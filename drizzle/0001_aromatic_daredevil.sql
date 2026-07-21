@@ -1,0 +1,203 @@
+CREATE TABLE `customer_merge_suggestions` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`customerAId` int NOT NULL,
+	`customerBId` int NOT NULL,
+	`matchReasons` text,
+	`status` enum('pending','approved','rejected','auto_merged') NOT NULL DEFAULT 'pending',
+	`reviewedByStaffId` int,
+	`reviewedAt` timestamp,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `customer_merge_suggestions_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `customers` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`facebookId` varchar(255),
+	`facebookName` varchar(255),
+	`messengerId` varchar(255),
+	`name` varchar(255),
+	`phoneNumber` varchar(20),
+	`email` varchar(255),
+	`address` text,
+	`city` varchar(100),
+	`state` varchar(100),
+	`postalCode` varchar(20),
+	`country` varchar(100),
+	`shopLinkIdentifier` varchar(255),
+	`totalOrders` int DEFAULT 0,
+	`totalSpent` decimal(12,2) DEFAULT '0',
+	`membershipLevel` enum('regular','member','vip') DEFAULT 'regular',
+	`pointsBalance` int DEFAULT 0,
+	`isBlacklisted` boolean DEFAULT false,
+	`blacklistReason` text,
+	`mergedIntoCustomerId` int,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	`lastOrderAt` timestamp,
+	CONSTRAINT `customers_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `flow_send_logs` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`reviewId` int NOT NULL,
+	`flowTemplateId` int NOT NULL,
+	`stepOrder` int NOT NULL,
+	`status` enum('pending','sent','failed') NOT NULL DEFAULT 'pending',
+	`errorMessage` text,
+	`messageContent` text,
+	`sentAt` timestamp,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `flow_send_logs_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `flow_steps` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`flowTemplateId` int NOT NULL,
+	`stepOrder` int NOT NULL,
+	`stepName` varchar(255) NOT NULL,
+	`messageType` enum('text','image','video','button','contact_support') NOT NULL,
+	`messageContent` text,
+	`mediaUrl` varchar(500),
+	`buttonName` varchar(100),
+	`buttonLink` varchar(500),
+	`delaySeconds` int DEFAULT 0,
+	`conditionType` enum('always','if_not_clicked','if_clicked'),
+	`conditionValue` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `flow_steps_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `membership_fee_reviews` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`orderId` int NOT NULL,
+	`receiptFileUrl` varchar(500),
+	`receiptUploadedAt` timestamp NOT NULL,
+	`reviewedByStaffId` int,
+	`reviewStatus` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+	`reviewNotes` text,
+	`reviewedAt` timestamp,
+	`flowSentAt` timestamp,
+	`flowStatus` enum('pending','sent','failed') NOT NULL DEFAULT 'pending',
+	`flowErrorMessage` text,
+	`flowTemplateId` int,
+	`telegramLinkClicked` boolean DEFAULT false,
+	`telegramLinkClickedAt` timestamp,
+	`needsManualFollowUp` boolean DEFAULT false,
+	`followUpNotes` text,
+	`followUpCount` int DEFAULT 0,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `membership_fee_reviews_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `messenger_flow_templates` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`name` varchar(255) NOT NULL,
+	`description` text,
+	`messageContent` text NOT NULL,
+	`imageUrl` varchar(500),
+	`videoUrl` varchar(500),
+	`buttonName` varchar(100) DEFAULT '进入心田会员系统',
+	`buttonLink` varchar(500),
+	`reminderEnabled` boolean DEFAULT true,
+	`reminderDelayHours` int DEFAULT 24,
+	`reminderMessage` text,
+	`reminderMaxCount` int DEFAULT 3,
+	`followUpEnabled` boolean DEFAULT true,
+	`followUpDelayHours` int DEFAULT 72,
+	`isActive` boolean DEFAULT true,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `messenger_flow_templates_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `order_items` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`orderId` int NOT NULL,
+	`productId` int NOT NULL,
+	`productName` varchar(255),
+	`productType` enum('physical','membership','virtual','gift'),
+	`quantity` int NOT NULL,
+	`unitPrice` decimal(10,2) NOT NULL,
+	`subtotal` decimal(10,2) NOT NULL,
+	`variationId` int,
+	`variationName` varchar(255),
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `order_items_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `orders` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`orderNumber` varchar(50) NOT NULL,
+	`customerId` int NOT NULL,
+	`facebookName` varchar(255),
+	`facebookId` varchar(255),
+	`messengerId` varchar(255),
+	`orderType` enum('physical','membership','mixed') NOT NULL,
+	`physicalSubtotal` decimal(10,2) DEFAULT '0',
+	`membershipSubtotal` decimal(10,2) DEFAULT '0',
+	`shippingFee` decimal(10,2) DEFAULT '0',
+	`totalAmount` decimal(10,2) NOT NULL,
+	`paidAmount` decimal(10,2) DEFAULT '0',
+	`physicalStatus` enum('pending','receipt_uploaded','payment_confirmed','packing','shipped','completed','cancelled') DEFAULT 'pending',
+	`membershipStatus` enum('pending','receipt_uploaded','pending_review','fee_confirmed','flow_sent','flow_failed','manual_follow_up','completed','cancelled') DEFAULT 'pending',
+	`shippingAddress` text,
+	`shippingMethod` enum('west_malaysia','east_malaysia_shopee','east_malaysia_poslaju','self_pickup','lalamove'),
+	`courierCompany` varchar(100),
+	`trackingNumber` varchar(100),
+	`paymentMethod` enum('online_banking','tng'),
+	`receiptUrl` varchar(500),
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`paymentUploadedAt` timestamp,
+	`paymentConfirmedAt` timestamp,
+	`shippedAt` timestamp,
+	`completedAt` timestamp,
+	`autoCompleteAt` timestamp,
+	CONSTRAINT `orders_id` PRIMARY KEY(`id`),
+	CONSTRAINT `orders_orderNumber_unique` UNIQUE(`orderNumber`)
+);
+--> statement-breakpoint
+CREATE TABLE `product_variations` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`productId` int NOT NULL,
+	`name` varchar(255) NOT NULL,
+	`price` decimal(10,2) NOT NULL,
+	`stockQuantity` int DEFAULT 0,
+	`keywords` varchar(500),
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `product_variations_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `products` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`name` varchar(255) NOT NULL,
+	`type` enum('physical','membership','virtual','gift') NOT NULL,
+	`description` text,
+	`coverImageUrl` varchar(500),
+	`images` text,
+	`cost` decimal(10,2),
+	`regularPrice` decimal(10,2),
+	`memberPrice` decimal(10,2),
+	`originalPrice` decimal(10,2),
+	`specialPrice` decimal(10,2),
+	`weightKg` decimal(8,2),
+	`stockQuantity` int DEFAULT 0,
+	`isPreOrder` boolean DEFAULT false,
+	`isListed` boolean DEFAULT true,
+	`isSpecialItem` boolean DEFAULT false,
+	`allowFreeShipping` boolean DEFAULT true,
+	`categories` text,
+	`keywords` varchar(500),
+	`videoUrl` varchar(500),
+	`membershipIntro` text,
+	`telegramFlowLink` varchar(500),
+	`facebookFlowId` varchar(255),
+	`allowStandalonePurchase` boolean DEFAULT true,
+	`allowMixedCheckout` boolean DEFAULT true,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `products_id` PRIMARY KEY(`id`)
+);
