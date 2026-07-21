@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -37,6 +37,7 @@ const menuItems = [
   { icon: Truck, label: "供应商管理", path: "/suppliers" },
   { icon: PackagePlus, label: "进货管理", path: "/purchase-orders" },
   { icon: TrendingUp, label: "利润报表", path: "/profit-report" },
+  { icon: Facebook, label: "Facebook 设置", path: "/facebook-settings" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

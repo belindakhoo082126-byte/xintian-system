@@ -14,6 +14,7 @@ import Flows from "@/pages/Flows";
 import Suppliers from "@/pages/Suppliers";
 import PurchaseOrders from "@/pages/PurchaseOrders";
 import ProfitReport from "@/pages/ProfitReport";
+import FacebookSettings from "@/pages/FacebookSettings";
 
 function Router() {
   return (
@@ -27,6 +28,7 @@ function Router() {
       <Route path={"/suppliers"} component={Suppliers} />
       <Route path={"/purchase-orders"} component={PurchaseOrders} />
       <Route path={"/profit-report"} component={ProfitReport} />
+      <Route path={"/facebook-settings"} component={FacebookSettings} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

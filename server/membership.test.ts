@@ -2,6 +2,19 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
+// Mock the messenger module
+vi.mock("./messenger", () => ({
+  sendTextMessage: vi.fn(() => Promise.resolve({ message_id: "msg_123" })),
+  sendButtonMessage: vi.fn(() => Promise.resolve({ message_id: "msg_124" })),
+  sendMediaMessage: vi.fn(() => Promise.resolve({ message_id: "msg_125" })),
+  sendTemplateMessage: vi.fn(() => Promise.resolve({ message_id: "msg_126" })),
+  sendMembershipFlow: vi.fn(() => Promise.resolve([{ stepIndex: 0, success: true, messageId: "msg_127" }])),
+  sendTelegramJoinFlow: vi.fn(() => Promise.resolve({ success: true, messageId: "msg_128" })),
+  getUserProfile: vi.fn(() => Promise.resolve({ name: "Test User" })),
+  handleMessengerEvent: vi.fn(),
+  handlePageFeedEvent: vi.fn(),
+}));
+
 // Mock the db module
 vi.mock("./db", () => ({
   getDb: vi.fn(() => Promise.resolve(null)),
@@ -26,6 +39,7 @@ vi.mock("./db", () => ({
   getOrders: vi.fn(() => Promise.resolve([])),
   getOrderById: vi.fn(() => Promise.resolve(undefined)),
   getOrderItems: vi.fn(() => Promise.resolve([])),
+  getCustomerById: vi.fn(() => Promise.resolve(undefined)),
   createOrderWithSplit: vi.fn(() => Promise.resolve({ orderId: 1, orderNumber: "XT001", totalAmount: "65.00" })),
   updateOrderStatus: vi.fn(() => Promise.resolve()),
 
@@ -235,6 +249,8 @@ describe("membership router - fee review flow", () => {
     vi.mocked(dbMock.getMembershipReviewById).mockResolvedValue(mockReview as any);
     vi.mocked(dbMock.getFlowTemplates).mockResolvedValue([mockTemplate] as any);
     vi.mocked(dbMock.getFlowTemplateById).mockResolvedValue(null as any);
+    vi.mocked(dbMock.getOrderById).mockResolvedValue({ id: 10, customerId: 1, messengerId: "psid_123" } as any);
+    vi.mocked(dbMock.getCustomerById).mockResolvedValue({ id: 1, messengerId: "psid_123" } as any);
 
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
@@ -352,6 +368,8 @@ describe("membership router - fee review flow", () => {
 
     vi.mocked(dbMock.getMembershipReviewById).mockResolvedValue(mockReview as any);
     vi.mocked(dbMock.getFlowTemplateById).mockResolvedValue(mockTemplate as any);
+    vi.mocked(dbMock.getOrderById).mockResolvedValue({ id: 10, customerId: 1, messengerId: "psid_123" } as any);
+    vi.mocked(dbMock.getCustomerById).mockResolvedValue({ id: 1, messengerId: "psid_123" } as any);
 
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);

@@ -4,6 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
+import { sendTelegramJoinFlow, sendMembershipFlow, getUserProfile, sendTextMessage } from "./messenger";
 
 export const appRouter = router({
   system: systemRouter,
@@ -409,41 +410,76 @@ export const appRouter = router({
           }
 
           if (template) {
-            // Simulate sending Messenger message
-            // In production, this would call Facebook Messenger API
             const messageContent = template.messageContent;
             const buttonName = template.buttonName || "进入心田会员系统";
             const buttonLink = template.buttonLink || "";
+
+            // Get the order to find customer's Messenger PSID
+            const order = await db.getOrderById(review.orderId);
+            const customer = order?.customerId ? await db.getCustomerById(order.customerId) : null;
+            const psid = customer?.messengerId || order?.messengerId || "";
+
+            let flowResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: "No PSID available" };
+
+            if (psid) {
+              // Send via real Messenger API
+              flowResult = await sendTelegramJoinFlow(
+                psid,
+                buttonLink || "",
+                messageContent,
+                buttonName
+              );
+            } else {
+              console.warn("[Membership] No Messenger PSID found for customer, cannot send Flow automatically");
+            }
 
             // Log the send attempt
             await db.createFlowSendLog({
               reviewId: input.reviewId,
               flowTemplateId: template.id,
               stepOrder: 1,
-              status: "sent",
+              status: flowResult.success ? "sent" : "failed",
               messageContent,
               sentAt: new Date(),
+              errorMessage: flowResult.error,
             } as any);
 
-            // Update review flow status
-            await db.updateFlowStatus(input.reviewId, {
-              flowStatus: "sent",
-              flowSentAt: new Date(),
-            });
+            if (flowResult.success) {
+              // Update review flow status
+              await db.updateFlowStatus(input.reviewId, {
+                flowStatus: "sent",
+                flowSentAt: new Date(),
+              });
 
-            // Update order status to flow_sent
-            await db.updateOrderStatus(review.orderId, {
-              membershipStatus: "flow_sent",
-            });
+              // Update order status to flow_sent
+              await db.updateOrderStatus(review.orderId, {
+                membershipStatus: "flow_sent",
+              });
 
-            return {
-              success: true,
-              flowSent: true,
-              message: "会员费已确认，Messenger Flow 已自动发送",
-              messageContent,
-              buttonName,
-              buttonLink,
-            };
+              return {
+                success: true,
+                flowSent: true,
+                message: "会员费已确认，Messenger Flow 已自动发送",
+                messageContent,
+                buttonName,
+                buttonLink,
+              };
+            } else {
+              await db.updateFlowStatus(input.reviewId, {
+                flowStatus: "failed",
+                flowErrorMessage: flowResult.error || "Messenger API send failed",
+              });
+
+              await db.updateOrderStatus(review.orderId, {
+                membershipStatus: "flow_failed",
+              });
+
+              return {
+                success: true,
+                flowSent: false,
+                message: `会员费已确认，但 Flow 发送失败: ${flowResult.error}`,
+              };
+            }
           } else {
             // No template configured
             await db.updateFlowStatus(input.reviewId, {
@@ -514,32 +550,59 @@ export const appRouter = router({
 
         if (!template) throw new Error("No active flow template configured");
 
-        // Simulate resending
+        // Get customer PSID
+        const order = await db.getOrderById(review.orderId);
+        const customer = order?.customerId ? await db.getCustomerById(order.customerId) : null;
+        const psid = customer?.messengerId || order?.messengerId || "";
+
+        let flowResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: "No PSID available" };
+
+        if (psid) {
+          flowResult = await sendTelegramJoinFlow(
+            psid,
+            template.buttonLink || "",
+            template.messageContent,
+            template.buttonName || "进入心田会员系统"
+          );
+        }
+
         await db.createFlowSendLog({
           reviewId: input.reviewId,
           flowTemplateId: template.id,
           stepOrder: 1,
-          status: "sent",
+          status: flowResult.success ? "sent" : "failed",
           messageContent: template.messageContent,
           sentAt: new Date(),
+          errorMessage: flowResult.error,
         } as any);
 
-        await db.updateFlowStatus(input.reviewId, {
-          flowStatus: "sent",
-          flowSentAt: new Date(),
-          flowErrorMessage: undefined,
-        });
+        if (flowResult.success) {
+          await db.updateFlowStatus(input.reviewId, {
+            flowStatus: "sent",
+            flowSentAt: new Date(),
+            flowErrorMessage: undefined,
+          });
 
-        // Update order status
-        await db.updateOrderStatus(review.orderId, {
-          membershipStatus: "flow_sent",
-        });
+          await db.updateOrderStatus(review.orderId, {
+            membershipStatus: "flow_sent",
+          });
 
-        return {
-          success: true,
-          message: "Flow 已重新发送",
-          messageContent: template.messageContent,
-        };
+          return {
+            success: true,
+            message: "Flow 已重新发送",
+            messageContent: template.messageContent,
+          };
+        } else {
+          await db.updateFlowStatus(input.reviewId, {
+            flowStatus: "failed",
+            flowErrorMessage: flowResult.error,
+          });
+
+          return {
+            success: false,
+            message: `Flow 重发失败: ${flowResult.error}`,
+          };
+        }
       }),
 
     markLinkClicked: protectedProcedure
@@ -792,6 +855,86 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getMergeSuggestions(input?.status);
       }),
+  }),
+
+  // ===========================================================================
+  // Messenger (Facebook integration)
+  // ===========================================================================
+  messenger: router({
+    // Test sending a message to a PSID
+    testSend: protectedProcedure
+      .input(z.object({
+        psid: z.string(),
+        message: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          const result = await sendTextMessage(
+            input.psid,
+            input.message || "测试消息：心田系统 Messenger 集成测试成功！"
+          );
+          return { success: true, result };
+        } catch (error: any) {
+          return { success: false, error: error?.response?.data?.error?.message || error?.message };
+        }
+      }),
+
+    // Get user profile by PSID
+    getProfile: protectedProcedure
+      .input(z.object({ psid: z.string() }))
+      .query(async ({ input }) => {
+        return await getUserProfile(input.psid);
+      }),
+
+    // Send custom message to a customer
+    sendCustomMessage: protectedProcedure
+      .input(z.object({
+        customerId: z.number(),
+        message: z.string(),
+        imageUrl: z.string().optional(),
+        buttonText: z.string().optional(),
+        buttonUrl: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const customer = await db.getCustomerById(input.customerId);
+        if (!customer) throw new Error("Customer not found");
+        const psid = customer.messengerId;
+        if (!psid) throw new Error("Customer has no Messenger ID");
+
+        try {
+          if (input.imageUrl) {
+            // Send image with caption
+            const { sendMediaMessage } = await import("./messenger");
+            await sendMediaMessage(psid, "image", input.imageUrl, input.message);
+          } else {
+            await sendTextMessage(psid, input.message);
+          }
+
+          if (input.buttonText && input.buttonUrl) {
+            const { sendButtonMessage } = await import("./messenger");
+            await sendButtonMessage(psid, "请点击以下按钮", [
+              { title: input.buttonText, url: input.buttonUrl },
+            ]);
+          }
+
+          return { success: true };
+        } catch (error: any) {
+          return { success: false, error: error?.response?.data?.error?.message || error?.message };
+        }
+      }),
+
+    // Get Facebook connection status
+    status: protectedProcedure.query(async () => {
+      return {
+        pageId: process.env.FB_PAGE_ID || "",
+        appId: process.env.FB_APP_ID || "",
+        hasPageAccessToken: !!process.env.FB_PAGE_ACCESS_TOKEN,
+        hasAppSecret: !!process.env.FB_APP_SECRET,
+        hasCatalogToken: !!process.env.FB_CATALOG_ACCESS_TOKEN,
+        webhookUrl: "/api/facebook/webhook",
+        verifyToken: process.env.FB_VERIFY_TOKEN || "",
+      };
+    }),
   }),
 
   // ===========================================================================
