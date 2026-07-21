@@ -10,8 +10,10 @@ import Products from "./pages/Products";
 import Orders from "./pages/Orders";
 import Membership from "./pages/Membership";
 import Customers from "./pages/Customers";
-import Flows from "./pages/Flows";
-import Home from "./pages/Home";
+import Flows from "@/pages/Flows";
+import Suppliers from "@/pages/Suppliers";
+import PurchaseOrders from "@/pages/PurchaseOrders";
+import ProfitReport from "@/pages/ProfitReport";
 
 function Router() {
   return (
@@ -22,6 +24,9 @@ function Router() {
       <Route path={"/membership"} component={Membership} />
       <Route path={"/customers"} component={Customers} />
       <Route path={"/flows"} component={Flows} />
+      <Route path={"/suppliers"} component={Suppliers} />
+      <Route path={"/purchase-orders"} component={PurchaseOrders} />
+      <Route path={"/profit-report"} component={ProfitReport} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

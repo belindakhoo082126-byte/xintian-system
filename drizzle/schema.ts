@@ -25,7 +25,10 @@ export type InsertUser = typeof users.$inferInsert;
 export const products = mysqlTable("products", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
-  type: mysqlEnum("type", ["physical", "membership", "virtual", "gift"]).notNull(),
+  type: mysqlEnum("type", ["physical", "membership", "gift"]).notNull(),
+
+  // Sub-category for physical products (e.g. 花类, 叶类, 果树, 肥料)
+  categoryId: int("categoryId"),
 
   // Basic info
   description: text("description"),
@@ -54,12 +57,15 @@ export const products = mysqlTable("products", {
   keywords: varchar("keywords", { length: 500 }),
   videoUrl: varchar("videoUrl", { length: 500 }),
 
-  // Membership-specific fields
+  // Membership-specific fields (no stock, no shipping, no weight)
   membershipIntro: text("membershipIntro"),
   telegramFlowLink: varchar("telegramFlowLink", { length: 500 }),
   facebookFlowId: varchar("facebookFlowId", { length: 255 }),
   allowStandalonePurchase: boolean("allowStandalonePurchase").default(true),
   allowMixedCheckout: boolean("allowMixedCheckout").default(true),
+
+  // Gift-specific: has stock + shipping, but price is 0
+  // (no extra fields needed - stockQuantity & weightKg already exist above)
 
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -67,6 +73,81 @@ export const products = mysqlTable("products", {
 
 export type Product = typeof products.$inferSelect;
 export type InsertProduct = typeof products.$inferInsert;
+
+// ============================================================================
+// Product Categories (sub-categories for physical products)
+// ============================================================================
+
+export const productCategories = mysqlTable("product_categories", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  parentId: int("parentId"), // null = top-level category
+  sortOrder: int("sortOrder").default(0),
+  isActive: boolean("isActive").default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ProductCategory = typeof productCategories.$inferSelect;
+export type InsertProductCategory = typeof productCategories.$inferInsert;
+
+// ============================================================================
+// Suppliers (进货供应商 - different suppliers have different costs)
+// ============================================================================
+
+export const suppliers = mysqlTable("suppliers", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  contactPerson: varchar("contactPerson", { length: 100 }),
+  phoneNumber: varchar("phoneNumber", { length: 20 }),
+  email: varchar("email", { length: 255 }),
+  address: text("address"),
+  bankAccount: varchar("bankAccount", { length: 255 }),
+  notes: text("notes"),
+  isActive: boolean("isActive").default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Supplier = typeof suppliers.$inferSelect;
+export type InsertSupplier = typeof suppliers.$inferInsert;
+
+// ============================================================================
+// Purchase Orders (进货单 - record each procurement from a supplier)
+// ============================================================================
+
+export const purchaseOrders = mysqlTable("purchase_orders", {
+  id: int("id").autoincrement().primaryKey(),
+  poNumber: varchar("poNumber", { length: 50 }).notNull().unique(),
+  supplierId: int("supplierId").notNull(),
+  totalAmount: decimal("totalAmount", { precision: 12, scale: 2 }).notNull(),
+  status: mysqlEnum("status", ["draft", "ordered", "received", "cancelled"]).default("draft").notNull(),
+  notes: text("notes"),
+  orderedAt: timestamp("orderedAt"),
+  receivedAt: timestamp("receivedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+export type InsertPurchaseOrder = typeof purchaseOrders.$inferInsert;
+
+// ============================================================================
+// Purchase Order Items (进货明细 - each product from each supplier with its own cost)
+// ============================================================================
+
+export const purchaseOrderItems = mysqlTable("purchase_order_items", {
+  id: int("id").autoincrement().primaryKey(),
+  purchaseOrderId: int("purchaseOrderId").notNull(),
+  productId: int("productId").notNull(),
+  quantity: int("quantity").notNull(),
+  unitCost: decimal("unitCost", { precision: 10, scale: 2 }).notNull(),
+  subtotal: decimal("subtotal", { precision: 12, scale: 2 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
+export type InsertPurchaseOrderItem = typeof purchaseOrderItems.$inferInsert;
 
 // ============================================================================
 // Product Variations
@@ -209,7 +290,7 @@ export const orderItems = mysqlTable("order_items", {
 
   // Snapshot
   productName: varchar("productName", { length: 255 }),
-  productType: mysqlEnum("productType", ["physical", "membership", "virtual", "gift"]),
+  productType: mysqlEnum("productType", ["physical", "membership", "gift"]),
 
   // Quantity & price
   quantity: int("quantity").notNull(),

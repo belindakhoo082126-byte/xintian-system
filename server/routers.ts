@@ -23,7 +23,7 @@ export const appRouter = router({
   products: router({
     list: protectedProcedure
       .input(z.object({
-        type: z.enum(["physical", "membership", "virtual", "gift"]).optional(),
+        type: z.enum(["physical", "membership", "gift"]).optional(),
         search: z.string().optional(),
         isListed: z.boolean().optional(),
       }).optional())
@@ -39,10 +39,11 @@ export const appRouter = router({
         return product;
       }),
 
-    create: adminProcedure
+    create: protectedProcedure
       .input(z.object({
         name: z.string().min(1),
-        type: z.enum(["physical", "membership", "virtual", "gift"]),
+        type: z.enum(["physical", "membership", "gift"]),
+        categoryId: z.number().optional(),
         description: z.string().optional(),
         coverImageUrl: z.string().optional(),
         cost: z.string().optional(),
@@ -69,11 +70,12 @@ export const appRouter = router({
         return await db.createProduct(input as any);
       }),
 
-    update: adminProcedure
+    update: protectedProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
-        type: z.enum(["physical", "membership", "virtual", "gift"]).optional(),
+        type: z.enum(["physical", "membership", "gift"]).optional(),
+        categoryId: z.number().optional(),
         description: z.string().optional(),
         coverImageUrl: z.string().optional(),
         cost: z.string().optional(),
@@ -102,11 +104,170 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    delete: adminProcedure
+    delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteProduct(input.id);
         return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // Product Categories
+  // ===========================================================================
+  categories: router({
+    list: protectedProcedure
+      .input(z.object({ activeOnly: z.boolean().optional() }).optional())
+      .query(async ({ input }) => {
+        return await db.getProductCategories(input?.activeOnly);
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        parentId: z.number().optional(),
+        sortOrder: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createProductCategory(input as any);
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        parentId: z.number().optional(),
+        sortOrder: z.number().optional(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateProductCategory(id, data as any);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteProductCategory(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // Suppliers (进货供应商)
+  // ===========================================================================
+  suppliers: router({
+    list: protectedProcedure
+      .input(z.object({ activeOnly: z.boolean().optional() }).optional())
+      .query(async ({ input }) => {
+        return await db.getSuppliers(input?.activeOnly);
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const supplier = await db.getSupplierById(input.id);
+        if (!supplier) throw new Error("Supplier not found");
+        return supplier;
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        contactPerson: z.string().optional(),
+        phoneNumber: z.string().optional(),
+        email: z.string().optional(),
+        address: z.string().optional(),
+        bankAccount: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createSupplier(input as any);
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        contactPerson: z.string().optional(),
+        phoneNumber: z.string().optional(),
+        email: z.string().optional(),
+        address: z.string().optional(),
+        bankAccount: z.string().optional(),
+        notes: z.string().optional(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateSupplier(id, data as any);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteSupplier(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // Purchase Orders (进货单)
+  // ===========================================================================
+  purchaseOrders: router({
+    list: protectedProcedure
+      .input(z.object({
+        supplierId: z.number().optional(),
+        status: z.string().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getPurchaseOrders(input || {});
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const po = await db.getPurchaseOrderById(input.id);
+        if (!po) throw new Error("Purchase order not found");
+        const items = await db.getPurchaseOrderItems(input.id);
+        return { ...po, items };
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        supplierId: z.number(),
+        notes: z.string().optional(),
+        items: z.array(z.object({
+          productId: z.number(),
+          quantity: z.number().min(1),
+          unitCost: z.string(),
+          subtotal: z.string(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createPurchaseOrder(input);
+      }),
+
+    receive: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.receivePurchaseOrder(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // Profit Report (利润报表)
+  // ===========================================================================
+  reports: router({
+    monthlyProfit: protectedProcedure
+      .input(z.object({
+        year: z.number(),
+        month: z.number().min(1).max(12),
+      }))
+      .query(async ({ input }) => {
+        return await db.getMonthlyProfitReport(input.year, input.month);
       }),
   }),
 
@@ -143,7 +304,7 @@ export const appRouter = router({
         items: z.array(z.object({
           productId: z.number(),
           productName: z.string(),
-          productType: z.enum(["physical", "membership", "virtual", "gift"]),
+          productType: z.enum(["physical", "membership", "gift"]),
           quantity: z.number().min(1),
           unitPrice: z.string(),
           subtotal: z.string(),
@@ -158,7 +319,7 @@ export const appRouter = router({
         return await db.createOrderWithSplit(input);
       }),
 
-    updateStatus: adminProcedure
+    updateStatus: protectedProcedure
       .input(z.object({
         id: z.number(),
         physicalStatus: z.string().optional(),
@@ -218,7 +379,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    approveFee: adminProcedure
+    approveFee: protectedProcedure
       .input(z.object({
         reviewId: z.number(),
         notes: z.string().optional(),
@@ -318,7 +479,7 @@ export const appRouter = router({
         }
       }),
 
-    rejectFee: adminProcedure
+    rejectFee: protectedProcedure
       .input(z.object({
         reviewId: z.number(),
         notes: z.string().optional(),
@@ -337,7 +498,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    resendFlow: adminProcedure
+    resendFlow: protectedProcedure
       .input(z.object({
         reviewId: z.number(),
       }))
@@ -395,7 +556,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    markNeedsFollowUp: adminProcedure
+    markNeedsFollowUp: protectedProcedure
       .input(z.object({
         reviewId: z.number(),
         notes: z.string().optional(),
@@ -411,7 +572,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    cancelMembershipOrder: adminProcedure
+    cancelMembershipOrder: protectedProcedure
       .input(z.object({
         reviewId: z.number(),
       }))
@@ -451,7 +612,7 @@ export const appRouter = router({
         return { ...template, steps };
       }),
 
-    create: adminProcedure
+    create: protectedProcedure
       .input(z.object({
         name: z.string().min(1),
         description: z.string().optional(),
@@ -472,7 +633,7 @@ export const appRouter = router({
         return await db.createFlowTemplate(input as any);
       }),
 
-    update: adminProcedure
+    update: protectedProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -496,7 +657,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    delete: adminProcedure
+    delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteFlowTemplate(input.id);
@@ -510,7 +671,7 @@ export const appRouter = router({
         return await db.getFlowStepsByTemplateId(input.templateId);
       }),
 
-    createStep: adminProcedure
+    createStep: protectedProcedure
       .input(z.object({
         flowTemplateId: z.number(),
         stepOrder: z.number(),
@@ -528,7 +689,7 @@ export const appRouter = router({
         return await db.createFlowStep(input as any);
       }),
 
-    updateStep: adminProcedure
+    updateStep: protectedProcedure
       .input(z.object({
         id: z.number(),
         stepOrder: z.number().optional(),
@@ -548,7 +709,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    deleteStep: adminProcedure
+    deleteStep: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteFlowStep(input.id);
@@ -588,7 +749,7 @@ export const appRouter = router({
         return await db.findOrCreateCustomer(input);
       }),
 
-    update: adminProcedure
+    update: protectedProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -616,7 +777,7 @@ export const appRouter = router({
         return await db.findPotentialDuplicateCustomers(input.customerId);
       }),
 
-    merge: adminProcedure
+    merge: protectedProcedure
       .input(z.object({
         sourceId: z.number(),
         targetId: z.number(),

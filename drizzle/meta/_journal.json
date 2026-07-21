@@ -15,6 +15,13 @@
       "when": 1784606584860,
       "tag": "0001_aromatic_daredevil",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1784627189162,
+      "tag": "0002_lowly_masked_marvel",
+      "breakpoints": true
     }
   ]
 }

@@ -125,13 +125,15 @@ describe("products router", () => {
     expect(dbMock.getProducts).toHaveBeenCalledWith({ type: "membership" });
   });
 
-  it("create requires admin role", async () => {
+  it("create succeeds for any logged-in user", async () => {
+    vi.mocked(dbMock.createProduct).mockResolvedValue({ insertId: 1 } as any);
+
     const { ctx } = createAuthContext({ role: "user" });
     const caller = appRouter.createCaller(ctx);
+    const result = await caller.products.create({ name: "Test", type: "physical" });
 
-    await expect(
-      caller.products.create({ name: "Test", type: "physical" })
-    ).rejects.toThrow();
+    expect(result).toBeDefined();
+    expect(dbMock.createProduct).toHaveBeenCalled();
   });
 
   it("create succeeds with admin role", async () => {
@@ -484,13 +486,15 @@ describe("flows router", () => {
     expect(result).toEqual(mockTemplates);
   });
 
-  it("create requires admin", async () => {
+  it("create succeeds for any logged-in user", async () => {
+    vi.mocked(dbMock.createFlowTemplate).mockResolvedValue({ insertId: 1 } as any);
+
     const { ctx } = createAuthContext({ role: "user" });
     const caller = appRouter.createCaller(ctx);
+    const result = await caller.flows.create({ name: "Test", messageContent: "Hello" });
 
-    await expect(
-      caller.flows.create({ name: "Test", messageContent: "Hello" })
-    ).rejects.toThrow();
+    expect(result).toBeDefined();
+    expect(dbMock.createFlowTemplate).toHaveBeenCalled();
   });
 
   it("create succeeds with admin", async () => {

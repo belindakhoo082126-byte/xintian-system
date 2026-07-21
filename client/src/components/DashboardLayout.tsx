@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3 } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -34,6 +34,9 @@ const menuItems = [
   { icon: Crown, label: "会员订单", path: "/membership" },
   { icon: Users, label: "客户管理", path: "/customers" },
   { icon: MessageSquare, label: "Flow 编辑器", path: "/flows" },
+  { icon: Truck, label: "供应商管理", path: "/suppliers" },
+  { icon: PackagePlus, label: "进货管理", path: "/purchase-orders" },
+  { icon: TrendingUp, label: "利润报表", path: "/profit-report" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

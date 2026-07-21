@@ -2,10 +2,11 @@ import { eq, ne, and, or, desc, asc, sql, gte, lte, isNull, like } from "drizzle
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
-  products, productVariations,
+  products, productVariations, productCategories,
   customers, orders, orderItems,
   membershipFeeReviews, messengerFlowTemplates, flowSteps,
   customerMergeSuggestions, flowSendLogs,
+  suppliers, purchaseOrders, purchaseOrderItems,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -321,7 +322,7 @@ export async function createOrderWithSplit(data: {
   items: Array<{
     productId: number;
     productName: string;
-    productType: "physical" | "membership" | "virtual" | "gift";
+    productType: "physical" | "membership" | "gift";
     quantity: number;
     unitPrice: string;
     subtotal: string;
@@ -335,24 +336,29 @@ export async function createOrderWithSplit(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const hasPhysical = data.items.some(i => i.productType === "physical");
+  // Physical and gift items both go through the physical order flow
+  // Gift items have price=0 but still count toward shipping weight and free-shipping threshold
+  const hasPhysical = data.items.some(i => i.productType === "physical" || i.productType === "gift");
   const hasMembership = data.items.some(i => i.productType === "membership");
   const orderType = hasPhysical && hasMembership ? "mixed" : hasMembership ? "membership" : "physical";
 
+  // Physical subtotal includes gift items (which have price=0)
   const physicalSubtotal = data.items
-    .filter(i => i.productType === "physical")
+    .filter(i => i.productType === "physical" || i.productType === "gift")
     .reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
 
   const membershipSubtotal = data.items
     .filter(i => i.productType === "membership")
     .reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
 
-  // Calculate shipping for physical items only
+  // Calculate shipping for physical + gift items (both have weight)
+  // Gift items count toward free-shipping threshold even though they are free
   let shippingFee = 0;
   if (hasPhysical && data.shippingMethod === "west_malaysia") {
+    // Simplified weight calc: each physical/gift item counts as 0.5kg minimum
     const totalWeight = data.items
-      .filter(i => i.productType === "physical")
-      .reduce((sum, i) => sum + (parseFloat(i.subtotal) > 0 ? 0.5 : 0), 0); // simplified
+      .filter(i => i.productType === "physical" || i.productType === "gift")
+      .reduce((sum, i) => sum + 0.5 * i.quantity, 0);
     shippingFee = totalWeight <= 10 ? 15 : 15 + Math.ceil(totalWeight - 10) * 3;
   }
 
@@ -692,5 +698,260 @@ export async function getDashboardStats() {
     needsFollowUp: needsFollowUp[0]?.count || 0,
     membershipRevenue: revenueResult[0]?.total || "0",
     flowSuccessRate: successRate,
+  };
+}
+
+// ============================================================================
+// Product Category helpers
+// ============================================================================
+
+export async function getProductCategories(activeOnly?: boolean) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select().from(productCategories);
+  if (activeOnly) query = query.where(eq(productCategories.isActive, true)) as any;
+  return await query.orderBy(asc(productCategories.sortOrder));
+}
+
+export async function createProductCategory(data: typeof productCategories.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.insert(productCategories).values(data);
+}
+
+export async function updateProductCategory(id: number, data: Partial<typeof productCategories.$inferInsert>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(productCategories).set(data).where(eq(productCategories.id, id));
+}
+
+export async function deleteProductCategory(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(productCategories).set({ isActive: false }).where(eq(productCategories.id, id));
+}
+
+// ============================================================================
+// Supplier helpers
+// ============================================================================
+
+export async function getSuppliers(activeOnly?: boolean) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select().from(suppliers);
+  if (activeOnly) query = query.where(eq(suppliers.isActive, true)) as any;
+  return await query.orderBy(desc(suppliers.createdAt));
+}
+
+export async function getSupplierById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(suppliers).where(eq(suppliers.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createSupplier(data: typeof suppliers.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.insert(suppliers).values(data);
+}
+
+export async function updateSupplier(id: number, data: Partial<typeof suppliers.$inferInsert>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(suppliers).set(data).where(eq(suppliers.id, id));
+}
+
+export async function deleteSupplier(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(suppliers).set({ isActive: false }).where(eq(suppliers.id, id));
+}
+
+// ============================================================================
+// Purchase Order helpers
+// ============================================================================
+
+export async function getPurchaseOrders(filters?: { supplierId?: number; status?: string }) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select().from(purchaseOrders);
+  const conditions: any[] = [];
+  if (filters?.supplierId) conditions.push(eq(purchaseOrders.supplierId, filters.supplierId));
+  if (filters?.status) conditions.push(eq(purchaseOrders.status, filters.status as any));
+  if (conditions.length > 0) {
+    query = query.where(and(...conditions)) as any;
+  }
+  return await query.orderBy(desc(purchaseOrders.createdAt));
+}
+
+export async function getPurchaseOrderById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getPurchaseOrderItems(poId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, poId));
+}
+
+export async function createPurchaseOrder(data: {
+  supplierId: number;
+  notes?: string;
+  items: Array<{
+    productId: number;
+    quantity: number;
+    unitCost: string;
+    subtotal: string;
+  }>;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const totalAmount = data.items.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+  const poNumber = `PO${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+  const poResult = await db.insert(purchaseOrders).values({
+    poNumber,
+    supplierId: data.supplierId,
+    totalAmount: totalAmount.toFixed(2),
+    status: "ordered",
+    notes: data.notes || null,
+    orderedAt: new Date(),
+  });
+
+  const poId = (poResult as any).insertId;
+
+  for (const item of data.items) {
+    await db.insert(purchaseOrderItems).values({
+      purchaseOrderId: poId,
+      productId: item.productId,
+      quantity: item.quantity,
+      unitCost: item.unitCost,
+      subtotal: item.subtotal,
+    });
+
+    // Update product cost immediately (latest purchase cost)
+    // Stock is NOT increased here - only when the PO is received
+    await db.update(products).set({
+      cost: item.unitCost,
+    }).where(eq(products.id, item.productId));
+  }
+
+  return { poId, poNumber, totalAmount: totalAmount.toFixed(2) };
+}
+
+export async function receivePurchaseOrder(poId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Mark PO as received
+  await db.update(purchaseOrders).set({
+    status: "received",
+    receivedAt: new Date(),
+  }).where(eq(purchaseOrders.id, poId));
+
+  // Increase stock for each item in the PO
+  const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, poId));
+  for (const item of items) {
+    await db.update(products).set({
+      stockQuantity: sql`${products.stockQuantity} + ${item.quantity}`,
+    }).where(eq(products.id, item.productId));
+  }
+}
+
+// ============================================================================
+// Profit Report helpers
+// ============================================================================
+
+export async function getMonthlyProfitReport(year: number, month: number) {
+  const db = await getDb();
+  if (!db) {
+    return {
+      revenue: "0",
+      cost: "0",
+      profit: "0",
+      profitMargin: 0,
+      orderCount: 0,
+      membershipRevenue: "0",
+      physicalRevenue: "0",
+      shippingRevenue: "0",
+      productCost: "0",
+      shippingCost: "0",
+      details: [],
+    };
+  }
+
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 1);
+
+  // Get all completed orders in the month
+  const monthOrders = await db.select().from(orders)
+    .where(and(
+      gte(orders.createdAt, monthStart),
+      lte(orders.createdAt, monthEnd),
+      or(
+        eq(orders.physicalStatus, "completed"),
+        eq(orders.membershipStatus, "completed"),
+      )
+    ));
+
+  let physicalRevenue = 0;
+  let membershipRevenue = 0;
+  let shippingRevenue = 0;
+  let productCost = 0;
+  let orderCount = monthOrders.length;
+
+  const details: any[] = [];
+
+  for (const order of monthOrders) {
+    const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+    const orderPhysicalRevenue = parseFloat(order.physicalSubtotal || "0");
+    const orderMembershipRevenue = parseFloat(order.membershipSubtotal || "0");
+    const orderShipping = parseFloat(order.shippingFee || "0");
+
+    physicalRevenue += orderPhysicalRevenue;
+    membershipRevenue += orderMembershipRevenue;
+    shippingRevenue += orderShipping;
+
+    // Calculate cost from order items
+    let orderCost = 0;
+    for (const item of items) {
+      // Get product cost
+      const product = await db.select().from(products).where(eq(products.id, item.productId)).limit(1);
+      if (product.length > 0 && product[0].cost) {
+        orderCost += parseFloat(product[0].cost) * item.quantity;
+      }
+    }
+    productCost += orderCost;
+
+    details.push({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      revenue: (orderPhysicalRevenue + orderMembershipRevenue + orderShipping).toFixed(2),
+      cost: orderCost.toFixed(2),
+      profit: (orderPhysicalRevenue + orderMembershipRevenue + orderShipping - orderCost).toFixed(2),
+    });
+  }
+
+  const totalRevenue = physicalRevenue + membershipRevenue + shippingRevenue;
+  const totalCost = productCost;
+  const profit = totalRevenue - totalCost;
+  const profitMargin = totalRevenue > 0 ? Math.round((profit / totalRevenue) * 100) : 0;
+
+  return {
+    revenue: totalRevenue.toFixed(2),
+    cost: totalCost.toFixed(2),
+    profit: profit.toFixed(2),
+    profitMargin,
+    orderCount,
+    membershipRevenue: membershipRevenue.toFixed(2),
+    physicalRevenue: physicalRevenue.toFixed(2),
+    shippingRevenue: shippingRevenue.toFixed(2),
+    productCost: productCost.toFixed(2),
+    details,
   };
 }
