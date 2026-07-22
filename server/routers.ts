@@ -1451,6 +1451,179 @@ export const appRouter = router({
   }),
 
   // ===========================================================================
+  // XLCS V1.0: Couriers (快递公司管理)
+  // ===========================================================================
+  couriers: router({
+    list: protectedProcedure
+      .input(z.object({ activeOnly: z.boolean().optional() }).optional())
+      .query(async ({ input }) => {
+        if (input?.activeOnly) {
+          return await db.getActiveCouriers();
+        }
+        return await db.getAllCouriers();
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        sortOrder: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createCourier(input);
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        isActive: z.boolean().optional(),
+        sortOrder: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateCourier(id, data);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteCourier(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Orders V2 (增强版订单管理)
+  // ===========================================================================
+  ordersV2: router({
+    list: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        orderSource: z.string().optional(),
+        physicalStatus: z.string().optional(),
+        shippingMethod: z.string().optional(),
+        orderType: z.string().optional(),
+        customerId: z.number().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getOrdersEnhanced(input || {});
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const order = await db.getOrderDetail(input.id);
+        if (!order) throw new Error('订单不存在');
+        return order;
+      }),
+
+    ship: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        courierId: z.number().optional(),
+        courierCompany: z.string().optional(),
+        trackingNumber: z.string().min(1),
+        shipmentDate: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.shipOrder(input.id, {
+          courierId: input.courierId,
+          courierCompany: input.courierCompany,
+          trackingNumber: input.trackingNumber,
+          shipmentDate: input.shipmentDate ? new Date(input.shipmentDate) : undefined,
+          operatorId: ctx.user.id,
+          operatorName: ctx.user.name || undefined,
+        });
+        return { success: true };
+      }),
+
+    cancel: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.cancelOrder(input.id, ctx.user.id, ctx.user.name || undefined);
+        return { success: true };
+      }),
+
+    complete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.completeOrder(input.id, ctx.user.id, ctx.user.name || undefined);
+        return { success: true };
+      }),
+
+    workQueue: protectedProcedure.query(async () => {
+      return await db.getWorkQueueStats();
+    }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Order Payments (付款纪录)
+  // ===========================================================================
+  orderPayments: router({
+    list: protectedProcedure
+      .input(z.object({ orderId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getOrderPayments(input.orderId);
+      }),
+
+    add: protectedProcedure
+      .input(z.object({
+        orderId: z.number(),
+        amount: z.string().min(1),
+        paymentDate: z.string(),
+        paymentMethod: z.enum(['online_banking', 'tng', 'cash', 'shopee', 'bank_transfer', 'other']),
+        receiptUrl: z.string().optional(),
+        purpose: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.addOrderPayment({
+          orderId: input.orderId,
+          amount: input.amount,
+          paymentDate: new Date(input.paymentDate),
+          paymentMethod: input.paymentMethod,
+          receiptUrl: input.receiptUrl,
+          purpose: input.purpose,
+          operatorId: ctx.user.id,
+          operatorName: ctx.user.name || undefined,
+          notes: input.notes,
+        });
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Order Notifications (通知历史)
+  // ===========================================================================
+  orderNotifications: router({
+    list: protectedProcedure
+      .input(z.object({ orderId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getOrderNotifications(input.orderId);
+      }),
+
+    markManual: protectedProcedure
+      .input(z.object({ notificationId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.markManualNotified(input.notificationId, ctx.user.id, ctx.user.name || undefined);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Order Audit Logs (审计日志)
+  // ===========================================================================
+  auditLogs: router({
+    list: protectedProcedure
+      .input(z.object({ orderId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getOrderAuditLogs(input.orderId);
+      }),
+  }),
+
+  // ===========================================================================
   // Dashboard
   // ===========================================================================
   dashboard: router({

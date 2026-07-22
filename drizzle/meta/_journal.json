@@ -29,6 +29,13 @@
       "when": 1784702651657,
       "tag": "0003_wild_maestro",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1784709885925,
+      "tag": "0004_fluffy_stardust",
+      "breakpoints": true
     }
   ]
 }

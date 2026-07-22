@@ -399,6 +399,10 @@ export type InsertCustomer = typeof customers.$inferInsert;
 export const orders = mysqlTable("orders", {
   id: int("id").autoincrement().primaryKey(),
   orderNumber: varchar("orderNumber", { length: 50 }).notNull().unique(),
+  orderSource: mysqlEnum("orderSource", [
+    "facebook_live", "facebook_comment", "facebook_messenger",
+    "whatsapp", "store", "backend"
+  ]).default("backend").notNull(),
   customerId: int("customerId").notNull(),
   facebookName: varchar("facebookName", { length: 255 }),
   facebookId: varchar("facebookId", { length: 255 }),
@@ -407,6 +411,8 @@ export const orders = mysqlTable("orders", {
   physicalSubtotal: decimal("physicalSubtotal", { precision: 10, scale: 2 }).default("0"),
   membershipSubtotal: decimal("membershipSubtotal", { precision: 10, scale: 2 }).default("0"),
   shippingFee: decimal("shippingFee", { precision: 10, scale: 2 }).default("0"),
+  estimatedShippingFee: decimal("estimatedShippingFee", { precision: 10, scale: 2 }).default("0"),
+  actualShippingFee: decimal("actualShippingFee", { precision: 10, scale: 2 }),
   totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }).notNull(),
   paidAmount: decimal("paidAmount", { precision: 10, scale: 2 }).default("0"),
   physicalStatus: mysqlEnum("physicalStatus", [
@@ -424,14 +430,18 @@ export const orders = mysqlTable("orders", {
     "east_malaysia_poslaju", "self_pickup", "lalamove"
   ]),
   courierCompany: varchar("courierCompany", { length: 100 }),
+  courierId: int("courierId"),
   trackingNumber: varchar("trackingNumber", { length: 100 }),
   paymentMethod: mysqlEnum("paymentMethod", ["online_banking", "tng"]),
   receiptUrl: varchar("receiptUrl", { length: 500 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  reservedAt: timestamp("reservedAt"),
   paymentUploadedAt: timestamp("paymentUploadedAt"),
   paymentConfirmedAt: timestamp("paymentConfirmedAt"),
   shippedAt: timestamp("shippedAt"),
+  shipmentDate: timestamp("shipmentDate"),
   completedAt: timestamp("completedAt"),
+  cancelledAt: timestamp("cancelledAt"),
   autoCompleteAt: timestamp("autoCompleteAt"),
 });
 
@@ -452,6 +462,7 @@ export const orderItems = mysqlTable("order_items", {
   unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).notNull(),
   subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
   variationId: int("variationId"),
+  variantId: int("variantId"), // Phase 1 variants.id
   variationName: varchar("variationName", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -576,3 +587,86 @@ export const flowSendLogs = mysqlTable("flow_send_logs", {
 
 export type FlowSendLog = typeof flowSendLogs.$inferSelect;
 export type InsertFlowSendLog = typeof flowSendLogs.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: Couriers (快递公司管理)
+// ============================================================================
+
+export const couriers = mysqlTable("couriers", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Courier = typeof couriers.$inferSelect;
+export type InsertCourier = typeof couriers.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: Order Payments (付款纪录 - 每张订单可有多笔)
+// ============================================================================
+
+export const orderPayments = mysqlTable("order_payments", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  paymentDate: timestamp("paymentDate").notNull(),
+  paymentMethod: mysqlEnum("paymentMethod", [
+    "online_banking", "tng", "cash", "shopee", "bank_transfer", "other"
+  ]).notNull(),
+  receiptUrl: varchar("receiptUrl", { length: 500 }),
+  purpose: varchar("purpose", { length: 200 }), // 用途: 商品/运费/补运费等
+  operatorId: int("operatorId"), // 操作人员 (users.id)
+  operatorName: varchar("operatorName", { length: 100 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OrderPayment = typeof orderPayments.$inferSelect;
+export type InsertOrderPayment = typeof orderPayments.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: Order Notifications (通知历史)
+// ============================================================================
+
+export const orderNotifications = mysqlTable("order_notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  notificationType: mysqlEnum("notificationType", [
+    "order_link", "shipping_notice", "payment_reminder", "custom"
+  ]).notNull(),
+  messengerStatus: mysqlEnum("messengerStatus", ["pending", "sent", "failed", "skipped"]).default("pending").notNull(),
+  messengerErrorMessage: text("messengerErrorMessage"),
+  whatsappStatus: mysqlEnum("whatsappStatus", ["pending", "sent", "failed", "skipped"]).default("pending").notNull(),
+  whatsappErrorMessage: text("whatsappErrorMessage"),
+  isManualNotified: boolean("isManualNotified").default(false).notNull(),
+  manualNotifiedAt: timestamp("manualNotifiedAt"),
+  operatorId: int("operatorId"),
+  operatorName: varchar("operatorName", { length: 100 }),
+  sentAt: timestamp("sentAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OrderNotification = typeof orderNotifications.$inferSelect;
+export type InsertOrderNotification = typeof orderNotifications.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: Order Audit Logs (审计日志)
+// ============================================================================
+
+export const orderAuditLogs = mysqlTable("order_audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  action: varchar("action", { length: 100 }).notNull(), // e.g. "update_order", "merge_order", "cancel_order"
+  fieldName: varchar("fieldName", { length: 100 }),
+  oldValue: text("oldValue"),
+  newValue: text("newValue"),
+  operatorId: int("operatorId"),
+  operatorName: varchar("operatorName", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OrderAuditLog = typeof orderAuditLogs.$inferSelect;
+export type InsertOrderAuditLog = typeof orderAuditLogs.$inferInsert;

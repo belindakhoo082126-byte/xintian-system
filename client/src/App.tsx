@@ -10,7 +10,8 @@ import ProductsV2 from "./pages/ProductsV2";
 import Categories from "./pages/Categories";
 import MemberLinkPreview from "./pages/MemberLinkPreview";
 import ProductPreview from "./pages/ProductPreview";
-import Orders from "./pages/Orders";
+import OrdersV2 from "./pages/OrdersV2";
+import Couriers from "./pages/Couriers";
 import Membership from "./pages/Membership";
 import Customers from "./pages/Customers";
 import Flows from "@/pages/Flows";
@@ -37,7 +38,8 @@ function DashboardRoutes() {
       <Route path={"/"} component={Dashboard} />
       <Route path={"/products"} component={ProductsV2} />
       <Route path={"/categories"} component={Categories} />
-      <Route path={"/orders"} component={Orders} />
+      <Route path={"/orders"} component={OrdersV2} />
+      <Route path={"/couriers"} component={Couriers} />
       <Route path={"/membership"} component={Membership} />
       <Route path={"/customers"} component={Customers} />
       <Route path={"/flows"} component={Flows} />

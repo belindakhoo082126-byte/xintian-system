@@ -118,3 +118,44 @@
 ### 多设备同步
 - [x] React Query cache invalidation 机制（refetchOnWindowFocus + refetchOnReconnect + staleTime 30s）
 - [x] tRPC 实时刷新确保多设备数据一致（useAuth 也启用 refetchOnWindowFocus）
+
+## XLCS V1.0: 订单管理模块
+
+### Sprint 1: 数据库重构
+- [x] 新增 couriers 表（快递公司管理）+ 默认数据
+- [x] 新增 order_payments 表（多笔付款纪录）
+- [x] 新增 order_notifications 表（通知历史）
+- [x] 新增 order_audit_logs 表（审计日志）
+- [x] orders 表新增字段（orderSource, estimatedShippingFee, actualShippingFee, shipmentDate, reservedAt, cancelledAt, courierId）
+- [x] order_items 表新增 variantId 字段（关联 Phase 1 variants.id）
+
+### Sprint 2: 后端 API
+- [x] 快递公司 CRUD API（couriers router）
+- [x] 订单增强 API（ordersV2 router: list/getById/ship/cancel/complete）
+- [x] 自动合并逻辑（findMergeableOrder + mergeOrderItems db helpers）
+- [x] 付款纪录 API（orderPayments router: list/add，多笔不可覆盖）
+- [x] 通知历史 API（orderNotifications router: list/markManual）
+- [x] 审计日志 API（auditLogs router: list，自动记录在 ship/cancel/complete）
+- [x] 工作队列统计 API（ordersV2.workQueue: 挂单/确认汇款/Shopee/欠运费/保留）
+- [x] 发货操作 API（ordersV2.ship: 选择快递 + Tracking + 日期 + 审计日志）
+- [ ] 库存规则（Reserved +/-, Physical -）— 后续版本
+
+### Sprint 3: 前端订单管理页面升级
+- [x] 工作队列顶部固定栏（挂单/确认汇款/Shopee/欠运费/保留 + 数量 + 点击筛选）
+- [x] 订单详情页重构（付款纪录列表 + 通知历史 + 审计日志 Tab）
+- [x] 发货操作对话框（选择快递公司 + Tracking + 日期）
+- [x] 订单来源筛选
+- [x] 配送方式筛选
+- [x] 保留天数显示
+- [x] 分页列表（limit/offset + 翻页控件）
+
+### Sprint 4: 快递管理页面 + 发货通知
+- [x] 快递公司管理页面（CRUD + 排序 + 启用/停用）
+- [x] 发货通知模板（含 Tracking Number + Tracking.my 链接）
+- [x] 复制 Tracking / 复制 Tracking.my / 复制发货信息 按钮
+- [x] 通知失败中心（Messenger + WhatsApp 双状态 + 标记已人工通知）
+
+### Sprint 5: 测试与验收
+- [x] Vitest 单元测试（23 个 XLCS 测试 + 34 Phase 1 + 18 旧测试 + 1 auth = 76 个全部通过）
+- [x] TypeScript 编译零错误
+- [x] 保存检查点

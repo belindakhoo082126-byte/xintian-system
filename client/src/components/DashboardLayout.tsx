@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree, Mail } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -32,6 +32,7 @@ const menuItems = [
   { icon: Package, label: "商品管理", path: "/products" },
   { icon: FolderTree, label: "分类管理", path: "/categories" },
   { icon: ShoppingCart, label: "订单管理", path: "/orders" },
+  { icon: Mail, label: "快递公司", path: "/couriers" },
   { icon: Crown, label: "会员订单", path: "/membership" },
   { icon: Users, label: "客户管理", path: "/customers" },
   { icon: MessageSquare, label: "Flow 编辑器", path: "/flows" },

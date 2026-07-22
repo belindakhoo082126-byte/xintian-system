@@ -9,6 +9,8 @@ import {
   suppliers, purchaseOrders, purchaseOrderItems,
   // Phase 1 imports
   categories, units, variants, memberLinks, productImages, productVideos, productAttributes,
+  // XLCS V1.0 imports
+  couriers, orderPayments, orderNotifications, orderAuditLogs,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1738,4 +1740,453 @@ export async function getProductStats() {
     outOfStock: Number(outOfStock[0]?.count) || 0,
     featured: Number(featured[0]?.count) || 0,
   };
+}
+
+// ============================================================================
+// XLCS V1.0: Couriers (快递公司管理)
+// ============================================================================
+
+export async function getAllCouriers() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(couriers).orderBy(asc(couriers.sortOrder));
+}
+
+export async function getActiveCouriers() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(couriers)
+    .where(eq(couriers.isActive, true))
+    .orderBy(asc(couriers.sortOrder));
+}
+
+export async function createCourier(data: { name: string; sortOrder?: number }) {
+  const db = await getDb();
+  if (!db) return { insertId: 0 };
+  const result = await db.insert(couriers).values({
+    name: data.name,
+    sortOrder: data.sortOrder ?? 0,
+  });
+  return { insertId: result[0].insertId };
+}
+
+export async function updateCourier(id: number, data: { name?: string; isActive?: boolean; sortOrder?: number }) {
+  const db = await getDb();
+  if (!db) return;
+  const updateData: any = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.isActive !== undefined) updateData.isActive = data.isActive;
+  if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
+  if (Object.keys(updateData).length === 0) return;
+  await db.update(couriers).set(updateData).where(eq(couriers.id, id));
+}
+
+export async function deleteCourier(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Soft delete: just deactivate
+  await db.update(couriers).set({ isActive: false }).where(eq(couriers.id, id));
+}
+
+// ============================================================================
+// XLCS V1.0: Order Payments (付款纪录)
+// ============================================================================
+
+export async function getOrderPayments(orderId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(orderPayments)
+    .where(eq(orderPayments.orderId, orderId))
+    .orderBy(desc(orderPayments.createdAt));
+}
+
+export async function addOrderPayment(data: {
+  orderId: number;
+  amount: string;
+  paymentDate: Date;
+  paymentMethod: string;
+  receiptUrl?: string;
+  purpose?: string;
+  operatorId?: number;
+  operatorName?: string;
+  notes?: string;
+}) {
+  const db = await getDb();
+  if (!db) return { insertId: 0 };
+  const result = await db.insert(orderPayments).values({
+    orderId: data.orderId,
+    amount: data.amount,
+    paymentDate: data.paymentDate,
+    paymentMethod: data.paymentMethod as any,
+    receiptUrl: data.receiptUrl,
+    purpose: data.purpose,
+    operatorId: data.operatorId,
+    operatorName: data.operatorName,
+    notes: data.notes,
+  });
+  // Update paidAmount on order
+  const payments = await db.select({ total: sql`sum(amount)` })
+    .from(orderPayments).where(eq(orderPayments.orderId, data.orderId));
+  const totalPaid = payments[0]?.total ?? '0';
+  await db.update(orders).set({ paidAmount: totalPaid as any })
+    .where(eq(orders.id, data.orderId));
+  return { insertId: result[0].insertId };
+}
+
+// ============================================================================
+// XLCS V1.0: Order Notifications (通知历史)
+// ============================================================================
+
+export async function getOrderNotifications(orderId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(orderNotifications)
+    .where(eq(orderNotifications.orderId, orderId))
+    .orderBy(desc(orderNotifications.createdAt));
+}
+
+export async function createOrderNotification(data: {
+  orderId: number;
+  notificationType: string;
+  messengerStatus?: string;
+  messengerErrorMessage?: string;
+  whatsappStatus?: string;
+  whatsappErrorMessage?: string;
+  operatorId?: number;
+  operatorName?: string;
+}) {
+  const db = await getDb();
+  if (!db) return { insertId: 0 };
+  const result = await db.insert(orderNotifications).values({
+    orderId: data.orderId,
+    notificationType: data.notificationType as any,
+    messengerStatus: (data.messengerStatus ?? 'pending') as any,
+    messengerErrorMessage: data.messengerErrorMessage,
+    whatsappStatus: (data.whatsappStatus ?? 'pending') as any,
+    whatsappErrorMessage: data.whatsappErrorMessage,
+    operatorId: data.operatorId,
+    operatorName: data.operatorName,
+  });
+  return { insertId: result[0].insertId };
+}
+
+export async function markManualNotified(notificationId: number, operatorId?: number, operatorName?: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(orderNotifications).set({
+    isManualNotified: true,
+    manualNotifiedAt: new Date(),
+    operatorId,
+    operatorName,
+  }).where(eq(orderNotifications.id, notificationId));
+}
+
+// ============================================================================
+// XLCS V1.0: Order Audit Logs (审计日志)
+// ============================================================================
+
+export async function getOrderAuditLogs(orderId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(orderAuditLogs)
+    .where(eq(orderAuditLogs.orderId, orderId))
+    .orderBy(desc(orderAuditLogs.createdAt));
+}
+
+export async function createAuditLog(data: {
+  orderId: number;
+  action: string;
+  fieldName?: string;
+  oldValue?: string;
+  newValue?: string;
+  operatorId?: number;
+  operatorName?: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(orderAuditLogs).values({
+    orderId: data.orderId,
+    action: data.action,
+    fieldName: data.fieldName,
+    oldValue: data.oldValue,
+    newValue: data.newValue,
+    operatorId: data.operatorId,
+    operatorName: data.operatorName,
+  });
+}
+
+// ============================================================================
+// XLCS V1.0: Work Queue Stats (工作队列统计)
+// ============================================================================
+
+export async function getWorkQueueStats() {
+  const db = await getDb();
+  if (!db) return {
+    pending: 0,
+    paymentConfirmed: 0,
+    eastMalaysiaShopee: 0,
+    shippingShortfall: 0,
+    reserved: 0,
+  };
+
+  // 挂单: physicalStatus = 'pending'
+  const pendingResult = await db.select({ count: sql`count(*)` })
+    .from(orders).where(and(
+      eq(orders.physicalStatus, 'pending'),
+      ne(orders.orderType, 'membership'),
+    ));
+  const pending = Number(pendingResult[0]?.count) || 0;
+
+  // 确认汇款: physicalStatus = 'payment_confirmed'
+  const confirmedResult = await db.select({ count: sql`count(*)` })
+    .from(orders).where(eq(orders.physicalStatus, 'payment_confirmed'));
+  const paymentConfirmed = Number(confirmedResult[0]?.count) || 0;
+
+  // 东马 Shopee: shippingMethod = 'east_malaysia_shopee' AND physicalStatus NOT IN ('completed', 'cancelled')
+  const shopeeResult = await db.select({ count: sql`count(*)` })
+    .from(orders).where(and(
+      eq(orders.shippingMethod, 'east_malaysia_shopee'),
+      sql`physicalStatus NOT IN ('completed', 'cancelled')`,
+    ));
+  const eastMalaysiaShopee = Number(shopeeResult[0]?.count) || 0;
+
+  // 欠运费: actualShippingFee > estimatedShippingFee AND paidAmount < totalAmount
+  const shortfallResult = await db.select({ count: sql`count(*)` })
+    .from(orders).where(and(
+      sql`actualShippingFee > estimatedShippingFee`,
+      sql`paidAmount < totalAmount`,
+      sql`physicalStatus NOT IN ('completed', 'cancelled')`,
+    ));
+  const shippingShortfall = Number(shortfallResult[0]?.count) || 0;
+
+  // 保留: physicalStatus = 'packing' (保留状态用 packing 表示)
+  const reservedResult = await db.select({ count: sql`count(*)` })
+    .from(orders).where(eq(orders.physicalStatus, 'packing'));
+  const reserved = Number(reservedResult[0]?.count) || 0;
+
+  return { pending, paymentConfirmed, eastMalaysiaShopee, shippingShortfall, reserved };
+}
+
+// ============================================================================
+// XLCS V1.0: Order Auto-Merge (订单自动合并)
+// ============================================================================
+
+export async function findMergeableOrder(customerId: number, shippingMethod: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  // Find pending order with no payments, same customer, compatible shipping
+  const result = await db.select().from(orders)
+    .where(and(
+      eq(orders.customerId, customerId),
+      eq(orders.physicalStatus, 'pending'),
+      ne(orders.orderType, 'membership'),
+      // No payments yet: paidAmount = 0
+      sql`paidAmount = 0`,
+    ))
+    .orderBy(desc(orders.createdAt))
+    .limit(1);
+  if (result.length === 0) return undefined;
+  // Check shipping method compatibility
+  const existing = result[0];
+  if (existing.shippingMethod === shippingMethod) return existing;
+  // Self-pickup is not mergeable with shipping orders
+  if (existing.shippingMethod === 'self_pickup' || shippingMethod === 'self_pickup') return undefined;
+  return existing;
+}
+
+export async function mergeOrderItems(targetOrderId: number, sourceOrderId: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Move all items from source to target
+  const sourceItems = await db.select().from(orderItems)
+    .where(eq(orderItems.orderId, sourceOrderId));
+  for (const item of sourceItems) {
+    await db.insert(orderItems).values({
+      orderId: targetOrderId,
+      productId: item.productId,
+      productName: item.productName,
+      productType: item.productType,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      subtotal: item.subtotal,
+      variationId: item.variationId,
+      variantId: item.variantId,
+      variationName: item.variationName,
+    });
+  }
+  // Recalculate totals on target order
+  const allItems = await db.select().from(orderItems)
+    .where(eq(orderItems.orderId, targetOrderId));
+  const physicalSubtotal = allItems
+    .filter(i => i.productType === 'physical')
+    .reduce((sum, i) => sum + Number(i.subtotal), 0);
+  const membershipSubtotal = allItems
+    .filter(i => i.productType === 'membership')
+    .reduce((sum, i) => sum + Number(i.subtotal), 0);
+  const totalAmount = physicalSubtotal + membershipSubtotal + Number(
+    (await db.select().from(orders).where(eq(orders.id, targetOrderId)))[0]?.shippingFee ?? 0
+  );
+  await db.update(orders).set({
+    physicalSubtotal: physicalSubtotal as any,
+    membershipSubtotal: membershipSubtotal as any,
+    totalAmount: totalAmount as any,
+    orderType: membershipSubtotal > 0 ? (physicalSubtotal > 0 ? 'mixed' : 'membership') : 'physical',
+  }).where(eq(orders.id, targetOrderId));
+  // Cancel source order
+  await db.update(orders).set({
+    physicalStatus: 'cancelled',
+    cancelledAt: new Date(),
+  }).where(eq(orders.id, sourceOrderId));
+}
+
+// ============================================================================
+// XLCS V1.0: Enhanced Order Operations
+// ============================================================================
+
+export async function shipOrder(orderId: number, data: {
+  courierId?: number;
+  courierCompany?: string;
+  trackingNumber: string;
+  shipmentDate?: Date;
+  operatorId?: number;
+  operatorName?: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  // Get current state for audit log
+  const current = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (current.length === 0) throw new Error('订单不存在');
+
+  // Get courier name if courierId provided
+  let courierName = data.courierCompany;
+  if (data.courierId) {
+    const courier = await db.select().from(couriers).where(eq(couriers.id, data.courierId)).limit(1);
+    if (courier.length > 0) courierName = courier[0].name;
+  }
+
+  await db.update(orders).set({
+    physicalStatus: 'shipped',
+    courierId: data.courierId,
+    courierCompany: courierName,
+    trackingNumber: data.trackingNumber,
+    shipmentDate: data.shipmentDate ?? new Date(),
+    shippedAt: new Date(),
+  }).where(eq(orders.id, orderId));
+
+  // Create audit log
+  await createAuditLog({
+    orderId,
+    action: 'ship_order',
+    fieldName: 'physicalStatus',
+    oldValue: current[0].physicalStatus ?? undefined,
+    newValue: 'shipped',
+    operatorId: data.operatorId,
+    operatorName: data.operatorName,
+  });
+}
+
+export async function cancelOrder(orderId: number, operatorId?: number, operatorName?: string) {
+  const db = await getDb();
+  if (!db) return;
+  const current = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (current.length === 0) throw new Error('订单不存在');
+
+  await db.update(orders).set({
+    physicalStatus: 'cancelled',
+    cancelledAt: new Date(),
+  }).where(eq(orders.id, orderId));
+
+  await createAuditLog({
+    orderId,
+    action: 'cancel_order',
+    fieldName: 'physicalStatus',
+    oldValue: current[0].physicalStatus ?? undefined,
+    newValue: 'cancelled',
+    operatorId,
+    operatorName,
+  });
+}
+
+export async function completeOrder(orderId: number, operatorId?: number, operatorName?: string) {
+  const db = await getDb();
+  if (!db) return;
+  const current = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (current.length === 0) throw new Error('订单不存在');
+
+  await db.update(orders).set({
+    physicalStatus: 'completed',
+    completedAt: new Date(),
+  }).where(eq(orders.id, orderId));
+
+  await createAuditLog({
+    orderId,
+    action: 'complete_order',
+    fieldName: 'physicalStatus',
+    oldValue: current[0].physicalStatus ?? undefined,
+    newValue: 'completed',
+    operatorId,
+    operatorName,
+  });
+}
+
+export async function getOrdersEnhanced(params: {
+  search?: string;
+  orderSource?: string;
+  physicalStatus?: string;
+  shippingMethod?: string;
+  orderType?: string;
+  customerId?: number;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return { items: [], total: 0 };
+  const conditions: any[] = [];
+  if (params.search) {
+    conditions.push(like(orders.orderNumber, `%${params.search}%`));
+  }
+  if (params.orderSource) {
+    conditions.push(eq(orders.orderSource, params.orderSource as any));
+  }
+  if (params.physicalStatus) {
+    conditions.push(eq(orders.physicalStatus, params.physicalStatus as any));
+  }
+  if (params.shippingMethod) {
+    conditions.push(eq(orders.shippingMethod, params.shippingMethod as any));
+  }
+  if (params.orderType) {
+    conditions.push(eq(orders.orderType, params.orderType as any));
+  }
+  if (params.customerId) {
+    conditions.push(eq(orders.customerId, params.customerId));
+  }
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const limit = params.limit ?? 20;
+  const offset = params.offset ?? 0;
+  const items = await db.select().from(orders)
+    .where(where)
+    .orderBy(desc(orders.createdAt))
+    .limit(limit)
+    .offset(offset);
+  const countResult = await db.select({ count: sql`count(*)` }).from(orders).where(where);
+  const total = Number(countResult[0]?.count) || 0;
+  return { items, total };
+}
+
+export async function getOrderDetail(orderId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const orderResult = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (orderResult.length === 0) return undefined;
+  const order = orderResult[0];
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const payments = await db.select().from(orderPayments).where(eq(orderPayments.orderId, orderId))
+    .orderBy(desc(orderPayments.createdAt));
+  const notifications = await db.select().from(orderNotifications)
+    .where(eq(orderNotifications.orderId, orderId))
+    .orderBy(desc(orderNotifications.createdAt));
+  const auditLogs = await db.select().from(orderAuditLogs)
+    .where(eq(orderAuditLogs.orderId, orderId))
+    .orderBy(desc(orderAuditLogs.createdAt));
+  return { ...order, items, payments, notifications, auditLogs };
 }
