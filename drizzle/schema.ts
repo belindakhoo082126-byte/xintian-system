@@ -289,22 +289,14 @@ export type InsertProductCategory = typeof productCategories.$inferInsert;
 
 export const suppliers = mysqlTable("suppliers", {
   id: int("id").autoincrement().primaryKey(),
-  supplierCode: varchar("supplier_code", { length: 20 }).unique(),
   name: varchar("name", { length: 255 }).notNull(),
   contactPerson: varchar("contactPerson", { length: 100 }),
   phoneNumber: varchar("phoneNumber", { length: 20 }),
   email: varchar("email", { length: 255 }),
   address: text("address"),
-  bankName: varchar("bank_name", { length: 100 }),
-  bankAccountName: varchar("bank_account_name", { length: 100 }),
-  bankAccountNumber: varchar("bank_account_number", { length: 50 }),
   bankAccount: varchar("bankAccount", { length: 255 }),
   notes: text("notes"),
-  remark: text("remark"),
-  status: mysqlEnum("status", ["active", "inactive"]).default("active"),
   isActive: boolean("isActive").default(true),
-  createdBy: varchar("created_by", { length: 100 }),
-  updatedBy: varchar("updated_by", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -319,20 +311,12 @@ export type InsertSupplier = typeof suppliers.$inferInsert;
 export const purchaseOrders = mysqlTable("purchase_orders", {
   id: int("id").autoincrement().primaryKey(),
   poNumber: varchar("poNumber", { length: 50 }).notNull().unique(),
-  purchaseOrderNo: varchar("purchase_order_no", { length: 30 }).unique(),
-  supplierDocumentNo: varchar("supplier_document_no", { length: 100 }),
-  purchaseDate: timestamp("purchase_date"),
   supplierId: int("supplierId").notNull(),
-  totalQuantity: int("total_quantity").default(0),
   totalAmount: decimal("totalAmount", { precision: 12, scale: 2 }).notNull(),
-  status: mysqlEnum("status", ["draft", "ordered", "received", "cancelled", "confirmed"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "ordered", "received", "cancelled"]).default("draft").notNull(),
   notes: text("notes"),
-  remark: text("remark"),
   orderedAt: timestamp("orderedAt"),
   receivedAt: timestamp("receivedAt"),
-  confirmedAt: timestamp("confirmed_at"),
-  confirmedBy: varchar("confirmed_by", { length: 100 }),
-  createdBy: varchar("created_by", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -348,7 +332,6 @@ export const purchaseOrderItems = mysqlTable("purchase_order_items", {
   id: int("id").autoincrement().primaryKey(),
   purchaseOrderId: int("purchaseOrderId").notNull(),
   productId: int("productId").notNull(),
-  variantId: int("variant_id"),
   quantity: int("quantity").notNull(),
   unitCost: decimal("unitCost", { precision: 10, scale: 2 }).notNull(),
   subtotal: decimal("subtotal", { precision: 12, scale: 2 }).notNull(),
@@ -382,64 +365,28 @@ export type InsertProductVariation = typeof productVariations.$inferInsert;
 
 export const customers = mysqlTable("customers", {
   id: int("id").autoincrement().primaryKey(),
-
-  // XLCS V1.0 Module 3: Human-readable Customer ID (C000001)
-  customerId: varchar("customerId", { length: 20 }).notNull().unique(),
-
-  // Facebook identity (use facebookId as unique FB identity, not facebookName)
   facebookId: varchar("facebookId", { length: 255 }),
   facebookName: varchar("facebookName", { length: 255 }),
   messengerId: varchar("messengerId", { length: 255 }),
-
-  // Display Name (admin-facing, defaults to facebookName)
-  displayName: varchar("displayName", { length: 255 }),
-
-  // Contact info
   name: varchar("name", { length: 255 }),
   phoneNumber: varchar("phoneNumber", { length: 20 }),
-  whatsappPhone: varchar("whatsappPhone", { length: 20 }),
   email: varchar("email", { length: 255 }),
-
-  // Legacy address fields (kept for backward compat; new addresses go to customer_addresses)
   address: text("address"),
   city: varchar("city", { length: 100 }),
   state: varchar("state", { length: 100 }),
   postalCode: varchar("postalCode", { length: 20 }),
   country: varchar("country", { length: 100 }),
-
-  // Avatars
-  avatarUrl: varchar("avatarUrl", { length: 500 }), // Facebook avatar (auto-fetched)
-  overrideAvatarUrl: varchar("overrideAvatarUrl", { length: 500 }), // Admin-uploaded override
-
-  // Customer source tracking
-  customerSource: mysqlEnum("customerSource", [
-    "facebook_live", "facebook_messenger", "whatsapp", "store", "admin"
-  ]).default("admin").notNull(),
-
   shopLinkIdentifier: varchar("shopLinkIdentifier", { length: 255 }),
-
-  // Statistics (auto-calculated)
   totalOrders: int("totalOrders").default(0),
   totalSpent: decimal("totalSpent", { precision: 12, scale: 2 }).default("0"),
   membershipLevel: mysqlEnum("membershipLevel", ["regular", "member", "vip"]).default("regular"),
   pointsBalance: int("pointsBalance").default(0),
-
-  // Blacklist (enhanced with audit fields)
   isBlacklisted: boolean("isBlacklisted").default(false),
   blacklistReason: text("blacklistReason"),
-  blacklistAt: timestamp("blacklistAt"),
-  blacklistBy: int("blacklistBy"),
-  unblacklistAt: timestamp("unblacklistAt"),
-  unblacklistBy: int("unblacklistBy"),
-
-  // Merge support
   mergedIntoCustomerId: int("mergedIntoCustomerId"),
-
-  // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastOrderAt: timestamp("lastOrderAt"),
-  lastInteractionAt: timestamp("lastInteractionAt"),
 });
 
 export type Customer = typeof customers.$inferSelect;
@@ -452,10 +399,6 @@ export type InsertCustomer = typeof customers.$inferInsert;
 export const orders = mysqlTable("orders", {
   id: int("id").autoincrement().primaryKey(),
   orderNumber: varchar("orderNumber", { length: 50 }).notNull().unique(),
-  orderSource: mysqlEnum("orderSource", [
-    "facebook_live", "facebook_comment", "facebook_messenger",
-    "whatsapp", "store", "backend"
-  ]).default("backend").notNull(),
   customerId: int("customerId").notNull(),
   facebookName: varchar("facebookName", { length: 255 }),
   facebookId: varchar("facebookId", { length: 255 }),
@@ -464,8 +407,6 @@ export const orders = mysqlTable("orders", {
   physicalSubtotal: decimal("physicalSubtotal", { precision: 10, scale: 2 }).default("0"),
   membershipSubtotal: decimal("membershipSubtotal", { precision: 10, scale: 2 }).default("0"),
   shippingFee: decimal("shippingFee", { precision: 10, scale: 2 }).default("0"),
-  estimatedShippingFee: decimal("estimatedShippingFee", { precision: 10, scale: 2 }).default("0"),
-  actualShippingFee: decimal("actualShippingFee", { precision: 10, scale: 2 }),
   totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }).notNull(),
   paidAmount: decimal("paidAmount", { precision: 10, scale: 2 }).default("0"),
   physicalStatus: mysqlEnum("physicalStatus", [
@@ -483,18 +424,14 @@ export const orders = mysqlTable("orders", {
     "east_malaysia_poslaju", "self_pickup", "lalamove"
   ]),
   courierCompany: varchar("courierCompany", { length: 100 }),
-  courierId: int("courierId"),
   trackingNumber: varchar("trackingNumber", { length: 100 }),
   paymentMethod: mysqlEnum("paymentMethod", ["online_banking", "tng"]),
   receiptUrl: varchar("receiptUrl", { length: 500 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  reservedAt: timestamp("reservedAt"),
   paymentUploadedAt: timestamp("paymentUploadedAt"),
   paymentConfirmedAt: timestamp("paymentConfirmedAt"),
   shippedAt: timestamp("shippedAt"),
-  shipmentDate: timestamp("shipmentDate"),
   completedAt: timestamp("completedAt"),
-  cancelledAt: timestamp("cancelledAt"),
   autoCompleteAt: timestamp("autoCompleteAt"),
 });
 
@@ -515,7 +452,6 @@ export const orderItems = mysqlTable("order_items", {
   unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).notNull(),
   subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
   variationId: int("variationId"),
-  variantId: int("variantId"), // Phase 1 variants.id
   variationName: varchar("variationName", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -640,587 +576,3 @@ export const flowSendLogs = mysqlTable("flow_send_logs", {
 
 export type FlowSendLog = typeof flowSendLogs.$inferSelect;
 export type InsertFlowSendLog = typeof flowSendLogs.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: Couriers (快递公司管理)
-// ============================================================================
-
-export const couriers = mysqlTable("couriers", {
-  id: int("id").autoincrement().primaryKey(),
-  name: varchar("name", { length: 100 }).notNull(),
-  isActive: boolean("isActive").default(true).notNull(),
-  sortOrder: int("sortOrder").default(0).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
-
-export type Courier = typeof couriers.$inferSelect;
-export type InsertCourier = typeof couriers.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: Order Payments (付款纪录 - 每张订单可有多笔)
-// ============================================================================
-
-export const orderPayments = mysqlTable("order_payments", {
-  id: int("id").autoincrement().primaryKey(),
-  orderId: int("orderId").notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  paymentDate: timestamp("paymentDate").notNull(),
-  paymentMethod: mysqlEnum("paymentMethod", [
-    "online_banking", "tng", "cash", "shopee", "bank_transfer", "other"
-  ]).notNull(),
-  receiptUrl: varchar("receiptUrl", { length: 500 }),
-  purpose: varchar("purpose", { length: 200 }), // 用途: 商品/运费/补运费等
-  operatorId: int("operatorId"), // 操作人员 (users.id)
-  operatorName: varchar("operatorName", { length: 100 }),
-  notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type OrderPayment = typeof orderPayments.$inferSelect;
-export type InsertOrderPayment = typeof orderPayments.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: Order Notifications (通知历史)
-// ============================================================================
-
-export const orderNotifications = mysqlTable("order_notifications", {
-  id: int("id").autoincrement().primaryKey(),
-  orderId: int("orderId").notNull(),
-  notificationType: mysqlEnum("notificationType", [
-    "order_link", "shipping_notice", "payment_reminder", "custom"
-  ]).notNull(),
-  messengerStatus: mysqlEnum("messengerStatus", ["pending", "sent", "failed", "skipped"]).default("pending").notNull(),
-  messengerErrorMessage: text("messengerErrorMessage"),
-  whatsappStatus: mysqlEnum("whatsappStatus", ["pending", "sent", "failed", "skipped"]).default("pending").notNull(),
-  whatsappErrorMessage: text("whatsappErrorMessage"),
-  isManualNotified: boolean("isManualNotified").default(false).notNull(),
-  manualNotifiedAt: timestamp("manualNotifiedAt"),
-  operatorId: int("operatorId"),
-  operatorName: varchar("operatorName", { length: 100 }),
-  sentAt: timestamp("sentAt"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type OrderNotification = typeof orderNotifications.$inferSelect;
-export type InsertOrderNotification = typeof orderNotifications.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: Order Audit Logs (审计日志)
-// ============================================================================
-
-export const orderAuditLogs = mysqlTable("order_audit_logs", {
-  id: int("id").autoincrement().primaryKey(),
-  orderId: int("orderId").notNull(),
-  action: varchar("action", { length: 100 }).notNull(), // e.g. "update_order", "merge_order", "cancel_order"
-  fieldName: varchar("fieldName", { length: 100 }),
-  oldValue: text("oldValue"),
-  newValue: text("newValue"),
-  operatorId: int("operatorId"),
-  operatorName: varchar("operatorName", { length: 100 }),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type OrderAuditLog = typeof orderAuditLogs.$inferSelect;
-export type InsertOrderAuditLog = typeof orderAuditLogs.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0 Module 3: Customer Management - Enhanced customers table
-// ============================================================================
-
-// Add new columns to existing customers table via ALTER TABLE in migration.
-// New fields documented here for reference (added via SQL migration):
-//   customerId       varchar(20)  - Human-readable Customer ID (C000001)
-//   displayName      varchar(255) - Admin-facing display name (defaults to facebookName)
-//   whatsappPhone    varchar(20)  - WhatsApp phone number
-//   avatarUrl        varchar(500) - Facebook avatar URL (auto-fetched)
-//   overrideAvatarUrl varchar(500) - Admin-uploaded avatar (overrides FB)
-//   customerSource   enum         - Where customer was created
-//   lastInteractionAt timestamp   - Last interaction (message, order, etc.)
-//   blacklistAt      timestamp    - When blacklisted
-//   blacklistBy      int          - Admin user ID who blacklisted
-//   unblacklistAt    timestamp    - When unblacklisted
-//   unblacklistBy    int          - Admin user ID who unblacklisted
-
-// ============================================================================
-// XLCS V1.0 Module 3: Customer Addresses (多地址管理)
-// ============================================================================
-
-export const customerAddresses = mysqlTable("customer_addresses", {
-  id: int("id").autoincrement().primaryKey(),
-  customerId: int("customerId").notNull(), // links to customers.id
-  label: varchar("label", { length: 50 }).notNull(), // e.g. "Home", "Office", "Parents"
-  recipientName: varchar("recipientName", { length: 255 }).notNull(),
-  recipientPhone: varchar("recipientPhone", { length: 20 }).notNull(),
-  address: text("address").notNull(),
-  city: varchar("city", { length: 100 }),
-  state: varchar("state", { length: 100 }),
-  postalCode: varchar("postalCode", { length: 20 }),
-  country: varchar("country", { length: 100 }).default("Malaysia").notNull(),
-  isDefault: boolean("isDefault").default(false).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
-
-export type CustomerAddress = typeof customerAddresses.$inferSelect;
-export type InsertCustomerAddress = typeof customerAddresses.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0 Module 3: Customer Credit Ledger (Credit 纪录)
-// ============================================================================
-
-export const customerCreditLedger = mysqlTable("customer_credit_ledger", {
-  id: int("id").autoincrement().primaryKey(),
-  customerId: int("customerId").notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(), // positive = add, negative = deduct
-  balanceAfter: decimal("balanceAfter", { precision: 10, scale: 2 }).notNull(),
-  type: mysqlEnum("type", ["topup", "refund", "adjustment", "order_deduction", "manual"]).notNull(),
-  reason: text("reason"),
-  orderId: int("orderId"), // related order if applicable
-  operatorId: int("operatorId"),
-  operatorName: varchar("operatorName", { length: 255 }),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type CustomerCreditLedger = typeof customerCreditLedger.$inferSelect;
-export type InsertCustomerCreditLedger = typeof customerCreditLedger.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0 Module 3: Customer Refunds (退款纪录)
-// ============================================================================
-
-export const customerRefunds = mysqlTable("customer_refunds", {
-  id: int("id").autoincrement().primaryKey(),
-  customerId: int("customerId").notNull(),
-  orderId: int("orderId").notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  refundMethod: mysqlEnum("refundMethod", [
-    "bank_transfer", "tng", "cash", "store_credit", "other"
-  ]).notNull(),
-  reason: text("reason"),
-  operatorId: int("operatorId"),
-  operatorName: varchar("operatorName", { length: 255 }),
-  refundDate: timestamp("refundDate").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type CustomerRefund = typeof customerRefunds.$inferSelect;
-export type InsertCustomerRefund = typeof customerRefunds.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0 Module 3: Customer Timeline (客户时间轴)
-// ============================================================================
-
-export const customerTimeline = mysqlTable("customer_timeline", {
-  id: int("id").autoincrement().primaryKey(),
-  customerId: int("customerId").notNull(),
-  eventType: mysqlEnum("eventType", [
-    "order_created", "order_shipped", "order_completed", "order_cancelled",
-    "payment_received", "refund_issued", "credit_topup", "credit_deduction",
-    "blacklist_added", "blacklist_removed", "address_added", "address_updated",
-    "profile_updated", "messenger_message", "whatsapp_message",
-    "notification_sent", "notification_failed", "live_comment", "other"
-  ]).notNull(),
-  title: varchar("title", { length: 255 }).notNull(),
-  description: text("description"),
-  orderId: int("orderId"),
-  paymentId: int("paymentId"),
-  metadata: text("metadata"), // JSON string for extra data
-  operatorId: int("operatorId"),
-  operatorName: varchar("operatorName", { length: 255 }),
-  eventDate: timestamp("eventDate").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type CustomerTimeline = typeof customerTimeline.$inferSelect;
-export type InsertCustomerTimeline = typeof customerTimeline.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0 Module 3: Customer Audit Logs (客户审计日志)
-// ============================================================================
-
-export const customerAuditLogs = mysqlTable("customer_audit_logs", {
-  id: int("id").autoincrement().primaryKey(),
-  customerId: int("customerId").notNull(),
-  action: varchar("action", { length: 100 }).notNull(),
-  fieldName: varchar("fieldName", { length: 100 }),
-  oldValue: text("oldValue"),
-  newValue: text("newValue"),
-  operatorId: int("operatorId"),
-  operatorName: varchar("operatorName", { length: 255 }),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type CustomerAuditLog = typeof customerAuditLogs.$inferSelect;
-export type InsertCustomerAuditLog = typeof customerAuditLogs.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: Sales Sessions (Facebook 直播/贴文/Reel 销售场次)
-// ============================================================================
-
-export const salesSessions = mysqlTable("sales_sessions", {
-  id: int("id").autoincrement().primaryKey(),
-  sessionCode: varchar("session_code", { length: 50 }).notNull().unique(),
-  sessionType: mysqlEnum("session_type", ["facebook_live", "facebook_post", "facebook_reel"]).notNull(),
-  facebookPageId: varchar("facebook_page_id", { length: 100 }),
-  facebookPostId: varchar("facebook_post_id", { length: 200 }),
-  facebookLiveVideoId: varchar("facebook_live_video_id", { length: 200 }),
-  title: varchar("title", { length: 255 }).notNull(),
-  status: mysqlEnum("status", ["not_listening", "comments_only", "order_capture_active", "paused", "ended"]).default("not_listening").notNull(),
-  commentSyncEnabled: boolean("comment_sync_enabled").default(false).notNull(),
-  orderCaptureEnabled: boolean("order_capture_enabled").default(false).notNull(),
-  autoDetectEnabled: boolean("auto_detect_enabled").default(true).notNull(),
-  autoSyncComments: boolean("auto_sync_comments").default(true).notNull(),
-  startedAt: timestamp("started_at"),
-  endedAt: timestamp("ended_at"),
-  createdBy: int("created_by"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-});
-
-export type SalesSession = typeof salesSessions.$inferSelect;
-export type InsertSalesSession = typeof salesSessions.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: Facebook Comments (留言同步 + 关键词捉单记录)
-// ============================================================================
-
-export const facebookComments = mysqlTable("facebook_comments", {
-  id: int("id").autoincrement().primaryKey(),
-  facebookCommentId: varchar("facebook_comment_id", { length: 200 }).notNull().unique(),
-  facebookPostId: varchar("facebook_post_id", { length: 200 }).notNull(),
-  sessionId: int("session_id"),
-  facebookUserId: varchar("facebook_user_id", { length: 200 }).notNull(),
-  customerId: int("customer_id"),
-  messageOriginal: text("message_original").notNull(),
-  messageNormalized: text("message_normalized"),
-  commentCreatedAt: timestamp("comment_created_at"),
-  keywordDetected: varchar("keyword_detected", { length: 100 }),
-  quantityDetected: int("quantity_detected"),
-  processingStatus: mysqlEnum("processing_status", ["pending", "matched", "no_match", "failed", "duplicate", "blacklisted", "out_of_stock", "preorder_full"]).default("pending").notNull(),
-  failureReason: text("failure_reason"),
-  orderId: int("order_id"),
-  orderItemId: int("order_item_id"),
-  processedAt: timestamp("processed_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export type FacebookComment = typeof facebookComments.$inferSelect;
-export type InsertFacebookComment = typeof facebookComments.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: Order Notes (订单备注 - 3 种类型)
-// ============================================================================
-
-export const orderNotes = mysqlTable("order_notes", {
-  id: int("id").autoincrement().primaryKey(),
-  orderId: int("order_id").notNull(),
-  customerId: int("customer_id"),
-  noteType: mysqlEnum("note_type", ["customer_note", "internal_note", "checkout_note"]).notNull(),
-  visibility: mysqlEnum("visibility", ["customer", "internal"]).default("internal").notNull(),
-  content: text("content").notNull(),
-  source: mysqlEnum("source", ["facebook_live", "facebook_post", "facebook_reel", "messenger", "whatsapp", "store_checkout", "admin", "customer_service"]).default("admin").notNull(),
-  sourceReferenceId: varchar("source_reference_id", { length: 200 }),
-  needsAction: boolean("needs_action").default(false).notNull(),
-  createdBy: int("created_by"),
-  createdByName: varchar("created_by_name", { length: 255 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-});
-
-export type OrderNote = typeof orderNotes.$inferSelect;
-export type InsertOrderNote = typeof orderNotes.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: Action Items (需要处理事项)
-// ============================================================================
-
-export const actionItems = mysqlTable("action_items", {
-  id: int("id").autoincrement().primaryKey(),
-  orderId: int("order_id"),
-  customerId: int("customer_id"),
-  noteId: int("note_id"),
-  sessionId: int("session_id"),
-  facebookCommentId: varchar("facebook_comment_id", { length: 200 }),
-  source: mysqlEnum("source", ["facebook_live", "facebook_post", "facebook_reel", "messenger", "whatsapp", "store_checkout", "admin", "customer_service"]).default("admin").notNull(),
-  content: text("content").notNull(),
-  status: mysqlEnum("status", ["pending", "completed"]).default("pending").notNull(),
-  createdBy: int("created_by"),
-  createdByName: varchar("created_by_name", { length: 255 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  completedBy: int("completed_by"),
-  completedByName: varchar("completed_by_name", { length: 255 }),
-  completedAt: timestamp("completed_at"),
-});
-
-export type ActionItem = typeof actionItems.$inferSelect;
-export type InsertActionItem = typeof actionItems.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: Session Products (场次商品 + 预售管理)
-// ============================================================================
-
-export const sessionProducts = mysqlTable("session_products", {
-  id: int("id").autoincrement().primaryKey(),
-  sessionId: int("session_id").notNull(),
-  productId: int("product_id").notNull(),
-  variantId: int("variant_id"),
-  keyword: varchar("keyword", { length: 100 }).notNull(),
-  sellingPrice: decimal("selling_price", { precision: 10, scale: 2 }),
-  physicalStockAtStart: int("physical_stock_at_start").default(0).notNull(),
-  physicalSoldQuantity: int("physical_sold_quantity").default(0).notNull(),
-  preorderEnabled: boolean("preorder_enabled").default(false).notNull(),
-  preorderLimit: int("preorder_limit"),
-  preorderSoldQuantity: int("preorder_sold_quantity").default(0).notNull(),
-  sellingStatus: mysqlEnum("selling_status", ["available", "stopped"]).default("available").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-});
-
-export type SessionProduct = typeof sessionProducts.$inferSelect;
-export type InsertSessionProduct = typeof sessionProducts.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: AI Agent - Settings (AI 行为配置)
-// ============================================================================
-
-export const aiSettings = mysqlTable("ai_settings", {
-  id: int("id").autoincrement().primaryKey(),
-  autoReplyEnabled: boolean("auto_reply_enabled").default(true).notNull(),
-  learningMode: mysqlEnum("learning_mode", ["suggestion", "draft", "disabled"]).default("suggestion").notNull(),
-  minConfidenceThreshold: decimal("min_confidence_threshold", { precision: 5, scale: 2 }).default("70.00").notNull(),
-  messengerAiEnabled: boolean("messenger_ai_enabled").default(true).notNull(),
-  whatsappAiEnabled: boolean("whatsapp_ai_enabled").default(true).notNull(),
-  facebookCommentsOrderOnly: boolean("facebook_comments_order_only").default(false).notNull(),
-  plantDiagnosticForceHuman: boolean("plant_diagnostic_force_human").default(true).notNull(),
-  paymentRequiresHumanConfirm: boolean("payment_requires_human_confirm").default(true).notNull(),
-  parcelAnomalyDays: int("parcel_anomaly_days").default(5).notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-  updatedBy: text("updated_by"),
-});
-
-export type AiSetting = typeof aiSettings.$inferSelect;
-export type InsertAiSetting = typeof aiSettings.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: AI Agent - Reply Logs (AI 回复记录)
-// ============================================================================
-
-export const aiReplyLogs = mysqlTable("ai_reply_logs", {
-  id: int("id").autoincrement().primaryKey(),
-  customerId: int("customer_id"),
-  customerName: text("customer_name"),
-  platform: mysqlEnum("platform", ["messenger", "whatsapp", "facebook_comment", "internal"]),
-  aiModule: mysqlEnum("ai_module", ["order", "parcel", "plant_diagnostic", "faq", "knowledge", "payment", "content", "unknown"]),
-  userMessage: text("user_message"),
-  aiReply: text("ai_reply"),
-  flowUsed: text("flow_used"),
-  faqUsed: text("faq_used"),
-  knowledgeUsed: text("knowledge_used"),
-  confidenceScore: decimal("confidence_score", { precision: 5, scale: 2 }),
-  transferredToHuman: boolean("transferred_to_human").default(false).notNull(),
-  humanReply: text("human_reply"),
-  humanRepliedAt: timestamp("human_replied_at"),
-  humanRepliedBy: text("human_replied_by"),
-  chatSessionId: int("chat_session_id"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export type AiReplyLog = typeof aiReplyLogs.$inferSelect;
-export type InsertAiReplyLog = typeof aiReplyLogs.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: AI Agent - Review Items (AI 学习建议)
-// ============================================================================
-
-export const aiReviewItems = mysqlTable("ai_review_items", {
-  id: int("id").autoincrement().primaryKey(),
-  replyLogId: int("reply_log_id"),
-  customerQuestion: text("customer_question").notNull(),
-  humanReply: text("human_reply"),
-  aiSuggestion: text("ai_suggestion").notNull(),
-  suggestionType: mysqlEnum("suggestion_type", ["faq", "knowledge", "flow"]),
-  suggestedCategory: text("suggested_category"),
-  suggestedContent: text("suggested_content"),
-  status: mysqlEnum("status", ["pending", "approved", "rejected", "modified", "ignored"]).default("pending").notNull(),
-  adminNote: text("admin_note"),
-  modifiedReply: text("modified_reply"),
-  reviewedBy: text("reviewed_by"),
-  reviewedAt: timestamp("reviewed_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export type AiReviewItem = typeof aiReviewItems.$inferSelect;
-export type InsertAiReviewItem = typeof aiReviewItems.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: AI Agent - FAQ Entries (FAQ 管理)
-// ============================================================================
-
-export const faqEntries = mysqlTable("faq_entries", {
-  id: int("id").autoincrement().primaryKey(),
-  category: varchar("category", { length: 100 }).notNull(),
-  keywords: text("keywords"),
-  question: text("question").notNull(),
-  answer: text("answer").notNull(),
-  imageUrl: text("image_url"),
-  videoUrl: text("video_url"),
-  pdfUrl: text("pdf_url"),
-  productId: int("product_id"),
-  sortOrder: int("sort_order").default(0).notNull(),
-  isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-});
-
-export type FaqEntry = typeof faqEntries.$inferSelect;
-export type InsertFaqEntry = typeof faqEntries.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: AI Agent - Knowledge Entries (Knowledge 管理)
-// ============================================================================
-
-export const knowledgeEntries = mysqlTable("knowledge_entries", {
-  id: int("id").autoincrement().primaryKey(),
-  productId: int("product_id"),
-  topic: varchar("topic", { length: 200 }).notNull(),
-  content: text("content").notNull(),
-  imageUrl: text("image_url"),
-  videoUrl: text("video_url"),
-  pdfUrl: text("pdf_url"),
-  tags: text("tags"),
-  sortOrder: int("sort_order").default(0).notNull(),
-  isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-});
-
-export type KnowledgeEntry = typeof knowledgeEntries.$inferSelect;
-export type InsertKnowledgeEntry = typeof knowledgeEntries.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: AI Agent - Plant Diagnostic Tickets (植物诊断工单)
-// ============================================================================
-
-export const plantDiagnosticTickets = mysqlTable("plant_diagnostic_tickets", {
-  id: int("id").autoincrement().primaryKey(),
-  customerId: int("customer_id"),
-  customerName: text("customer_name"),
-  platform: mysqlEnum("platform", ["messenger", "whatsapp", "internal"]),
-  // Environment info collected by AI
-  placement: varchar("placement", { length: 50 }),
-  lightingHours: text("lighting_hours"),
-  wateringFrequency: text("watering_frequency"),
-  soilDryDays: text("soil_dry_days"),
-  recentFertilized: boolean("recent_fertilized"),
-  fertilizerType: text("fertilizer_type"),
-  recentRepotted: boolean("recent_repotted"),
-  recentSprayed: boolean("recent_sprayed"),
-  hasPests: boolean("has_pests"),
-  leafCondition: text("leaf_condition"),
-  branchCondition: text("branch_condition"),
-  rootCondition: text("root_condition"),
-  photoUrls: text("photo_urls"),
-  // Status
-  status: mysqlEnum("status", ["collecting", "pending_human", "in_progress", "resolved", "closed"]).default("collecting").notNull(),
-  assignedTo: text("assigned_to"),
-  humanReply: text("human_reply"),
-  resolvedAt: timestamp("resolved_at"),
-  resolvedBy: text("resolved_by"),
-  chatSessionId: int("chat_session_id"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-});
-
-export type PlantDiagnosticTicket = typeof plantDiagnosticTickets.$inferSelect;
-export type InsertPlantDiagnosticTicket = typeof plantDiagnosticTickets.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: AI Agent - Chat Sessions (AI 对话会话)
-// ============================================================================
-
-export const aiChatSessions = mysqlTable("ai_chat_sessions", {
-  id: int("id").autoincrement().primaryKey(),
-  customerId: int("customer_id"),
-  customerName: text("customer_name"),
-  platform: mysqlEnum("platform", ["messenger", "whatsapp", "facebook_comment", "internal"]),
-  status: mysqlEnum("status", ["active", "transferred", "closed"]).default("active").notNull(),
-  messageCount: int("message_count").default(0).notNull(),
-  lastMessageAt: timestamp("last_message_at"),
-  transferredAt: timestamp("transferred_at"),
-  transferredTo: text("transferred_to"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-});
-
-export type AiChatSession = typeof aiChatSessions.$inferSelect;
-export type InsertAiChatSession = typeof aiChatSessions.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: Session Product Variants (场次 Variant 绑定 + 独立关键词)
-// ============================================================================
-
-export const sessionProductVariants = mysqlTable("session_product_variants", {
-  id: int("id").autoincrement().primaryKey(),
-  sessionId: int("session_id").notNull(),
-  sessionProductId: int("session_product_id").notNull(),
-  productId: int("product_id").notNull(),
-  variantId: int("variant_id").notNull(),
-  keyword: varchar("keyword", { length: 100 }).notNull(),
-  sellingPrice: decimal("selling_price", { precision: 10, scale: 2 }),
-  physicalStockAtStart: int("physical_stock_at_start").default(0).notNull(),
-  physicalSoldQuantity: int("physical_sold_quantity").default(0).notNull(),
-  preorderEnabled: boolean("preorder_enabled").default(false).notNull(),
-  preorderLimit: int("preorder_limit"),
-  preorderSoldQuantity: int("preorder_sold_quantity").default(0).notNull(),
-  sellingStatus: mysqlEnum("selling_status", ["available", "stopped"]).default("available").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-});
-
-export type SessionProductVariant = typeof sessionProductVariants.$inferSelect;
-export type InsertSessionProductVariant = typeof sessionProductVariants.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: Purchase Module - Inventory Lots (FIFO)
-// ============================================================================
-
-export const inventoryLots = mysqlTable("inventory_lots", {
-  id: int("id").autoincrement().primaryKey(),
-  lotNo: varchar("lot_no", { length: 30 }).notNull().unique(),
-  purchaseOrderId: int("purchase_order_id").notNull(),
-  supplierId: int("supplier_id").notNull(),
-  productId: int("product_id").notNull(),
-  variantId: int("variant_id"),
-  originalQuantity: int("original_quantity").notNull(),
-  remainingQuantity: int("remaining_quantity").notNull(),
-  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }).notNull(),
-  purchaseDate: timestamp("purchase_date").notNull(),
-  status: mysqlEnum("status", ["active", "exhausted", "cancelled"]).default("active").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export type InventoryLot = typeof inventoryLots.$inferSelect;
-export type InsertInventoryLot = typeof inventoryLots.$inferInsert;
-
-// ============================================================================
-// XLCS V1.0: Purchase Module - Inventory Ledger (Stock Movement)
-// ============================================================================
-
-export const inventoryLedger = mysqlTable("inventory_ledger", {
-  id: int("id").autoincrement().primaryKey(),
-  productId: int("product_id").notNull(),
-  variantId: int("variant_id"),
-  lotId: int("lot_id"),
-  transactionType: mysqlEnum("transaction_type", ["purchase", "sale", "adjustment", "transfer", "return"]).notNull(),
-  referenceType: varchar("reference_type", { length: 50 }),
-  referenceId: int("reference_id"),
-  quantityChange: int("quantity_change").notNull(),
-  balanceAfter: int("balance_after").notNull(),
-  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }),
-  createdBy: varchar("created_by", { length: 100 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export type InventoryLedger = typeof inventoryLedger.$inferSelect;
-export type InsertInventoryLedger = typeof inventoryLedger.$inferInsert;

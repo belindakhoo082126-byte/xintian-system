@@ -72,15 +72,6 @@ vi.mock("./db", () => ({
   getFlowSendLogsByReviewId: vi.fn(() => Promise.resolve([])),
 
   // Dashboard
-  getWorkCenterStats: vi.fn(() => Promise.resolve({
-    needsAction: 0,
-    pendingPayment: 0,
-    paidPendingShip: 0,
-    todayOrderCount: 0,
-    todayItemCount: 0,
-    todayRevenue: "0",
-    liveStats: { activeSessions: 0, todayOrderCount: 0, todayRevenue: "0", todayItemCount: 0 },
-  })),
   getDashboardStats: vi.fn(() => Promise.resolve({
     newMembershipOrders: 0,
     pendingReviews: 0,
@@ -89,6 +80,24 @@ vi.mock("./db", () => ({
     membershipRevenue: "0",
     flowSuccessRate: 0,
   })),
+  // Business Reports
+  getDateRange: vi.fn(() => ({ start: new Date(), end: new Date() })),
+  getBusinessOverview: vi.fn(() => Promise.resolve({
+    totalRevenue: 0, totalPaid: 0, totalUnpaid: 0, totalRefunds: 0,
+    paidOrders: 0, unpaidOrders: 0, shippedPackages: 0, borneShipping: 0,
+    shippingIncome: 0, productSales: 0, fifoCost: 0, grossProfit: 0, grossMargin: 0,
+    orderStats: { total: 0, paid: 0, unpaid: 0, refunded: 0, completed: 0, cancelled: 0 },
+  })),
+  getTopProductsByQuantity: vi.fn(() => Promise.resolve([])),
+  getTopProductsByRevenue: vi.fn(() => Promise.resolve([])),
+  getTopProductsByProfit: vi.fn(() => Promise.resolve([])),
+  getTopCustomersBySpending: vi.fn(() => Promise.resolve([])),
+  getSalesPaymentReport: vi.fn(() => Promise.resolve([])),
+  getProductSalesReport: vi.fn(() => Promise.resolve([])),
+  getCustomerSpendingReport: vi.fn(() => Promise.resolve([])),
+  getPurchaseInventoryReport: vi.fn(() => Promise.resolve(null)),
+  getRefundRecords: vi.fn(() => Promise.resolve([])),
+  getMonthlyProfitReport: vi.fn(() => Promise.resolve({ revenue: "0", cost: "0", profit: "0" })),
 }));
 
 import * as dbMock from "./db";
@@ -478,15 +487,14 @@ describe("dashboard router", () => {
 
   it("stats returns dashboard data", async () => {
     const mockStats = {
-      needsAction: 5,
-      pendingPayment: 2,
-      paidPendingShip: 10,
-      todayOrderCount: 1,
-      todayItemCount: 3,
-      todayRevenue: "1000.00",
-      liveStats: { activeSessions: 0, todayOrderCount: 1, todayRevenue: "500", todayItemCount: 2 },
+      newMembershipOrders: 5,
+      pendingReviews: 2,
+      flowSent: 10,
+      needsFollowUp: 1,
+      membershipRevenue: "1000.00",
+      flowSuccessRate: 90,
     };
-    vi.mocked(dbMock.getWorkCenterStats).mockResolvedValue(mockStats as any);
+    vi.mocked(dbMock.getDashboardStats).mockResolvedValue(mockStats as any);
 
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);

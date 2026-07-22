@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree, Mail, Radio, Bot, HelpCircle, BookOpen, ClipboardCheck, FileText } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -32,20 +32,17 @@ const menuItems = [
   { icon: Package, label: "商品管理", path: "/products" },
   { icon: FolderTree, label: "分类管理", path: "/categories" },
   { icon: ShoppingCart, label: "订单管理", path: "/orders" },
-  { icon: Mail, label: "快递公司", path: "/couriers" },
   { icon: Crown, label: "会员订单", path: "/membership" },
   { icon: Users, label: "客户管理", path: "/customers" },
   { icon: MessageSquare, label: "Flow 编辑器", path: "/flows" },
   { icon: Truck, label: "供应商管理", path: "/suppliers" },
   { icon: PackagePlus, label: "进货管理", path: "/purchase-orders" },
-  { icon: TrendingUp, label: "利润报表", path: "/profit-report" },
+  { icon: TrendingUp, label: "经营报告", path: "/profit-report" },
+  { icon: DollarSign, label: "销售与收款", path: "/reports/sales-payment" },
+  { icon: ShoppingBag, label: "商品销售", path: "/reports/product-sales" },
+  { icon: Users, label: "客户消费", path: "/reports/customer-spending" },
+  { icon: Boxes, label: "进货与库存", path: "/reports/purchase-inventory" },
   { icon: Facebook, label: "Facebook 设置", path: "/facebook-settings" },
-  { icon: Radio, label: "FB 直播捉单", path: "/facebook-live" },
-  { icon: Bot, label: "AI 设置", path: "/ai-settings" },
-  { icon: HelpCircle, label: "FAQ 管理", path: "/faq" },
-  { icon: BookOpen, label: "Knowledge 管理", path: "/knowledge" },
-  { icon: ClipboardCheck, label: "AI Review Center", path: "/ai-review" },
-  { icon: FileText, label: "AI 回复记录", path: "/ai-reply-log" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

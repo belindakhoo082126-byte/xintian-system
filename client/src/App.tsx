@@ -10,21 +10,18 @@ import ProductsV2 from "./pages/ProductsV2";
 import Categories from "./pages/Categories";
 import MemberLinkPreview from "./pages/MemberLinkPreview";
 import ProductPreview from "./pages/ProductPreview";
-import OrdersV2 from "./pages/OrdersV2";
-import Couriers from "./pages/Couriers";
+import Orders from "./pages/Orders";
 import Membership from "./pages/Membership";
-import CustomersV2 from "./pages/CustomersV2";
+import Customers from "./pages/Customers";
 import Flows from "@/pages/Flows";
-import SuppliersV2 from "@/pages/SuppliersV2";
-import PurchaseOrdersV2 from "@/pages/PurchaseOrdersV2";
-import ProfitReport from "@/pages/ProfitReport";
+import Suppliers from "@/pages/Suppliers";
+import PurchaseOrders from "@/pages/PurchaseOrders";
+import BusinessReport from "@/pages/BusinessReport";
+import SalesPaymentReport from "@/pages/SalesPaymentReport";
+import ProductSalesReport from "@/pages/ProductSalesReport";
+import CustomerSpendingReport from "@/pages/CustomerSpendingReport";
+import PurchaseInventoryReport from "@/pages/PurchaseInventoryReport";
 import FacebookSettings from "@/pages/FacebookSettings";
-import FacebookLive from "@/pages/FacebookLive";
-import AISettings from "@/pages/AISettings";
-import FAQManagement from "@/pages/FAQManagement";
-import KnowledgeManagement from "@/pages/KnowledgeManagement";
-import AIReviewCenter from "@/pages/AIReviewCenter";
-import AIReplyLog from "@/pages/AIReplyLog";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -44,21 +41,18 @@ function DashboardRoutes() {
       <Route path={"/"} component={Dashboard} />
       <Route path={"/products"} component={ProductsV2} />
       <Route path={"/categories"} component={Categories} />
-      <Route path={"/orders"} component={OrdersV2} />
-      <Route path={"/couriers"} component={Couriers} />
+      <Route path={"/orders"} component={Orders} />
       <Route path={"/membership"} component={Membership} />
-      <Route path={"/customers"} component={CustomersV2} />
+      <Route path={"/customers"} component={Customers} />
       <Route path={"/flows"} component={Flows} />
-      <Route path={"/suppliers"} component={SuppliersV2} />
-      <Route path={"/purchase-orders"} component={PurchaseOrdersV2} />
-      <Route path={"/profit-report"} component={ProfitReport} />
+      <Route path={"/suppliers"} component={Suppliers} />
+      <Route path={"/purchase-orders"} component={PurchaseOrders} />
+      <Route path={"/profit-report"} component={BusinessReport} />
+      <Route path={"/reports/sales-payment"} component={SalesPaymentReport} />
+      <Route path={"/reports/product-sales"} component={ProductSalesReport} />
+      <Route path={"/reports/customer-spending"} component={CustomerSpendingReport} />
+      <Route path={"/reports/purchase-inventory"} component={PurchaseInventoryReport} />
       <Route path={"/facebook-settings"} component={FacebookSettings} />
-      <Route path={"/facebook-live"} component={FacebookLive} />
-      <Route path={"/ai-settings"} component={AISettings} />
-      <Route path={"/faq"} component={FAQManagement} />
-      <Route path={"/knowledge"} component={KnowledgeManagement} />
-      <Route path={"/ai-review"} component={AIReviewCenter} />
-      <Route path={"/ai-reply-log"} component={AIReplyLog} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
