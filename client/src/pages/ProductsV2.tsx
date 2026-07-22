@@ -729,8 +729,11 @@ export default function ProductsV2() {
                                 if (res.ok) {
                                   const data = await res.json();
                                   setForm({ ...form, coverImageUrl: data.url });
+                                  toast.success("图片已上传");
+                                } else {
+                                  toast.error("上传失败");
                                 }
-                              } catch {}
+                              } catch { toast.error("上传失败，请重试"); }
                             };
                             reader.readAsDataURL(file);
                           }} />
