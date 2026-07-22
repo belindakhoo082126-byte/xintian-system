@@ -2472,6 +2472,199 @@ export const appRouter = router({
   }),
 
   // ===========================================================================
+  // XLCS V1.0: Purchase Module - Suppliers V2
+  // ===========================================================================
+  suppliersV2: router({
+    list: protectedProcedure
+      .input(z.object({ activeOnly: z.boolean().optional(), search: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        if (input?.search) return await db.searchSuppliers(input.search);
+        return await db.getSuppliers(input?.activeOnly);
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const supplier = await db.getSupplierById(input.id);
+        if (!supplier) throw new Error("Supplier not found");
+        const history = await db.getSupplierPurchaseHistory(input.id);
+        return { ...supplier, purchaseHistory: history };
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        contactPerson: z.string().optional(),
+        phoneNumber: z.string().optional(),
+        email: z.string().optional(),
+        address: z.string().optional(),
+        bankName: z.string().optional(),
+        bankAccountName: z.string().optional(),
+        bankAccountNumber: z.string().optional(),
+        remark: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const supplierCode = await db.generateSupplierCode();
+        return await db.createSupplier({
+          ...input,
+          supplierCode,
+          status: "active",
+          isActive: true,
+          createdBy: ctx.user?.name || "system",
+        } as any);
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        contactPerson: z.string().optional(),
+        phoneNumber: z.string().optional(),
+        email: z.string().optional(),
+        address: z.string().optional(),
+        bankName: z.string().optional(),
+        bankAccountName: z.string().optional(),
+        bankAccountNumber: z.string().optional(),
+        remark: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        await db.updateSupplier(id, { ...data, updatedBy: ctx.user?.name || "system" } as any);
+        return { success: true };
+      }),
+
+    deactivate: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const hasRecords = await db.hasPurchaseRecords(input.id);
+        if (hasRecords) {
+          await db.deactivateSupplier(input.id, ctx.user?.name || "system");
+        } else {
+          await db.deleteSupplier(input.id);
+        }
+        return { success: true };
+      }),
+
+    generateCode: protectedProcedure.query(async () => {
+      return await db.generateSupplierCode();
+    }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Purchase Module - Purchase Orders V2
+  // ===========================================================================
+  purchaseOrdersV2: router({
+    list: protectedProcedure
+      .input(z.object({
+        supplierId: z.number().optional(),
+        status: z.string().optional(),
+        search: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        if (input?.search) return await db.searchPurchaseOrders(input.search);
+        return await db.getPurchaseOrders({ supplierId: input?.supplierId, status: input?.status });
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const po = await db.getPurchaseOrderById(input.id);
+        if (!po) throw new Error("Purchase order not found");
+        const items = await db.getPurchaseOrderItems(input.id);
+        return { ...po, items };
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        supplierId: z.number(),
+        supplierDocumentNo: z.string().optional(),
+        purchaseDate: z.number(),
+        remark: z.string().optional(),
+        items: z.array(z.object({
+          productId: z.number(),
+          variantId: z.number().optional(),
+          quantity: z.number().min(1),
+          unitCost: z.string(),
+          subtotal: z.string(),
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const purchaseOrderNo = await db.generatePurchaseOrderNo();
+        return await db.createPurchaseOrderV2({
+          purchaseOrderNo,
+          supplierDocumentNo: input.supplierDocumentNo,
+          purchaseDate: new Date(input.purchaseDate),
+          supplierId: input.supplierId,
+          remark: input.remark,
+          createdBy: ctx.user?.name || "system",
+          items: input.items,
+        });
+      }),
+
+    updateDraft: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        supplierDocumentNo: z.string().optional(),
+        purchaseDate: z.number().optional(),
+        supplierId: z.number().optional(),
+        remark: z.string().optional(),
+        items: z.array(z.object({
+          productId: z.number(),
+          variantId: z.number().optional(),
+          quantity: z.number().min(1),
+          unitCost: z.string(),
+          subtotal: z.string(),
+        })).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.updatePurchaseOrderDraft(input.id, {
+          supplierDocumentNo: input.supplierDocumentNo,
+          purchaseDate: input.purchaseDate ? new Date(input.purchaseDate) : undefined,
+          supplierId: input.supplierId,
+          remark: input.remark,
+          items: input.items,
+        });
+      }),
+
+    confirm: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        return await db.confirmPurchaseOrder(input.id, ctx.user?.name || "system");
+      }),
+
+    cancel: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.cancelPurchaseOrder(input.id);
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Purchase Module - Inventory (FIFO Lots + Ledger)
+  // ===========================================================================
+  inventory: router({
+    getLots: protectedProcedure
+      .input(z.object({ productId: z.number(), variantId: z.number().optional() }))
+      .query(async ({ input }) => {
+        return await db.getInventoryLotsByProduct(input.productId, input.variantId);
+      }),
+
+    getLedger: protectedProcedure
+      .input(z.object({ productId: z.number(), variantId: z.number().optional() }))
+      .query(async ({ input }) => {
+        return await db.getInventoryLedgerByProduct(input.productId, input.variantId);
+      }),
+
+    getCurrentStock: protectedProcedure
+      .input(z.object({ productId: z.number(), variantId: z.number().optional() }))
+      .query(async ({ input }) => {
+        return { stock: await db.getCurrentStock(input.productId, input.variantId) };
+      }),
+  }),
+
+  // ===========================================================================
   // Dashboard (legacy - keep for backward compat)
   // ===========================================================================
   dashboard: router({

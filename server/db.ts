@@ -7,6 +7,7 @@ import {
   membershipFeeReviews, messengerFlowTemplates, flowSteps,
   customerMergeSuggestions, flowSendLogs,
   suppliers, purchaseOrders, purchaseOrderItems,
+  inventoryLots, inventoryLedger,
   // Phase 1 imports
   categories, units, variants, memberLinks, productImages, productVideos, productAttributes,
   // XLCS V1.0 imports
@@ -3784,4 +3785,416 @@ export async function getLiveDashboardStats(sessionId: number) {
     },
     preorderAlerts: preorderProducts,
   };
+}
+
+// ============================================================================
+// XLCS V1.0: Purchase Module - Enhanced Supplier Helpers
+// ============================================================================
+
+export async function generateSupplierCode(): Promise<string> {
+  const db = await getDb();
+  if (!db) return "SUP001";
+  const result = await db.execute({ sql: "SELECT COUNT(*) as count FROM suppliers" } as any);
+  const count = (result[0] as any)?.count || 0;
+  return `SUP${String(count + 1).padStart(4, "0")}`;
+}
+
+export async function searchSuppliers(query: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const pattern = `%${query}%`;
+  return await db.select().from(suppliers)
+    .where(sql`(suppliers.name LIKE ${pattern} OR suppliers.contact_person LIKE ${pattern} OR suppliers.supplier_code LIKE ${pattern})`)
+    .orderBy(desc(suppliers.createdAt));
+}
+
+export async function getSupplierPurchaseHistory(supplierId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(purchaseOrders)
+    .where(eq(purchaseOrders.supplierId, supplierId))
+    .orderBy(desc(purchaseOrders.createdAt));
+}
+
+export async function hasPurchaseRecords(supplierId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const result = await db.select({ count: sql<number>`COUNT(*)` })
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.supplierId, supplierId));
+  return (result[0]?.count || 0) > 0;
+}
+
+export async function deactivateSupplier(id: number, updatedBy: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(suppliers).set({
+    status: "inactive",
+    isActive: false,
+    updatedBy,
+  }).where(eq(suppliers.id, id));
+}
+
+// ============================================================================
+// XLCS V1.0: Purchase Module - Enhanced Purchase Order Helpers
+// ============================================================================
+
+export async function generatePurchaseOrderNo(): Promise<string> {
+  const db = await getDb();
+  if (!db) return `PO-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-0001`;
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const result = await db.execute({ 
+    sql: `SELECT COUNT(*) as count FROM purchase_orders WHERE purchase_order_no LIKE 'PO-${today}-%'` 
+  } as any);
+  const count = (result[0] as any)?.count || 0;
+  return `PO-${today}-${String(count + 1).padStart(4, "0")}`;
+}
+
+export async function searchPurchaseOrders(query: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const pattern = `%${query}%`;
+  return await db.select({
+    po: purchaseOrders,
+    supplierName: suppliers.name,
+  })
+    .from(purchaseOrders)
+    .leftJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
+    .where(sql`(purchase_orders.purchase_order_no LIKE ${pattern} OR purchase_orders.supplier_document_no LIKE ${pattern} OR suppliers.name LIKE ${pattern})`)
+    .orderBy(desc(purchaseOrders.createdAt));
+}
+
+export async function createPurchaseOrderV2(data: {
+  purchaseOrderNo: string;
+  supplierDocumentNo?: string;
+  purchaseDate: Date;
+  supplierId: number;
+  remark?: string;
+  createdBy: string;
+  items: Array<{
+    productId: number;
+    variantId?: number;
+    quantity: number;
+    unitCost: string;
+    subtotal: string;
+  }>;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const totalQuantity = data.items.reduce((sum, i) => sum + i.quantity, 0);
+  const totalAmount = data.items.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+
+  const poResult = await db.insert(purchaseOrders).values({
+    poNumber: data.purchaseOrderNo,
+    purchaseOrderNo: data.purchaseOrderNo,
+    supplierDocumentNo: data.supplierDocumentNo || null,
+    purchaseDate: data.purchaseDate,
+    supplierId: data.supplierId,
+    remark: data.remark || null,
+    notes: data.remark || null,
+    status: "draft",
+    totalQuantity,
+    totalAmount: totalAmount.toFixed(2),
+    createdBy: data.createdBy,
+  });
+
+  const poId = (poResult as any).insertId;
+
+  for (const item of data.items) {
+    await db.insert(purchaseOrderItems).values({
+      purchaseOrderId: poId,
+      productId: item.productId,
+      variantId: item.variantId || null,
+      quantity: item.quantity,
+      unitCost: item.unitCost,
+      subtotal: item.subtotal,
+    });
+  }
+
+  return { poId, purchaseOrderNo: data.purchaseOrderNo, totalQuantity, totalAmount: totalAmount.toFixed(2) };
+}
+
+export async function updatePurchaseOrderDraft(poId: number, data: {
+  supplierDocumentNo?: string;
+  purchaseDate?: Date;
+  supplierId?: number;
+  remark?: string;
+  items?: Array<{
+    productId: number;
+    variantId?: number;
+    quantity: number;
+    unitCost: string;
+    subtotal: string;
+  }>;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Only allow editing drafts
+  const po = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, poId)).limit(1);
+  if (!po.length || po[0].status !== "draft") {
+    throw new Error("Only draft purchase orders can be edited");
+  }
+
+  const updates: any = {};
+  if (data.supplierDocumentNo !== undefined) updates.supplierDocumentNo = data.supplierDocumentNo;
+  if (data.purchaseDate !== undefined) updates.purchaseDate = data.purchaseDate;
+  if (data.supplierId !== undefined) updates.supplierId = data.supplierId;
+  if (data.remark !== undefined) { updates.remark = data.remark; updates.notes = data.remark; }
+
+  if (data.items) {
+    updates.totalQuantity = data.items.reduce((sum, i) => sum + i.quantity, 0);
+    updates.totalAmount = data.items.reduce((sum, i) => sum + parseFloat(i.subtotal), 0).toFixed(2);
+    
+    // Delete old items and insert new ones
+    await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, poId));
+    for (const item of data.items) {
+      await db.insert(purchaseOrderItems).values({
+        purchaseOrderId: poId,
+        productId: item.productId,
+        variantId: item.variantId || null,
+        quantity: item.quantity,
+        unitCost: item.unitCost,
+        subtotal: item.subtotal,
+      });
+    }
+  }
+
+  await db.update(purchaseOrders).set(updates).where(eq(purchaseOrders.id, poId));
+  return { poId };
+}
+
+export async function confirmPurchaseOrder(poId: number, confirmedBy: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Verify it's a draft
+  const po = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, poId)).limit(1);
+  if (!po.length) throw new Error("Purchase order not found");
+  if (po[0].status !== "draft") throw new Error("Only draft purchase orders can be confirmed");
+
+  // Get items
+  const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, poId));
+  if (!items.length) throw new Error("No items in purchase order");
+
+  // 1. Update PO status to confirmed
+  await db.update(purchaseOrders).set({
+    status: "confirmed",
+    confirmedAt: new Date(),
+    confirmedBy,
+  }).where(eq(purchaseOrders.id, poId));
+
+  // 2. Create FIFO Lots and update inventory for each item
+  for (const item of items) {
+    // Generate lot number
+    const lotCount = await db.select({ count: sql<number>`COUNT(*)` }).from(inventoryLots);
+    const lotNo = `LOT${String((lotCount[0]?.count || 0) + 1).padStart(5, "0")}`;
+
+    // Create FIFO Lot
+    const lotResult = await db.insert(inventoryLots).values({
+      lotNo,
+      purchaseOrderId: poId,
+      supplierId: po[0].supplierId,
+      productId: item.productId,
+      variantId: item.variantId || null,
+      originalQuantity: item.quantity,
+      remainingQuantity: item.quantity,
+      unitCost: item.unitCost,
+      purchaseDate: po[0].purchaseDate || new Date(),
+      status: "active",
+    });
+    const lotId = (lotResult as any).insertId;
+
+    // Get current stock balance
+    let currentStock = 0;
+    if (item.variantId) {
+      const variant = await db.select().from(variants).where(eq(variants.id, item.variantId)).limit(1);
+      currentStock = variant[0]?.stockQuantity || 0;
+      // Update variant stock
+      await db.update(variants).set({
+        stockQuantity: sql`${variants.stockQuantity} + ${item.quantity}`,
+      }).where(eq(variants.id, item.variantId));
+    } else {
+      const product = await db.select().from(products).where(eq(products.id, item.productId)).limit(1);
+      currentStock = product[0]?.stockQuantity || 0;
+      // Update product stock
+      await db.update(products).set({
+        stockQuantity: sql`${products.stockQuantity} + ${item.quantity}`,
+      }).where(eq(products.id, item.productId));
+    }
+
+    // Write Stock Ledger entry
+    await db.insert(inventoryLedger).values({
+      productId: item.productId,
+      variantId: item.variantId || null,
+      lotId,
+      transactionType: "purchase",
+      referenceType: "purchase_order",
+      referenceId: poId,
+      quantityChange: item.quantity,
+      balanceAfter: currentStock + item.quantity,
+      unitCost: item.unitCost,
+      createdBy: confirmedBy,
+    });
+
+    // Update product currentCost (FIFO cost - will be recalculated on sale)
+    if (!item.variantId) {
+      await db.update(products).set({
+        currentCost: item.unitCost,
+      }).where(eq(products.id, item.productId));
+    } else {
+      await db.update(variants).set({
+        currentCost: item.unitCost,
+      }).where(eq(variants.id, item.variantId));
+    }
+  }
+
+  return { poId, confirmed: true };
+}
+
+export async function cancelPurchaseOrder(poId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const po = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, poId)).limit(1);
+  if (!po.length) throw new Error("Purchase order not found");
+  if (po[0].status === "confirmed") throw new Error("Confirmed purchase orders cannot be cancelled");
+
+  await db.update(purchaseOrders).set({ status: "cancelled" }).where(eq(purchaseOrders.id, poId));
+  return { poId };
+}
+
+// ============================================================================
+// XLCS V1.0: Purchase Module - FIFO Cost Calculation
+// ============================================================================
+
+export async function getFifoLotsForSale(productId: number, variantId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions: any[] = [
+    eq(inventoryLots.productId, productId),
+    eq(inventoryLots.status, "active"),
+    sql`${inventoryLots.remainingQuantity} > 0`,
+  ];
+  if (variantId) {
+    conditions.push(eq(inventoryLots.variantId, variantId));
+  } else {
+    conditions.push(sql`${inventoryLots.variantId} IS NULL`);
+  }
+  
+  // Return lots ordered by creation time (FIFO: oldest first)
+  return await db.select().from(inventoryLots)
+    .where(and(...conditions))
+    .orderBy(inventoryLots.createdAt);
+}
+
+export async function consumeFifoLots(
+  productId: number,
+  variantId: number | undefined,
+  quantity: number,
+  referenceType: string,
+  referenceId: number,
+  createdBy: string,
+): Promise<Array<{ lotId: number; lotNo: string; quantity: number; unitCost: string }>> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const lots = await getFifoLotsForSale(productId, variantId);
+  let remaining = quantity;
+  const consumed: Array<{ lotId: number; lotNo: string; quantity: number; unitCost: string }> = [];
+
+  for (const lot of lots) {
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, lot.remainingQuantity);
+    
+    // Update lot remaining quantity
+    const newRemaining = lot.remainingQuantity - take;
+    await db.update(inventoryLots).set({
+      remainingQuantity: newRemaining,
+      status: newRemaining === 0 ? "exhausted" : "active",
+    }).where(eq(inventoryLots.id, lot.id));
+
+    // Write ledger entry
+    let currentStock = 0;
+    if (variantId) {
+      const v = await db.select().from(variants).where(eq(variants.id, variantId)).limit(1);
+      currentStock = v[0]?.stockQuantity || 0;
+      await db.update(variants).set({
+        stockQuantity: sql`${variants.stockQuantity} - ${take}`,
+      }).where(eq(variants.id, variantId));
+    } else {
+      const p = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+      currentStock = p[0]?.stockQuantity || 0;
+      await db.update(products).set({
+        stockQuantity: sql`${products.stockQuantity} - ${take}`,
+      }).where(eq(products.id, productId));
+    }
+
+    await db.insert(inventoryLedger).values({
+      productId,
+      variantId: variantId || null,
+      lotId: lot.id,
+      transactionType: "sale",
+      referenceType,
+      referenceId,
+      quantityChange: -take,
+      balanceAfter: currentStock - take,
+      unitCost: lot.unitCost,
+      createdBy,
+    });
+
+    consumed.push({ lotId: lot.id, lotNo: lot.lotNo, quantity: take, unitCost: lot.unitCost });
+    remaining -= take;
+  }
+
+  if (remaining > 0) {
+    throw new Error(`Insufficient stock: ${remaining} units not covered by FIFO lots`);
+  }
+
+  return consumed;
+}
+
+export async function getInventoryLotsByProduct(productId: number, variantId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions: any[] = [eq(inventoryLots.productId, productId)];
+  if (variantId) {
+    conditions.push(eq(inventoryLots.variantId, variantId));
+  }
+  
+  return await db.select().from(inventoryLots)
+    .where(and(...conditions))
+    .orderBy(desc(inventoryLots.createdAt));
+}
+
+export async function getInventoryLedgerByProduct(productId: number, variantId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions: any[] = [eq(inventoryLedger.productId, productId)];
+  if (variantId) {
+    conditions.push(eq(inventoryLedger.variantId, variantId));
+  }
+  
+  return await db.select().from(inventoryLedger)
+    .where(and(...conditions))
+    .orderBy(desc(inventoryLedger.createdAt));
+}
+
+export async function getCurrentStock(productId: number, variantId?: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  
+  if (variantId) {
+    const result = await db.select({ stock: variants.stockQuantity })
+      .from(variants).where(eq(variants.id, variantId)).limit(1);
+    return result[0]?.stock || 0;
+  } else {
+    const result = await db.select({ stock: products.stockQuantity })
+      .from(products).where(eq(products.id, productId)).limit(1);
+    return result[0]?.stock || 0;
+  }
 }

@@ -289,14 +289,22 @@ export type InsertProductCategory = typeof productCategories.$inferInsert;
 
 export const suppliers = mysqlTable("suppliers", {
   id: int("id").autoincrement().primaryKey(),
+  supplierCode: varchar("supplier_code", { length: 20 }).unique(),
   name: varchar("name", { length: 255 }).notNull(),
   contactPerson: varchar("contactPerson", { length: 100 }),
   phoneNumber: varchar("phoneNumber", { length: 20 }),
   email: varchar("email", { length: 255 }),
   address: text("address"),
+  bankName: varchar("bank_name", { length: 100 }),
+  bankAccountName: varchar("bank_account_name", { length: 100 }),
+  bankAccountNumber: varchar("bank_account_number", { length: 50 }),
   bankAccount: varchar("bankAccount", { length: 255 }),
   notes: text("notes"),
+  remark: text("remark"),
+  status: mysqlEnum("status", ["active", "inactive"]).default("active"),
   isActive: boolean("isActive").default(true),
+  createdBy: varchar("created_by", { length: 100 }),
+  updatedBy: varchar("updated_by", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -311,12 +319,20 @@ export type InsertSupplier = typeof suppliers.$inferInsert;
 export const purchaseOrders = mysqlTable("purchase_orders", {
   id: int("id").autoincrement().primaryKey(),
   poNumber: varchar("poNumber", { length: 50 }).notNull().unique(),
+  purchaseOrderNo: varchar("purchase_order_no", { length: 30 }).unique(),
+  supplierDocumentNo: varchar("supplier_document_no", { length: 100 }),
+  purchaseDate: timestamp("purchase_date"),
   supplierId: int("supplierId").notNull(),
+  totalQuantity: int("total_quantity").default(0),
   totalAmount: decimal("totalAmount", { precision: 12, scale: 2 }).notNull(),
-  status: mysqlEnum("status", ["draft", "ordered", "received", "cancelled"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "ordered", "received", "cancelled", "confirmed"]).default("draft").notNull(),
   notes: text("notes"),
+  remark: text("remark"),
   orderedAt: timestamp("orderedAt"),
   receivedAt: timestamp("receivedAt"),
+  confirmedAt: timestamp("confirmed_at"),
+  confirmedBy: varchar("confirmed_by", { length: 100 }),
+  createdBy: varchar("created_by", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -332,6 +348,7 @@ export const purchaseOrderItems = mysqlTable("purchase_order_items", {
   id: int("id").autoincrement().primaryKey(),
   purchaseOrderId: int("purchaseOrderId").notNull(),
   productId: int("productId").notNull(),
+  variantId: int("variant_id"),
   quantity: int("quantity").notNull(),
   unitCost: decimal("unitCost", { precision: 10, scale: 2 }).notNull(),
   subtotal: decimal("subtotal", { precision: 12, scale: 2 }).notNull(),
@@ -1163,3 +1180,47 @@ export const sessionProductVariants = mysqlTable("session_product_variants", {
 
 export type SessionProductVariant = typeof sessionProductVariants.$inferSelect;
 export type InsertSessionProductVariant = typeof sessionProductVariants.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: Purchase Module - Inventory Lots (FIFO)
+// ============================================================================
+
+export const inventoryLots = mysqlTable("inventory_lots", {
+  id: int("id").autoincrement().primaryKey(),
+  lotNo: varchar("lot_no", { length: 30 }).notNull().unique(),
+  purchaseOrderId: int("purchase_order_id").notNull(),
+  supplierId: int("supplier_id").notNull(),
+  productId: int("product_id").notNull(),
+  variantId: int("variant_id"),
+  originalQuantity: int("original_quantity").notNull(),
+  remainingQuantity: int("remaining_quantity").notNull(),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }).notNull(),
+  purchaseDate: timestamp("purchase_date").notNull(),
+  status: mysqlEnum("status", ["active", "exhausted", "cancelled"]).default("active").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type InventoryLot = typeof inventoryLots.$inferSelect;
+export type InsertInventoryLot = typeof inventoryLots.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: Purchase Module - Inventory Ledger (Stock Movement)
+// ============================================================================
+
+export const inventoryLedger = mysqlTable("inventory_ledger", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("product_id").notNull(),
+  variantId: int("variant_id"),
+  lotId: int("lot_id"),
+  transactionType: mysqlEnum("transaction_type", ["purchase", "sale", "adjustment", "transfer", "return"]).notNull(),
+  referenceType: varchar("reference_type", { length: 50 }),
+  referenceId: int("reference_id"),
+  quantityChange: int("quantity_change").notNull(),
+  balanceAfter: int("balance_after").notNull(),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }),
+  createdBy: varchar("created_by", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type InventoryLedger = typeof inventoryLedger.$inferSelect;
+export type InsertInventoryLedger = typeof inventoryLedger.$inferInsert;

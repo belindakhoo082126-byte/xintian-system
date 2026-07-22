@@ -72,6 +72,15 @@ vi.mock("./db", () => ({
   getFlowSendLogsByReviewId: vi.fn(() => Promise.resolve([])),
 
   // Dashboard
+  getWorkCenterStats: vi.fn(() => Promise.resolve({
+    needsAction: 0,
+    pendingPayment: 0,
+    paidPendingShip: 0,
+    todayOrderCount: 0,
+    todayItemCount: 0,
+    todayRevenue: "0",
+    liveStats: { activeSessions: 0, todayOrderCount: 0, todayRevenue: "0", todayItemCount: 0 },
+  })),
   getDashboardStats: vi.fn(() => Promise.resolve({
     newMembershipOrders: 0,
     pendingReviews: 0,
@@ -469,14 +478,15 @@ describe("dashboard router", () => {
 
   it("stats returns dashboard data", async () => {
     const mockStats = {
-      newMembershipOrders: 5,
-      pendingReviews: 2,
-      flowSent: 10,
-      needsFollowUp: 1,
-      membershipRevenue: "1000.00",
-      flowSuccessRate: 90,
+      needsAction: 5,
+      pendingPayment: 2,
+      paidPendingShip: 10,
+      todayOrderCount: 1,
+      todayItemCount: 3,
+      todayRevenue: "1000.00",
+      liveStats: { activeSessions: 0, todayOrderCount: 1, todayRevenue: "500", todayItemCount: 2 },
     };
-    vi.mocked(dbMock.getDashboardStats).mockResolvedValue(mockStats as any);
+    vi.mocked(dbMock.getWorkCenterStats).mockResolvedValue(mockStats as any);
 
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);

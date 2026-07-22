@@ -49,8 +49,8 @@
 
 ## 待后续接入
 
-- [ ] Facebook Messenger API 实际发送集成（目前为模拟发送）
-- [ ] Facebook Live 直播捉单功能
+- [x] Facebook Messenger API 实际发送集成（messenger.ts: sendTextMessage/sendButtonMessage/sendMediaMessage/sendTemplateMessage/sendMembershipFlow + facebook.ts: Webhook 接收端点 + FacebookSettings 页面）
+- [x] Facebook Live 直播捉单功能（facebook.ts: Webhook 处理 live video comments + sales_sessions + facebook_comments + 关键词捉单 + FacebookLive 控制中心）
 - [ ] 客户端商城前端（商品浏览、购物车、结账）
 - [ ] 汇款单据上传 API（S3 存储集成）
 - [ ] 7 天自动完成定时任务
@@ -288,5 +288,44 @@
 
 ### Sprint 6: 测试与验收
 - [x] Vitest 单元测试（29 个 AI Agent 测试 + 125 个旧测试 = 154 个全部通过）
+- [x] TypeScript 编译零错误
+- [x] 保存检查点
+
+## XLCS V1.0: 采购模块（供应商管理 + 进货管理 + FIFO）
+
+### Sprint 1: 数据库
+- [x] suppliers 表增强（supplierCode/bankName/bankAccountName/bankAccountNumber/remark/status/createdBy/updatedBy）
+- [x] purchase_orders 表增强（purchaseOrderNo/supplierDocumentNo/purchaseDate/totalQuantity/remark/confirmedAt/confirmedBy/createdBy）
+- [x] purchase_order_items 表增强（variantId）
+- [x] inventory_lots 表（FIFO Lot: lotNo/purchaseOrderId/supplierId/productId/variantId/originalQuantity/remainingQuantity/unitCost/purchaseDate/status）
+- [x] inventory_ledger 表（库存流水: productId/variantId/lotId/transactionType/referenceType/referenceId/quantityChange/balanceAfter/unitCost/createdBy）
+- [x] 生成迁移 SQL 并执行
+
+### Sprint 2: 后端 API
+- [x] 供应商 CRUD API（suppliersV2: list/search/getById/create/update/deactivate/generateCode）
+- [x] 供应商详情 API（含历史进货列表）
+- [x] 进货 CRUD API（purchaseOrdersV2: list/search/getById/create/updateDraft/confirm/cancel）
+- [x] 确认进货 API（confirmPurchaseOrder: 建立 FIFO Lot + 增加库存 + Stock Ledger + 锁定）
+- [x] FIFO 扣减 API（consumeFifoLots: 按先进先出扣 Lot + Stock Ledger）
+- [x] 库存查询 API（inventory: getLots/getLedger/getCurrentStock）
+
+### Sprint 3: 供应商管理前端
+- [x] 供应商列表页（搜索/新增/编辑/停用/查看详情）
+- [x] 新增/编辑供应商对话框（基本资料 + 银行资料）
+- [x] 供应商详情页（基本资料 + 银行资料 + 历史进货列表）
+
+### Sprint 4: 进货管理前端
+- [x] 进货列表页（搜索/状态筛选/新增进货）
+- [x] 新增进货页面（供应商选择 + 日期 + 供应商单号 + 备注）
+- [x] 添加商品搜索（商品名称搜索 + Variant Badge 选择）
+- [x] Variant 选择（有 Variant 选规格/无 Variant 直接添加）
+- [ ] 新增 Variant 对话框 — 后续版本
+- [x] 商品行（商品/Variant/数量/单位成本/小计/删除）
+- [x] 底部汇总（商品种类/总数量/总金额）
+- [x] 保存草稿 + 确认进货 + 取消操作
+
+### Sprint 5: 菜单 + 测试 + 检查点
+- [x] 侧栏菜单更新（供应商管理 + 进货管理 已在之前 Sprint 中配置）
+- [x] Vitest 单元测试（16 个采购模块测试 + 154 个旧测试 = 170 个全部通过）
 - [x] TypeScript 编译零错误
 - [x] 保存检查点

@@ -15,8 +15,8 @@ import Couriers from "./pages/Couriers";
 import Membership from "./pages/Membership";
 import CustomersV2 from "./pages/CustomersV2";
 import Flows from "@/pages/Flows";
-import Suppliers from "@/pages/Suppliers";
-import PurchaseOrders from "@/pages/PurchaseOrders";
+import SuppliersV2 from "@/pages/SuppliersV2";
+import PurchaseOrdersV2 from "@/pages/PurchaseOrdersV2";
 import ProfitReport from "@/pages/ProfitReport";
 import FacebookSettings from "@/pages/FacebookSettings";
 import FacebookLive from "@/pages/FacebookLive";
@@ -49,8 +49,8 @@ function DashboardRoutes() {
       <Route path={"/membership"} component={Membership} />
       <Route path={"/customers"} component={CustomersV2} />
       <Route path={"/flows"} component={Flows} />
-      <Route path={"/suppliers"} component={Suppliers} />
-      <Route path={"/purchase-orders"} component={PurchaseOrders} />
+      <Route path={"/suppliers"} component={SuppliersV2} />
+      <Route path={"/purchase-orders"} component={PurchaseOrdersV2} />
       <Route path={"/profit-report"} component={ProfitReport} />
       <Route path={"/facebook-settings"} component={FacebookSettings} />
       <Route path={"/facebook-live"} component={FacebookLive} />
