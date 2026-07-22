@@ -2742,7 +2742,7 @@ export async function getWorkCenterStats() {
   const todayOrders = await db.select({
     customerCount: sql`COUNT(DISTINCT customerId)`,
     totalAmount: sql`COALESCE(SUM(totalAmount), 0)`,
-    itemCount: sql`COALESCE(SUM((SELECT COUNT(*) FROM order_items WHERE order_items.orderId = orders.id)), 0)`,
+    itemCount: sql`COALESCE(SUM((SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_items.orderId = orders.id)), 0)`,
   })
     .from(orders)
     .where(sql`createdAt >= ${todayStart}`);
@@ -3232,14 +3232,14 @@ export async function getSessionStats(sessionId: number) {
     .from(facebookComments)
     .where(eq(facebookComments.sessionId, sessionId));
 
-  // Get order stats for this session
+  // Get order stats for this session - use paidAmount vs totalAmount to determine payment status
   const sessionOrders = await db.select({
     customerCount: sql`COUNT(DISTINCT customerId)`,
     itemCount: sql`COALESCE(SUM((SELECT SUM(quantity) FROM order_items WHERE order_items.orderId = orders.id AND order_items.sessionId = ${sessionId}), 0)`,
     totalAmount: sql`COALESCE(SUM(totalAmount), 0)`,
-    pending: sql`SUM(CASE WHEN paymentStatus = 'pending' THEN 1 ELSE 0 END)`,
-    paid: sql`SUM(CASE WHEN paymentStatus = 'paid' THEN 1 ELSE 0 END)`,
-    partial: sql`SUM(CASE WHEN paymentStatus = 'partial' THEN 1 ELSE 0 END)`,
+    pending: sql`SUM(CASE WHEN CAST(paidAmount AS DECIMAL(10,2)) = 0 AND physicalStatus != 'cancelled' THEN 1 ELSE 0 END)`,
+    paid: sql`SUM(CASE WHEN CAST(paidAmount AS DECIMAL(10,2)) >= CAST(totalAmount AS DECIMAL(10,2)) AND physicalStatus != 'cancelled' THEN 1 ELSE 0 END)`,
+    partial: sql`SUM(CASE WHEN CAST(paidAmount AS DECIMAL(10,2)) > 0 AND CAST(paidAmount AS DECIMAL(10,2)) < CAST(totalAmount AS DECIMAL(10,2)) AND physicalStatus != 'cancelled' THEN 1 ELSE 0 END)`,
     cancelled: sql`SUM(CASE WHEN physicalStatus = 'cancelled' THEN 1 ELSE 0 END)`,
   })
     .from(orders)
