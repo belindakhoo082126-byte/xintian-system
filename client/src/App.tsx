@@ -34,6 +34,7 @@ import MallProductDetail from "@/pages/mall/MallProductDetail";
 import MallCart from "@/pages/mall/MallCart";
 import MallCheckout from "@/pages/mall/MallCheckout";
 import MallOrderQuery from "@/pages/mall/MallOrderQuery";
+import MallPayment from "@/pages/mall/MallPayment";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -47,6 +48,7 @@ function PublicRoutes() {
       <Route path={"/mall/cart"} component={MallCart} />
       <Route path={"/mall/checkout"} component={MallCheckout} />
       <Route path={"/mall/order-query"} component={MallOrderQuery} />
+      <Route path={"/mall/payment/:orderNumber"} component={MallPayment} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -99,6 +101,7 @@ function App() {
             <Route path={"/mall/cart"} nest component={MallCart} />
             <Route path={"/mall/checkout"} nest component={MallCheckout} />
             <Route path={"/mall/order-query"} nest component={MallOrderQuery} />
+            <Route path={"/mall/payment/:orderNumber"} nest component={MallPayment} />
             <Route>
               <DashboardLayout>
                 <DashboardRoutes />

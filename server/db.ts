@@ -3088,20 +3088,14 @@ export async function mallCheckout(data: {
 export async function queryOrderByNumber(orderNumber: string, contactNumber: string) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(orders)
-    .where(and(eq(orders.orderNumber, orderNumber), eq(orders.shippingAddress, contactNumber)))
+  // Find order by order number, then verify customer phone matches
+  const order = await db.select().from(orders)
+    .where(eq(orders.orderNumber, orderNumber))
     .limit(1);
-  if (result.length === 0) {
-    // Also try matching by customer phone
-    const order = await db.select().from(orders)
-      .where(eq(orders.orderNumber, orderNumber))
-      .limit(1);
-    if (order.length === 0) return undefined;
-    const customer = await getCustomerById(order[0].customerId);
-    if (!customer || customer.phoneNumber !== contactNumber) return undefined;
-    return order[0];
-  }
-  return result[0];
+  if (order.length === 0) return undefined;
+  const customer = await getCustomerById(order[0].customerId);
+  if (!customer || customer.phoneNumber !== contactNumber) return undefined;
+  return order[0];
 }
 
 // --- Smart Paste: parse customer info text ---

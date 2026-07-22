@@ -56,23 +56,31 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
       toast.error("请选择付款凭证图片");
       return;
     }
-    const formData = new FormData();
-    formData.append("file", receiptFile);
-    try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      if (res.ok) {
-        const data = await res.json();
-        uploadReceiptMutation.mutate({
-          id: orderId,
-          physicalStatus: "receipt_uploaded",
-          receiptUrl: data.url,
+    // Convert file to base64 data URL for JSON API
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const base64Data = ev.target?.result as string;
+      try {
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file: base64Data, filename: receiptFile.name }),
         });
-      } else {
-        toast.error("上传失败");
+        if (res.ok) {
+          const data = await res.json();
+          uploadReceiptMutation.mutate({
+            id: orderId,
+            physicalStatus: "receipt_uploaded",
+            receiptUrl: data.url,
+          });
+        } else {
+          toast.error("上传失败");
+        }
+      } catch {
+        toast.error("上传失败，请重试");
       }
-    } catch {
-      toast.error("上传失败，请重试");
-    }
+    };
+    reader.readAsDataURL(receiptFile);
   }
 
   function copyToClipboard(text: string, label: string) {

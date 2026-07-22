@@ -114,7 +114,7 @@ export default function MallOrderQuery() {
               </Table>
 
               {order.physicalStatus === "pending" && (
-                <Link href={`/mall/payment/${order.orderNumber}`}>
+                <Link href={`/mall/payment/${order.orderNumber}?phone=${encodeURIComponent(contactNumber)}`}>
                   <Button className="w-full bg-[#2d6a4f] hover:bg-[#40916c]">去付款</Button>
                 </Link>
               )}

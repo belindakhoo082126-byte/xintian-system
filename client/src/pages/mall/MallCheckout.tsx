@@ -31,7 +31,7 @@ export default function MallCheckout() {
 
   const utils = trpc.useUtils();
   const { data: settings } = trpc.mall.settings.useQuery();
-  const { data: paymentMethods } = trpc.paymentMethods.list.useQuery();
+  const { data: paymentMethods } = trpc.paymentMethods.listEnabled.useQuery();
 
   // smartPaste is a query, use lazy fetch
   const [smartPasteLoading, setSmartPasteLoading] = useState(false);
@@ -133,7 +133,7 @@ export default function MallCheckout() {
             <p className="text-lg font-bold text-[#2d6a4f]">RM {orderResult.totalAmount}</p>
             {orderResult.merged && <Badge>已合并到保留订单</Badge>}
             <div className="pt-4 space-y-2">
-              <Link href={`/mall/payment/${orderResult.orderId}`}>
+                <Link href={`/mall/payment/${orderResult.orderNumber}?phone=${encodeURIComponent(form.contactNumber || '')}`}>
                 <Button className="w-full bg-[#2d6a4f] hover:bg-[#40916c]">去付款</Button>
               </Link>
               <Link href="/mall/order-query">

@@ -138,21 +138,27 @@ export default function PaymentSettings() {
   async function handleQrUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Use manus-upload-file for QR image upload
-    const formData = new FormData();
-    formData.append("file", file);
-    try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      if (res.ok) {
-        const data = await res.json();
-        setForm((prev: any) => ({ ...prev, qrImageUrl: data.url }));
-        toast.success("QR 图片已上传");
-      } else {
-        toast.error("上传失败");
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const base64 = ev.target?.result as string;
+      try {
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file: base64, filename: file.name }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setForm((prev: any) => ({ ...prev, qrImageUrl: data.url }));
+          toast.success("QR 图片已上传");
+        } else {
+          toast.error("上传失败");
+        }
+      } catch {
+        toast.error("上传失败，请重试");
       }
-    } catch {
-      toast.error("上传失败，请重试");
-    }
+    };
+    reader.readAsDataURL(file);
   }
 
   function copyToClipboard(text: string, label: string) {

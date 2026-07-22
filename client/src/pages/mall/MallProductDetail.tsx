@@ -40,6 +40,10 @@ export default function MallProductDetail() {
   const subtotal = (parseFloat(unitPrice) * quantity).toFixed(2);
 
   function addToCart() {
+    if (variants.length > 0 && !selectedVariantId) {
+      toast.error("请选择规格");
+      return;
+    }
     try {
       const cart = JSON.parse(localStorage.getItem("mall_cart") || "[]");
       const existing = cart.find((i: any) => i.productId === product!.id && i.variationId === selectedVariantId);
@@ -66,6 +70,10 @@ export default function MallProductDetail() {
   }
 
   function buyNow() {
+    if (variants.length > 0 && !selectedVariantId) {
+      toast.error("请选择规格");
+      return;
+    }
     addToCart();
     window.location.href = "/mall/checkout";
   }
@@ -128,7 +136,7 @@ export default function MallProductDetail() {
                   <SelectTrigger><SelectValue placeholder="请选择规格" /></SelectTrigger>
                   <SelectContent>
                     {variants.map((v: any) => (
-                      <SelectItem key={v.id} value={v.id.toString()}>{v.name} - RM {v.price}</SelectItem>
+                      <SelectItem key={v.id} value={v.id.toString()}>{v.name} - RM {v.sellingPrice}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

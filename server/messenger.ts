@@ -189,7 +189,7 @@ export async function sendMembershipFlow(
           break;
         case "contact":
           response = await sendButtonMessage(psid, step.content, [
-            { title: "联系客服", url: step.buttonUrl || "https://m.me/250376501495005" },
+            { title: "联系客服", url: step.buttonUrl || `https://m.me/${getPageId()}` },
           ]);
           break;
         default:
@@ -275,7 +275,7 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
         "您好！心田会员可以享受更多专属福利。请点击以下链接了解会员详情："
       );
       await sendButtonMessage(psid, "心田会员专区", [
-        { title: "了解会员", url: "https://m.me/250376501495005" },
+        { title: "了解会员", url: `https://m.me/${getPageId()}` },
       ]);
       return;
     }

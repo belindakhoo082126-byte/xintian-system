@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown } from "lucide-react";
+import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Upload } from "lucide-react";
 
 const PRODUCT_TYPES = [
   { value: "physical", label: "实体商品" },
@@ -707,8 +707,35 @@ export default function ProductsV2() {
                 {step === 1 && (
                   <div className="space-y-4">
                     <div>
-                      <Label>封面图片 URL</Label>
-                      <Input value={form.coverImageUrl} onChange={(e) => setForm({ ...form, coverImageUrl: e.target.value })} placeholder="https://..." />
+                      <Label>封面图片</Label>
+                      <div className="flex items-center gap-3">
+                        <Input value={form.coverImageUrl} onChange={(e) => setForm({ ...form, coverImageUrl: e.target.value })} placeholder="https://... 或点击上传" />
+                        <label className="cursor-pointer">
+                          <Button variant="outline" asChild>
+                            <span><Upload className="h-4 w-4 mr-1" />上传</span>
+                          </Button>
+                          <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = async (ev) => {
+                              const base64 = ev.target?.result as string;
+                              try {
+                                const res = await fetch("/api/upload", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ file: base64, filename: file.name }),
+                                });
+                                if (res.ok) {
+                                  const data = await res.json();
+                                  setForm({ ...form, coverImageUrl: data.url });
+                                }
+                              } catch {}
+                            };
+                            reader.readAsDataURL(file);
+                          }} />
+                        </label>
+                      </div>
                       {form.coverImageUrl && (
                         <img src={form.coverImageUrl} alt="封面预览" className="mt-2 h-32 w-32 rounded-lg object-cover border" />
                       )}

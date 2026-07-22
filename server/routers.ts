@@ -940,7 +940,8 @@ export const appRouter = router({
         })),
         shippingAddress: z.string().optional(),
         shippingMethod: z.string().optional(),
-        paymentMethod: z.string().optional(),
+        paymentMethodId: z.number().optional(),
+        paymentMethodName: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         return await db.createOrderWithSplit(input);
@@ -954,7 +955,8 @@ export const appRouter = router({
         courierCompany: z.string().optional(),
         trackingNumber: z.string().optional(),
         receiptUrl: z.string().optional(),
-        paymentMethod: z.string().optional(),
+        paymentMethodId: z.number().optional(),
+        paymentMethodName: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
@@ -2316,6 +2318,24 @@ export const appRouter = router({
           subtotal: i.subtotal,
         })),
       };
+    }),
+
+    // Upload payment receipt (public - guest)
+    uploadReceipt: publicProcedure.input(z.object({
+      orderNumber: z.string(),
+      receiptUrl: z.string(),
+    })).mutation(async ({ input }) => {
+      const dbConn = await db.getDb();
+      if (!dbConn) throw new Error("Database not available");
+      const { orders: ordTable } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const result = await dbConn.select().from(ordTable).where(eq(ordTable.orderNumber, input.orderNumber)).limit(1);
+      if (result.length === 0) throw new Error("Order not found");
+      await db.updateOrderStatus(result[0].id, {
+        physicalStatus: "receipt_uploaded",
+        receiptUrl: input.receiptUrl,
+      });
+      return { success: true };
     }),
 
     // Find mergeable hold orders by customer phone (public)

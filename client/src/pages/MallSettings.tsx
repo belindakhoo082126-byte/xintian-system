@@ -367,7 +367,38 @@ export default function MallSettings() {
                 </SelectContent>
               </Select>
             </div>
-            <div><Label>图片 URL</Label><Input value={bannerForm.imageUrl} onChange={(e) => setBannerForm((p: any) => ({ ...p, imageUrl: e.target.value }))} /></div>
+            <div>
+              <Label>图片</Label>
+              <div className="flex items-center gap-3">
+                <Input value={bannerForm.imageUrl} onChange={(e) => setBannerForm((p: any) => ({ ...p, imageUrl: e.target.value }))} placeholder="https://... 或点击上传" />
+                <label className="cursor-pointer">
+                  <Button variant="outline" asChild>
+                    <span><Upload className="h-4 w-4 mr-1" />上传</span>
+                  </Button>
+                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = async (ev) => {
+                      const base64 = ev.target?.result as string;
+                      try {
+                        const res = await fetch("/api/upload", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ file: base64, filename: file.name }),
+                        });
+                        if (res.ok) {
+                          const data = await res.json();
+                          setBannerForm((p: any) => ({ ...p, imageUrl: data.url }));
+                          toast.success("图片已上传");
+                        }
+                      } catch { toast.error("上传失败"); }
+                    };
+                    reader.readAsDataURL(file);
+                  }} />
+                </label>
+              </div>
+            </div>
             {bannerForm.imageUrl && <img src={bannerForm.imageUrl} alt="preview" className="w-full rounded border" />}
             <div><Label>链接 URL (可选)</Label><Input value={bannerForm.linkUrl} onChange={(e) => setBannerForm((p: any) => ({ ...p, linkUrl: e.target.value }))} /></div>
             <div className="flex items-center gap-4">
