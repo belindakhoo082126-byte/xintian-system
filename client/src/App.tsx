@@ -19,6 +19,7 @@ import Suppliers from "@/pages/Suppliers";
 import PurchaseOrders from "@/pages/PurchaseOrders";
 import ProfitReport from "@/pages/ProfitReport";
 import FacebookSettings from "@/pages/FacebookSettings";
+import FacebookLive from "@/pages/FacebookLive";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -47,6 +48,7 @@ function DashboardRoutes() {
       <Route path={"/purchase-orders"} component={PurchaseOrders} />
       <Route path={"/profit-report"} component={ProfitReport} />
       <Route path={"/facebook-settings"} component={FacebookSettings} />
+      <Route path={"/facebook-live"} component={FacebookLive} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

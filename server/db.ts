@@ -1,4 +1,4 @@
-import { eq, ne, and, or, desc, asc, sql, gte, lte, isNull, like } from "drizzle-orm";
+import { eq, ne, and, or, desc, asc, sql, gte, lte, isNull, like, not } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -13,6 +13,8 @@ import {
   couriers, orderPayments, orderNotifications, orderAuditLogs,
   // XLCS V1.0 Module 3: Customer Management imports
   customerAddresses, customerCreditLedger, customerRefunds, customerTimeline, customerAuditLogs,
+  // XLCS V1.0 Dashboard/Notes/Facebook Sales imports
+  salesSessions, facebookComments, orderNotes, actionItems, sessionProducts,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2692,4 +2694,578 @@ export async function updateCustomerWithAudit(
     operatorId,
     operatorName,
   });
+}
+
+// ============================================================================
+// XLCS V1.0: Dashboard Work Center - Statistics
+// ============================================================================
+
+export async function getWorkCenterStats() {
+  const db = await getDb();
+  if (!db) return null;
+
+  // Pending action items count
+  const pendingActions = await db.select({ count: sql`COUNT(*)` })
+    .from(actionItems)
+    .where(eq(actionItems.status, "pending"));
+  const pendingActionCount = Number(pendingActions[0]?.count || 0);
+
+  // Pending payment orders (paidAmount = 0 and not cancelled)
+  const pendingPaymentOrders = await db.select({
+    count: sql`COUNT(DISTINCT customerId)`,
+    totalAmount: sql`COALESCE(SUM(totalAmount), 0)`,
+  })
+    .from(orders)
+    .where(and(
+      sql`paidAmount = 0`,
+      not(eq(orders.physicalStatus, "cancelled"))
+    ));
+  const pendingPaymentCount = Number(pendingPaymentOrders[0]?.count || 0);
+  const pendingPaymentAmount = Number(pendingPaymentOrders[0]?.totalAmount || 0);
+
+  // Paid orders (paidAmount >= totalAmount and not cancelled)
+  const paidOrders = await db.select({
+    count: sql`COUNT(*)`,
+    totalAmount: sql`COALESCE(SUM(totalAmount), 0)`,
+  })
+    .from(orders)
+    .where(and(
+      sql`paidAmount >= totalAmount`,
+      not(eq(orders.physicalStatus, "cancelled"))
+    ));
+  const paidCount = Number(paidOrders[0]?.count || 0);
+  const paidAmount = Number(paidOrders[0]?.totalAmount || 0);
+
+  // Today's orders
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayOrders = await db.select({
+    customerCount: sql`COUNT(DISTINCT customerId)`,
+    totalAmount: sql`COALESCE(SUM(totalAmount), 0)`,
+    itemCount: sql`COALESCE(SUM((SELECT COUNT(*) FROM order_items WHERE order_items.orderId = orders.id)), 0)`,
+  })
+    .from(orders)
+    .where(sql`createdAt >= ${todayStart}`);
+  const todayCustomerCount = Number(todayOrders[0]?.customerCount || 0);
+  const todayTotalAmount = Number(todayOrders[0]?.totalAmount || 0);
+  const todayItemCount = Number(todayOrders[0]?.itemCount || 0);
+
+  // Today's live sessions
+  const todaySessions = await db.select({
+    count: sql`COUNT(*)`,
+  })
+    .from(salesSessions)
+    .where(and(
+      eq(salesSessions.sessionType, "facebook_live"),
+      sql`DATE(started_at) = CURDATE()`
+    ));
+  const todayLiveCount = Number(todaySessions[0]?.count || 0);
+
+  return {
+    pendingActionCount,
+    pendingPaymentCount,
+    pendingPaymentAmount,
+    paidCount,
+    paidAmount,
+    todayCustomerCount,
+    todayTotalAmount,
+    todayItemCount,
+    todayLiveCount,
+  };
+}
+
+export async function getRecentActionItems(limit: number = 5) {
+  const db = await getDb();
+  if (!db) return [];
+  const result = await db.select({
+    id: actionItems.id,
+    orderId: actionItems.orderId,
+    customerId: actionItems.customerId,
+    source: actionItems.source,
+    content: actionItems.content,
+    status: actionItems.status,
+    createdAt: actionItems.createdAt,
+    createdByName: actionItems.createdByName,
+  })
+    .from(actionItems)
+    .where(eq(actionItems.status, "pending"))
+    .orderBy(desc(actionItems.createdAt))
+    .limit(limit);
+  return result;
+}
+
+export async function getAllActionItems(filters: {
+  source?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (filters.source && filters.source !== "all") {
+    conditions.push(eq(actionItems.source, filters.source as any));
+  }
+  if (filters.status && filters.status !== "all") {
+    conditions.push(eq(actionItems.status, filters.status as any));
+  }
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const query = db.select({
+    id: actionItems.id,
+    orderId: actionItems.orderId,
+    customerId: actionItems.customerId,
+    source: actionItems.source,
+    content: actionItems.content,
+    status: actionItems.status,
+    createdAt: actionItems.createdAt,
+    createdByName: actionItems.createdByName,
+    completedByName: actionItems.completedByName,
+    completedAt: actionItems.completedAt,
+  })
+    .from(actionItems)
+    .orderBy(desc(actionItems.createdAt))
+    .limit(filters.limit || 50)
+    .offset(filters.offset || 0);
+  if (where) query.where(where);
+  return await query;
+}
+
+export async function completeActionItem(id: number, completedBy: number, completedByName: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(actionItems)
+    .set({
+      status: "completed",
+      completedBy,
+      completedByName,
+      completedAt: new Date(),
+    })
+    .where(eq(actionItems.id, id));
+}
+
+export async function createActionItem(data: {
+  orderId?: number;
+  customerId?: number;
+  noteId?: number;
+  sessionId?: number;
+  source: string;
+  content: string;
+  createdBy?: number;
+  createdByName?: string;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(actionItems).values({
+    orderId: data.orderId,
+    customerId: data.customerId,
+    noteId: data.noteId,
+    sessionId: data.sessionId,
+    source: data.source as any,
+    content: data.content,
+    createdBy: data.createdBy,
+    createdByName: data.createdByName,
+  });
+  return { id: result[0].insertId };
+}
+
+// ============================================================================
+// XLCS V1.0: Order Notes
+// ============================================================================
+
+export async function getOrderNotes(orderId: number, includeInternal: boolean = true) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(orderNotes.orderId, orderId)];
+  if (!includeInternal) {
+    conditions.push(eq(orderNotes.visibility, "customer"));
+  }
+  return await db.select()
+    .from(orderNotes)
+    .where(and(...conditions))
+    .orderBy(desc(orderNotes.createdAt));
+}
+
+export async function addOrderNote(data: {
+  orderId: number;
+  customerId?: number;
+  noteType: string;
+  visibility: string;
+  content: string;
+  source?: string;
+  sourceReferenceId?: string;
+  needsAction?: boolean;
+  createdBy?: number;
+  createdByName?: string;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(orderNotes).values({
+    orderId: data.orderId,
+    customerId: data.customerId,
+    noteType: data.noteType as any,
+    visibility: data.visibility as any,
+    content: data.content,
+    source: (data.source || "admin") as any,
+    sourceReferenceId: data.sourceReferenceId,
+    needsAction: data.needsAction || false,
+    createdBy: data.createdBy,
+    createdByName: data.createdByName,
+  });
+  const noteId = result[0].insertId;
+
+  // If needsAction, create an action item
+  if (data.needsAction) {
+    await createActionItem({
+      orderId: data.orderId,
+      customerId: data.customerId,
+      noteId,
+      source: data.source || "admin",
+      content: data.content,
+      createdBy: data.createdBy,
+      createdByName: data.createdByName,
+    });
+  }
+
+  return { id: noteId };
+}
+
+export async function deleteOrderNote(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(orderNotes).where(eq(orderNotes.id, id));
+}
+
+// ============================================================================
+// XLCS V1.0: Sales Sessions
+// ============================================================================
+
+export async function listSalesSessions(filters: {
+  status?: string;
+  sessionType?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (filters.status) conditions.push(eq(salesSessions.status, filters.status as any));
+  if (filters.sessionType) conditions.push(eq(salesSessions.sessionType, filters.sessionType as any));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const query = db.select().from(salesSessions)
+    .orderBy(desc(salesSessions.createdAt))
+    .limit(filters.limit || 50)
+    .offset(filters.offset || 0);
+  if (where) query.where(where);
+  return await query;
+}
+
+export async function getSalesSessionById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(salesSessions).where(eq(salesSessions.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createSalesSession(data: {
+  sessionCode: string;
+  sessionType: string;
+  facebookPageId?: string;
+  facebookPostId?: string;
+  facebookLiveVideoId?: string;
+  title: string;
+  createdBy?: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(salesSessions).values({
+    sessionCode: data.sessionCode,
+    sessionType: data.sessionType as any,
+    facebookPageId: data.facebookPageId,
+    facebookPostId: data.facebookPostId,
+    facebookLiveVideoId: data.facebookLiveVideoId,
+    title: data.title,
+    createdBy: data.createdBy,
+  });
+  return { id: result[0].insertId };
+}
+
+export async function updateSalesSessionStatus(id: number, status: string) {
+  const db = await getDb();
+  if (!db) return;
+  const updates: any = { status: status as any };
+  if (status === "comments_only") updates.commentSyncEnabled = true;
+  if (status === "order_capture_active") {
+    updates.commentSyncEnabled = true;
+    updates.orderCaptureEnabled = true;
+    updates.startedAt = new Date();
+  }
+  if (status === "ended") {
+    updates.endedAt = new Date();
+    updates.commentSyncEnabled = false;
+    updates.orderCaptureEnabled = false;
+  }
+  await db.update(salesSessions).set(updates).where(eq(salesSessions.id, id));
+}
+
+// ============================================================================
+// XLCS V1.0: Session Products
+// ============================================================================
+
+export async function getSessionProducts(sessionId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(sessionProducts)
+    .where(eq(sessionProducts.sessionId, sessionId))
+    .orderBy(desc(sessionProducts.createdAt));
+}
+
+export async function addSessionProduct(data: {
+  sessionId: number;
+  productId: number;
+  variantId?: number;
+  keyword: string;
+  sellingPrice?: string;
+  physicalStockAtStart?: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(sessionProducts).values({
+    sessionId: data.sessionId,
+    productId: data.productId,
+    variantId: data.variantId,
+    keyword: data.keyword,
+    sellingPrice: data.sellingPrice,
+    physicalStockAtStart: data.physicalStockAtStart || 0,
+  });
+  return { id: result[0].insertId };
+}
+
+export async function updateSessionProduct(id: number, updates: {
+  preorderEnabled?: boolean;
+  preorderLimit?: number | null;
+  sellingStatus?: string;
+  sellingPrice?: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(sessionProducts).set(updates as any).where(eq(sessionProducts.id, id));
+}
+
+export async function incrementSessionProductSold(id: number, quantity: number, isPreorder: boolean) {
+  const db = await getDb();
+  if (!db) return;
+  if (isPreorder) {
+    await db.update(sessionProducts)
+      .set({ preorderSoldQuantity: sql`preorder_sold_quantity + ${quantity}` })
+      .where(eq(sessionProducts.id, id));
+  } else {
+    await db.update(sessionProducts)
+      .set({ physicalSoldQuantity: sql`physical_sold_quantity + ${quantity}` })
+      .where(eq(sessionProducts.id, id));
+  }
+}
+
+// ============================================================================
+// XLCS V1.0: Facebook Comments Processing
+// ============================================================================
+
+export async function findCommentByFacebookId(facebookCommentId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(facebookComments)
+    .where(eq(facebookComments.facebookCommentId, facebookCommentId))
+    .limit(1);
+  return result[0];
+}
+
+export async function createFacebookComment(data: {
+  facebookCommentId: string;
+  facebookPostId: string;
+  sessionId?: number;
+  facebookUserId: string;
+  customerId?: number;
+  messageOriginal: string;
+  messageNormalized?: string;
+  commentCreatedAt?: Date;
+  keywordDetected?: string;
+  quantityDetected?: number;
+  processingStatus?: string;
+  failureReason?: string;
+  orderId?: number;
+  orderItemId?: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(facebookComments).values({
+    facebookCommentId: data.facebookCommentId,
+    facebookPostId: data.facebookPostId,
+    sessionId: data.sessionId,
+    facebookUserId: data.facebookUserId,
+    customerId: data.customerId,
+    messageOriginal: data.messageOriginal,
+    messageNormalized: data.messageNormalized,
+    commentCreatedAt: data.commentCreatedAt,
+    keywordDetected: data.keywordDetected,
+    quantityDetected: data.quantityDetected,
+    processingStatus: (data.processingStatus || "pending") as any,
+    failureReason: data.failureReason,
+    orderId: data.orderId,
+    orderItemId: data.orderItemId,
+    processedAt: new Date(),
+  });
+  return { id: result[0].insertId };
+}
+
+export async function updateFacebookCommentStatus(
+  facebookCommentId: string,
+  status: string,
+  failureReason?: string,
+  orderId?: number,
+  orderItemId?: number
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(facebookComments)
+    .set({
+      processingStatus: status as any,
+      failureReason,
+      orderId,
+      orderItemId,
+      processedAt: new Date(),
+    })
+    .where(eq(facebookComments.facebookCommentId, facebookCommentId));
+}
+
+export async function listSessionComments(sessionId: number, limit: number = 100, offset: number = 0) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(facebookComments)
+    .where(eq(facebookComments.sessionId, sessionId))
+    .orderBy(desc(facebookComments.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+// ============================================================================
+// XLCS V1.0: Keyword Matching Engine
+// ============================================================================
+
+/**
+ * Normalize a comment message: trim, uppercase, remove spaces around +.
+ * Only matches "KEYWORD+QUANTITY" format.
+ * Returns null if no valid keyword+quantity pattern found.
+ */
+export function normalizeCommentMessage(message: string): { keyword: string; quantity: number } | null {
+  if (!message) return null;
+  // Trim and collapse whitespace
+  const trimmed = message.trim().replace(/\s+/g, " ");
+  // Match pattern: keyword + quantity (allow spaces around +)
+  // Keyword: alphanumeric (letters + numbers), case insensitive
+  // Quantity: digits only
+  const match = trimmed.match(/^([a-zA-Z0-9]+)\s*\+\s*(\d+)$/);
+  if (!match) return null;
+  const keyword = match[1].toUpperCase();
+  const quantity = parseInt(match[2], 10);
+  if (quantity < 1 || quantity > 999) return null;
+  return { keyword, quantity };
+}
+
+/**
+ * Find a session product by exact keyword match.
+ * Uses precise matching - "MP1" only matches "MP1", not "MP".
+ */
+export async function findSessionProductByKeyword(sessionId: number, keyword: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(sessionProducts)
+    .where(and(
+      eq(sessionProducts.sessionId, sessionId),
+      eq(sessionProducts.keyword, keyword),
+      eq(sessionProducts.sellingStatus, "available")
+    ))
+    .limit(1);
+  return result[0];
+}
+
+/**
+ * Check if a session product can accept an order (stock + preorder check).
+ */
+export function checkProductAvailability(sp: any): { canOrder: boolean; isPreorder: boolean; reason?: string } {
+  const physicalRemaining = sp.physicalStockAtStart - sp.physicalSoldQuantity;
+  const preorderRemaining = sp.preorderEnabled
+    ? (sp.preorderLimit === null ? Infinity : sp.preorderLimit - sp.preorderSoldQuantity)
+    : 0;
+  const totalRemaining = physicalRemaining + preorderRemaining;
+
+  if (totalRemaining <= 0) {
+    return { canOrder: false, isPreorder: false, reason: "out_of_stock" };
+  }
+
+  // If physical available, it's a regular order
+  if (physicalRemaining > 0) {
+    return { canOrder: true, isPreorder: false };
+  }
+
+  // Physical sold out but preorder available
+  if (sp.preorderEnabled && preorderRemaining > 0) {
+    return { canOrder: true, isPreorder: true };
+  }
+
+  return { canOrder: false, isPreorder: false, reason: "preorder_full" };
+}
+
+// ============================================================================
+// XLCS V1.0: Live Session Statistics
+// ============================================================================
+
+export async function getSessionStats(sessionId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const sessionComments = await db.select({
+    total: sql`COUNT(*)`,
+    matched: sql`SUM(CASE WHEN processing_status = 'matched' THEN 1 ELSE 0 END)`,
+    failed: sql`SUM(CASE WHEN processing_status = 'failed' THEN 1 ELSE 0 END)`,
+    blacklisted: sql`SUM(CASE WHEN processing_status = 'blacklisted' THEN 1 ELSE 0 END)`,
+    duplicate: sql`SUM(CASE WHEN processing_status = 'duplicate' THEN 1 ELSE 0 END)`,
+  })
+    .from(facebookComments)
+    .where(eq(facebookComments.sessionId, sessionId));
+
+  // Get order stats for this session
+  const sessionOrders = await db.select({
+    customerCount: sql`COUNT(DISTINCT customerId)`,
+    itemCount: sql`COALESCE(SUM((SELECT SUM(quantity) FROM order_items WHERE order_items.orderId = orders.id AND order_items.sessionId = ${sessionId}), 0)`,
+    totalAmount: sql`COALESCE(SUM(totalAmount), 0)`,
+    pending: sql`SUM(CASE WHEN paymentStatus = 'pending' THEN 1 ELSE 0 END)`,
+    paid: sql`SUM(CASE WHEN paymentStatus = 'paid' THEN 1 ELSE 0 END)`,
+    partial: sql`SUM(CASE WHEN paymentStatus = 'partial' THEN 1 ELSE 0 END)`,
+    cancelled: sql`SUM(CASE WHEN physicalStatus = 'cancelled' THEN 1 ELSE 0 END)`,
+  })
+    .from(orders)
+    .where(sql`id IN (SELECT order_id FROM facebook_comments WHERE session_id = ${sessionId} AND order_id IS NOT NULL)`);
+
+  const pendingActions = await db.select({ count: sql`COUNT(*)` })
+    .from(actionItems)
+    .where(and(eq(actionItems.sessionId, sessionId), eq(actionItems.status, "pending")));
+
+  return {
+    commentStats: {
+      total: Number(sessionComments[0]?.total || 0),
+      matched: Number(sessionComments[0]?.matched || 0),
+      failed: Number(sessionComments[0]?.failed || 0),
+      blacklisted: Number(sessionComments[0]?.blacklisted || 0),
+      duplicate: Number(sessionComments[0]?.duplicate || 0),
+    },
+    orderStats: {
+      customerCount: Number(sessionOrders[0]?.customerCount || 0),
+      itemCount: Number(sessionOrders[0]?.itemCount || 0),
+      totalAmount: Number(sessionOrders[0]?.totalAmount || 0),
+      pending: Number(sessionOrders[0]?.pending || 0),
+      paid: Number(sessionOrders[0]?.paid || 0),
+      partial: Number(sessionOrders[0]?.partial || 0),
+      cancelled: Number(sessionOrders[0]?.cancelled || 0),
+    },
+    pendingActionCount: Number(pendingActions[0]?.count || 0),
+  };
 }

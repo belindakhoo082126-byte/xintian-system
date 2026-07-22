@@ -1840,7 +1840,220 @@ export const appRouter = router({
   }),
 
   // ===========================================================================
-  // Dashboard
+  // XLCS V1.0: Dashboard Work Center
+  // ===========================================================================
+  workCenter: router({
+    stats: protectedProcedure.query(async () => {
+      return await db.getWorkCenterStats();
+    }),
+    recentActions: protectedProcedure.query(async () => {
+      return await db.getRecentActionItems(5);
+    }),
+    allActions: protectedProcedure
+      .input(z.object({
+        source: z.string().optional(),
+        status: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await db.getAllActionItems(input);
+      }),
+    completeAction: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.completeActionItem(
+          input.id,
+          ctx.user?.id || 0,
+          ctx.user?.name || "Unknown"
+        );
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Order Notes
+  // ===========================================================================
+  orderNotes: router({
+    list: protectedProcedure
+      .input(z.object({
+        orderId: z.number(),
+        includeInternal: z.boolean().default(true),
+      }))
+      .query(async ({ input }) => {
+        return await db.getOrderNotes(input.orderId, input.includeInternal);
+      }),
+    add: protectedProcedure
+      .input(z.object({
+        orderId: z.number(),
+        customerId: z.number().optional(),
+        noteType: z.enum(["customer_note", "internal_note", "checkout_note"]),
+        visibility: z.enum(["customer", "internal"]),
+        content: z.string().min(1),
+        source: z.string().optional(),
+        sourceReferenceId: z.string().optional(),
+        needsAction: z.boolean().default(false),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.addOrderNote({
+          ...input,
+          createdBy: ctx.user?.id,
+          createdByName: ctx.user?.name || "Unknown",
+        });
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteOrderNote(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Action Items
+  // ===========================================================================
+  actionItems: router({
+    list: protectedProcedure
+      .input(z.object({
+        source: z.string().optional(),
+        status: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await db.getAllActionItems(input);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        orderId: z.number().optional(),
+        customerId: z.number().optional(),
+        sessionId: z.number().optional(),
+        source: z.string(),
+        content: z.string().min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.createActionItem({
+          ...input,
+          createdBy: ctx.user?.id,
+          createdByName: ctx.user?.name || "Unknown",
+        });
+      }),
+    complete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.completeActionItem(
+          input.id,
+          ctx.user?.id || 0,
+          ctx.user?.name || "Unknown"
+        );
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Sales Sessions (Facebook Live/Post/Reel)
+  // ===========================================================================
+  salesSessions: router({
+    list: protectedProcedure
+      .input(z.object({
+        status: z.string().optional(),
+        sessionType: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await db.listSalesSessions(input);
+      }),
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getSalesSessionById(input.id);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        sessionCode: z.string(),
+        sessionType: z.enum(["facebook_live", "facebook_post", "facebook_reel"]),
+        facebookPageId: z.string().optional(),
+        facebookPostId: z.string().optional(),
+        facebookLiveVideoId: z.string().optional(),
+        title: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.createSalesSession({
+          ...input,
+          createdBy: ctx.user?.id,
+        });
+      }),
+    updateStatus: protectedProcedure
+      .input(z.object({ id: z.number(), status: z.string() }))
+      .mutation(async ({ input }) => {
+        await db.updateSalesSessionStatus(input.id, input.status);
+        return { success: true };
+      }),
+    stats: protectedProcedure
+      .input(z.object({ sessionId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getSessionStats(input.sessionId);
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Session Products
+  // ===========================================================================
+  sessionProducts: router({
+    list: protectedProcedure
+      .input(z.object({ sessionId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getSessionProducts(input.sessionId);
+      }),
+    add: protectedProcedure
+      .input(z.object({
+        sessionId: z.number(),
+        productId: z.number(),
+        variantId: z.number().optional(),
+        keyword: z.string(),
+        sellingPrice: z.string().optional(),
+        physicalStockAtStart: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.addSessionProduct(input);
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        preorderEnabled: z.boolean().optional(),
+        preorderLimit: z.number().nullable().optional(),
+        sellingStatus: z.string().optional(),
+        sellingPrice: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...updates } = input;
+        await db.updateSessionProduct(id, updates);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Facebook Comments
+  // ===========================================================================
+  facebookComments: router({
+    list: protectedProcedure
+      .input(z.object({
+        sessionId: z.number(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await db.listSessionComments(
+          input.sessionId,
+          input.limit || 100,
+          input.offset || 0
+        );
+      }),
+  }),
+
+  // ===========================================================================
+  // Dashboard (legacy - keep for backward compat)
   // ===========================================================================
   dashboard: router({
     stats: protectedProcedure.query(async () => {

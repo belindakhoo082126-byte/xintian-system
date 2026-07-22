@@ -43,6 +43,13 @@
       "when": 1784711568025,
       "tag": "0005_sparkling_eternity",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1784713755690,
+      "tag": "0006_ancient_naoko",
+      "breakpoints": true
     }
   ]
 }

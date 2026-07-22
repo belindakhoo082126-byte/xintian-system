@@ -836,3 +836,129 @@ export const customerAuditLogs = mysqlTable("customer_audit_logs", {
 
 export type CustomerAuditLog = typeof customerAuditLogs.$inferSelect;
 export type InsertCustomerAuditLog = typeof customerAuditLogs.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: Sales Sessions (Facebook 直播/贴文/Reel 销售场次)
+// ============================================================================
+
+export const salesSessions = mysqlTable("sales_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  sessionCode: varchar("session_code", { length: 50 }).notNull().unique(),
+  sessionType: mysqlEnum("session_type", ["facebook_live", "facebook_post", "facebook_reel"]).notNull(),
+  facebookPageId: varchar("facebook_page_id", { length: 100 }),
+  facebookPostId: varchar("facebook_post_id", { length: 200 }),
+  facebookLiveVideoId: varchar("facebook_live_video_id", { length: 200 }),
+  title: varchar("title", { length: 255 }).notNull(),
+  status: mysqlEnum("status", ["not_listening", "comments_only", "order_capture_active", "paused", "ended"]).default("not_listening").notNull(),
+  commentSyncEnabled: boolean("comment_sync_enabled").default(false).notNull(),
+  orderCaptureEnabled: boolean("order_capture_enabled").default(false).notNull(),
+  autoDetectEnabled: boolean("auto_detect_enabled").default(true).notNull(),
+  autoSyncComments: boolean("auto_sync_comments").default(true).notNull(),
+  startedAt: timestamp("started_at"),
+  endedAt: timestamp("ended_at"),
+  createdBy: int("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SalesSession = typeof salesSessions.$inferSelect;
+export type InsertSalesSession = typeof salesSessions.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: Facebook Comments (留言同步 + 关键词捉单记录)
+// ============================================================================
+
+export const facebookComments = mysqlTable("facebook_comments", {
+  id: int("id").autoincrement().primaryKey(),
+  facebookCommentId: varchar("facebook_comment_id", { length: 200 }).notNull().unique(),
+  facebookPostId: varchar("facebook_post_id", { length: 200 }).notNull(),
+  sessionId: int("session_id"),
+  facebookUserId: varchar("facebook_user_id", { length: 200 }).notNull(),
+  customerId: int("customer_id"),
+  messageOriginal: text("message_original").notNull(),
+  messageNormalized: text("message_normalized"),
+  commentCreatedAt: timestamp("comment_created_at"),
+  keywordDetected: varchar("keyword_detected", { length: 100 }),
+  quantityDetected: int("quantity_detected"),
+  processingStatus: mysqlEnum("processing_status", ["pending", "matched", "no_match", "failed", "duplicate", "blacklisted", "out_of_stock", "preorder_full"]).default("pending").notNull(),
+  failureReason: text("failure_reason"),
+  orderId: int("order_id"),
+  orderItemId: int("order_item_id"),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type FacebookComment = typeof facebookComments.$inferSelect;
+export type InsertFacebookComment = typeof facebookComments.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: Order Notes (订单备注 - 3 种类型)
+// ============================================================================
+
+export const orderNotes = mysqlTable("order_notes", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("order_id").notNull(),
+  customerId: int("customer_id"),
+  noteType: mysqlEnum("note_type", ["customer_note", "internal_note", "checkout_note"]).notNull(),
+  visibility: mysqlEnum("visibility", ["customer", "internal"]).default("internal").notNull(),
+  content: text("content").notNull(),
+  source: mysqlEnum("source", ["facebook_live", "facebook_post", "facebook_reel", "messenger", "whatsapp", "store_checkout", "admin", "customer_service"]).default("admin").notNull(),
+  sourceReferenceId: varchar("source_reference_id", { length: 200 }),
+  needsAction: boolean("needs_action").default(false).notNull(),
+  createdBy: int("created_by"),
+  createdByName: varchar("created_by_name", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OrderNote = typeof orderNotes.$inferSelect;
+export type InsertOrderNote = typeof orderNotes.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: Action Items (需要处理事项)
+// ============================================================================
+
+export const actionItems = mysqlTable("action_items", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("order_id"),
+  customerId: int("customer_id"),
+  noteId: int("note_id"),
+  sessionId: int("session_id"),
+  facebookCommentId: varchar("facebook_comment_id", { length: 200 }),
+  source: mysqlEnum("source", ["facebook_live", "facebook_post", "facebook_reel", "messenger", "whatsapp", "store_checkout", "admin", "customer_service"]).default("admin").notNull(),
+  content: text("content").notNull(),
+  status: mysqlEnum("status", ["pending", "completed"]).default("pending").notNull(),
+  createdBy: int("created_by"),
+  createdByName: varchar("created_by_name", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedBy: int("completed_by"),
+  completedByName: varchar("completed_by_name", { length: 255 }),
+  completedAt: timestamp("completed_at"),
+});
+
+export type ActionItem = typeof actionItems.$inferSelect;
+export type InsertActionItem = typeof actionItems.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: Session Products (场次商品 + 预售管理)
+// ============================================================================
+
+export const sessionProducts = mysqlTable("session_products", {
+  id: int("id").autoincrement().primaryKey(),
+  sessionId: int("session_id").notNull(),
+  productId: int("product_id").notNull(),
+  variantId: int("variant_id"),
+  keyword: varchar("keyword", { length: 100 }).notNull(),
+  sellingPrice: decimal("selling_price", { precision: 10, scale: 2 }),
+  physicalStockAtStart: int("physical_stock_at_start").default(0).notNull(),
+  physicalSoldQuantity: int("physical_sold_quantity").default(0).notNull(),
+  preorderEnabled: boolean("preorder_enabled").default(false).notNull(),
+  preorderLimit: int("preorder_limit"),
+  preorderSoldQuantity: int("preorder_sold_quantity").default(0).notNull(),
+  sellingStatus: mysqlEnum("selling_status", ["available", "stopped"]).default("available").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SessionProduct = typeof sessionProducts.$inferSelect;
+export type InsertSessionProduct = typeof sessionProducts.$inferInsert;

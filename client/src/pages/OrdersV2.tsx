@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import {
   Search, Eye, Truck, Plus, Copy, CheckCircle, XCircle, Clock,
   Package, AlertTriangle, Banknote, Bell, FileText, ChevronLeft, ChevronRight,
+  StickyNote, ListChecks, Trash2,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -71,6 +72,42 @@ export default function OrdersV2() {
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
+  const [addNoteOpen, setAddNoteOpen] = useState(false);
+  const [noteForm, setNoteForm] = useState({
+    noteType: "internal_note" as "customer_note" | "internal_note" | "checkout_note",
+    content: "",
+    needsAction: false,
+  });
+
+  // Order notes query
+  const { data: orderNotes, refetch: refetchNotes } = trpc.orderNotes.list.useQuery(
+    { orderId: detailOrderId!, includeInternal: true },
+    { enabled: detailOrderId !== null }
+  );
+
+  // Action items for this order
+  const { data: orderActionItems, refetch: refetchActions } = trpc.actionItems.list.useQuery(
+    { limit: 50, offset: 0 },
+    { enabled: detailOrderId !== null }
+  );
+
+  const addNoteMutation = trpc.orderNotes.add.useMutation({
+    onSuccess: () => {
+      refetchNotes();
+      refetchActions();
+      setAddNoteOpen(false);
+      setNoteForm({ noteType: "internal_note", content: "", needsAction: false });
+      toast.success("备注已添加");
+    },
+  });
+
+  const deleteNoteMutation = trpc.orderNotes.delete.useMutation({
+    onSuccess: () => { refetchNotes(); toast.success("备注已删除"); },
+  });
+
+  const completeActionMutation = trpc.actionItems.complete.useMutation({
+    onSuccess: () => { refetchActions(); toast.success("事项已完成"); },
+  });
   const [shipForm, setShipForm] = useState({ courierId: "", trackingNumber: "", shipmentDate: "" });
   const [shipDialogOpen, setShipDialogOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -628,6 +665,8 @@ export default function OrdersV2() {
               <Tabs defaultValue="payments">
                 <TabsList>
                   <TabsTrigger value="payments">付款纪录</TabsTrigger>
+                  <TabsTrigger value="notes">备注</TabsTrigger>
+                  <TabsTrigger value="actions">需要处理</TabsTrigger>
                   <TabsTrigger value="notifications">通知历史</TabsTrigger>
                   <TabsTrigger value="audit">审计日志</TabsTrigger>
                 </TabsList>
@@ -665,6 +704,90 @@ export default function OrdersV2() {
                     </Table>
                   ) : (
                     <p className="text-sm text-muted-foreground text-center py-4">暂无付款纪录</p>
+                  )}
+                </TabsContent>
+
+                {/* Notes Tab */}
+                <TabsContent value="notes" className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm font-medium">
+                      <StickyNote className="h-4 w-4 inline mr-1" />
+                      备注 ({orderNotes?.length || 0})
+                    </p>
+                    <Button size="sm" variant="outline" onClick={() => setAddNoteOpen(true)}>
+                      <Plus className="h-3 w-3 mr-1" />添加备注
+                    </Button>
+                  </div>
+                  {orderNotes && orderNotes.length > 0 ? (
+                    <div className="space-y-2">
+                      {orderNotes.map((note: any) => (
+                        <div key={note.id} className="flex items-start gap-3 p-3 border rounded-lg text-sm">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="secondary" className="text-xs">
+                                {note.noteType === "customer_note" ? "客户可见" :
+                                 note.noteType === "internal_note" ? "内部备注" : "Checkout 备注"}
+                              </Badge>
+                              {note.needsAction && (
+                                <Badge variant="destructive" className="text-xs">需要处理</Badge>
+                              )}
+                              <span className="text-xs text-muted-foreground">
+                                {note.createdByName || "系统"} · {new Date(note.createdAt).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="text-sm">{note.content}</p>
+                          </div>
+                          <Button size="icon" variant="ghost" className="h-6 w-6"
+                            onClick={() => deleteNoteMutation.mutate({ id: note.id })}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">暂无备注</p>
+                  )}
+                </TabsContent>
+
+                {/* Action Items Tab */}
+                <TabsContent value="actions" className="space-y-3">
+                  <p className="text-sm font-medium">
+                    <ListChecks className="h-4 w-4 inline mr-1" />
+                    需要处理事项
+                  </p>
+                  {orderActionItems && orderActionItems.filter((a: any) => a.orderId === detailOrder?.id).length > 0 ? (
+                    <div className="space-y-2">
+                      {orderActionItems
+                        .filter((a: any) => a.orderId === detailOrder?.id)
+                        .map((item: any) => (
+                          <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg text-sm">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge variant={item.status === "pending" ? "destructive" : "default"} className="text-xs">
+                                  {item.status === "pending" ? "待处理" : "已完成"}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {item.createdByName || "系统"} · {new Date(item.createdAt).toLocaleString()}
+                                </span>
+                              </div>
+                              <p className="text-sm">{item.content}</p>
+                              {item.status === "completed" && item.completedByName && (
+                                <p className="text-xs text-green-600 mt-1">
+                                  由 {item.completedByName} 于 {new Date(item.completedAt).toLocaleString()} 完成
+                                </p>
+                              )}
+                            </div>
+                            {item.status === "pending" && (
+                              <Button size="sm" variant="default"
+                                onClick={() => completeActionMutation.mutate({ id: item.id })}>
+                                <CheckCircle className="h-3 w-3 mr-1" />完成
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">暂无需要处理事项</p>
                   )}
                 </TabsContent>
 
@@ -1002,6 +1125,60 @@ export default function OrdersV2() {
             <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
             <Button onClick={handleCreateOrder} disabled={createOrderMutation.isPending || findCustomerMutation.isPending}>
               创建订单
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Note Dialog */}
+      <Dialog open={addNoteOpen} onOpenChange={setAddNoteOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>添加备注</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>备注类型</Label>
+              <Select value={noteForm.noteType} onValueChange={(v) => setNoteForm({ ...noteForm, noteType: v as any })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="internal_note">内部备注（仅后台可见）</SelectItem>
+                  <SelectItem value="customer_note">客户备注（客户可见）</SelectItem>
+                  <SelectItem value="checkout_note">Checkout 备注</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>内容</Label>
+              <Textarea value={noteForm.content}
+                onChange={(e) => setNoteForm({ ...noteForm, content: e.target.value })}
+                placeholder="输入备注内容..." rows={3} />
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="needsAction" checked={noteForm.needsAction}
+                onChange={(e) => setNoteForm({ ...noteForm, needsAction: e.target.checked })}
+                className="rounded" />
+              <Label htmlFor="needsAction" className="text-sm cursor-pointer">
+                标记为需要后续处理（将加入 Dashboard 需要处理清单）
+              </Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddNoteOpen(false)}>取消</Button>
+            <Button
+              onClick={() => {
+                if (!detailOrder || !noteForm.content.trim()) return;
+                addNoteMutation.mutate({
+                  orderId: detailOrder.id,
+                  customerId: detailOrder.customerId,
+                  noteType: noteForm.noteType,
+                  visibility: noteForm.noteType === "customer_note" ? "customer" : "internal",
+                  content: noteForm.content,
+                  needsAction: noteForm.needsAction,
+                });
+              }}
+              disabled={addNoteMutation.isPending || !noteForm.content.trim()}>
+              添加备注
             </Button>
           </DialogFooter>
         </DialogContent>

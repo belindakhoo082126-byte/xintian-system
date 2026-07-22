@@ -199,3 +199,47 @@
 - [x] Vitest 单元测试（23 个 Module 3 测试 + 76 个旧测试 = 99 个全部通过）
 - [x] TypeScript 编译零错误
 - [x] 保存检查点
+
+## XLCS V1.0: Dashboard 工作中心、订单备注与 Facebook 直播／贴文管理
+
+### Sprint 1: 数据库
+- [x] sales_sessions 表（直播/贴文/Reel 销售场次）
+- [x] facebook_comments 表（留言同步 + 关键词捉单记录）
+- [x] order_notes 表（3 种备注：客户可见/内部/Checkout）
+- [x] action_items 表（需要处理事项）
+- [x] session_products 表（场次商品 + 预售管理）
+- [x] 生成迁移 SQL 并执行
+
+### Sprint 2: 后端 API
+- [x] Dashboard 统计 API（workCenter router: stats/recentActions/allActions/completeAction）
+- [x] Order Notes CRUD API（orderNotes router: list/add/delete + needsAction 自动创建 ActionItem）
+- [x] Action Items CRUD API（actionItems router: list/create/complete + 完成人记录）
+- [x] Sales Sessions CRUD API（salesSessions router: list/getById/create/updateStatus/stats）
+- [x] Session Products API（sessionProducts router: list/add/update + 预售管理 + 停售/继续）
+- [x] Comment 处理 API（facebookComments router: list + normalizeCommentMessage + findSessionProductByKeyword + checkProductAvailability + 重复检测幂等）
+
+### Sprint 3: Dashboard 工作中心前端
+- [x] 5 大卡片（需要处理/待付款/已付款/今日订单/今日直播）
+- [x] 需要处理预览（最近 5 项 + 完成 + 进入订单）
+- [x] 快速完成（状态更新 + Dashboard 数量即时扣减）
+- [x] 需要处理清单页（完整列表 + 筛选器 + 来源标签）
+
+### Sprint 4: 订单备注系统前端
+- [x] OrdersV2 详情页整合 3 种备注（客户可见/内部/Checkout）
+- [x] 备注添加对话框（类型选择 + 需要后续处理勾选）
+- [x] Action Items Tab（未完成/已完成 + 完成操作）
+- [ ] 包货员视图过滤 — 后续版本
+
+### Sprint 5: Facebook Sales Management 前端
+- [x] Facebook 场次列表页（当前直播 + 最近贴文 + 监听状态 + 分页）
+- [x] 直播控制中心三栏布局（商品区/留言区/客户订单操作）
+- [x] 商品卡（关键词/库存/预售/停售按钮）
+- [x] 留言区（FB ID/匹配状态/关键词/数量/失败原因）
+- [ ] 客户快速订单卡（一键操作）— V1.1 版本
+- [x] 直播统计栏（下单客户/商品件数/金额/付款状态/需要处理/留言统计）
+- [ ] 手动链接备用入口 — V1.1 版本
+
+### Sprint 6: 测试与验收
+- [x] Vitest 单元测试（26 个新测试 + 99 个旧测试 = 125 个全部通过）
+- [x] TypeScript 编译零错误
+- [x] 保存检查点
