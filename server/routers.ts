@@ -2016,6 +2016,325 @@ export const appRouter = router({
   }),
 
   // ===========================================================================
+  // Mall Admin (商城管理 - Admin)
+  // ===========================================================================
+  mallAdmin: router({
+    // Settings
+    getSettings: adminProcedure.query(async () => {
+      return await db.getMallSettings() || await db.createMallSettingsIfNotExists();
+    }),
+    updateSettings: adminProcedure.input(z.object({
+      id: z.number(),
+      shopName: z.string().optional(),
+      domain: z.string().nullable().optional(),
+      logoUrl: z.string().nullable().optional(),
+      faviconUrl: z.string().nullable().optional(),
+      slogan: z.string().nullable().optional(),
+      seoTitle: z.string().nullable().optional(),
+      seoDescription: z.string().nullable().optional(),
+      facebookPixel: z.string().nullable().optional(),
+      googleAnalytics: z.string().nullable().optional(),
+      shippingPolicy: z.string().nullable().optional(),
+      refundPolicy: z.string().nullable().optional(),
+      serviceTerms: z.string().nullable().optional(),
+      companyName: z.string().nullable().optional(),
+      phone: z.string().nullable().optional(),
+      whatsapp: z.string().nullable().optional(),
+      email: z.string().nullable().optional(),
+      facebook: z.string().nullable().optional(),
+      address: z.string().nullable().optional(),
+      wazeLink: z.string().nullable().optional(),
+      googleMapLink: z.string().nullable().optional(),
+      activeTheme: z.string().optional(),
+      customThemeColors: z.any().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      return await db.updateMallSettings(id, data);
+    }),
+
+    // Banners
+    listBanners: adminProcedure.input(z.object({ type: z.string().optional() })).query(async ({ input }) => {
+      return await db.getMallBanners(input.type);
+    }),
+    createBanner: adminProcedure.input(z.object({
+      type: z.enum(["home_16x9", "home_9x16", "home_1x1", "marketing_16x9", "marketing_1x1", "marketing_9x16"]),
+      imageUrl: z.string(),
+      linkUrl: z.string().optional(),
+      displayOrder: z.number().default(0),
+      startDate: z.number().optional(),
+      endDate: z.number().optional(),
+      isEnabled: z.boolean().default(true),
+    })).mutation(async ({ input }) => {
+      return await db.createMallBanner({
+        ...input,
+        startDate: input.startDate ? new Date(input.startDate) : null,
+        endDate: input.endDate ? new Date(input.endDate) : null,
+      });
+    }),
+    updateBanner: adminProcedure.input(z.object({
+      id: z.number(),
+      imageUrl: z.string().optional(),
+      linkUrl: z.string().nullable().optional(),
+      displayOrder: z.number().optional(),
+      startDate: z.number().nullable().optional(),
+      endDate: z.number().nullable().optional(),
+      isEnabled: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      const cleanData: any = { ...data };
+      if (data.startDate !== undefined) cleanData.startDate = data.startDate ? new Date(data.startDate) : null;
+      if (data.endDate !== undefined) cleanData.endDate = data.endDate ? new Date(data.endDate) : null;
+      await db.updateMallBanner(id, cleanData);
+      return { success: true };
+    }),
+    deleteBanner: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.deleteMallBanner(input.id);
+      return { success: true };
+    }),
+
+    // Quick Contacts
+    listQuickContacts: adminProcedure.query(async () => {
+      return await db.getMallQuickContacts();
+    }),
+    createQuickContact: adminProcedure.input(z.object({
+      type: z.enum(["whatsapp", "messenger", "facebook_page", "waze", "google_map"]),
+      name: z.string(),
+      imageUrl: z.string().optional(),
+      linkUrl: z.string(),
+      isEnabled: z.boolean().default(true),
+      displayOrder: z.number().default(0),
+    })).mutation(async ({ input }) => {
+      return await db.createMallQuickContact(input);
+    }),
+    updateQuickContact: adminProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      imageUrl: z.string().nullable().optional(),
+      linkUrl: z.string().optional(),
+      isEnabled: z.boolean().optional(),
+      displayOrder: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateMallQuickContact(id, data);
+      return { success: true };
+    }),
+    deleteQuickContact: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.deleteMallQuickContact(input.id);
+      return { success: true };
+    }),
+
+    // Notices
+    listNotices: adminProcedure.query(async () => {
+      return await db.getMallNotices();
+    }),
+    createNotice: adminProcedure.input(z.object({
+      announcement: z.string(),
+      isEnabled: z.boolean().default(true),
+      displayOrder: z.number().default(0),
+    })).mutation(async ({ input }) => {
+      return await db.createMallNotice(input);
+    }),
+    updateNotice: adminProcedure.input(z.object({
+      id: z.number(),
+      announcement: z.string().optional(),
+      isEnabled: z.boolean().optional(),
+      displayOrder: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateMallNotice(id, data);
+      return { success: true };
+    }),
+    deleteNotice: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.deleteMallNotice(input.id);
+      return { success: true };
+    }),
+
+    // Theme Schedules
+    listThemeSchedules: adminProcedure.query(async () => {
+      return await db.getMallThemeSchedules();
+    }),
+    createThemeSchedule: adminProcedure.input(z.object({
+      themeKey: z.string(),
+      startDate: z.number(),
+      endDate: z.number(),
+      isEnabled: z.boolean().default(true),
+    })).mutation(async ({ input }) => {
+      return await db.createMallThemeSchedule({
+        ...input,
+        startDate: new Date(input.startDate),
+        endDate: new Date(input.endDate),
+      });
+    }),
+    deleteThemeSchedule: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.deleteMallThemeSchedule(input.id);
+      return { success: true };
+    }),
+
+    // Product Detail Images
+    listDetailImages: adminProcedure.input(z.object({ productId: z.number() })).query(async ({ input }) => {
+      return await db.getMallProductDetailImages(input.productId);
+    }),
+    createDetailImage: adminProcedure.input(z.object({
+      productId: z.number(),
+      imageUrl: z.string(),
+      displayOrder: z.number().default(0),
+    })).mutation(async ({ input }) => {
+      return await db.createMallProductDetailImage(input);
+    }),
+    deleteDetailImage: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.deleteMallProductDetailImage(input.id);
+      return { success: true };
+    }),
+
+    // Product Mall Sync
+    updateProductSync: adminProcedure.input(z.object({
+      productId: z.number(),
+      syncToMall: z.boolean(),
+    })).mutation(async ({ input }) => {
+      await db.updateProductMallSync(input.productId, input.syncToMall);
+      return { success: true };
+    }),
+  }),
+
+  // ===========================================================================
+  // Mall Public (商城公开接口)
+  // ===========================================================================
+  mall: router({
+    // Get mall settings (public)
+    settings: publicProcedure.query(async () => {
+      const settings = await db.getMallSettings() || await db.createMallSettingsIfNotExists();
+      // Don't expose analytics/pixel IDs to public
+      const { facebookPixel, googleAnalytics, ...publicSettings } = settings as any;
+      return publicSettings;
+    }),
+
+    // Get enabled banners (public)
+    banners: publicProcedure.input(z.object({ type: z.string().optional() })).query(async ({ input }) => {
+      return await db.getEnabledMallBanners(input.type);
+    }),
+
+    // Get enabled quick contacts (public)
+    quickContacts: publicProcedure.query(async () => {
+      return await db.getEnabledMallQuickContacts();
+    }),
+
+    // Get enabled notices (public)
+    notices: publicProcedure.query(async () => {
+      return await db.getEnabledMallNotices();
+    }),
+
+    // Get mall categories (public)
+    categories: publicProcedure.query(async () => {
+      return await db.getMallCategories();
+    }),
+
+    // Get mall products (public)
+    products: publicProcedure.input(z.object({
+      categoryId: z.number().optional(),
+      search: z.string().optional(),
+    })).query(async ({ input }) => {
+      return await db.getMallProducts(input);
+    }),
+
+    // Get mall product detail (public)
+    productDetail: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const product = await db.getMallProductById(input.id);
+      if (!product) throw new Error("Product not found");
+      const [productVariants, productImgs, detailImgs] = await Promise.all([
+        db.getMallProductVariants(input.id),
+        db.getMallProductImages(input.id),
+        db.getMallProductDetailImages(input.id),
+      ]);
+      return {
+        ...product,
+        variants: productVariants,
+        images: productImgs,
+        detailImages: detailImgs,
+      };
+    }),
+
+    // Checkout (public - guest checkout)
+    checkout: publicProcedure.input(z.object({
+      customerName: z.string(),
+      contactNumber: z.string(),
+      whatsappNumber: z.string().optional(),
+      email: z.string().optional(),
+      addressLine1: z.string(),
+      addressLine2: z.string().optional(),
+      postcode: z.string(),
+      city: z.string(),
+      state: z.string(),
+      area: z.string(),
+      deliveryRemark: z.string().optional(),
+      shippingMethod: z.enum(["west_malaysia", "east_malaysia", "lalamove", "self_pickup"]),
+      items: z.array(z.object({
+        productId: z.number(),
+        productName: z.string(),
+        productSku: z.string().optional(),
+        variationId: z.number().optional(),
+        variationName: z.string().optional(),
+        facebookKeyword: z.string().optional(),
+        quantity: z.number().min(1),
+        unitPrice: z.string(),
+        subtotal: z.string(),
+        discount: z.string().optional(),
+      })),
+      paymentMethodId: z.number().optional(),
+      paymentMethodName: z.string().optional(),
+      mergeIntoOrderId: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      return await db.mallCheckout(input);
+    }),
+
+    // Smart Paste (public)
+    smartPaste: publicProcedure.input(z.object({ text: z.string() })).query(async ({ input }) => {
+      return db.parseSmartPaste(input.text);
+    }),
+
+    // Order query (public - guest)
+    queryOrder: publicProcedure.input(z.object({
+      orderNumber: z.string(),
+      contactNumber: z.string(),
+    })).query(async ({ input }) => {
+      const order = await db.queryOrderByNumber(input.orderNumber, input.contactNumber);
+      if (!order) return null;
+      const items = await db.getOrderItems(order.id);
+      // Don't expose internal fields
+      return {
+        orderNumber: order.orderNumber,
+        physicalStatus: order.physicalStatus,
+        totalAmount: order.totalAmount,
+        paidAmount: order.paidAmount,
+        shippingMethod: order.shippingMethod,
+        trackingNumber: order.trackingNumber,
+        createdAt: order.createdAt,
+        items: items.map((i: any) => ({
+          productName: i.productName,
+          variationName: i.variationName,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          subtotal: i.subtotal,
+        })),
+      };
+    }),
+
+    // Find mergeable hold orders by customer phone (public)
+    findMergeableOrders: publicProcedure.input(z.object({
+      contactNumber: z.string(),
+    })).query(async ({ input }) => {
+      // Find customer by phone
+      const dbConn = await db.getDb();
+      if (!dbConn) return [];
+      const { customers: custTable, holdOrderInfos: holdTable, orders: ordTable } = await import("../drizzle/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const customerResult = await dbConn.select().from(custTable).where(eq(custTable.phoneNumber, input.contactNumber)).limit(1);
+      if (customerResult.length === 0) return [];
+      const customerId = customerResult[0].id;
+      return await db.getActiveHoldOrdersByCustomer(customerId);
+    }),
+  }),
+
+  // ===========================================================================
   // Dashboard
   // ===========================================================================
   dashboard: router({

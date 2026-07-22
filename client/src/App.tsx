@@ -28,6 +28,12 @@ import LogisticsIntegration from "@/pages/LogisticsIntegration";
 import PaymentSettings from "@/pages/PaymentSettings";
 import OrderDetail from "@/pages/OrderDetail";
 import CustomerPayment from "@/pages/CustomerPayment";
+import MallSettings from "@/pages/MallSettings";
+import MallHome from "@/pages/mall/MallHome";
+import MallProductDetail from "@/pages/mall/MallProductDetail";
+import MallCart from "@/pages/mall/MallCart";
+import MallCheckout from "@/pages/mall/MallCheckout";
+import MallOrderQuery from "@/pages/mall/MallOrderQuery";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -35,6 +41,12 @@ function PublicRoutes() {
     <Switch>
       <Route path={"/m/:token"} component={(params: any) => <MemberLinkPreview token={params.token} />} />
       <Route path={"/product/:id"} component={(params: any) => <ProductPreview productId={parseInt(params.id)} />} />
+      {/* Mall public routes */}
+      <Route path={"/mall"} component={MallHome} />
+      <Route path={"/mall/product/:id"} component={(params: any) => <MallProductDetail />} />
+      <Route path={"/mall/cart"} component={MallCart} />
+      <Route path={"/mall/checkout"} component={MallCheckout} />
+      <Route path={"/mall/order-query"} component={MallOrderQuery} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -63,6 +75,7 @@ function DashboardRoutes() {
       <Route path={"/shipping-rules"} component={ShippingRules} />
       <Route path={"/logistics"} component={LogisticsIntegration} />
       <Route path={"/payment-settings"} component={PaymentSettings} />
+      <Route path={"/mall-settings"} component={MallSettings} />
       <Route path={"/orders/:id"} component={(params: any) => <OrderDetail orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
       <Route path={"/pay/:id"} component={(params: any) => <CustomerPayment orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
       <Route path={"/404"} component={NotFound} />
@@ -81,6 +94,11 @@ function App() {
           <Switch>
             <Route path={"/m/:token"} nest component={(params: any) => <MemberLinkPreview token={params.token} />} />
             <Route path={"/product/:id"} nest component={(params: any) => <ProductPreview productId={parseInt(params.id)} />} />
+            <Route path={"/mall"} nest component={MallHome} />
+            <Route path={"/mall/product/:id"} nest component={MallProductDetail} />
+            <Route path={"/mall/cart"} nest component={MallCart} />
+            <Route path={"/mall/checkout"} nest component={MallCheckout} />
+            <Route path={"/mall/order-query"} nest component={MallOrderQuery} />
             <Route>
               <DashboardLayout>
                 <DashboardRoutes />

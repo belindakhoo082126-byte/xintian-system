@@ -144,6 +144,10 @@ export const products = mysqlTable("products", {
   seoTitle: varchar("seoTitle", { length: 200 }),
   seoDesc: text("seoDesc"),
 
+  // Mall sync (Phase: Mall module)
+  syncToMall: boolean("syncToMall").default(false).notNull(),
+  mallSortOrder: int("mallSortOrder").default(0).notNull(),
+
   // Internal notes
   notes: text("notes"),
 
@@ -864,3 +868,130 @@ export const notificationLogs = mysqlTable("notification_logs", {
 
 export type NotificationLog = typeof notificationLogs.$inferSelect;
 export type InsertNotificationLog = typeof notificationLogs.$inferInsert;
+
+// ============================================================================
+// Mall Module - Mall Settings (商城设置)
+// ============================================================================
+
+export const mallSettings = mysqlTable("mall_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  // Basic Information
+  shopName: varchar("shopName", { length: 200 }).notNull(),
+  domain: varchar("domain", { length: 255 }),
+  logoUrl: varchar("logoUrl", { length: 500 }),
+  faviconUrl: varchar("faviconUrl", { length: 500 }),
+  slogan: varchar("slogan", { length: 500 }),
+  seoTitle: varchar("seoTitle", { length: 200 }),
+  seoDescription: text("seoDescription"),
+  // Future reserved
+  facebookPixel: varchar("facebookPixel", { length: 100 }),
+  googleAnalytics: varchar("googleAnalytics", { length: 100 }),
+  // Policies
+  shippingPolicy: text("shippingPolicy"),
+  refundPolicy: text("refundPolicy"),
+  serviceTerms: text("serviceTerms"),
+  // Contact Information
+  companyName: varchar("companyName", { length: 200 }),
+  phone: varchar("phone", { length: 50 }),
+  whatsapp: varchar("whatsapp", { length: 50 }),
+  email: varchar("email", { length: 200 }),
+  facebook: varchar("facebook", { length: 500 }),
+  address: text("address"),
+  wazeLink: varchar("wazeLink", { length: 500 }),
+  googleMapLink: varchar("googleMapLink", { length: 500 }),
+  // Active theme
+  activeTheme: varchar("activeTheme", { length: 50 }).default("xintian_nature").notNull(),
+  // Custom theme colors (JSON: { primary, secondary, button, background, font })
+  customThemeColors: json("customThemeColors"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type MallSetting = typeof mallSettings.$inferSelect;
+export type InsertMallSetting = typeof mallSettings.$inferInsert;
+
+// ============================================================================
+// Mall Module - Banners (商城横幅)
+// ============================================================================
+
+export const mallBanners = mysqlTable("mall_banners", {
+  id: int("id").autoincrement().primaryKey(),
+  // Banner type: home_16x9, home_9x16, home_1x1, marketing_16x9, marketing_1x1, marketing_9x16
+  type: mysqlEnum("type", ["home_16x9", "home_9x16", "home_1x1", "marketing_16x9", "marketing_1x1", "marketing_9x16"]).notNull(),
+  imageUrl: varchar("imageUrl", { length: 500 }).notNull(),
+  linkUrl: varchar("linkUrl", { length: 500 }),
+  displayOrder: int("displayOrder").default(0).notNull(),
+  startDate: timestamp("startDate"),
+  endDate: timestamp("endDate"),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type MallBanner = typeof mallBanners.$inferSelect;
+export type InsertMallBanner = typeof mallBanners.$inferInsert;
+
+// ============================================================================
+// Mall Module - Quick Contact Buttons (快捷联系按钮)
+// ============================================================================
+
+export const mallQuickContacts = mysqlTable("mall_quick_contacts", {
+  id: int("id").autoincrement().primaryKey(),
+  // Button type: whatsapp, messenger, facebook_page, waze, google_map
+  type: mysqlEnum("type", ["whatsapp", "messenger", "facebook_page", "waze", "google_map"]).notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  imageUrl: varchar("imageUrl", { length: 500 }),
+  linkUrl: varchar("linkUrl", { length: 500 }).notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  displayOrder: int("displayOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type MallQuickContact = typeof mallQuickContacts.$inferSelect;
+export type InsertMallQuickContact = typeof mallQuickContacts.$inferInsert;
+
+// ============================================================================
+// Mall Module - Notices (首页公告)
+// ============================================================================
+
+export const mallNotices = mysqlTable("mall_notices", {
+  id: int("id").autoincrement().primaryKey(),
+  announcement: varchar("announcement", { length: 500 }).notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  displayOrder: int("displayOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type MallNotice = typeof mallNotices.$inferSelect;
+export type InsertMallNotice = typeof mallNotices.$inferInsert;
+
+// ============================================================================
+// Mall Module - Theme Scheduler (主题排程)
+// ============================================================================
+
+export const mallThemeSchedules = mysqlTable("mall_theme_schedules", {
+  id: int("id").autoincrement().primaryKey(),
+  themeKey: varchar("themeKey", { length: 50 }).notNull(),
+  startDate: timestamp("startDate").notNull(),
+  endDate: timestamp("endDate").notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type MallThemeSchedule = typeof mallThemeSchedules.$inferSelect;
+export type InsertMallThemeSchedule = typeof mallThemeSchedules.$inferInsert;
+
+// ============================================================================
+// Mall Module - Product Detail Images (商品详情图片)
+// ============================================================================
+
+export const mallProductDetailImages = mysqlTable("mall_product_detail_images", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  imageUrl: varchar("imageUrl", { length: 500 }).notNull(),
+  displayOrder: int("displayOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type MallProductDetailImage = typeof mallProductDetailImages.$inferSelect;
+export type InsertMallProductDetailImage = typeof mallProductDetailImages.$inferInsert;

@@ -223,3 +223,39 @@
 ### Sprint 6: Tests & Checkpoint
 - [x] TypeScript 编译零错误
 - [x] 保存检查点
+
+## Mall (商城) Module
+
+### Sprint 1: Database Schema
+- [x] mall_settings table (shop info, policies, contact, theme)
+- [x] mall_banners table (6 types: home/marketing x 16:9/9:16/1:1)
+- [x] mall_quick_contacts table (WhatsApp/Messenger/FB/Waze/Google Map)
+- [x] mall_notices table (homepage announcements)
+- [x] mall_theme_schedules table (seasonal theme scheduling)
+- [x] mall_product_detail_images table (product detail page images)
+- [x] products table: syncToMall + mallSortOrder fields
+- [x] Seed default settings, quick contacts, notices
+
+### Sprint 2: Backend
+- [x] 30+ db helpers (settings/banners/contacts/notices/themes/detail images/sync/checkout/order query/smart paste)
+- [x] mallAdmin router (settings CRUD, banners CRUD, contacts CRUD, notices CRUD, theme schedules, detail images, product sync)
+- [x] mall public router (settings, banners, contacts, notices, categories, products, productDetail, checkout, smartPaste, queryOrder, findMergeableOrders)
+
+### Sprint 3: Admin Frontend
+- [x] MallSettings page (6 tabs: basic/banners/notices/policies/contact/themes)
+- [x] 12 preset themes (Xintian Nature, Lavender, Sakura, Nature Green, Warm Brown, Christmas, CNY, Hari Raya, Merdeka, Mid-Autumn, Valentine, Custom)
+- [x] Theme scheduler UI
+
+### Sprint 4: Public Mall Frontend
+- [x] MallHome (banners, notices, category bar, product grid, search, quick contact floating buttons, footer)
+- [x] MallProductDetail (images, variants, quantity, add to cart, buy now, description, detail images)
+- [x] MallCart (quantity update, remove, subtotal, checkout link)
+- [x] MallCheckout (smart paste, customer info, shipping method, hold order merge, payment method, order summary)
+- [x] MallOrderQuery (order number + phone lookup, status display, items table)
+
+### Sprint 5: Integration
+- [x] DashboardLayout: Mall Settings menu item
+- [x] App.tsx: mall public routes + admin route
+- [x] TypeScript zero errors
+- [x] Vitest tests passing
+- [x] Checkpoint saved

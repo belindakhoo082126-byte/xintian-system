@@ -13,6 +13,8 @@ import {
   systemSettings, shippingRules, shippingProviders, shipments,
   // Payment & Order imports
   paymentMethods, orderStatusLogs, holdOrderInfos, notificationLogs,
+  // Mall imports
+  mallSettings, mallBanners, mallQuickContacts, mallNotices, mallThemeSchedules, mallProductDetailImages,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2676,4 +2678,501 @@ export async function recalculateOrderTotals(orderId: number) {
   }
   
   return (await db.select().from(orders).where(eq(orders.id, orderId)).limit(1))[0];
+}
+
+// ============================================================================
+// Mall Module - DB Helpers
+// ============================================================================
+
+// --- Mall Settings ---
+export async function getMallSettings() {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(mallSettings).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function updateMallSettings(id: number, data: Partial<typeof mallSettings.$inferInsert>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(mallSettings).set(data).where(eq(mallSettings.id, id));
+  return await getMallSettings();
+}
+
+export async function createMallSettingsIfNotExists() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getMallSettings();
+  if (existing) return existing;
+  await db.insert(mallSettings).values({
+    shopName: "心田 Xintian",
+    activeTheme: "xintian_nature",
+  });
+  return await getMallSettings();
+}
+
+// --- Mall Banners ---
+export async function getMallBanners(type?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select().from(mallBanners);
+  if (type) query = query.where(eq(mallBanners.type, type as any)) as any;
+  return await query.orderBy(asc(mallBanners.displayOrder));
+}
+
+export async function getEnabledMallBanners(type?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [eq(mallBanners.isEnabled, true)];
+  if (type) conditions.push(eq(mallBanners.type, type as any));
+  let query = db.select().from(mallBanners).where(and(...conditions));
+  const now = new Date();
+  const results = await query.orderBy(asc(mallBanners.displayOrder));
+  return results.filter(b => {
+    if (b.startDate && new Date(b.startDate) > now) return false;
+    if (b.endDate && new Date(b.endDate) < now) return false;
+    return true;
+  });
+}
+
+export async function createMallBanner(data: typeof mallBanners.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(mallBanners).values(data);
+  return result;
+}
+
+export async function updateMallBanner(id: number, data: Partial<typeof mallBanners.$inferInsert>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(mallBanners).set(data).where(eq(mallBanners.id, id));
+}
+
+export async function deleteMallBanner(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(mallBanners).where(eq(mallBanners.id, id));
+}
+
+// --- Mall Quick Contacts ---
+export async function getMallQuickContacts() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(mallQuickContacts).orderBy(asc(mallQuickContacts.displayOrder));
+}
+
+export async function getEnabledMallQuickContacts() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(mallQuickContacts)
+    .where(eq(mallQuickContacts.isEnabled, true))
+    .orderBy(asc(mallQuickContacts.displayOrder));
+}
+
+export async function createMallQuickContact(data: typeof mallQuickContacts.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(mallQuickContacts).values(data);
+  return result;
+}
+
+export async function updateMallQuickContact(id: number, data: Partial<typeof mallQuickContacts.$inferInsert>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(mallQuickContacts).set(data).where(eq(mallQuickContacts.id, id));
+}
+
+export async function deleteMallQuickContact(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(mallQuickContacts).where(eq(mallQuickContacts.id, id));
+}
+
+// --- Mall Notices ---
+export async function getMallNotices() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(mallNotices).orderBy(asc(mallNotices.displayOrder));
+}
+
+export async function getEnabledMallNotices() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(mallNotices)
+    .where(eq(mallNotices.isEnabled, true))
+    .orderBy(asc(mallNotices.displayOrder));
+}
+
+export async function createMallNotice(data: typeof mallNotices.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(mallNotices).values(data);
+  return result;
+}
+
+export async function updateMallNotice(id: number, data: Partial<typeof mallNotices.$inferInsert>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(mallNotices).set(data).where(eq(mallNotices.id, id));
+}
+
+export async function deleteMallNotice(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(mallNotices).where(eq(mallNotices.id, id));
+}
+
+// --- Mall Theme Schedules ---
+export async function getMallThemeSchedules() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(mallThemeSchedules).orderBy(asc(mallThemeSchedules.startDate));
+}
+
+export async function createMallThemeSchedule(data: typeof mallThemeSchedules.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(mallThemeSchedules).values(data);
+  return result;
+}
+
+export async function deleteMallThemeSchedule(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(mallThemeSchedules).where(eq(mallThemeSchedules.id, id));
+}
+
+// --- Mall Product Detail Images ---
+export async function getMallProductDetailImages(productId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(mallProductDetailImages)
+    .where(eq(mallProductDetailImages.productId, productId))
+    .orderBy(asc(mallProductDetailImages.displayOrder));
+}
+
+export async function createMallProductDetailImage(data: typeof mallProductDetailImages.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(mallProductDetailImages).values(data);
+  return result;
+}
+
+export async function deleteMallProductDetailImage(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(mallProductDetailImages).where(eq(mallProductDetailImages.id, id));
+}
+
+// --- Mall Product Sync ---
+export async function getMallProducts(filters?: { categoryId?: number; search?: string }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [
+    eq(products.syncToMall, true),
+    eq(products.status, "active"),
+    eq(products.visibility, "public"),
+    ne(products.type, "gift"),
+  ];
+  if (filters?.categoryId) {
+    conditions.push(eq(products.categoryId, filters.categoryId));
+  }
+  if (filters?.search) {
+    conditions.push(or(
+      like(products.name, `%${filters.search}%`),
+      like(products.sku, `%${filters.search}%`),
+      like(products.keyword, `%${filters.search}%`),
+    ));
+  }
+  let query = db.select().from(products).where(and(...conditions));
+  return await query.orderBy(asc(products.mallSortOrder), desc(products.createdAt));
+}
+
+export async function getMallProductById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(products)
+    .where(and(eq(products.id, id), eq(products.syncToMall, true)))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getMallProductVariants(productId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(variants)
+    .where(eq(variants.productId, productId))
+    .orderBy(asc(variants.id));
+}
+
+export async function getMallProductImages(productId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(productImages)
+    .where(eq(productImages.productId, productId))
+    .orderBy(asc(productImages.id));
+}
+
+export async function updateProductMallSync(productId: number, syncToMall: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(products).set({ syncToMall }).where(eq(products.id, productId));
+}
+
+// --- Mall Categories (from ERP categories) ---
+export async function getMallCategories() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(categories).orderBy(asc(categories.sortOrder));
+}
+
+// --- Mall Checkout (Guest Checkout) ---
+export async function mallCheckout(data: {
+  customerName: string;
+  contactNumber: string;
+  whatsappNumber?: string;
+  email?: string;
+  addressLine1: string;
+  addressLine2?: string;
+  postcode: string;
+  city: string;
+  state: string;
+  area: string;
+  deliveryRemark?: string;
+  shippingMethod: string;
+  items: Array<{
+    productId: number;
+    productName: string;
+    productSku?: string;
+    variationId?: number;
+    variationName?: string;
+    facebookKeyword?: string;
+    quantity: number;
+    unitPrice: string;
+    subtotal: string;
+    discount?: string;
+  }>;
+  paymentMethodId?: number;
+  paymentMethodName?: string;
+  mergeIntoOrderId?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Find or create customer
+  const customer = await findOrCreateCustomer({
+    name: data.customerName,
+    phoneNumber: data.contactNumber,
+    email: data.email,
+  });
+
+  // Build shipping address
+  const shippingAddress = [
+    data.addressLine1,
+    data.addressLine2,
+    `${data.postcode} ${data.city}`,
+    data.state,
+    data.area,
+  ].filter(Boolean).join(", ");
+
+  // Calculate totals
+  const subtotal = data.items.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+  const totalWeight = data.items.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
+
+  // Calculate shipping fee based on method
+  let shippingFee = 0;
+  if (data.shippingMethod === "west_malaysia") {
+    shippingFee = subtotal >= 150 ? (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3) : 15;
+  } else if (data.shippingMethod === "east_malaysia") {
+    shippingFee = totalWeight <= 2 ? 15 : 15; // Base fee, remaining via Shopee
+  } else if (data.shippingMethod === "self_pickup") {
+    shippingFee = 0;
+  } else if (data.shippingMethod === "lalamove") {
+    shippingFee = 0; // Actual quote
+  }
+
+  const totalAmount = subtotal + shippingFee;
+
+  // If merging into existing hold order
+  if (data.mergeIntoOrderId) {
+    // Add items to existing order
+    for (const item of data.items) {
+      await db.insert(orderItems).values({
+        orderId: data.mergeIntoOrderId,
+        productId: item.productId,
+        productName: item.productName,
+        productSku: item.productSku || null,
+        productType: "physical",
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        subtotal: item.subtotal,
+        variationId: item.variationId || null,
+        variationName: item.variationName || null,
+        facebookKeyword: item.facebookKeyword || null,
+        discount: item.discount || "0.00",
+      });
+    }
+
+    // Recalculate order totals
+    const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, data.mergeIntoOrderId));
+    const newSubtotal = allItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+    const newWeight = allItems.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
+    let newShippingFee = 0;
+    const existingOrder = await getOrderById(data.mergeIntoOrderId);
+    const method = existingOrder?.shippingMethod || data.shippingMethod;
+    if (method === "west_malaysia") {
+      newShippingFee = newSubtotal >= 150 ? (newWeight <= 10 ? 0 : Math.ceil(newWeight - 10) * 3) : 15;
+    }
+    const newTotal = newSubtotal + newShippingFee;
+    const paidAmount = parseFloat((existingOrder as any)?.paidAmount || "0");
+
+    await db.update(orders).set({
+      physicalSubtotal: newSubtotal.toFixed(2),
+      shippingFee: newShippingFee.toFixed(2),
+      totalAmount: newTotal.toFixed(2),
+      totalWeight: newWeight.toFixed(2),
+      physicalStatus: paidAmount > 0 && paidAmount < newTotal ? "partial_payment" : "receipt_uploaded",
+    }).where(eq(orders.id, data.mergeIntoOrderId));
+
+    return { orderId: data.mergeIntoOrderId, orderNumber: existingOrder?.orderNumber, merged: true, totalAmount: newTotal.toFixed(2) };
+  }
+
+  // Create new order
+  const orderNumber = `XT${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const orderResult = await db.insert(orders).values({
+    orderNumber,
+    customerId: customer.id,
+    orderType: "physical",
+    physicalSubtotal: subtotal.toFixed(2),
+    membershipSubtotal: "0.00",
+    shippingFee: shippingFee.toFixed(2),
+    totalAmount: totalAmount.toFixed(2),
+    totalWeight: totalWeight.toFixed(2),
+    physicalStatus: "pending",
+    shippingAddress,
+    shippingMethod: data.shippingMethod as any,
+    orderSource: "store",
+    paymentMethodId: (data.paymentMethodId as any) || null,
+    paymentMethodName: (data.paymentMethodName as any) || null,
+  });
+
+  const orderId = (orderResult as any).insertId;
+
+  for (const item of data.items) {
+    await db.insert(orderItems).values({
+      orderId,
+      productId: item.productId,
+      productName: item.productName,
+      productSku: item.productSku || null,
+      productType: "physical",
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      subtotal: item.subtotal,
+      variationId: item.variationId || null,
+      variationName: item.variationName || null,
+      facebookKeyword: item.facebookKeyword || null,
+      discount: item.discount || "0.00",
+    });
+  }
+
+  // Update customer stats
+  await db.update(customers).set({
+    totalOrders: sql`${customers.totalOrders} + 1`,
+    totalSpent: sql`${customers.totalSpent} + ${totalAmount.toFixed(2)}`,
+  }).where(eq(customers.id, customer.id));
+
+  return { orderId, orderNumber, merged: false, totalAmount: totalAmount.toFixed(2) };
+}
+
+// --- Mall Order Query (Guest) ---
+export async function queryOrderByNumber(orderNumber: string, contactNumber: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(orders)
+    .where(and(eq(orders.orderNumber, orderNumber), eq(orders.shippingAddress, contactNumber)))
+    .limit(1);
+  if (result.length === 0) {
+    // Also try matching by customer phone
+    const order = await db.select().from(orders)
+      .where(eq(orders.orderNumber, orderNumber))
+      .limit(1);
+    if (order.length === 0) return undefined;
+    const customer = await getCustomerById(order[0].customerId);
+    if (!customer || customer.phoneNumber !== contactNumber) return undefined;
+    return order[0];
+  }
+  return result[0];
+}
+
+// --- Smart Paste: parse customer info text ---
+export function parseSmartPaste(text: string): {
+  customerName?: string;
+  contactNumber?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  postcode?: string;
+  city?: string;
+  state?: string;
+  area?: string;
+} {
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  const result: any = {};
+
+  // Malaysian postcode pattern (5 digits)
+  const postcodeRegex = /\b(\d{5})\b/;
+  // Phone number pattern (Malaysian format)
+  const phoneRegex = /(\+?6?01[0-9]\s?\-?\s?\d{3,4}\s?\-?\s?\d{3,4}|\+?6?01[0-9]{8,9})/;
+
+  for (const line of lines) {
+    // Check for postcode + city pattern
+    const postcodeMatch = line.match(postcodeRegex);
+    if (postcodeMatch && !result.postcode) {
+      result.postcode = postcodeMatch[1];
+      // City is the rest of the line after postcode
+      const cityPart = line.replace(postcodeRegex, "").trim();
+      if (cityPart) result.city = cityPart;
+      continue;
+    }
+
+    // Check for phone number
+    const phoneMatch = line.match(phoneRegex);
+    if (phoneMatch && !result.contactNumber) {
+      result.contactNumber = phoneMatch[1].replace(/[\s\-]/g, "");
+      continue;
+    }
+
+    // Check for Malaysian states
+    const states = ["Johor", "Kedah", "Kelantan", "Melaka", "Negeri Sembilan", "Pahang", "Penang", "Perak", "Perlis", "Sabah", "Sarawak", "Selangor", "Terengganu", "Kuala Lumpur", "Putrajaya", "Labuan", "Pulau Pinang"];
+    const stateMatch = states.find(s => line.toLowerCase().includes(s.toLowerCase()));
+    if (stateMatch && !result.state) {
+      result.state = stateMatch;
+      // Check if it's East or West Malaysia
+      if (["Sabah", "Sarawak", "Labuan"].includes(stateMatch)) {
+        result.area = "East Malaysia";
+      } else {
+        result.area = "West Malaysia";
+      }
+      continue;
+    }
+
+    // First non-matched line is usually the name
+    if (!result.customerName && !postcodeMatch && !phoneMatch && !stateMatch) {
+      result.customerName = line;
+      continue;
+    }
+
+    // Second non-matched line is address
+    if (!result.addressLine1 && result.customerName && !postcodeMatch && !phoneMatch && !stateMatch) {
+      result.addressLine1 = line;
+      continue;
+    }
+
+    // Third non-matched line is address line 2
+    if (!result.addressLine2 && result.customerName && result.addressLine1 && !postcodeMatch && !phoneMatch && !stateMatch) {
+      result.addressLine2 = line;
+      continue;
+    }
+  }
+
+  return result;
 }
