@@ -11,6 +11,8 @@ import {
   categories, units, variants, memberLinks, productImages, productVideos, productAttributes,
   // System Settings & Shipping imports
   systemSettings, shippingRules, shippingProviders, shipments,
+  // Payment & Order imports
+  paymentMethods, orderStatusLogs, holdOrderInfos, notificationLogs,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -335,7 +337,8 @@ export async function createOrderWithSplit(data: {
   }>;
   shippingAddress?: string;
   shippingMethod?: string;
-  paymentMethod?: string;
+  paymentMethodId?: number;
+  paymentMethodName?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -384,7 +387,8 @@ export async function createOrderWithSplit(data: {
     membershipStatus: hasMembership ? "pending" : undefined,
     shippingAddress: data.shippingAddress || null,
     shippingMethod: (data.shippingMethod as any) || null,
-    paymentMethod: (data.paymentMethod as any) || null,
+    paymentMethodId: (data.paymentMethodId as any) || null,
+    paymentMethodName: (data.paymentMethodName as any) || null,
   });
 
   const orderId = (orderResult as any).insertId;
@@ -420,7 +424,8 @@ export async function updateOrderStatus(id: number, data: {
   courierCompany?: string;
   trackingNumber?: string;
   receiptUrl?: string;
-  paymentMethod?: string;
+  paymentMethodId?: number;
+  paymentMethodName?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -430,7 +435,8 @@ export async function updateOrderStatus(id: number, data: {
   if (data.courierCompany !== undefined) updateData.courierCompany = data.courierCompany;
   if (data.trackingNumber !== undefined) updateData.trackingNumber = data.trackingNumber;
   if (data.receiptUrl !== undefined) updateData.receiptUrl = data.receiptUrl;
-  if (data.paymentMethod !== undefined) updateData.paymentMethod = data.paymentMethod;
+  if (data.paymentMethodId !== undefined) updateData.paymentMethodId = data.paymentMethodId;
+  if (data.paymentMethodName !== undefined) updateData.paymentMethodName = data.paymentMethodName;
 
   if (data.physicalStatus === "receipt_uploaded") updateData.paymentUploadedAt = new Date();
   if (data.physicalStatus === "payment_confirmed") updateData.paymentConfirmedAt = new Date();
@@ -2407,4 +2413,267 @@ export async function getShipmentsByStatus(status: string) {
   if (!db) return [];
   const rows = await db.select().from(shipments).where(eq(shipments.status, status as any));
   return rows;
+}
+
+// ============================================================================
+// Payment Methods helpers (付款方式)
+// ============================================================================
+
+export async function getPaymentMethods(includeDisabled = false) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(paymentMethods).orderBy(asc(paymentMethods.displayOrder));
+  return includeDisabled ? rows : rows.filter((r: any) => r.isEnabled);
+}
+
+export async function getPaymentMethodById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(paymentMethods).where(eq(paymentMethods.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createPaymentMethod(data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.insert(paymentMethods).values(data);
+  return (await db.select().from(paymentMethods).orderBy(desc(paymentMethods.id)).limit(1))[0];
+}
+
+export async function updatePaymentMethod(id: number, data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(paymentMethods).set(data).where(eq(paymentMethods.id, id));
+  return (await db.select().from(paymentMethods).where(eq(paymentMethods.id, id)).limit(1))[0];
+}
+
+export async function deletePaymentMethod(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(paymentMethods).where(eq(paymentMethods.id, id));
+}
+
+// ============================================================================
+// Order Status Logs helpers (订单状态变更记录)
+// ============================================================================
+
+export async function getOrderStatusLogs(orderId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(orderStatusLogs).where(eq(orderStatusLogs.orderId, orderId)).orderBy(desc(orderStatusLogs.createdAt));
+  return rows;
+}
+
+export async function createOrderStatusLog(data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.insert(orderStatusLogs).values(data);
+  return (await db.select().from(orderStatusLogs).orderBy(desc(orderStatusLogs.id)).limit(1))[0];
+}
+
+// ============================================================================
+// Hold Order Info helpers (保留订单)
+// ============================================================================
+
+export async function getHoldOrderInfo(orderId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(holdOrderInfos).where(eq(holdOrderInfos.orderId, orderId)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getActiveHoldOrdersByCustomer(customerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  // Join with orders to filter by customerId
+  const rows = await db.execute(sql`
+    SELECT h.*, o.orderNumber, o.customerId, o.totalAmount, o.paidAmount
+    FROM hold_order_infos h
+    LEFT JOIN orders o ON h.orderId = o.id
+    WHERE o.customerId = ${customerId} AND h.isActive = 1
+    AND o.physicalStatus = 'hold_order'
+    ORDER BY h.holdCreatedAt DESC
+  `);
+  return rows as any[];
+}
+
+export async function createHoldOrderInfo(data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.insert(holdOrderInfos).values(data);
+  return (await db.select().from(holdOrderInfos).orderBy(desc(holdOrderInfos.id)).limit(1))[0];
+}
+
+export async function updateHoldOrderInfo(orderId: number, data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(holdOrderInfos).set(data).where(eq(holdOrderInfos.orderId, orderId));
+  return (await db.select().from(holdOrderInfos).where(eq(holdOrderInfos.orderId, orderId)).limit(1))[0];
+}
+
+export async function releaseHoldOrder(orderId: number, releasedBy: string) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(holdOrderInfos).set({
+    isActive: false,
+    holdReleasedAt: new Date() as any,
+  }).where(eq(holdOrderInfos.orderId, orderId));
+  return true;
+}
+
+// ============================================================================
+// Notification Logs helpers (通知记录)
+// ============================================================================
+
+export async function getNotificationLogs(orderId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  if (orderId) {
+    const rows = await db.select().from(notificationLogs).where(eq(notificationLogs.orderId, orderId)).orderBy(desc(notificationLogs.createdAt));
+    return rows;
+  }
+  const rows = await db.select().from(notificationLogs).orderBy(desc(notificationLogs.createdAt)).limit(100);
+  return rows;
+}
+
+export async function createNotificationLog(data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.insert(notificationLogs).values(data);
+  return (await db.select().from(notificationLogs).orderBy(desc(notificationLogs.id)).limit(1))[0];
+}
+
+export async function updateNotificationLog(id: number, data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(notificationLogs).set(data).where(eq(notificationLogs.id, id));
+  return (await db.select().from(notificationLogs).where(eq(notificationLogs.id, id)).limit(1))[0];
+}
+
+// ============================================================================
+// Order Status Transition helpers (订单状态流转)
+// ============================================================================
+
+export async function transitionOrderStatus(orderId: number, toStatus: string, changedBy: string, notes?: string) {
+  const db = await getDb();
+  if (!db) return null;
+
+  // Get current order
+  const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order[0]) throw new Error("Order not found");
+
+  const fromStatus = order[0].physicalStatus;
+
+  // Update order status
+  const updateData: any = { physicalStatus: toStatus as any };
+  if (toStatus === "receipt_uploaded") updateData.paymentUploadedAt = new Date() as any;
+  if (toStatus === "packing") updateData.paymentConfirmedAt = new Date() as any;
+  if (toStatus === "shipped") updateData.shippedAt = new Date() as any;
+  if (toStatus === "completed") updateData.completedAt = new Date() as any;
+
+  await db.update(orders).set(updateData).where(eq(orders.id, orderId));
+
+  // Create status log
+  await db.insert(orderStatusLogs).values({
+    orderId,
+    fromStatus: fromStatus as string,
+    toStatus,
+    changedBy,
+    notes: notes || null,
+  });
+
+  return (await db.select().from(orders).where(eq(orders.id, orderId)).limit(1))[0];
+}
+
+// ============================================================================
+// Hold Order Auto-Merge helpers (保留订单自动合并)
+// ============================================================================
+
+export async function findMergeableHoldOrder(customerId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.execute(sql`
+    SELECT h.*, o.orderNumber, o.totalAmount, o.paidAmount, o.physicalSubtotal, o.shippingFee, o.discountAmount
+    FROM hold_order_infos h
+    LEFT JOIN orders o ON h.orderId = o.id
+    WHERE o.customerId = ${customerId} 
+    AND h.isActive = 1 
+    AND h.allowAutoMerge = 1
+    AND o.physicalStatus = 'hold_order'
+    ORDER BY h.holdCreatedAt DESC
+    LIMIT 1
+  `);
+  return (rows as any[])[0] ?? null;
+}
+
+export async function mergeOrderItemsIntoOrder(targetOrderId: number, items: any[]) {
+  const db = await getDb();
+  if (!db) return;
+  for (const item of items) {
+    await db.insert(orderItems).values({
+      orderId: targetOrderId,
+      productId: item.productId,
+      productName: item.productName,
+      productSku: item.productSku || null,
+      productType: item.productType || "physical",
+      variationId: item.variationId || null,
+      variationName: item.variationName || null,
+      facebookKeyword: item.facebookKeyword || null,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice.toString(),
+      discount: (item.discount || "0").toString(),
+      subtotal: item.subtotal.toString(),
+      unitWeight: (item.unitWeight || "0").toString(),
+    });
+  }
+}
+
+export async function recalculateOrderTotals(orderId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  // Get all items
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  
+  let subtotal = 0;
+  let totalWeight = 0;
+  let totalDiscount = 0;
+  
+  for (const item of items) {
+    subtotal += Number(item.subtotal);
+    totalWeight += Number(item.unitWeight) * item.quantity;
+    totalDiscount += Number(item.discount || 0);
+  }
+  
+  // Get current order for shipping fee
+  const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order[0]) return null;
+  
+  const shippingFee = Number(order[0].shippingFee || 0);
+  const paidAmount = Number(order[0].paidAmount || 0);
+  const totalAmount = subtotal - totalDiscount + shippingFee;
+  
+  await db.update(orders).set({
+    physicalSubtotal: subtotal.toString(),
+    totalWeight: totalWeight.toString(),
+    discountAmount: totalDiscount.toString(),
+    totalAmount: totalAmount.toString(),
+  }).where(eq(orders.id, orderId));
+  
+  // Determine new status based on payment
+  let newStatus = order[0].physicalStatus;
+  if (paidAmount < totalAmount && paidAmount > 0) {
+    newStatus = "partial_payment" as any;
+  } else if (paidAmount >= totalAmount && paidAmount > 0) {
+    // Keep as hold_order if it was hold_order
+    if (order[0].physicalStatus === "hold_order") {
+      newStatus = "hold_order" as any;
+    }
+  }
+  
+  if (newStatus !== order[0].physicalStatus) {
+    await db.update(orders).set({ physicalStatus: newStatus as any }).where(eq(orders.id, orderId));
+  }
+  
+  return (await db.select().from(orders).where(eq(orders.id, orderId)).limit(1))[0];
 }

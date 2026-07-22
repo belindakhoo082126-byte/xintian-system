@@ -184,3 +184,42 @@
 - [x] TypeScript 编译零错误
 - [x] Vitest 单元测试
 - [x] 保存检查点
+
+## Payment Setting + Payment Flow + Order Status + Order Detail Module
+
+### Sprint 1: Database Schema
+- [x] payment_methods table (付款方式)
+- [x] order_status_logs table (订单状态变更记录)
+- [x] hold_order_infos table (保留订单信息)
+- [x] notification_logs table (通知发送记录)
+- [x] orders 表新增列 (paymentMethodId, orderSource, sourceName, originalCustomerComment, commentDate, totalWeight, discountAmount)
+- [x] orders.physicalStatus 枚举扩展为 9 种状态
+- [x] order_items 表新增快照列 (productSku, facebookKeyword, discount, unitWeight)
+- [x] 默认付款方式种子数据 (DuitNow QR, TNG QR, Public Bank, Cash)
+
+### Sprint 2: Backend DB Helpers
+- [x] Payment Methods CRUD
+- [x] Order Status Logs
+- [x] Hold Order Info (get/create/release)
+- [x] Notification Logs
+- [x] Order Status Transition (transitionOrderStatus)
+- [x] Hold Order Auto-Merge (findMergeableHoldOrder, mergeOrderItemsIntoOrder, recalculateOrderTotals)
+
+### Sprint 3: Backend tRPC Routers
+- [x] paymentMethods router (list, listEnabled, getById, create, update, delete)
+- [x] orderWorkflow router (getStatusLogs, transition, confirmPayment)
+- [x] holdOrders router (getInfo, getActiveByCustomer, create, release, findMergeable)
+- [x] notifications router (list, create)
+
+### Sprint 4: Frontend Admin Pages
+- [x] PaymentSettings page (付款设定 CRUD + QR 上传/预览/下载)
+- [x] OrderDetail page (订单详情 + 商品快照 + 状态流转 + 保留订单 + 通知记录)
+- [x] DashboardLayout navigation updated
+- [x] App.tsx routes updated
+
+### Sprint 5: Frontend Customer Page
+- [x] CustomerPayment page (QR 展示/放大/下载 + 银行账号复制 + 付款凭证上传)
+
+### Sprint 6: Tests & Checkpoint
+- [x] TypeScript 编译零错误
+- [x] 保存检查点

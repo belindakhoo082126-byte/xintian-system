@@ -1868,6 +1868,154 @@ export const appRouter = router({
   }),
 
   // ===========================================================================
+  // Payment Methods (付款方式设定)
+  // ===========================================================================
+  paymentMethods: router({
+    list: protectedProcedure.query(async () => {
+      return await db.getPaymentMethods(true);
+    }),
+    
+    listEnabled: publicProcedure.query(async () => {
+      return await db.getPaymentMethods(false);
+    }),
+    
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await db.getPaymentMethodById(input.id);
+    }),
+    
+    create: adminProcedure.input(z.object({
+      name: z.string(),
+      type: z.enum(["qr_code", "bank_transfer", "cash", "other"]),
+      qrImageUrl: z.string().optional(),
+      bankName: z.string().optional(),
+      accountHolder: z.string().optional(),
+      accountNumber: z.string().optional(),
+      paymentInstruction: z.string().optional(),
+      remark: z.string().optional(),
+      isEnabled: z.boolean().default(true),
+      displayOrder: z.number().default(0),
+    })).mutation(async ({ input }) => {
+      return await db.createPaymentMethod(input);
+    }),
+    
+    update: adminProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      type: z.enum(["qr_code", "bank_transfer", "cash", "other"]).optional(),
+      qrImageUrl: z.string().nullable().optional(),
+      bankName: z.string().nullable().optional(),
+      accountHolder: z.string().nullable().optional(),
+      accountNumber: z.string().nullable().optional(),
+      paymentInstruction: z.string().nullable().optional(),
+      remark: z.string().nullable().optional(),
+      isEnabled: z.boolean().optional(),
+      displayOrder: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      return await db.updatePaymentMethod(id, data);
+    }),
+    
+    delete: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.deletePaymentMethod(input.id);
+      return { success: true };
+    }),
+  }),
+
+  // ===========================================================================
+  // Order Status Workflow (订单状态流转)
+  // ===========================================================================
+  orderWorkflow: router({
+    getStatusLogs: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+      return await db.getOrderStatusLogs(input.orderId);
+    }),
+    
+    transition: adminProcedure.input(z.object({
+      orderId: z.number(),
+      toStatus: z.enum(["pending", "receipt_uploaded", "partial_payment", "hold_order", "packing", "shipped", "partial_shipped", "completed", "cancelled"]),
+      notes: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const changedBy = ctx.user?.name || ctx.user?.openId || "admin";
+      const result = await db.transitionOrderStatus(input.orderId, input.toStatus, changedBy, input.notes);
+      return result;
+    }),
+    
+    confirmPayment: adminProcedure.input(z.object({
+      orderId: z.number(),
+      hasHoldOrder: z.boolean(),
+      notes: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const changedBy = ctx.user?.name || ctx.user?.openId || "admin";
+      const toStatus = input.hasHoldOrder ? "hold_order" : "packing";
+      const result = await db.transitionOrderStatus(input.orderId, toStatus, changedBy, input.notes || "Payment confirmed");
+      return result;
+    }),
+  }),
+
+  // ===========================================================================
+  // Hold Orders (保留订单)
+  // ===========================================================================
+  holdOrders: router({
+    getInfo: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+      return await db.getHoldOrderInfo(input.orderId);
+    }),
+    
+    getActiveByCustomer: protectedProcedure.input(z.object({ customerId: z.number() })).query(async ({ input }) => {
+      return await db.getActiveHoldOrdersByCustomer(input.customerId);
+    }),
+    
+    create: adminProcedure.input(z.object({
+      orderId: z.number(),
+      holdType: z.enum(["wait_next_live", "scheduled_shipping", "wait_stock", "other"]),
+      scheduledShippingDate: z.number().optional(),
+      allowAutoMerge: z.boolean().default(true),
+      holdRemark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const holdBy = ctx.user?.name || ctx.user?.openId || "admin";
+      return await db.createHoldOrderInfo({
+        orderId: input.orderId,
+        holdType: input.holdType,
+        scheduledShippingDate: input.scheduledShippingDate ? new Date(input.scheduledShippingDate) : null,
+        allowAutoMerge: input.allowAutoMerge,
+        holdRemark: input.holdRemark || null,
+        holdBy,
+      });
+    }),
+    
+    release: adminProcedure.input(z.object({
+      orderId: z.number(),
+    })).mutation(async ({ input, ctx }) => {
+      const releasedBy = ctx.user?.name || ctx.user?.openId || "admin";
+      await db.releaseHoldOrder(input.orderId, releasedBy);
+      // Transition to packing
+      await db.transitionOrderStatus(input.orderId, "packing", releasedBy, "Hold released");
+      return { success: true };
+    }),
+    
+    findMergeable: protectedProcedure.input(z.object({ customerId: z.number() })).query(async ({ input }) => {
+      return await db.findMergeableHoldOrder(input.customerId);
+    }),
+  }),
+
+  // ===========================================================================
+  // Notification Logs (通知记录)
+  // ===========================================================================
+  notifications: router({
+    list: protectedProcedure.input(z.object({ orderId: z.number().optional() })).query(async ({ input }) => {
+      return await db.getNotificationLogs(input.orderId);
+    }),
+    
+    create: adminProcedure.input(z.object({
+      orderId: z.number().optional(),
+      customerId: z.number().optional(),
+      type: z.string(),
+      channel: z.enum(["messenger", "whatsapp", "email"]).default("messenger"),
+      message: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      return await db.createNotificationLog(input);
+    }),
+  }),
+
+  // ===========================================================================
   // Dashboard
   // ===========================================================================
   dashboard: router({

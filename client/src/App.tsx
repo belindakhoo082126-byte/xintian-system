@@ -25,6 +25,9 @@ import FacebookSettings from "@/pages/FacebookSettings";
 import SystemSettings from "@/pages/SystemSettings";
 import ShippingRules from "@/pages/ShippingRules";
 import LogisticsIntegration from "@/pages/LogisticsIntegration";
+import PaymentSettings from "@/pages/PaymentSettings";
+import OrderDetail from "@/pages/OrderDetail";
+import CustomerPayment from "@/pages/CustomerPayment";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -59,6 +62,9 @@ function DashboardRoutes() {
       <Route path={"/system-settings"} component={SystemSettings} />
       <Route path={"/shipping-rules"} component={ShippingRules} />
       <Route path={"/logistics"} component={LogisticsIntegration} />
+      <Route path={"/payment-settings"} component={PaymentSettings} />
+      <Route path={"/orders/:id"} component={(params: any) => <OrderDetail orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
+      <Route path={"/pay/:id"} component={(params: any) => <CustomerPayment orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

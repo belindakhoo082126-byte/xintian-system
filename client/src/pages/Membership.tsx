@@ -256,7 +256,7 @@ export default function Membership() {
                     </div>
                     <div>
                       <p className="text-muted-foreground">付款方式</p>
-                      <p className="font-medium">{order.paymentMethod || "-"}</p>
+                      <p className="font-medium">{order.paymentMethodName || "-"}</p>
                     </div>
                   </div>
                 );

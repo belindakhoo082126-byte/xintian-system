@@ -410,8 +410,15 @@ export const orders = mysqlTable("orders", {
   totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }).notNull(),
   paidAmount: decimal("paidAmount", { precision: 10, scale: 2 }).default("0"),
   physicalStatus: mysqlEnum("physicalStatus", [
-    "pending", "receipt_uploaded", "payment_confirmed",
-    "packing", "shipped", "completed", "cancelled"
+    "pending",           // 挂单 - waiting for payment
+    "receipt_uploaded",  // 确认汇款 - customer uploaded payment proof
+    "partial_payment",   // 部分汇款 - customer paid partially
+    "hold_order",        // 保留订单 - customer requested hold
+    "packing",           // 待包货 - ready for packing
+    "shipped",           // 已发货 - all parcels shipped
+    "partial_shipped",   // 部分发货 - some items shipped
+    "completed",         // 完成订单
+    "cancelled",         // 已取消
   ]).default("pending"),
   membershipStatus: mysqlEnum("membershipStatus", [
     "pending", "receipt_uploaded", "pending_review",
@@ -425,8 +432,22 @@ export const orders = mysqlTable("orders", {
   ]),
   courierCompany: varchar("courierCompany", { length: 100 }),
   trackingNumber: varchar("trackingNumber", { length: 100 }),
-  paymentMethod: mysqlEnum("paymentMethod", ["online_banking", "tng"]),
+  paymentMethodId: int("paymentMethodId"),
+  paymentMethodName: varchar("paymentMethodName", { length: 100 }),
   receiptUrl: varchar("receiptUrl", { length: 500 }),
+  // Order source tracking
+  orderSource: mysqlEnum("orderSource", [
+    "facebook_live", "facebook_post", "facebook_reel",
+    "messenger", "store", "manual"
+  ]).default("manual"),
+  sourceName: varchar("sourceName", { length: 255 }),
+  // Facebook comment tracking
+  originalCustomerComment: text("originalCustomerComment"),
+  commentDate: timestamp("commentDate"),
+  // Total weight for shipping calculation
+  totalWeight: decimal("totalWeight", { precision: 8, scale: 2 }).default("0"),
+  // Discount
+  discountAmount: decimal("discountAmount", { precision: 10, scale: 2 }).default("0"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   paymentUploadedAt: timestamp("paymentUploadedAt"),
   paymentConfirmedAt: timestamp("paymentConfirmedAt"),
@@ -446,13 +467,22 @@ export const orderItems = mysqlTable("order_items", {
   id: int("id").autoincrement().primaryKey(),
   orderId: int("orderId").notNull(),
   productId: int("productId").notNull(),
-  productName: varchar("productName", { length: 255 }),
+  // Snapshot fields (permanent record, never changes after order creation)
+  productName: varchar("productName", { length: 255 }).notNull(),
+  productSku: varchar("productSku", { length: 100 }),
   productType: mysqlEnum("productType", ["physical", "membership", "gift"]),
-  quantity: int("quantity").notNull(),
-  unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).notNull(),
-  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
+  // Variant snapshot
   variationId: int("variationId"),
   variationName: varchar("variationName", { length: 255 }),
+  // Facebook keyword that triggered this item
+  facebookKeyword: varchar("facebookKeyword", { length: 100 }),
+  // Pricing
+  quantity: int("quantity").notNull(),
+  unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).notNull(),
+  discount: decimal("discount", { precision: 10, scale: 2 }).default("0"),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
+  // Weight per unit (for shipping calculation)
+  unitWeight: decimal("unitWeight", { precision: 8, scale: 2 }).default("0"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -721,3 +751,116 @@ export const shipments = mysqlTable("shipments", {
 
 export type Shipment = typeof shipments.$inferSelect;
 export type InsertShipment = typeof shipments.$inferInsert;
+
+// ============================================================================
+// Payment Methods (付款方式设定)
+// ============================================================================
+
+export const paymentMethods = mysqlTable("payment_methods", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  // Type: qr_code, bank_transfer, cash, other
+  type: mysqlEnum("type", ["qr_code", "bank_transfer", "cash", "other"]).default("qr_code").notNull(),
+  // QR Code image URL (for qr_code type)
+  qrImageUrl: varchar("qrImageUrl", { length: 500 }),
+  // Bank details (for bank_transfer type)
+  bankName: varchar("bankName", { length: 100 }),
+  accountHolder: varchar("accountHolder", { length: 255 }),
+  accountNumber: varchar("accountNumber", { length: 50 }),
+  // Payment instruction shown to customer
+  paymentInstruction: text("paymentInstruction"),
+  // Remark (internal note)
+  remark: text("remark"),
+  // Status
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  // Display order
+  displayOrder: int("displayOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PaymentMethod = typeof paymentMethods.$inferSelect;
+export type InsertPaymentMethod = typeof paymentMethods.$inferInsert;
+
+// ============================================================================
+// Order Status Log (订单状态变更记录)
+// ============================================================================
+
+export const orderStatusLogs = mysqlTable("order_status_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  // Status before change
+  fromStatus: varchar("fromStatus", { length: 50 }),
+  // Status after change
+  toStatus: varchar("toStatus", { length: 50 }).notNull(),
+  // Who made the change
+  changedBy: varchar("changedBy", { length: 255 }),
+  // Reason/notes for the change
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OrderStatusLog = typeof orderStatusLogs.$inferSelect;
+export type InsertOrderStatusLog = typeof orderStatusLogs.$inferInsert;
+
+// ============================================================================
+// Hold Order Info (保留订单信息)
+// ============================================================================
+
+export const holdOrderInfos = mysqlTable("hold_order_infos", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull().unique(),
+  // Hold type
+  holdType: mysqlEnum("holdType", [
+    "wait_next_live",      // 等待下次直播加单
+    "scheduled_shipping",  // 指定日期发货
+    "wait_stock",          // 等待缺货商品
+    "other",               // 其他
+  ]).notNull(),
+  // Scheduled shipping date (for scheduled_shipping type)
+  scheduledShippingDate: timestamp("scheduledShippingDate"),
+  // Allow auto merge with new orders from same customer
+  allowAutoMerge: boolean("allowAutoMerge").default(true).notNull(),
+  // Hold remark
+  holdRemark: text("holdRemark"),
+  // Staff who placed the hold
+  holdBy: varchar("holdBy", { length: 255 }),
+  // When the hold was created
+  holdCreatedAt: timestamp("holdCreatedAt").defaultNow().notNull(),
+  // When the hold was released
+  holdReleasedAt: timestamp("holdReleasedAt"),
+  // Is the hold still active
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type HoldOrderInfo = typeof holdOrderInfos.$inferSelect;
+export type InsertHoldOrderInfo = typeof holdOrderInfos.$inferInsert;
+
+// ============================================================================
+// Notification Log (通知发送记录)
+// ============================================================================
+
+export const notificationLogs = mysqlTable("notification_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId"),
+  customerId: int("customerId"),
+  // Notification type: payment_confirmed, hold_order, shipped, etc.
+  type: varchar("type", { length: 50 }).notNull(),
+  // Channel: messenger, whatsapp, email
+  channel: mysqlEnum("channel", ["messenger", "whatsapp", "email"]).default("messenger").notNull(),
+  // Message content
+  message: text("message"),
+  // Status: sent, failed, pending
+  status: mysqlEnum("status", ["pending", "sent", "failed"]).default("pending").notNull(),
+  // Error message if failed
+  errorMessage: text("errorMessage"),
+  // External message ID (from Messenger API)
+  externalMessageId: varchar("externalMessageId", { length: 255 }),
+  sentAt: timestamp("sentAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type NotificationLog = typeof notificationLogs.$inferSelect;
+export type InsertNotificationLog = typeof notificationLogs.$inferInsert;
