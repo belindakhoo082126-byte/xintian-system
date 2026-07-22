@@ -148,3 +148,39 @@
 - [x] Vitest 单元测试
 - [x] TypeScript 编译零错误
 - [x] 保存检查点
+
+## 系统设置 + 运费规则 + ParcelDaily 物流整合
+
+### Sprint 1: 数据库 Schema
+- [x] system_settings 表（公司资料、编号规则、通知、安全）
+- [x] shipping_rules 表（西马/东马/自取/Lalamove 运费规则）
+- [x] shipping_providers 表（物流供应商配置）
+- [x] shipments 表（物流运单）
+- [x] 默认运费规则种子数据
+- [x] 默认物流供应商种子数据
+- [x] ParcelDaily 凭据存为 secrets
+
+### Sprint 2: 后端 API 客户端
+- [x] ParcelDaily API 客户端（server/parceldaily.ts）
+- [x] 物流供应商适配器架构（server/shippingProvider.ts）
+- [x] ParcelDaily: accountInfo, checkPostcode, getQuote, createOrder, checkoutOrder, getConsignmentNote
+- [x] Manual Shipping 适配器
+- [x] Provider Registry（可扩展）
+
+### Sprint 3: 后端路由
+- [x] settings 路由（get/update 系统设置）
+- [x] shippingRules 路由（list/update/create/delete）
+- [x] shippingProviders 路由（list/update/testConnection）
+- [x] parceldaily 路由（accountInfo/checkPostcode/getQuote/createShipment/checkoutShipment/getConsignmentNote）
+
+### Sprint 4: 前端页面
+- [x] SystemSettings 页面（公司资料/编号规则/通知/安全 4 个 Tab）
+- [x] ShippingRules 页面（4 个区域运费规则编辑）
+- [x] LogisticsIntegration 页面（ParcelDaily/Parcel King/Manual 3 个 Tab）
+- [x] 侧栏导航更新（运费规则/物流整合/系统设置）
+- [x] App.tsx 路由更新
+
+### Sprint 5: 测试与验收
+- [x] TypeScript 编译零错误
+- [x] Vitest 单元测试
+- [x] 保存检查点

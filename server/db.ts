@@ -9,6 +9,8 @@ import {
   suppliers, purchaseOrders, purchaseOrderItems,
   // Phase 1 imports
   categories, units, variants, memberLinks, productImages, productVideos, productAttributes,
+  // System Settings & Shipping imports
+  systemSettings, shippingRules, shippingProviders, shipments,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2286,4 +2288,123 @@ export async function getRefundRecords(dateRange: DateRange) {
     refundDate: r.refund_date,
     createdAt: r.created_at,
   }));
+}
+
+// ============================================================================
+// System Settings helpers
+// ============================================================================
+
+export async function getSystemSettings() {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(systemSettings).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateSystemSettings(data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  const existing = await db.select().from(systemSettings).limit(1);
+  if (existing.length > 0) {
+    await db.update(systemSettings).set(data).where(eq(systemSettings.id, existing[0].id));
+    return (await db.select().from(systemSettings).limit(1))[0];
+  } else {
+    const result = await db.insert(systemSettings).values(data as any);
+    return (await db.select().from(systemSettings).limit(1))[0];
+  }
+}
+
+// ============================================================================
+// Shipping Rules helpers
+// ============================================================================
+
+export async function getShippingRules() {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(shippingRules).orderBy(asc(shippingRules.sortOrder));
+  return rows;
+}
+
+export async function getShippingRuleByZone(zone: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(shippingRules).where(eq(shippingRules.zone, zone as any)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateShippingRule(id: number, data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(shippingRules).set(data).where(eq(shippingRules.id, id));
+  return (await db.select().from(shippingRules).where(eq(shippingRules.id, id)).limit(1))[0];
+}
+
+export async function createShippingRule(data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.insert(shippingRules).values(data);
+  return (await db.select().from(shippingRules).orderBy(desc(shippingRules.id)).limit(1))[0];
+}
+
+export async function deleteShippingRule(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(shippingRules).where(eq(shippingRules.id, id));
+}
+
+// ============================================================================
+// Shipping Providers helpers
+// ============================================================================
+
+export async function getShippingProviders() {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(shippingProviders);
+  return rows;
+}
+
+export async function getShippingProviderByKey(key: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(shippingProviders).where(eq(shippingProviders.providerKey, key)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateShippingProvider(key: string, data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(shippingProviders).set(data).where(eq(shippingProviders.providerKey, key));
+  return (await db.select().from(shippingProviders).where(eq(shippingProviders.providerKey, key)).limit(1))[0];
+}
+
+// ============================================================================
+// Shipments helpers
+// ============================================================================
+
+export async function getShipmentByOrderId(orderId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(shipments).where(eq(shipments.orderId, orderId)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createShipment(data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.insert(shipments).values(data);
+  return (await db.select().from(shipments).orderBy(desc(shipments.id)).limit(1))[0];
+}
+
+export async function updateShipment(id: number, data: any) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(shipments).set(data).where(eq(shipments.id, id));
+  return (await db.select().from(shipments).where(eq(shipments.id, id)).limit(1))[0];
+}
+
+export async function getShipmentsByStatus(status: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(shipments).where(eq(shipments.status, status as any));
+  return rows;
 }

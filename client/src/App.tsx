@@ -22,6 +22,9 @@ import ProductSalesReport from "@/pages/ProductSalesReport";
 import CustomerSpendingReport from "@/pages/CustomerSpendingReport";
 import PurchaseInventoryReport from "@/pages/PurchaseInventoryReport";
 import FacebookSettings from "@/pages/FacebookSettings";
+import SystemSettings from "@/pages/SystemSettings";
+import ShippingRules from "@/pages/ShippingRules";
+import LogisticsIntegration from "@/pages/LogisticsIntegration";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -53,6 +56,9 @@ function DashboardRoutes() {
       <Route path={"/reports/customer-spending"} component={CustomerSpendingReport} />
       <Route path={"/reports/purchase-inventory"} component={PurchaseInventoryReport} />
       <Route path={"/facebook-settings"} component={FacebookSettings} />
+      <Route path={"/system-settings"} component={SystemSettings} />
+      <Route path={"/shipping-rules"} component={ShippingRules} />
+      <Route path={"/logistics"} component={LogisticsIntegration} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

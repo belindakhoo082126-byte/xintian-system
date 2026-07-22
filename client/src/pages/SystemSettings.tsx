@@ -1,0 +1,238 @@
+import { useState, useEffect } from "react";
+import { trpc } from "@/lib/trpc";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
+import { Building2, Hash, Bell, Shield, Save } from "lucide-react";
+
+export default function SystemSettings() {
+  const { data: settings, isLoading, refetch } = trpc.settings.get.useQuery();
+  const updateMutation = trpc.settings.update.useMutation({
+    onSuccess: () => { toast.success("设置已保存"); refetch(); },
+    onError: (e) => toast.error("保存失败: " + e.message),
+  });
+
+  const [form, setForm] = useState<any>({});
+
+  useEffect(() => {
+    if (settings) setForm(settings);
+  }, [settings]);
+
+  const handleSave = () => {
+    updateMutation.mutate(form);
+  };
+
+  const update = (key: string, value: any) => {
+    setForm((prev: any) => ({ ...prev, [key]: value }));
+  };
+
+  if (isLoading) return <Skeleton className="h-96 w-full" />;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">系统设置</h1>
+          <p className="text-sm text-muted-foreground mt-1">公司资料、编号规则、通知与安全设置</p>
+        </div>
+        <Button onClick={handleSave} disabled={updateMutation.isPending}>
+          <Save className="h-4 w-4 mr-2" />
+          {updateMutation.isPending ? "保存中..." : "保存"}
+        </Button>
+      </div>
+
+      <Tabs defaultValue="company">
+        <TabsList>
+          <TabsTrigger value="company"><Building2 className="h-4 w-4 mr-2" />公司资料</TabsTrigger>
+          <TabsTrigger value="numbering"><Hash className="h-4 w-4 mr-2" />编号规则</TabsTrigger>
+          <TabsTrigger value="notification"><Bell className="h-4 w-4 mr-2" />通知设置</TabsTrigger>
+          <TabsTrigger value="security"><Shield className="h-4 w-4 mr-2" />安全设置</TabsTrigger>
+        </TabsList>
+
+        {/* Company Profile */}
+        <TabsContent value="company" className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle className="text-base">公司资料</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>公司名称</Label>
+                <Input value={form.companyName || ""} onChange={(e) => update("companyName", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>公司 Logo URL</Label>
+                <Input value={form.companyLogoUrl || ""} onChange={(e) => update("companyLogoUrl", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>公司电话</Label>
+                <Input value={form.companyPhone || ""} onChange={(e) => update("companyPhone", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input type="email" value={form.companyEmail || ""} onChange={(e) => update("companyEmail", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Website</Label>
+                <Input value={form.companyWebsite || ""} onChange={(e) => update("companyWebsite", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Business Registration No.</Label>
+                <Input value={form.businessRegNo || ""} onChange={(e) => update("businessRegNo", e.target.value)} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>公司地址</Label>
+                <Textarea value={form.companyAddress || ""} onChange={(e) => update("companyAddress", e.target.value)} />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base">默认寄件地址</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>寄件人姓名</Label>
+                <Input value={form.defaultShipFromName || ""} onChange={(e) => update("defaultShipFromName", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>寄件电话</Label>
+                <Input value={form.defaultShipFromPhone || ""} onChange={(e) => update("defaultShipFromPhone", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>寄件邮编</Label>
+                <Input value={form.defaultShipFromPostcode || ""} onChange={(e) => update("defaultShipFromPostcode", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>州属</Label>
+                <Input value={form.defaultShipFromState || ""} onChange={(e) => update("defaultShipFromState", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>城市</Label>
+                <Input value={form.defaultShipFromCity || ""} onChange={(e) => update("defaultShipFromCity", e.target.value)} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>寄件地址</Label>
+                <Textarea value={form.defaultShipFromAddress || ""} onChange={(e) => update("defaultShipFromAddress", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>货币</Label>
+                <Input value={form.currency || "MYR"} onChange={(e) => update("currency", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>时区</Label>
+                <Input value={form.timezone || "Asia/Kuala_Lumpur"} onChange={(e) => update("timezone", e.target.value)} />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Numbering Rules */}
+        <TabsContent value="numbering" className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle className="text-base">编号规则</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>订单编号前缀</Label>
+                <Input value={form.orderPrefix || "ORD"} onChange={(e) => update("orderPrefix", e.target.value)} />
+                <p className="text-xs text-muted-foreground">例: ORD-202607-000001</p>
+              </div>
+              <div className="space-y-2">
+                <Label>订单编号位数</Label>
+                <Input type="number" value={form.orderNumberPadding || 6} onChange={(e) => update("orderNumberPadding", parseInt(e.target.value))} />
+              </div>
+              <div></div>
+              <div className="space-y-2">
+                <Label>进货单前缀</Label>
+                <Input value={form.poPrefix || "PO"} onChange={(e) => update("poPrefix", e.target.value)} />
+                <p className="text-xs text-muted-foreground">例: PO-202607-000001</p>
+              </div>
+              <div className="space-y-2">
+                <Label>进货单位数</Label>
+                <Input type="number" value={form.poNumberPadding || 6} onChange={(e) => update("poNumberPadding", parseInt(e.target.value))} />
+              </div>
+              <div></div>
+              <div className="space-y-2">
+                <Label>客户编号前缀</Label>
+                <Input value={form.customerPrefix || "CUS"} onChange={(e) => update("customerPrefix", e.target.value)} />
+                <p className="text-xs text-muted-foreground">例: CUS-000001</p>
+              </div>
+              <div className="space-y-2">
+                <Label>客户编号位数</Label>
+                <Input type="number" value={form.customerNumberPadding || 6} onChange={(e) => update("customerNumberPadding", parseInt(e.target.value))} />
+              </div>
+              <div></div>
+              <div className="space-y-2">
+                <Label>商品编号前缀</Label>
+                <Input value={form.skuPrefix || "SKU"} onChange={(e) => update("skuPrefix", e.target.value)} />
+                <p className="text-xs text-muted-foreground">例: SKU-000001</p>
+              </div>
+              <div className="space-y-2">
+                <Label>商品编号位数</Label>
+                <Input type="number" value={form.skuNumberPadding || 6} onChange={(e) => update("skuNumberPadding", parseInt(e.target.value))} />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Notification Settings */}
+        <TabsContent value="notification" className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle className="text-base">通知设置</CardTitle></CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>新订单通知</Label>
+                  <p className="text-xs text-muted-foreground">收到新订单时发送通知</p>
+                </div>
+                <Switch checked={form.notifyOnNewOrder ?? true} onCheckedChange={(v) => update("notifyOnNewOrder", v)} />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>付款通知</Label>
+                  <p className="text-xs text-muted-foreground">客户上传付款凭证时通知</p>
+                </div>
+                <Switch checked={form.notifyOnPayment ?? true} onCheckedChange={(v) => update("notifyOnPayment", v)} />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>发货通知</Label>
+                  <p className="text-xs text-muted-foreground">订单发货时通知客户</p>
+                </div>
+                <Switch checked={form.notifyOnShipment ?? true} onCheckedChange={(v) => update("notifyOnShipment", v)} />
+              </div>
+              <div className="space-y-2">
+                <Label>通知邮箱</Label>
+                <Input type="email" value={form.notifyEmail || ""} onChange={(e) => update("notifyEmail", e.target.value)} placeholder="admin@example.com" />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Security Settings */}
+        <TabsContent value="security" className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle className="text-base">安全设置</CardTitle></CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>要求员工登录</Label>
+                  <p className="text-xs text-muted-foreground">发货员必须登录才能操作系统</p>
+                </div>
+                <Switch checked={form.requireStaffLogin ?? true} onCheckedChange={(v) => update("requireStaffLogin", v)} />
+              </div>
+              <div className="space-y-2">
+                <Label>自动完成天数</Label>
+                <Input type="number" value={form.autoCompleteDays ?? 7} onChange={(e) => update("autoCompleteDays", parseInt(e.target.value))} />
+                <p className="text-xs text-muted-foreground">发货后多少天自动完成订单</p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}

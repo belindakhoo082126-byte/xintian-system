@@ -576,3 +576,148 @@ export const flowSendLogs = mysqlTable("flow_send_logs", {
 
 export type FlowSendLog = typeof flowSendLogs.$inferSelect;
 export type InsertFlowSendLog = typeof flowSendLogs.$inferInsert;
+
+// ============================================================================
+// System Settings - Company Profile (公司资料)
+// ============================================================================
+
+export const systemSettings = mysqlTable("system_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  // Company info
+  companyName: varchar("companyName", { length: 255 }),
+  companyLogoUrl: varchar("companyLogoUrl", { length: 500 }),
+  companyAddress: text("companyAddress"),
+  companyPhone: varchar("companyPhone", { length: 50 }),
+  companyEmail: varchar("companyEmail", { length: 255 }),
+  companyWebsite: varchar("companyWebsite", { length: 255 }),
+  businessRegNo: varchar("businessRegNo", { length: 100 }),
+  // Default shipping address
+  defaultShipFromAddress: text("defaultShipFromAddress"),
+  defaultShipFromPhone: varchar("defaultShipFromPhone", { length: 50 }),
+  defaultShipFromName: varchar("defaultShipFromName", { length: 255 }),
+  defaultShipFromPostcode: varchar("defaultShipFromPostcode", { length: 10 }),
+  defaultShipFromState: varchar("defaultShipFromState", { length: 100 }),
+  defaultShipFromCity: varchar("defaultShipFromCity", { length: 100 }),
+  // Currency & Timezone
+  currency: varchar("currency", { length: 10 }).default("MYR").notNull(),
+  timezone: varchar("timezone", { length: 50 }).default("Asia/Kuala_Lumpur").notNull(),
+  // Numbering rules
+  orderPrefix: varchar("orderPrefix", { length: 20 }).default("ORD").notNull(),
+  orderNumberPadding: int("orderNumberPadding").default(6).notNull(),
+  poPrefix: varchar("poPrefix", { length: 20 }).default("PO").notNull(),
+  poNumberPadding: int("poNumberPadding").default(6).notNull(),
+  customerPrefix: varchar("customerPrefix", { length: 20 }).default("CUS").notNull(),
+  customerNumberPadding: int("customerNumberPadding").default(6).notNull(),
+  skuPrefix: varchar("skuPrefix", { length: 20 }).default("SKU").notNull(),
+  skuNumberPadding: int("skuNumberPadding").default(6).notNull(),
+  // Notification settings
+  notifyOnNewOrder: boolean("notifyOnNewOrder").default(true).notNull(),
+  notifyOnPayment: boolean("notifyOnPayment").default(true).notNull(),
+  notifyOnShipment: boolean("notifyOnShipment").default(true).notNull(),
+  notifyEmail: varchar("notifyEmail", { length: 255 }),
+  // Security
+  requireStaffLogin: boolean("requireStaffLogin").default(true).notNull(),
+  autoCompleteDays: int("autoCompleteDays").default(7).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertSystemSetting = typeof systemSettings.$inferInsert;
+
+// ============================================================================
+// Shipping Rules (运费规则)
+// ============================================================================
+
+export const shippingRules = mysqlTable("shipping_rules", {
+  id: int("id").autoincrement().primaryKey(),
+  // Shipping zone: west_malaysia, east_malaysia, self_pickup, lalamove
+  zone: mysqlEnum("zone", ["west_malaysia", "east_malaysia", "self_pickup", "lalamove"]).notNull(),
+  // Display name
+  displayName: varchar("displayName", { length: 100 }).notNull(),
+  // Free shipping threshold (RM)
+  freeShippingThreshold: decimal("freeShippingThreshold", { precision: 10, scale: 2 }),
+  // Free shipping max weight (kg)
+  freeShippingMaxWeight: decimal("freeShippingMaxWeight", { precision: 8, scale: 2 }),
+  // Additional weight price per kg (RM)
+  additionalKgPrice: decimal("additionalKgPrice", { precision: 10, scale: 2 }),
+  // Default courier for zone
+  defaultCourier: varchar("defaultCourier", { length: 50 }),
+  // For east malaysia: max weight to calculate (e.g. 2kg)
+  maxCalculateWeight: decimal("maxCalculateWeight", { precision: 8, scale: 2 }),
+  // Special instructions
+  specialInstruction: text("specialInstruction"),
+  // Is enabled
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  // Sort order
+  sortOrder: int("sortOrder").default(0).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ShippingRule = typeof shippingRules.$inferSelect;
+export type InsertShippingRule = typeof shippingRules.$inferInsert;
+
+// ============================================================================
+// Shipping Providers (物流供应商配置)
+// ============================================================================
+
+export const shippingProviders = mysqlTable("shipping_providers", {
+  id: int("id").autoincrement().primaryKey(),
+  // Provider key: parceldaily, parcel_king, manual
+  providerKey: varchar("providerKey", { length: 50 }).notNull().unique(),
+  // Display name
+  displayName: varchar("displayName", { length: 100 }).notNull(),
+  // Is enabled
+  isEnabled: boolean("isEnabled").default(false).notNull(),
+  // Environment: sandbox / production
+  environment: mysqlEnum("environment", ["sandbox", "production"]).default("production").notNull(),
+  // Credentials stored as JSON (merchant_id, token, etc.) - NOT exposed to frontend
+  credentials: text("credentials"), // JSON string, server-side only
+  // Supported couriers (JSON array)
+  supportedCouriers: text("supportedCouriers"), // JSON array: ["line_clear", "spx", "poslaju", ...]
+  // Last sync timestamp
+  lastSyncAt: timestamp("lastSyncAt"),
+  // Account balance (cached)
+  accountBalance: decimal("accountBalance", { precision: 12, scale: 2 }),
+  // Additional config (JSON)
+  config: text("config"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ShippingProvider = typeof shippingProviders.$inferSelect;
+export type InsertShippingProvider = typeof shippingProviders.$inferInsert;
+
+// ============================================================================
+// Shipments (物流运单)
+// ============================================================================
+
+export const shipments = mysqlTable("shipments", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  // Provider
+  providerKey: varchar("providerKey", { length: 50 }).notNull(),
+  // Courier selected (e.g. spx, poslaju, line_clear)
+  courier: varchar("courier", { length: 50 }).notNull(),
+  // ParcelDaily order ID
+  providerOrderId: varchar("providerOrderId", { length: 100 }),
+  // Tracking number
+  trackingNumber: varchar("trackingNumber", { length: 100 }),
+  // Consignment note URL (AWB)
+  consignmentNoteUrl: varchar("consignmentNoteUrl", { length: 500 }),
+  // Weight
+  actualWeight: decimal("actualWeight", { precision: 8, scale: 2 }).notNull(),
+  // Shipping cost (from provider)
+  shippingCost: decimal("shippingCost", { precision: 10, scale: 2 }),
+  // Status
+  status: mysqlEnum("status", ["created", "checked_out", "in_transit", "delivered", "failed", "cancelled"]).default("created").notNull(),
+  // Raw API response (JSON)
+  rawResponse: text("rawResponse"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  checkedOutAt: timestamp("checkedOutAt"),
+  shippedAt: timestamp("shippedAt"),
+  deliveredAt: timestamp("deliveredAt"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Shipment = typeof shipments.$inferSelect;
+export type InsertShipment = typeof shipments.$inferInsert;

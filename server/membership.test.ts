@@ -98,6 +98,27 @@ vi.mock("./db", () => ({
   getPurchaseInventoryReport: vi.fn(() => Promise.resolve(null)),
   getRefundRecords: vi.fn(() => Promise.resolve([])),
   getMonthlyProfitReport: vi.fn(() => Promise.resolve({ revenue: "0", cost: "0", profit: "0" })),
+  // System Settings & Shipping
+  getSystemSettings: vi.fn(() => Promise.resolve({ id: 1, companyName: "心田", currency: "MYR", timezone: "Asia/Kuala_Lumpur" })),
+  updateSystemSettings: vi.fn((data: any) => Promise.resolve({ id: 1, ...data })),
+  getShippingRules: vi.fn(() => Promise.resolve([
+    { id: 1, zone: "west_malaysia", displayName: "西马", freeShippingThreshold: "150.00", isEnabled: true, sortOrder: 1 },
+    { id: 2, zone: "east_malaysia", displayName: "东马", maxCalculateWeight: "2.00", isEnabled: true, sortOrder: 2 },
+  ])),
+  getShippingRuleByZone: vi.fn(() => Promise.resolve(null)),
+  updateShippingRule: vi.fn((_id: number, data: any) => Promise.resolve({ id: 1, ...data })),
+  createShippingRule: vi.fn((data: any) => Promise.resolve({ id: 3, ...data })),
+  deleteShippingRule: vi.fn(() => Promise.resolve()),
+  getShippingProviders: vi.fn(() => Promise.resolve([
+    { id: 1, providerKey: "parceldaily", displayName: "ParcelDaily", isEnabled: true, environment: "production" },
+    { id: 2, providerKey: "manual", displayName: "Manual Shipping", isEnabled: true, environment: "production" },
+  ])),
+  getShippingProviderByKey: vi.fn(() => Promise.resolve(null)),
+  updateShippingProvider: vi.fn((_key: string, data: any) => Promise.resolve({ providerKey: "parceldaily", ...data })),
+  getShipmentByOrderId: vi.fn(() => Promise.resolve(null)),
+  createShipment: vi.fn((data: any) => Promise.resolve({ id: 1, ...data })),
+  updateShipment: vi.fn((_id: number, data: any) => Promise.resolve({ id: 1, ...data })),
+  getShipmentsByStatus: vi.fn(() => Promise.resolve([])),
 }));
 
 import * as dbMock from "./db";
@@ -547,5 +568,65 @@ describe("flows router", () => {
 
     expect(result).toBeDefined();
     expect(dbMock.createFlowTemplate).toHaveBeenCalled();
+  });
+});
+
+describe("settings router", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+  it("get returns system settings", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.settings.get();
+    expect(result).toEqual({ id: 1, companyName: "心田", currency: "MYR", timezone: "Asia/Kuala_Lumpur" });
+  });
+  it("update saves settings with admin", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.settings.update({ companyName: "心田 ERP" });
+    expect(result).toMatchObject({ id: 1, companyName: "心田 ERP" });
+    expect(dbMock.updateSystemSettings).toHaveBeenCalledWith({ companyName: "心田 ERP" });
+  });
+});
+
+describe("shippingRules router", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+  it("list returns shipping rules", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.shippingRules.list();
+    expect(result).toHaveLength(2);
+    expect(result[0].zone).toBe("west_malaysia");
+  });
+  it("update modifies a rule with admin", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.shippingRules.update({ id: 1, displayName: "西马半岛" });
+    expect(result).toMatchObject({ id: 1, displayName: "西马半岛" });
+    expect(dbMock.updateShippingRule).toHaveBeenCalled();
+  });
+  it("delete removes a rule with admin", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.shippingRules.delete({ id: 5 });
+    expect(result).toEqual({ success: true });
+    expect(dbMock.deleteShippingRule).toHaveBeenCalledWith(5);
+  });
+});
+
+describe("shippingProviders router", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+  it("list returns providers without credentials", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.shippingProviders.list();
+    expect(result).toHaveLength(2);
+    expect(result[0].credentials).toBeUndefined();
+  });
+  it("update modifies provider settings with admin", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.shippingProviders.update({ providerKey: "parceldaily", isEnabled: false });
+    expect(result).toMatchObject({ providerKey: "parceldaily", isEnabled: false });
+    expect(dbMock.updateShippingProvider).toHaveBeenCalled();
   });
 });

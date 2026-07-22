@@ -7,6 +7,8 @@ import * as db from "./db";
 import { eq } from "drizzle-orm";
 import { variants } from "../drizzle/schema";
 import { sendTelegramJoinFlow, sendMembershipFlow, getUserProfile, sendTextMessage } from "./messenger";
+import * as parceldaily from "./parceldaily";
+import * as shippingProvider from "./shippingProvider";
 
 export const appRouter = router({
   system: systemRouter,
@@ -1558,6 +1560,310 @@ export const appRouter = router({
         webhookUrl: "/api/facebook/webhook",
         verifyToken: process.env.FB_VERIFY_TOKEN || "",
       };
+    }),
+  }),
+
+  // ===========================================================================
+  // System Settings (系统设置)
+  // ===========================================================================
+  settings: router({
+    // Company profile & system settings
+    get: protectedProcedure.query(async () => {
+      return await db.getSystemSettings();
+    }),
+    update: adminProcedure.input(z.object({
+      companyName: z.string().optional(),
+      companyLogoUrl: z.string().optional(),
+      companyAddress: z.string().optional(),
+      companyPhone: z.string().optional(),
+      companyEmail: z.string().optional(),
+      companyWebsite: z.string().optional(),
+      businessRegNo: z.string().optional(),
+      defaultShipFromAddress: z.string().optional(),
+      defaultShipFromPhone: z.string().optional(),
+      defaultShipFromName: z.string().optional(),
+      defaultShipFromPostcode: z.string().optional(),
+      defaultShipFromState: z.string().optional(),
+      defaultShipFromCity: z.string().optional(),
+      currency: z.string().optional(),
+      timezone: z.string().optional(),
+      orderPrefix: z.string().optional(),
+      orderNumberPadding: z.number().optional(),
+      poPrefix: z.string().optional(),
+      poNumberPadding: z.number().optional(),
+      customerPrefix: z.string().optional(),
+      customerNumberPadding: z.number().optional(),
+      skuPrefix: z.string().optional(),
+      skuNumberPadding: z.number().optional(),
+      notifyOnNewOrder: z.boolean().optional(),
+      notifyOnPayment: z.boolean().optional(),
+      notifyOnShipment: z.boolean().optional(),
+      notifyEmail: z.string().optional(),
+      requireStaffLogin: z.boolean().optional(),
+      autoCompleteDays: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      return await db.updateSystemSettings(input);
+    }),
+  }),
+
+  // ===========================================================================
+  // Shipping Rules (运费规则)
+  // ===========================================================================
+  shippingRules: router({
+    list: protectedProcedure.query(async () => {
+      return await db.getShippingRules();
+    }),
+    update: adminProcedure.input(z.object({
+      id: z.number(),
+      displayName: z.string().optional(),
+      freeShippingThreshold: z.number().nullable().optional(),
+      freeShippingMaxWeight: z.number().nullable().optional(),
+      additionalKgPrice: z.number().nullable().optional(),
+      defaultCourier: z.string().nullable().optional(),
+      maxCalculateWeight: z.number().nullable().optional(),
+      specialInstruction: z.string().nullable().optional(),
+      isEnabled: z.boolean().optional(),
+      sortOrder: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      return await db.updateShippingRule(id, data);
+    }),
+    create: adminProcedure.input(z.object({
+      zone: z.enum(["west_malaysia", "east_malaysia", "self_pickup", "lalamove"]),
+      displayName: z.string(),
+      freeShippingThreshold: z.number().nullable().optional(),
+      freeShippingMaxWeight: z.number().nullable().optional(),
+      additionalKgPrice: z.number().nullable().optional(),
+      defaultCourier: z.string().nullable().optional(),
+      maxCalculateWeight: z.number().nullable().optional(),
+      specialInstruction: z.string().nullable().optional(),
+      isEnabled: z.boolean().optional(),
+      sortOrder: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      return await db.createShippingRule(input);
+    }),
+    delete: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.deleteShippingRule(input.id);
+      return { success: true };
+    }),
+  }),
+
+  // ===========================================================================
+  // Shipping Providers (物流供应商)
+  // ===========================================================================
+  shippingProviders: router({
+    list: protectedProcedure.query(async () => {
+      const providers = await db.getShippingProviders();
+      // Don't expose credentials to frontend
+      return providers.map(p => ({
+        ...p,
+        credentials: undefined,
+      }));
+    }),
+    update: adminProcedure.input(z.object({
+      providerKey: z.string(),
+      isEnabled: z.boolean().optional(),
+      environment: z.enum(["sandbox", "production"]).optional(),
+      supportedCouriers: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const { providerKey, ...data } = input;
+      return await db.updateShippingProvider(providerKey, data);
+    }),
+    // Test connection for a provider
+    testConnection: adminProcedure.input(z.object({
+      providerKey: z.string(),
+    })).mutation(async ({ input }) => {
+      if (input.providerKey === "parceldaily") {
+        if (!parceldaily.isParcelDailyConfigured()) {
+          return { success: false, error: "ParcelDaily credentials not configured" };
+        }
+        try {
+          const info = await parceldaily.checkAccountInfo();
+          if (info.data) {
+            // Update balance in DB
+            await db.updateShippingProvider("parceldaily", {
+              accountBalance: info.data.credit.toString() as any,
+              lastSyncAt: new Date() as any,
+            });
+            return {
+              success: true,
+              balance: info.data.credit,
+              package: info.data.topupPackage,
+              expiresIn: info.data.expiresIn,
+            };
+          }
+          return { success: false, error: info.error?.message || "Unknown error" };
+        } catch (error: any) {
+          return { success: false, error: error.message };
+        }
+      }
+      return { success: false, error: "Unknown provider" };
+    }),
+  }),
+
+  // ===========================================================================
+  // ParcelDaily Operations (ParcelDaily 物流操作)
+  // ===========================================================================
+  parceldaily: router({
+    // Check account info / balance
+    accountInfo: adminProcedure.query(async () => {
+      if (!parceldaily.isParcelDailyConfigured()) {
+        return { success: false, error: "Not configured" };
+      }
+      try {
+        const info = await parceldaily.checkAccountInfo();
+        return { success: true, data: info.data };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+    // Check postcode
+    checkPostcode: protectedProcedure.input(z.object({
+      postcode: z.string(),
+    })).query(async ({ input }) => {
+      try {
+        const result = await parceldaily.checkPostcode(input.postcode);
+        return { success: true, data: result.success };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+    // Get shipping quote
+    getQuote: protectedProcedure.input(z.object({
+      fromPostcode: z.string(),
+      toPostcode: z.string(),
+      weightKg: z.number(),
+    })).query(async ({ input }) => {
+      try {
+        const quote = await parceldaily.getQuote({
+          fromPostcode: input.fromPostcode,
+          toPostcode: input.toPostcode,
+          kg: input.weightKg,
+        });
+        const couriers = parceldaily.extractCourierPrices(quote);
+        return { success: true, couriers, raw: quote.success };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+    // Create shipment for an order
+    createShipment: protectedProcedure.input(z.object({
+      orderId: z.number(),
+      courier: z.string(),
+      weightKg: z.number(),
+      price: z.number().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      try {
+        // Get order details
+        const order = await db.getOrderById(input.orderId);
+        if (!order) throw new Error("Order not found");
+
+        // Get customer details for delivery address
+        const customer = await db.getCustomerById(order.customerId);
+        if (!customer) throw new Error("Customer not found");
+
+        // Get system settings for pickup address
+        const settings = await db.getSystemSettings();
+        if (!settings?.defaultShipFromPostcode) {
+          throw new Error("Default shipping address not configured in system settings");
+        }
+
+        const pickupAddress = {
+          fullName: settings.defaultShipFromName || settings.companyName || "Sender",
+          phone: settings.defaultShipFromPhone || "",
+          line1: settings.defaultShipFromAddress || "",
+          city: settings.defaultShipFromCity || "",
+          postcode: settings.defaultShipFromPostcode,
+          state: settings.defaultShipFromState || "",
+          country: "Malaysia",
+        };
+
+        const deliveryAddress = {
+          fullName: customer.name || customer.facebookName || "Recipient",
+          phone: customer.phoneNumber || "",
+          line1: customer.address || order.shippingAddress || "",
+          city: customer.city || "",
+          postcode: customer.postalCode || "",
+          state: customer.state || "",
+          country: customer.country || "Malaysia",
+        };
+
+        const result = await shippingProvider.parcelDailyProvider.createShipment({
+          courier: input.courier,
+          pickupAddress,
+          deliveryAddress,
+          weightKg: input.weightKg,
+          price: input.price || 0,
+          content: "Goods",
+          contentValue: parseFloat(order.totalAmount?.toString() || "0"),
+          reference: order.orderNumber,
+        });
+
+        // Save shipment record
+        const shipment = await db.createShipment({
+          orderId: input.orderId,
+          providerKey: "parceldaily",
+          courier: input.courier,
+          providerOrderId: result.providerOrderId,
+          actualWeight: input.weightKg.toString() as any,
+          status: "created",
+          rawResponse: JSON.stringify(result.rawResponse),
+        });
+
+        return { success: true, shipment };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+    // Checkout shipment (pay and get tracking number)
+    checkoutShipment: protectedProcedure.input(z.object({
+      shipmentId: z.number(),
+    })).mutation(async ({ input }) => {
+      try {
+        // Get shipment from DB by ID - use a direct query
+        const dbAny = db as any;
+        const shipment = await dbAny.getShipmentById?.(input.shipmentId);
+        if (!shipment) {
+          throw new Error("Shipment not found");
+        }
+
+        const result = await shippingProvider.parcelDailyProvider.checkoutShipment(shipment.providerOrderId);
+
+        // Update shipment with tracking number
+        const updated = await db.updateShipment(input.shipmentId, {
+          trackingNumber: result.trackingNumber,
+          consignmentNoteUrl: result.consignmentNoteUrl || null,
+          shippingCost: result.shippingCost.toString() as any,
+          status: "checked_out",
+          checkedOutAt: new Date() as any,
+        });
+
+        // Update order status to shipped
+        await db.updateOrderStatus(shipment.orderId, {
+          physicalStatus: "shipped",
+          trackingNumber: result.trackingNumber,
+          courierCompany: shipment.courier,
+        });
+
+        return { success: true, shipment: updated, trackingNumber: result.trackingNumber };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+    // Get consignment note URL
+    getConsignmentNote: protectedProcedure.input(z.object({
+      shipmentId: z.number(),
+    })).query(async ({ input }) => {
+      try {
+        const dbAny2 = db as any;
+        const shipment = await dbAny2.getShipmentById?.(input.shipmentId);
+        if (!shipment) throw new Error("Shipment not found");
+
+        const result = await parceldaily.getConsignmentNote(shipment.providerOrderId);
+        return { success: true, url: result.url };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
     }),
   }),
 
