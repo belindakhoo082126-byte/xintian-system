@@ -49,8 +49,8 @@
 
 ## 待后续接入
 
-- [ ] Facebook Messenger API 实际发送集成（目前为模拟发送）
-- [ ] Facebook Live 直播捉单功能
+- [x] Facebook Messenger API 实际发送集成（Graph API v21.0：sendTextMessage/sendButtonMessage/sendMediaMessage/sendTemplateMessage/sendMembershipFlow/sendTelegramJoinFlow）
+- [x] Facebook Live 直播捉单功能（关键词匹配 + 自动建单 + 自动回复 + Messenger 通知）
 - [x] 客户端商城前端（商品浏览、购物车、结账）
 - [x] 汇款单据上传 API（S3 存储集成）
 - [ ] 7 天自动完成定时任务
@@ -259,3 +259,49 @@
 - [x] TypeScript zero errors
 - [x] Vitest tests passing
 - [x] Checkpoint saved
+
+## XLCS V1: 包货、发货、客户订单模块 + 直播捉单
+
+### Sprint 1: Database Schema
+- [x] packages 表（包裹：courier, trackingNumber, shippingLabel, auto/manual）
+- [x] package_items 表（包裹商品关联：partial shipping 支援）
+- [x] live_order_captures 表（直播捉单记录：comment, keyword, matched product, order）
+
+### Sprint 2: Backend API
+- [x] 包货工作台 API（待包货/已发货/部分发货/今日已发货 列表）
+- [x] 包货详情 API（商品图片、规格、数量、客户信息）
+- [x] A5 包货单数据 API（黑白打印格式数据）
+- [x] 完整发货 API（多包裹，自动状态流转为已发货）
+- [x] 部分发货 API（选择商品，创建包裹，状态流转为部分发货）
+- [x] 包裹查询 API（获取订单包裹列表）
+- [x] ParcelDaily 自动 Shipping Label API
+- [x] 客户订单追踪 API（公开，简化状态）
+- [x] 直播捉单 API（关键词解析 + 商品匹配 + 自动建单 + 记录查询）
+
+### Sprint 3: Frontend - 包货工作台
+- [x] 包货首页（4 个状态 Tab + 订单列表 + 特殊标签）
+- [x] 包货详情页（商品彩色照片 + 超大数量 + 客户完整信息）
+
+### Sprint 4: Frontend - A5 包货单
+- [x] A5 打印预览（黑白、勾选框、超大数量、汇总金额、赠品独立列出）
+- [x] 打印按钮（window.print 触发）
+
+### Sprint 5: Frontend - 发货
+- [x] 完整发货（多包裹新增 + courier 选择 + tracking 输入）
+- [x] 部分发货（商品勾选 + courier + tracking）
+- [x] ParcelDaily 自动获取 tracking（集成 parceldaily.ts）
+- [x] 混合物流支持（同一订单 auto + manual 包裹）
+
+### Sprint 6: Frontend - 客户订单追踪
+- [x] 公开订单追踪页（简化状态 + 商品照片 + 包裹物流 + 查询链接）
+
+### Sprint 7: 直播捉单
+- [x] 关键词匹配引擎（comment → product keyword match）
+- [x] 自动建单逻辑（匹配成功 → 创建挂单 → 自动回复确认）
+- [x] 自动发送 Messenger 消息请求收货地址
+- [x] live_order_captures 记录
+
+### Sprint 8: 测试与验收
+- [x] TypeScript 编译零错误
+- [x] Vitest 单元测试（60 个全部通过）
+- [ ] 保存检查点

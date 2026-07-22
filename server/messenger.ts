@@ -360,15 +360,74 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
     // New comment on a post
     const commentId = value?.comment_id;
     const commenterName = value?.from?.name;
+    const commenterPsid = value?.from?.id; // Facebook sender ID
     const commentMessage = value?.message;
     const postId = value?.post_id;
 
     console.log("[Facebook] New comment:", commenterName, ":", commentMessage, "on post:", postId);
 
-    // Auto-reply to comments (especially during live streams)
+    // Auto-reply to comments + keyword matching for live order capture
     if (commentMessage) {
       const lowerMsg = commentMessage.toLowerCase();
 
+      // Try keyword matching for live order capture (e.g. "ABS+2", "POT+1")
+      try {
+        const { parseCommentKeywords, matchKeywordsToProducts, createOrderFromLiveCapture } = require("./db");
+        const keywords = parseCommentKeywords(commentMessage);
+        
+        if (keywords.length > 0) {
+          // Has keyword patterns, try to match products
+          const { matched, unmatched } = await matchKeywordsToProducts(keywords);
+          
+          if (matched.length > 0) {
+            // Create order from matched products
+            const orderResult = await createOrderFromLiveCapture({
+              commenterName,
+              commentMessage,
+              commentId,
+              postId,
+              matchedProducts: matched.map((m: any) => ({
+                keyword: m.keyword,
+                quantity: m.quantity,
+                productId: m.productId,
+                productName: m.productName,
+                productSku: m.productSku,
+                unitPrice: m.unitPrice,
+              })),
+              sourceName: "Facebook Live",
+            });
+            
+            // Reply with order confirmation
+            const itemList = matched.map((m: any) => `${m.keyword}+${m.quantity}`).join(", ");
+            await replyToComment(
+              commentId,
+              `${commenterName} 您好！已自动建单 ✅\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请私信我们提供收货地址和付款方式哦~`
+            );
+            
+            // Also try to send Messenger message
+            try {
+              await sendTextMessage(commenterPsid || '', `您好 ${commenterName}！\n\n您的直播订单已创建：\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请提供以下信息完成订单：\n1. 收货地址\n2. 联系电话\n3. 付款方式`);
+            } catch (msgErr) {
+              console.log("[Facebook] Could not send Messenger message (expected if no PSID)");
+            }
+            
+            return; // Order created, skip generic replies
+          } else if (unmatched.length > 0) {
+            // Keywords found but no product match
+            const unmatchedList = unmatched.map((u: any) => u.keyword).join(", ");
+            await replyToComment(
+              commentId,
+              `${commenterName} 您好！关键词 "${unmatchedList}" 暂未匹配到商品，请私信我们确认哦~`
+            );
+            return;
+          }
+        }
+      } catch (kwError: any) {
+        console.error("[Facebook] Keyword matching error:", kwError?.message);
+        // Continue to generic replies
+      }
+
+      // Generic auto-replies (only if no keyword match was attempted)
       if (lowerMsg.includes("要") || lowerMsg.includes("买") || lowerMsg.includes("下单")) {
         await replyToComment(commentId, `${commenterName} 您好！已收到您的订单意向，请私信我们完成下单哦~`);
       } else if (lowerMsg.includes("多少钱") || lowerMsg.includes("价格") || lowerMsg.includes("price")) {

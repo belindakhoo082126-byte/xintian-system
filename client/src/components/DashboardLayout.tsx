@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings, Ship, Warehouse, CreditCard, Store } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings, Ship, Warehouse, CreditCard, Store, PackageCheck, Search } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -48,6 +48,8 @@ const menuItems = [
   { icon: CreditCard, label: "付款设定", path: "/payment-settings" },
   { icon: Settings, label: "系统设置", path: "/system-settings" },
   { icon: Store, label: "商城设置", path: "/mall-settings" },
+  { icon: PackageCheck, label: "包货工作台", path: "/packing" },
+  { icon: Search, label: "订单查询", path: "/order-tracking" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

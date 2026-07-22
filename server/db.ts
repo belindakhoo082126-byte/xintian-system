@@ -15,6 +15,8 @@ import {
   paymentMethods, orderStatusLogs, holdOrderInfos, notificationLogs,
   // Mall imports
   mallSettings, mallBanners, mallQuickContacts, mallNotices, mallThemeSchedules, mallProductDetailImages,
+  // Packing & Shipping imports
+  packages, packageItems, liveOrderCaptures,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3183,4 +3185,592 @@ export function parseSmartPaste(text: string): {
   }
 
   return result;
+}
+
+// ============================================================================
+// PACKING & SHIPPING MODULE (包货发货模块)
+// ============================================================================
+
+// --- Packing Workbench: Get orders by status ---
+export async function getPackingOrders(status: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    customerId: orders.customerId,
+    customerName: customers.name,
+    customerPhone: customers.phoneNumber,
+    shippingAddress: orders.shippingAddress,
+    shippingMethod: orders.shippingMethod,
+    totalAmount: orders.totalAmount,
+    paidAmount: orders.paidAmount,
+    totalWeight: orders.totalWeight,
+    createdAt: orders.createdAt,
+    paymentConfirmedAt: orders.paymentConfirmedAt,
+  }).from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id))
+    .where(eq(orders.physicalStatus, status as any))
+    .orderBy(desc(orders.paymentConfirmedAt), desc(orders.createdAt));
+  
+  // Get item count and types for each order
+  const enriched = await Promise.all(result.map(async (o) => {
+    const items = await db.select({
+      id: orderItems.id,
+      quantity: orderItems.quantity,
+      productName: orderItems.productName,
+    }).from(orderItems).where(eq(orderItems.orderId, o.id));
+    
+    const totalQty = items.reduce((sum, i) => sum + i.quantity, 0);
+    const itemTypes = items.length;
+    
+    // Check for special labels
+    let specialLabel = "";
+    if (o.shippingMethod === "lalamove") specialLabel = "LALAMOVE";
+    else if (o.shippingMethod === "east_malaysia_shopee") specialLabel = "东马 SHOPEE";
+    else if (o.shippingMethod === "east_malaysia_poslaju") specialLabel = "东马 POSLAJU";
+    
+    return { ...o, totalQuantity: totalQty, itemTypes, specialLabel };
+  }));
+  
+  return enriched;
+}
+
+// --- Packing Detail: Get full order with items and product images ---
+export async function getPackingDetail(orderId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const order = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    customerId: orders.customerId,
+    customerName: customers.name,
+    customerPhone: customers.phoneNumber,
+    shippingAddress: orders.shippingAddress,
+    shippingMethod: orders.shippingMethod,
+    deliveryRemark: orders.shippingAddress,
+    totalAmount: orders.totalAmount,
+    paidAmount: orders.paidAmount,
+    shippingFee: orders.shippingFee,
+    discountAmount: orders.discountAmount,
+    totalWeight: orders.totalWeight,
+    physicalStatus: orders.physicalStatus,
+    createdAt: orders.createdAt,
+    paymentConfirmedAt: orders.paymentConfirmedAt,
+  }).from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id))
+    .where(eq(orders.id, orderId))
+    .limit(1);
+  
+  if (order.length === 0) return null;
+  
+  const items = await db.select({
+    id: orderItems.id,
+    productId: orderItems.productId,
+    productName: orderItems.productName,
+    productSku: orderItems.productSku,
+    variationId: orderItems.variationId,
+    variationName: orderItems.variationName,
+    quantity: orderItems.quantity,
+    unitPrice: orderItems.unitPrice,
+    discount: orderItems.discount,
+    subtotal: orderItems.subtotal,
+    productType: orderItems.productType,
+  }).from(orderItems).where(eq(orderItems.orderId, orderId));
+  
+  // Get product images for each item
+  const enrichedItems = await Promise.all(items.map(async (i) => {
+    const images = await db.select({
+      imageUrl: productImages.url,
+    }).from(productImages)
+      .where(eq(productImages.productId, i.productId))
+      .orderBy(asc(productImages.sortOrder))
+      .limit(5);
+    
+    // Also get cover image from products table
+    const product = await db.select({
+      coverImageUrl: products.coverImageUrl,
+      keyword: products.keyword,
+    }).from(products).where(eq(products.id, i.productId)).limit(1);
+    
+    return {
+      ...i,
+      coverImageUrl: product[0]?.coverImageUrl || null,
+      keyword: product[0]?.keyword || null,
+      images: images.map(img => img.imageUrl),
+    };
+  }));
+  
+  // Get existing packages
+  const existingPackages = await db.select().from(packages).where(eq(packages.orderId, orderId)).orderBy(asc(packages.packageNumber));
+  
+  return {
+    ...order[0],
+    items: enrichedItems,
+    packages: existingPackages,
+  };
+}
+
+// --- A5 Packing Slip Data ---
+export async function getPackingSlipData(orderId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const detail = await getPackingDetail(orderId);
+  if (!detail) return null;
+  
+  // Calculate summary
+  const regularItems = detail.items.filter((i: any) => i.productType === "physical" && parseFloat(i.discount) === 0);
+  const discountItems = detail.items.filter((i: any) => i.productType === "physical" && parseFloat(i.discount) > 0);
+  const giftItems = detail.items.filter((i: any) => i.productType === "gift");
+  
+  const regularTotal = regularItems.reduce((sum: number, i: any) => sum + parseFloat(i.subtotal), 0);
+  const discountTotal = discountItems.reduce((sum: number, i: any) => sum + parseFloat(i.subtotal), 0);
+  const discountCount = discountItems.reduce((sum: number, i: any) => sum + i.quantity, 0);
+  
+  const paidAmount = parseFloat(detail.paidAmount || "0");
+  const totalAmount = parseFloat(detail.totalAmount || "0");
+  const shippingFee = parseFloat(detail.shippingFee || "0");
+  const discountAmount = parseFloat(detail.discountAmount || "0");
+  const balance = totalAmount - paidAmount;
+  
+  // Determine special label for A5 header
+  let specialLabel = "";
+  if (detail.shippingMethod === "lalamove") specialLabel = "LALAMOVE";
+  else if (detail.shippingMethod === "east_malaysia_shopee") specialLabel = "东马 SHOPEE";
+  else if (detail.shippingMethod === "east_malaysia_poslaju") specialLabel = "东马 POSLAJU";
+  
+  return {
+    orderNumber: detail.orderNumber,
+    customerName: detail.customerName,
+    customerPhone: detail.customerPhone,
+    shippingAddress: detail.shippingAddress,
+    paymentConfirmedAt: detail.paymentConfirmedAt,
+    items: detail.items,
+    giftItems,
+    summary: {
+      itemTypes: detail.items.length,
+      regularTotal: regularTotal.toFixed(2),
+      discountTotal: discountTotal.toFixed(2),
+      discountCount,
+      shippingFee: shippingFee.toFixed(2),
+      discountAmount: discountAmount.toFixed(2),
+      paidAmount: paidAmount.toFixed(2),
+      balance: balance.toFixed(2),
+      totalAmount: totalAmount.toFixed(2),
+    },
+    specialLabel,
+  };
+}
+
+// --- Create Package (包裹) ---
+export async function createPackage(data: {
+  orderId: number;
+  courier: string;
+  shippingType: "auto" | "manual";
+  trackingNumber?: string;
+  shippingLabelUrl?: string;
+  providerOrderId?: string;
+  weight?: string;
+  shippingCost?: string;
+  itemIds?: number[]; // For partial shipping: which order items are in this package
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Get next package number
+  const existing = await db.select().from(packages).where(eq(packages.orderId, data.orderId));
+  const packageNumber = existing.length + 1;
+  
+  const result = await db.insert(packages).values({
+    orderId: data.orderId,
+    packageNumber,
+    courier: data.courier,
+    shippingType: data.shippingType,
+    trackingNumber: data.trackingNumber || null,
+    shippingLabelUrl: data.shippingLabelUrl || null,
+    providerOrderId: data.providerOrderId || null,
+    weight: data.weight || "0",
+    shippingCost: data.shippingCost || null,
+    status: "shipped",
+    shippedAt: new Date(),
+  });
+  
+  const packageId = (result as any).insertId;
+  
+  // If item IDs provided (partial shipping), link them
+  if (data.itemIds && data.itemIds.length > 0) {
+    for (const itemId of data.itemIds) {
+      // Get the order item to know quantity
+      const item = await db.select().from(orderItems).where(eq(orderItems.id, itemId)).limit(1);
+      if (item.length > 0) {
+        await db.insert(packageItems).values({
+          packageId,
+          orderItemId: itemId,
+          quantity: item[0].quantity,
+        });
+      }
+    }
+  }
+  
+  return { packageId, packageNumber };
+}
+
+// --- Full Shipping: Mark order as shipped ---
+export async function fullShipping(orderId: number, packageList: Array<{
+  courier: string;
+  shippingType: "auto" | "manual";
+  trackingNumber?: string;
+  shippingLabelUrl?: string;
+  providerOrderId?: string;
+  weight?: string;
+  shippingCost?: string;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Create all packages
+  for (const pkg of packageList) {
+    await createPackage({
+      orderId,
+      ...pkg,
+    });
+  }
+  
+  // Update order status to shipped
+  await db.update(orders).set({
+    physicalStatus: "shipped",
+    shippedAt: new Date(),
+  }).where(eq(orders.id, orderId));
+  
+  return { success: true };
+}
+
+// --- Partial Shipping: Ship selected items only ---
+export async function partialShipping(orderId: number, itemIds: number[], packageData: {
+  courier: string;
+  shippingType: "auto" | "manual";
+  trackingNumber?: string;
+  shippingLabelUrl?: string;
+  providerOrderId?: string;
+  weight?: string;
+  shippingCost?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Create package with selected items
+  await createPackage({
+    orderId,
+    ...packageData,
+    itemIds,
+  });
+  
+  // Check if all items are now shipped
+  const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const allPackages = await db.select().from(packages).where(eq(packages.orderId, orderId));
+  
+  // Get all shipped item IDs
+  const shippedItemIds = new Set<number>();
+  for (const pkg of allPackages) {
+    const pkgItems = await db.select().from(packageItems).where(eq(packageItems.packageId, pkg.id));
+    for (const pi of pkgItems) {
+      shippedItemIds.add(pi.orderItemId);
+    }
+  }
+  
+  // Check if all items are shipped
+  const allShipped = allItems.every((item) => shippedItemIds.has(item.id));
+  
+  // Update order status
+  await db.update(orders).set({
+    physicalStatus: allShipped ? "shipped" : "partial_shipped",
+    ...(allShipped ? { shippedAt: new Date() } : {}),
+  }).where(eq(orders.id, orderId));
+  
+  return { success: true, allShipped };
+}
+
+// --- Get packages for an order ---
+export async function getOrderPackages(orderId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const pkgs = await db.select().from(packages).where(eq(packages.orderId, orderId)).orderBy(asc(packages.packageNumber));
+  
+  // Get items for each package
+  const enriched = await Promise.all(pkgs.map(async (p) => {
+    const items = await db.select({
+      packageItemId: packageItems.id,
+      orderItemId: packageItems.orderItemId,
+      quantity: packageItems.quantity,
+      productName: orderItems.productName,
+      variationName: orderItems.variationName,
+    }).from(packageItems)
+      .leftJoin(orderItems, eq(packageItems.orderItemId, orderItems.id))
+      .where(eq(packageItems.packageId, p.id));
+    
+    return { ...p, items };
+  }));
+  
+  return enriched;
+}
+
+// --- Customer Order Tracking (public) ---
+export async function getCustomerOrderTracking(orderNumber: string, contactNumber?: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const order = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    physicalStatus: orders.physicalStatus,
+    totalAmount: orders.totalAmount,
+    paidAmount: orders.paidAmount,
+    shippingFee: orders.shippingFee,
+    discountAmount: orders.discountAmount,
+    shippingAddress: orders.shippingAddress,
+    shippingMethod: orders.shippingMethod,
+    customerName: customers.name,
+    customerPhone: customers.phoneNumber,
+    createdAt: orders.createdAt,
+  }).from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id))
+    .where(eq(orders.orderNumber, orderNumber))
+    .limit(1);
+  
+  if (order.length === 0) return null;
+  
+  // Verify phone if provided
+  if (contactNumber && order[0].customerPhone !== contactNumber) return null;
+  
+  const items = await db.select({
+    productName: orderItems.productName,
+    variationName: orderItems.variationName,
+    quantity: orderItems.quantity,
+    unitPrice: orderItems.unitPrice,
+    productType: orderItems.productType,
+    productId: orderItems.productId,
+  }).from(orderItems).where(eq(orderItems.orderId, order[0].id));
+  
+  // Get product images for items
+  const enrichedItems = await Promise.all(items.map(async (i) => {
+    const product = await db.select({
+      coverImageUrl: products.coverImageUrl,
+    }).from(products).where(eq(products.id, i.productId)).limit(1);
+    return { ...i, coverImageUrl: product[0]?.coverImageUrl || null };
+  }));
+  
+  // Get packages
+  const pkgs = await getOrderPackages(order[0].id);
+  
+  // Map status to customer-friendly labels
+  const statusMap: Record<string, string> = {
+    "pending": "等待付款",
+    "receipt_uploaded": "付款审核中",
+    "partial_payment": "付款审核中",
+    "hold_order": "等待付款",
+    "packing": "已确认付款",
+    "shipped": "已发货",
+    "partial_shipped": "部分发货",
+    "completed": "已完成",
+    "cancelled": "已取消",
+  };
+  
+  return {
+    ...order[0],
+    customerStatus: statusMap[order[0].physicalStatus || ""] || order[0].physicalStatus || "unknown",
+    items: enrichedItems,
+    packages: pkgs,
+  };
+}
+
+// ============================================================================
+// LIVE ORDER CAPTURE (直播捉单)
+// ============================================================================
+
+// --- Parse comment keywords ---
+export function parseCommentKeywords(comment: string): Array<{ keyword: string; quantity: number }> {
+  const results: Array<{ keyword: string; quantity: number }> = [];
+  // Match patterns like: ABS+2, ABS +2, ABS+ 2, pot+1, etc.
+  // Also match: ABS (default quantity 1)
+  const lines = comment.split(/[\n,;]+/).map(l => l.trim()).filter(Boolean);
+  
+  for (const line of lines) {
+    // Pattern: KEYWORD+NUMBER or KEYWORD +NUMBER or KEYWORD + NUMBER
+    const match = line.match(/^([A-Za-z0-9]+)\s*\+\s*(\d+)$/);
+    if (match) {
+      results.push({ keyword: match[1].toUpperCase(), quantity: parseInt(match[2]) });
+    } else {
+      // Single keyword without quantity (default 1)
+      const single = line.match(/^([A-Za-z0-9]+)$/);
+      if (single) {
+        results.push({ keyword: single[1].toUpperCase(), quantity: 1 });
+      }
+    }
+  }
+  
+  return results;
+}
+
+// --- Match keywords to products ---
+export async function matchKeywordsToProducts(keywords: Array<{ keyword: string; quantity: number }>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const matched: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string; coverImageUrl: string | null }> = [];
+  const unmatched: Array<{ keyword: string; quantity: number }> = [];
+  
+  for (const { keyword, quantity } of keywords) {
+    // Try to match product keyword
+    const product = await db.select({
+      id: products.id,
+      name: products.name,
+      sku: products.sku,
+      sellingPrice: products.sellingPrice,
+      coverImageUrl: products.coverImageUrl,
+      keyword: products.keyword,
+      status: products.status,
+    }).from(products).where(eq(products.keyword, keyword)).limit(1);
+    
+    if (product.length > 0 && product[0].status !== "out_of_stock" && product[0].status !== "inactive") {
+      matched.push({
+        keyword,
+        quantity,
+        productId: product[0].id,
+        productName: product[0].name,
+        productSku: product[0].sku || "",
+        unitPrice: product[0].sellingPrice || "0",
+        coverImageUrl: product[0].coverImageUrl || null,
+      });
+    } else {
+      // Try variant keyword
+      const variant = await db.select({
+        id: variants.id,
+        productId: variants.productId,
+        variationName: variants.name,
+        sellingPrice: variants.sellingPrice,
+        keyword: variants.keyword,
+      }).from(variants).where(eq(variants.keyword, keyword)).limit(1);
+      
+      if (variant.length > 0) {
+        const parentProduct = await db.select({
+          id: products.id,
+          name: products.name,
+          sku: products.sku,
+          coverImageUrl: products.coverImageUrl,
+          status: products.status,
+        }).from(products).where(eq(products.id, variant[0].productId)).limit(1);
+        
+        if (parentProduct.length > 0 && parentProduct[0].status !== "out_of_stock" && parentProduct[0].status !== "inactive") {
+          matched.push({
+            keyword,
+            quantity,
+            productId: parentProduct[0].id,
+            productName: `${parentProduct[0].name} - ${variant[0].variationName}`,
+            productSku: parentProduct[0].sku || "",
+            unitPrice: variant[0].sellingPrice || "0",
+            coverImageUrl: parentProduct[0].coverImageUrl || null,
+          });
+        } else {
+          unmatched.push({ keyword, quantity });
+        }
+      } else {
+        unmatched.push({ keyword, quantity });
+      }
+    }
+  }
+  
+  return { matched, unmatched };
+}
+
+// --- Create order from live capture ---
+export async function createOrderFromLiveCapture(data: {
+  commenterName: string;
+  commenterPsid?: string;
+  commentMessage: string;
+  commentId?: string;
+  postId?: string;
+  liveVideoId?: string;
+  matchedProducts: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string }>;
+  sourceName?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Find or create customer
+  const customer = await findOrCreateCustomer({
+    name: data.commenterName,
+    phoneNumber: "", // Will be updated via Messenger
+    facebookName: data.commenterName,
+    messengerId: data.commenterPsid,
+  });
+  
+  // Calculate totals
+  const subtotal = data.matchedProducts.reduce((sum, p) => sum + parseFloat(p.unitPrice) * p.quantity, 0);
+  const totalWeight = data.matchedProducts.reduce((sum, p) => sum + 0.5 * p.quantity, 0);
+  
+  // Create order
+  const orderNumber = `XT${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const orderResult = await db.insert(orders).values({
+    orderNumber,
+    customerId: customer.id,
+    facebookName: data.commenterName,
+    messengerId: data.commenterPsid || null,
+    orderType: "physical",
+    physicalSubtotal: subtotal.toFixed(2),
+    membershipSubtotal: "0.00",
+    shippingFee: "0.00",
+    totalAmount: subtotal.toFixed(2),
+    totalWeight: totalWeight.toFixed(2),
+    physicalStatus: "pending",
+    orderSource: "facebook_live",
+    sourceName: data.sourceName || "Facebook Live",
+    originalCustomerComment: data.commentMessage,
+    commentDate: new Date(),
+  });
+  
+  const orderId = (orderResult as any).insertId;
+  
+  // Create order items
+  for (const p of data.matchedProducts) {
+    const itemSubtotal = (parseFloat(p.unitPrice) * p.quantity).toFixed(2);
+    await db.insert(orderItems).values({
+      orderId,
+      productId: p.productId,
+      productName: p.productName,
+      productSku: p.productSku || null,
+      productType: "physical",
+      quantity: p.quantity,
+      unitPrice: p.unitPrice,
+      subtotal: itemSubtotal,
+      facebookKeyword: p.keyword,
+      discount: "0.00",
+    });
+  }
+  
+  // Create live capture record
+  await db.insert(liveOrderCaptures).values({
+    commentId: data.commentId || null,
+    commenterName: data.commenterName,
+    commenterPsid: data.commenterPsid || null,
+    commentMessage: data.commentMessage,
+    postId: data.postId || null,
+    liveVideoId: data.liveVideoId || null,
+    parsedKeywords: JSON.stringify(data.matchedProducts.map(p => ({ keyword: p.keyword, quantity: p.quantity }))),
+    matchedProducts: JSON.stringify(data.matchedProducts),
+    status: "order_created",
+    orderId,
+    commentDate: new Date(),
+  });
+  
+  return { orderId, orderNumber, totalAmount: subtotal.toFixed(2) };
+}
+
+// --- Get live order captures (admin) ---
+export async function getLiveOrderCaptures(limit = 50) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.select().from(liveOrderCaptures).orderBy(desc(liveOrderCaptures.createdAt)).limit(limit);
 }

@@ -35,6 +35,9 @@ import MallCart from "@/pages/mall/MallCart";
 import MallCheckout from "@/pages/mall/MallCheckout";
 import MallOrderQuery from "@/pages/mall/MallOrderQuery";
 import MallPayment from "@/pages/mall/MallPayment";
+import Packing from "@/pages/Packing";
+import PackingDetail from "@/pages/PackingDetail";
+import CustomerOrderTracking from "@/pages/CustomerOrderTracking";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -49,6 +52,7 @@ function PublicRoutes() {
       <Route path={"/mall/checkout"} component={MallCheckout} />
       <Route path={"/mall/order-query"} component={MallOrderQuery} />
       <Route path={"/mall/payment/:orderNumber"} component={MallPayment} />
+      <Route path={"/order-tracking"} component={CustomerOrderTracking} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -78,6 +82,8 @@ function DashboardRoutes() {
       <Route path={"/logistics"} component={LogisticsIntegration} />
       <Route path={"/payment-settings"} component={PaymentSettings} />
       <Route path={"/mall-settings"} component={MallSettings} />
+      <Route path={"/packing"} component={Packing} />
+      <Route path={"/packing/:id"} component={PackingDetail} />
       <Route path={"/orders/:id"} component={(params: any) => <OrderDetail orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
       <Route path={"/pay/:id"} component={(params: any) => <CustomerPayment orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
       <Route path={"/404"} component={NotFound} />
@@ -102,6 +108,7 @@ function App() {
             <Route path={"/mall/checkout"} nest component={MallCheckout} />
             <Route path={"/mall/order-query"} nest component={MallOrderQuery} />
             <Route path={"/mall/payment/:orderNumber"} nest component={MallPayment} />
+            <Route path={"/order-tracking"} nest component={CustomerOrderTracking} />
             <Route>
               <DashboardLayout>
                 <DashboardRoutes />

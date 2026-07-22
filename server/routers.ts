@@ -2355,6 +2355,158 @@ export const appRouter = router({
   }),
 
   // ===========================================================================
+  // Packing & Shipping (包货发货)
+  // ===========================================================================
+  packing: router({
+    // Get orders by packing status
+    list: protectedProcedure.input(z.object({
+      status: z.enum(["packing", "shipped", "partial_shipped", "completed"]),
+    })).query(async ({ input }) => {
+      return await db.getPackingOrders(input.status);
+    }),
+    
+    // Get packing detail
+    detail: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+      return await db.getPackingDetail(input.orderId);
+    }),
+    
+    // Get A5 packing slip data
+    slipData: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+      return await db.getPackingSlipData(input.orderId);
+    }),
+  }),
+  
+  shipping: router({
+    // Full shipping - all items in one or more packages
+    fullShip: protectedProcedure.input(z.object({
+      orderId: z.number(),
+      packages: z.array(z.object({
+        courier: z.string(),
+        shippingType: z.enum(["auto", "manual"]),
+        trackingNumber: z.string().optional(),
+        shippingLabelUrl: z.string().optional(),
+        providerOrderId: z.string().optional(),
+        weight: z.string().optional(),
+        shippingCost: z.string().optional(),
+      })),
+    })).mutation(async ({ input }) => {
+      return await db.fullShipping(input.orderId, input.packages);
+    }),
+    
+    // Partial shipping - selected items only
+    partialShip: protectedProcedure.input(z.object({
+      orderId: z.number(),
+      itemIds: z.array(z.number()),
+      packageData: z.object({
+        courier: z.string(),
+        shippingType: z.enum(["auto", "manual"]),
+        trackingNumber: z.string().optional(),
+        shippingLabelUrl: z.string().optional(),
+        providerOrderId: z.string().optional(),
+        weight: z.string().optional(),
+        shippingCost: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      return await db.partialShipping(input.orderId, input.itemIds, input.packageData);
+    }),
+    
+    // Get packages for an order
+    packages: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+      return await db.getOrderPackages(input.orderId);
+    }),
+    
+    // Create ParcelDaily shipment (auto)
+    createParcelDaily: protectedProcedure.input(z.object({
+      orderId: z.number(),
+      weight: z.number(),
+      courier: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      // Get order details for shipping info
+      const order = await db.getOrderById(input.orderId);
+      if (!order) throw new Error("Order not found");
+      
+      // Call ParcelDaily API to create order
+      // Note: ParcelDaily requires specific address format, this is a simplified version
+      // In production, parse shippingAddress into components
+      const result = await parceldaily.createOrder({
+        serviceProvider: input.courier || "poslaju",
+        pickupAddress: {
+          fullName: "Xintian Nursery",
+          phone: "",
+          line1: "",
+          city: "",
+          postcode: "",
+          state: "",
+          country: "Malaysia",
+        },
+        clientAddress: {
+          fullName: order.facebookName || "",
+          phone: "",
+          line1: order.shippingAddress || "",
+          city: "",
+          postcode: "",
+          state: "",
+          country: "Malaysia",
+        },
+        kg: input.weight,
+        price: 0,
+        content: "Plants",
+        content_value: parseFloat(order.totalAmount || "0"),
+        contentValueCurrency: "MYR",
+        reference: order.orderNumber,
+      });
+      
+      return result;
+    }),
+  }),
+  
+  // Customer order tracking (public)
+  orderTracking: router({
+    query: publicProcedure.input(z.object({
+      orderNumber: z.string(),
+      contactNumber: z.string().optional(),
+    })).query(async ({ input }) => {
+      return await db.getCustomerOrderTracking(input.orderNumber, input.contactNumber);
+    }),
+  }),
+  
+  // Live Order Capture (直播捉单)
+  liveCapture: router({
+    // Parse comment keywords (admin tool for testing)
+    parse: protectedProcedure.input(z.object({ comment: z.string() })).query(async ({ input }) => {
+      const keywords = db.parseCommentKeywords(input.comment);
+      const { matched, unmatched } = await db.matchKeywordsToProducts(keywords);
+      return { keywords, matched, unmatched };
+    }),
+    
+    // Create order from live capture
+    createOrder: protectedProcedure.input(z.object({
+      commenterName: z.string(),
+      commenterPsid: z.string().optional(),
+      commentMessage: z.string(),
+      commentId: z.string().optional(),
+      postId: z.string().optional(),
+      liveVideoId: z.string().optional(),
+      matchedProducts: z.array(z.object({
+        keyword: z.string(),
+        quantity: z.number(),
+        productId: z.number(),
+        productName: z.string(),
+        productSku: z.string(),
+        unitPrice: z.string(),
+      })),
+      sourceName: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      return await db.createOrderFromLiveCapture(input);
+    }),
+    
+    // List captures (admin)
+    list: protectedProcedure.input(z.object({ limit: z.number().optional() })).query(async ({ input }) => {
+      return await db.getLiveOrderCaptures(input.limit || 50);
+    }),
+  }),
+  
+  // ===========================================================================
   // Dashboard
   // ===========================================================================
   dashboard: router({

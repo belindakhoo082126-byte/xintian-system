@@ -995,3 +995,84 @@ export const mallProductDetailImages = mysqlTable("mall_product_detail_images", 
 
 export type MallProductDetailImage = typeof mallProductDetailImages.$inferSelect;
 export type InsertMallProductDetailImage = typeof mallProductDetailImages.$inferInsert;
+
+// ============================================================================
+// Packages (包裹) - Multi-package shipping support
+// ============================================================================
+
+export const packages = mysqlTable("packages", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  // Package number within the order (1, 2, 3...)
+  packageNumber: int("packageNumber").notNull(),
+  // Courier selection
+  courier: varchar("courier", { length: 100 }).notNull(),
+  // Shipping method: auto (ParcelDaily API) or manual
+  shippingType: mysqlEnum("shippingType", ["auto", "manual"]).default("manual").notNull(),
+  // Tracking number (manual entry or auto from ParcelDaily)
+  trackingNumber: varchar("trackingNumber", { length: 100 }),
+  // Shipping label URL (auto-generated from ParcelDaily)
+  shippingLabelUrl: varchar("shippingLabelUrl", { length: 500 }),
+  // ParcelDaily order ID (if auto)
+  providerOrderId: varchar("providerOrderId", { length: 100 }),
+  // Weight of this package
+  weight: decimal("weight", { precision: 8, scale: 2 }).default("0"),
+  // Shipping cost
+  shippingCost: decimal("shippingCost", { precision: 10, scale: 2 }),
+  // Package status
+  status: mysqlEnum("status", ["pending", "shipped", "delivered"]).default("pending").notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  shippedAt: timestamp("shippedAt"),
+  deliveredAt: timestamp("deliveredAt"),
+});
+
+export type Package = typeof packages.$inferSelect;
+export type InsertPackage = typeof packages.$inferInsert;
+
+// ============================================================================
+// Package Items (包裹商品) - For partial shipping tracking
+// ============================================================================
+
+export const packageItems = mysqlTable("package_items", {
+  id: int("id").autoincrement().primaryKey(),
+  packageId: int("packageId").notNull(),
+  orderItemId: int("orderItemId").notNull(),
+  // Quantity of this item in this package
+  quantity: int("quantity").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type PackageItem = typeof packageItems.$inferSelect;
+export type InsertPackageItem = typeof packageItems.$inferInsert;
+
+// ============================================================================
+// Live Order Captures (直播捉单记录)
+// ============================================================================
+
+export const liveOrderCaptures = mysqlTable("live_order_captures", {
+  id: int("id").autoincrement().primaryKey(),
+  // Facebook comment info
+  commentId: varchar("commentId", { length: 255 }),
+  commenterName: varchar("commenterName", { length: 255 }).notNull(),
+  commenterPsid: varchar("commenterPsid", { length: 255 }),
+  commentMessage: text("commentMessage").notNull(),
+  postId: varchar("postId", { length: 255 }),
+  liveVideoId: varchar("liveVideoId", { length: 255 }),
+  // Parsed keywords
+  parsedKeywords: text("parsedKeywords"),
+  // Matched products (JSON array of { productId, keyword, quantity })
+  matchedProducts: text("matchedProducts"),
+  // Status: matched, no_match, order_created, failed
+  status: mysqlEnum("status", ["matched", "no_match", "order_created", "failed"]).default("matched").notNull(),
+  // Created order ID (if order was created)
+  orderId: int("orderId"),
+  // Error message (if failed)
+  errorMessage: text("errorMessage"),
+  // Timestamps
+  commentDate: timestamp("commentDate"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type LiveOrderCapture = typeof liveOrderCaptures.$inferSelect;
+export type InsertLiveOrderCapture = typeof liveOrderCaptures.$inferInsert;
