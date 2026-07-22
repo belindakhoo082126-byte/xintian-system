@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare } from "lucide-react";
 
 const COURIERS = [
   "Parcel Daily", "Parcel King", "PosLaju", "JNT", "Ninja Van", "DHL", "Lalamove", "Shopee Xpress", "Other"
@@ -25,6 +25,8 @@ export default function PackingDetail() {
   const { data: detail, isLoading } = trpc.packing.detail.useQuery({ orderId });
   const { data: slipData } = trpc.packing.slipData.useQuery({ orderId });
   const { data: existingPackages } = trpc.shipping.packages.useQuery({ orderId });
+  const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
+  const { data: repots } = trpc.repots.list.useQuery({ orderId });
 
   const [shippingMode, setShippingMode] = useState<"full" | "partial">("full");
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
@@ -225,6 +227,41 @@ export default function PackingDetail() {
         </Card>
       )}
 
+      {/* V1.1: Remarks Display (Live + Customer only, not Internal) */}
+      {remarks && (remarks as any[]).filter((r: any) => r.type === "live" || r.type === "customer").length > 0 && (
+        <Card className="print-hide">
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><MessageSquare className="h-4 w-4" />备注</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {(remarks as any[]).filter((r: any) => r.type === "live" || r.type === "customer").map((r: any) => (
+              <div key={r.id} className="flex items-start gap-2 p-2 border rounded-lg">
+                <Badge variant="outline" className={r.type === "live" ? "text-blue-600" : "text-green-600"}>
+                  {r.type === "live" ? "直播" : "客户"}
+                </Badge>
+                <p className="text-sm">{r.content}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* V1.1: Repot Display */}
+      {repots && (repots as any[]).length > 0 && (
+        <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/20">
+          <CardHeader><CardTitle className="text-base flex items-center gap-2 text-blue-700"><Sprout className="h-4 w-4" />换盆安排</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {(repots as any[]).map((r: any) => (
+              <div key={r.id} className="flex items-center gap-3 p-2 border border-blue-200 rounded-lg">
+                <Sprout className="h-5 w-5 text-blue-500" />
+                <div>
+                  <p className="text-sm font-medium">{r.productName} → {r.potProductName}</p>
+                  <p className="text-xs text-muted-foreground">数量: {r.quantity}</p>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Shipping Section */}
       <Card className="print-hide">
         <CardHeader><CardTitle className="text-base">发货</CardTitle></CardHeader>
@@ -412,6 +449,28 @@ function A5PackingSlip({ data }: { data: any }) {
           </>
         )}
       </div>
+
+      {/* V1.1: Customer Remarks on A5 Slip */}
+      {data.customerRemarks && data.customerRemarks.length > 0 && (
+        <div style={{ marginBottom: "8px" }}>
+          <div style={{ fontWeight: "bold", fontSize: "11px", marginBottom: "2px" }}>客户备注:</div>
+          {data.customerRemarks.map((r: any, i: number) => (
+            <div key={i} style={{ fontSize: "11px", marginLeft: "8px" }}>• {r.content}</div>
+          ))}
+        </div>
+      )}
+
+      {/* V1.1: Repot on A5 Slip */}
+      {data.repots && data.repots.length > 0 && (
+        <div style={{ marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
+          <div style={{ fontWeight: "bold", fontSize: "12px", marginBottom: "2px" }}>⚠ 换盆安排:</div>
+          {data.repots.map((r: any, i: number) => (
+            <div key={i} style={{ fontSize: "11px", marginLeft: "8px" }}>
+              • {r.productName} → {r.potProductName} (×{r.quantity})
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{ borderTop: "1px solid #000", margin: "4px 0" }} />
 

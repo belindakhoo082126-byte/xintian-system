@@ -10,6 +10,9 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import facebookWebhook from "../facebook";
+import { sdk } from "./sdk";
+import * as db from "../db";
+import { sendTextMessage } from "../messenger";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -61,6 +64,49 @@ async function startServer() {
     } catch (err: any) {
       console.error("[Upload] Error:", err);
       res.status(500).json({ error: err.message || "Upload failed" });
+    }
+  });
+
+  // V1.1: Scheduled task endpoints (Heartbeat cron callbacks)
+  app.post("/api/scheduled/auto-complete", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (!user.isCron) return res.status(403).json({ error: "cron-only" });
+      const result = await db.autoCompleteShippedOrders();
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, stack: err.stack, timestamp: new Date().toISOString() });
+    }
+  });
+
+  app.post("/api/scheduled/flow-reminder", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (!user.isCron) return res.status(403).json({ error: "cron-only" });
+      const pending = await db.getPendingFlowReminders();
+      let reminded = 0;
+      let failed = 0;
+      for (const review of pending) {
+        try {
+          // Get order and customer to find messenger PSID
+          const order = await db.getOrderById(review.orderId);
+          if (!order) { failed++; continue; }
+          const customer = await db.getCustomerById(order.customerId);
+          if (!customer?.messengerId) { failed++; continue; }
+          // Send reminder message via Messenger
+          await sendTextMessage(
+            customer.messengerId,
+            "温馨提醒：您尚未点击进入会员系统链接，请尽快点击完成注册。如有疑问请联系客服。"
+          );
+          await db.markFlowReminderSent(review.id);
+          reminded++;
+        } catch (e) {
+          failed++;
+        }
+      }
+      res.json({ ok: true, checked: pending.length, reminded, failed });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, stack: err.stack, timestamp: new Date().toISOString() });
     }
   });
 

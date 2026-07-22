@@ -3343,6 +3343,13 @@ export async function getPackingSlipData(orderId: number) {
   else if (detail.shippingMethod === "east_malaysia_shopee") specialLabel = "东马 SHOPEE";
   else if (detail.shippingMethod === "east_malaysia_poslaju") specialLabel = "东马 POSLAJU";
   
+  // V1.1: Fetch customer remarks (only customer type for A5 slip)
+  const allRemarks = await getOrderRemarks(orderId);
+  const customerRemarks = allRemarks.filter((r: any) => r.type === "customer");
+
+  // V1.1: Fetch repots for A5 slip
+  const repots = await getOrderItemRepots(orderId);
+
   return {
     orderNumber: detail.orderNumber,
     customerName: detail.customerName,
@@ -3351,6 +3358,8 @@ export async function getPackingSlipData(orderId: number) {
     paymentConfirmedAt: detail.paymentConfirmedAt,
     items: detail.items,
     giftItems,
+    customerRemarks,
+    repots,
     summary: {
       itemTypes: detail.items.length,
       regularTotal: regularTotal.toFixed(2),
@@ -3996,6 +4005,77 @@ export async function getTodayScheduledShipping() {
   return await db.select().from(orders)
     .where(and(eq(orders.physicalStatus, 'packing'), eq(orders.scheduledShippingDate, today)))
     .orderBy(desc(orders.createdAt));
+}
+
+// V1.1: Auto-complete orders 7 days after shipping
+export async function autoCompleteShippedOrders() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  // Find shipped orders older than 7 days that haven't been completed yet
+  const candidates = await db.select().from(orders)
+    .where(and(
+      eq(orders.physicalStatus, 'shipped'),
+      sql`${orders.shippedAt} IS NOT NULL`,
+      sql`${orders.shippedAt} <= ${sevenDaysAgo}`,
+      sql`${orders.autoCompleteAt} IS NULL`,
+    ));
+  let completed = 0;
+  for (const order of candidates) {
+    await db.update(orders)
+      .set({ physicalStatus: 'completed', completedAt: new Date(), autoCompleteAt: new Date() })
+      .where(eq(orders.id, order.id));
+    completed++;
+  }
+  return { completed, checked: candidates.length };
+}
+
+// V1.1: Flow reminder - find reviews where flow was sent but Telegram link not clicked after 24h
+export async function getPendingFlowReminders() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  return await db.select().from(membershipFeeReviews)
+    .where(and(
+      eq(membershipFeeReviews.reviewStatus, 'approved'),
+      eq(membershipFeeReviews.flowStatus, 'sent'),
+      eq(membershipFeeReviews.telegramLinkClicked, false),
+      eq(membershipFeeReviews.needsManualFollowUp, false),
+      sql`${membershipFeeReviews.flowSentAt} IS NOT NULL`,
+      sql`${membershipFeeReviews.flowSentAt} <= ${twentyFourHoursAgo}`,
+    ));
+}
+
+// V1.1: Mark a review as needing manual follow-up (after reminder sent)
+export async function markFlowReminderSent(reviewId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(membershipFeeReviews)
+    .set({
+      followUpCount: sql`followUpCount + 1`,
+      needsManualFollowUp: true,
+    })
+    .where(eq(membershipFeeReviews.id, reviewId));
+}
+
+export async function getScheduledShippingOrders(filter?: { dateFrom?: Date; dateTo?: Date }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const conditions = [
+    eq(orders.physicalStatus, 'packing'),
+    sql`${orders.scheduledShippingDate} IS NOT NULL`,
+  ];
+  if (filter?.dateFrom) {
+    const from = new Date(filter.dateFrom); from.setHours(0, 0, 0, 0);
+    conditions.push(sql`${orders.scheduledShippingDate} >= ${from}`);
+  }
+  if (filter?.dateTo) {
+    const to = new Date(filter.dateTo); to.setHours(23, 59, 59, 999);
+    conditions.push(sql`${orders.scheduledShippingDate} <= ${to}`);
+  }
+  return await db.select().from(orders)
+    .where(and(...conditions))
+    .orderBy(asc(orders.scheduledShippingDate));
 }
 
 // ============================================================================

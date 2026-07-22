@@ -53,8 +53,8 @@
 - [x] Facebook Live 直播捉单功能（关键词匹配 + 自动建单 + 自动回复 + Messenger 通知）
 - [x] 客户端商城前端（商品浏览、购物车、结账）
 - [x] 汇款单据上传 API（S3 存储集成）
-- [ ] 7 天自动完成定时任务
-- [ ] Flow 提醒定时任务（延迟发送未点击提醒）
+- [x] 7 天自动完成定时任务（Heartbeat cron handler + db.autoCompleteShippedOrders）
+- [x] Flow 提醒定时任务（Heartbeat cron handler + db.getPendingFlowReminders）
 
 ## 第二轮需求 - Bug修复与新功能
 
@@ -332,20 +332,20 @@
 
 ### Sprint 4: 备注系统
 - [x] OrderDetail 新增 3 种备注（直播/客户/内部）
-- [ ] PackingDetail 显示直播备注 + 客户备注
-- [ ] A5 包货单显示客户备注
+- [x] PackingDetail 显示直播备注 + 客户备注
+- [x] A5 包货单显示客户备注
 
 ### Sprint 5: 换盆功能
 - [x] OrderDetail 新增换盆 UI（选商品→数量→花盆，可多次新增）
-- [ ] 数量自动验证（不可超过购买数量）
-- [ ] PackingDetail 显示换盆安排（⚠️ 换盆标识）
-- [ ] A5 包货单显示换盆安排
-- [ ] 完成换盆后自动扣除花盆库存
+- [x] 数量自动验证（不可超过购买数量）
+- [x] PackingDetail 显示换盆安排（⚠️ 换盆标识）
+- [x] A5 包货单显示换盆安排
+- [x] 完成换盆后自动扣除花盆库存
 
 ### Sprint 6: 预约发货
 - [x] OrderDetail 新增预约发货日期选择
 - [x] Dashboard 今日预约发货提醒
-- [ ] 预约发货订单列表
+- [x] 预约发货订单列表
 
 ### Sprint 7: 多语言
 - [x] i18n 框架搭建（中文/英文切换）

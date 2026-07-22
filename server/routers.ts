@@ -2585,6 +2585,15 @@ export const appRouter = router({
     today: protectedProcedure.query(async () => {
       return await db.getTodayScheduledShipping();
     }),
+    list: protectedProcedure.input(z.object({
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+    }).optional()).query(async ({ input }) => {
+      return await db.getScheduledShippingOrders({
+        dateFrom: input?.dateFrom ? new Date(input.dateFrom) : undefined,
+        dateTo: input?.dateTo ? new Date(input.dateTo) : undefined,
+      });
+    }),
   }),
 
   // ===========================================================================
