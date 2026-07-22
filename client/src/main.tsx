@@ -8,7 +8,41 @@ import App from "./App";
 import { startLogin } from "./const";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Multi-device sync: refetch on window focus so data stays fresh
+      // when user switches between phone/tablet/desktop
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      // Data is considered stale after 30s, triggering background refetch
+      staleTime: 30 * 1000,
+      // Poll key queries every 60s to catch changes from other devices
+      // even when the tab is in the background
+      refetchInterval: 60 * 1000,
+      // Keep previous data while fetching new data to avoid UI flicker
+      // (placeholderData is set per-query in components where needed)
+    },
+  },
+});
+
+// Cross-tab sync: when one tab mutates data, broadcast to other tabs
+// so they invalidate their caches and refetch immediately
+if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+  const channel = new BroadcastChannel("xintian-sync");
+  channel.onmessage = (event) => {
+    if (event.data?.type === "invalidate") {
+      queryClient.invalidateQueries();
+    }
+  };
+
+  // Hook into mutation cache to broadcast invalidations
+  queryClient.getMutationCache().subscribe((event) => {
+    if (event.type === "updated" && event.action.type === "success") {
+      channel.postMessage({ type: "invalidate" });
+    }
+  });
+}
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;

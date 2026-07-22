@@ -116,5 +116,5 @@
 - [x] 保存检查点
 
 ### 多设备同步
-- [ ] React Query cache invalidation 机制
-- [ ] tRPC 实时刷新确保多设备数据一致
+- [x] React Query cache invalidation 机制（refetchOnWindowFocus + refetchOnReconnect + staleTime 30s）
+- [x] tRPC 实时刷新确保多设备数据一致（useAuth 也启用 refetchOnWindowFocus）
