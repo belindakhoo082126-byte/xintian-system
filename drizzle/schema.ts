@@ -962,3 +962,204 @@ export const sessionProducts = mysqlTable("session_products", {
 
 export type SessionProduct = typeof sessionProducts.$inferSelect;
 export type InsertSessionProduct = typeof sessionProducts.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: AI Agent - Settings (AI 行为配置)
+// ============================================================================
+
+export const aiSettings = mysqlTable("ai_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  autoReplyEnabled: boolean("auto_reply_enabled").default(true).notNull(),
+  learningMode: mysqlEnum("learning_mode", ["suggestion", "draft", "disabled"]).default("suggestion").notNull(),
+  minConfidenceThreshold: decimal("min_confidence_threshold", { precision: 5, scale: 2 }).default("70.00").notNull(),
+  messengerAiEnabled: boolean("messenger_ai_enabled").default(true).notNull(),
+  whatsappAiEnabled: boolean("whatsapp_ai_enabled").default(true).notNull(),
+  facebookCommentsOrderOnly: boolean("facebook_comments_order_only").default(false).notNull(),
+  plantDiagnosticForceHuman: boolean("plant_diagnostic_force_human").default(true).notNull(),
+  paymentRequiresHumanConfirm: boolean("payment_requires_human_confirm").default(true).notNull(),
+  parcelAnomalyDays: int("parcel_anomaly_days").default(5).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+  updatedBy: text("updated_by"),
+});
+
+export type AiSetting = typeof aiSettings.$inferSelect;
+export type InsertAiSetting = typeof aiSettings.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: AI Agent - Reply Logs (AI 回复记录)
+// ============================================================================
+
+export const aiReplyLogs = mysqlTable("ai_reply_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  customerId: int("customer_id"),
+  customerName: text("customer_name"),
+  platform: mysqlEnum("platform", ["messenger", "whatsapp", "facebook_comment", "internal"]),
+  aiModule: mysqlEnum("ai_module", ["order", "parcel", "plant_diagnostic", "faq", "knowledge", "payment", "content", "unknown"]),
+  userMessage: text("user_message"),
+  aiReply: text("ai_reply"),
+  flowUsed: text("flow_used"),
+  faqUsed: text("faq_used"),
+  knowledgeUsed: text("knowledge_used"),
+  confidenceScore: decimal("confidence_score", { precision: 5, scale: 2 }),
+  transferredToHuman: boolean("transferred_to_human").default(false).notNull(),
+  humanReply: text("human_reply"),
+  humanRepliedAt: timestamp("human_replied_at"),
+  humanRepliedBy: text("human_replied_by"),
+  chatSessionId: int("chat_session_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type AiReplyLog = typeof aiReplyLogs.$inferSelect;
+export type InsertAiReplyLog = typeof aiReplyLogs.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: AI Agent - Review Items (AI 学习建议)
+// ============================================================================
+
+export const aiReviewItems = mysqlTable("ai_review_items", {
+  id: int("id").autoincrement().primaryKey(),
+  replyLogId: int("reply_log_id"),
+  customerQuestion: text("customer_question").notNull(),
+  humanReply: text("human_reply"),
+  aiSuggestion: text("ai_suggestion").notNull(),
+  suggestionType: mysqlEnum("suggestion_type", ["faq", "knowledge", "flow"]),
+  suggestedCategory: text("suggested_category"),
+  suggestedContent: text("suggested_content"),
+  status: mysqlEnum("status", ["pending", "approved", "rejected", "modified", "ignored"]).default("pending").notNull(),
+  adminNote: text("admin_note"),
+  modifiedReply: text("modified_reply"),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type AiReviewItem = typeof aiReviewItems.$inferSelect;
+export type InsertAiReviewItem = typeof aiReviewItems.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: AI Agent - FAQ Entries (FAQ 管理)
+// ============================================================================
+
+export const faqEntries = mysqlTable("faq_entries", {
+  id: int("id").autoincrement().primaryKey(),
+  category: varchar("category", { length: 100 }).notNull(),
+  keywords: text("keywords"),
+  question: text("question").notNull(),
+  answer: text("answer").notNull(),
+  imageUrl: text("image_url"),
+  videoUrl: text("video_url"),
+  pdfUrl: text("pdf_url"),
+  productId: int("product_id"),
+  sortOrder: int("sort_order").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FaqEntry = typeof faqEntries.$inferSelect;
+export type InsertFaqEntry = typeof faqEntries.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: AI Agent - Knowledge Entries (Knowledge 管理)
+// ============================================================================
+
+export const knowledgeEntries = mysqlTable("knowledge_entries", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("product_id"),
+  topic: varchar("topic", { length: 200 }).notNull(),
+  content: text("content").notNull(),
+  imageUrl: text("image_url"),
+  videoUrl: text("video_url"),
+  pdfUrl: text("pdf_url"),
+  tags: text("tags"),
+  sortOrder: int("sort_order").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type KnowledgeEntry = typeof knowledgeEntries.$inferSelect;
+export type InsertKnowledgeEntry = typeof knowledgeEntries.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: AI Agent - Plant Diagnostic Tickets (植物诊断工单)
+// ============================================================================
+
+export const plantDiagnosticTickets = mysqlTable("plant_diagnostic_tickets", {
+  id: int("id").autoincrement().primaryKey(),
+  customerId: int("customer_id"),
+  customerName: text("customer_name"),
+  platform: mysqlEnum("platform", ["messenger", "whatsapp", "internal"]),
+  // Environment info collected by AI
+  placement: varchar("placement", { length: 50 }),
+  lightingHours: text("lighting_hours"),
+  wateringFrequency: text("watering_frequency"),
+  soilDryDays: text("soil_dry_days"),
+  recentFertilized: boolean("recent_fertilized"),
+  fertilizerType: text("fertilizer_type"),
+  recentRepotted: boolean("recent_repotted"),
+  recentSprayed: boolean("recent_sprayed"),
+  hasPests: boolean("has_pests"),
+  leafCondition: text("leaf_condition"),
+  branchCondition: text("branch_condition"),
+  rootCondition: text("root_condition"),
+  photoUrls: text("photo_urls"),
+  // Status
+  status: mysqlEnum("status", ["collecting", "pending_human", "in_progress", "resolved", "closed"]).default("collecting").notNull(),
+  assignedTo: text("assigned_to"),
+  humanReply: text("human_reply"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: text("resolved_by"),
+  chatSessionId: int("chat_session_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PlantDiagnosticTicket = typeof plantDiagnosticTickets.$inferSelect;
+export type InsertPlantDiagnosticTicket = typeof plantDiagnosticTickets.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: AI Agent - Chat Sessions (AI 对话会话)
+// ============================================================================
+
+export const aiChatSessions = mysqlTable("ai_chat_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  customerId: int("customer_id"),
+  customerName: text("customer_name"),
+  platform: mysqlEnum("platform", ["messenger", "whatsapp", "facebook_comment", "internal"]),
+  status: mysqlEnum("status", ["active", "transferred", "closed"]).default("active").notNull(),
+  messageCount: int("message_count").default(0).notNull(),
+  lastMessageAt: timestamp("last_message_at"),
+  transferredAt: timestamp("transferred_at"),
+  transferredTo: text("transferred_to"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AiChatSession = typeof aiChatSessions.$inferSelect;
+export type InsertAiChatSession = typeof aiChatSessions.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0: Session Product Variants (场次 Variant 绑定 + 独立关键词)
+// ============================================================================
+
+export const sessionProductVariants = mysqlTable("session_product_variants", {
+  id: int("id").autoincrement().primaryKey(),
+  sessionId: int("session_id").notNull(),
+  sessionProductId: int("session_product_id").notNull(),
+  productId: int("product_id").notNull(),
+  variantId: int("variant_id").notNull(),
+  keyword: varchar("keyword", { length: 100 }).notNull(),
+  sellingPrice: decimal("selling_price", { precision: 10, scale: 2 }),
+  physicalStockAtStart: int("physical_stock_at_start").default(0).notNull(),
+  physicalSoldQuantity: int("physical_sold_quantity").default(0).notNull(),
+  preorderEnabled: boolean("preorder_enabled").default(false).notNull(),
+  preorderLimit: int("preorder_limit"),
+  preorderSoldQuantity: int("preorder_sold_quantity").default(0).notNull(),
+  sellingStatus: mysqlEnum("selling_status", ["available", "stopped"]).default("available").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SessionProductVariant = typeof sessionProductVariants.$inferSelect;
+export type InsertSessionProductVariant = typeof sessionProductVariants.$inferInsert;

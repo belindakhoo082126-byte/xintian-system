@@ -20,6 +20,11 @@ import PurchaseOrders from "@/pages/PurchaseOrders";
 import ProfitReport from "@/pages/ProfitReport";
 import FacebookSettings from "@/pages/FacebookSettings";
 import FacebookLive from "@/pages/FacebookLive";
+import AISettings from "@/pages/AISettings";
+import FAQManagement from "@/pages/FAQManagement";
+import KnowledgeManagement from "@/pages/KnowledgeManagement";
+import AIReviewCenter from "@/pages/AIReviewCenter";
+import AIReplyLog from "@/pages/AIReplyLog";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -49,6 +54,11 @@ function DashboardRoutes() {
       <Route path={"/profit-report"} component={ProfitReport} />
       <Route path={"/facebook-settings"} component={FacebookSettings} />
       <Route path={"/facebook-live"} component={FacebookLive} />
+      <Route path={"/ai-settings"} component={AISettings} />
+      <Route path={"/faq"} component={FAQManagement} />
+      <Route path={"/knowledge"} component={KnowledgeManagement} />
+      <Route path={"/ai-review"} component={AIReviewCenter} />
+      <Route path={"/ai-reply-log"} component={AIReplyLog} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

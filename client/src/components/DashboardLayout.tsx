@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree, Mail, Radio } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree, Mail, Radio, Bot, HelpCircle, BookOpen, ClipboardCheck, FileText } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -41,6 +41,11 @@ const menuItems = [
   { icon: TrendingUp, label: "利润报表", path: "/profit-report" },
   { icon: Facebook, label: "Facebook 设置", path: "/facebook-settings" },
   { icon: Radio, label: "FB 直播捉单", path: "/facebook-live" },
+  { icon: Bot, label: "AI 设置", path: "/ai-settings" },
+  { icon: HelpCircle, label: "FAQ 管理", path: "/faq" },
+  { icon: BookOpen, label: "Knowledge 管理", path: "/knowledge" },
+  { icon: ClipboardCheck, label: "AI Review Center", path: "/ai-review" },
+  { icon: FileText, label: "AI 回复记录", path: "/ai-reply-log" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

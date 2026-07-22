@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import {
   Radio, Plus, Play, Pause, Square, Eye, Users, Package,
   DollarSign, AlertCircle, Search, ChevronLeft, ChevronRight,
+  TrendingUp, AlertTriangle, Layers,
 } from "lucide-react";
 
 const SESSION_TYPE_LABELS: Record<string, string> = {
@@ -83,6 +84,16 @@ export default function FacebookLive() {
     { enabled: selectedSessionId !== null }
   );
 
+  const { data: sessionVariants } = trpc.sessionProductVariants.list.useQuery(
+    { sessionId: selectedSessionId! },
+    { enabled: selectedSessionId !== null }
+  );
+
+  const { data: liveDashboard } = trpc.liveSelling.getDashboardStats.useQuery(
+    { sessionId: selectedSessionId! },
+    { enabled: selectedSessionId !== null }
+  );
+
   const { data: products } = trpc.productsV2.list.useQuery({
     limit: 100,
     offset: 0,
@@ -126,8 +137,10 @@ export default function FacebookLive() {
       session={selectedSession}
       stats={sessionStats}
       products={sessionProducts}
+      variants={sessionVariants}
       comments={sessionComments}
       allProducts={products}
+      liveDashboard={liveDashboard}
       onBack={() => setSelectedSessionId(null)}
       onUpdateStatus={(status: string) => updateStatusMutation.mutate({ id: selectedSessionId, status })}
       onAddProduct={() => setAddProductOpen(true)}
@@ -313,8 +326,10 @@ function LiveControlCenter({
   session,
   stats,
   products,
+  variants,
   comments,
   allProducts,
+  liveDashboard,
   onBack,
   onUpdateStatus,
   onAddProduct,
@@ -367,12 +382,63 @@ function LiveControlCenter({
 
       {/* Statistics Bar */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
           <StatCard icon={Users} label="下单客户" value={stats.orderStats?.customerCount || 0} color="text-blue-500" />
           <StatCard icon={Package} label="商品件数" value={stats.orderStats?.itemCount || 0} color="text-purple-500" />
           <StatCard icon={DollarSign} label="总金额" value={`RM ${Number(stats.orderStats?.totalAmount || 0).toFixed(2)}`} color="text-green-600" />
           <StatCard icon={AlertCircle} label="待付款" value={stats.orderStats?.pending || 0} color="text-orange-500" />
+          <StatCard icon={TrendingUp} label="已付款" value={stats.orderStats?.paid || 0} color="text-green-600" />
           <StatCard icon={AlertCircle} label="需要处理" value={stats.pendingActionCount || 0} color="text-red-500" />
+        </div>
+      )}
+
+      {/* Live Dashboard Alerts */}
+      {liveDashboard && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Out of Stock Alerts */}
+          {(liveDashboard.outOfStockAlerts?.products?.length > 0 || liveDashboard.outOfStockAlerts?.variants?.length > 0) && (
+            <Card className="border-red-200 bg-red-50/50">
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="h-4 w-4 text-red-500" />
+                  <span className="text-sm font-medium text-red-700">缺货提醒</span>
+                </div>
+                <div className="space-y-1">
+                  {liveDashboard.outOfStockAlerts.products.map((p: any) => (
+                    <div key={p.id} className="text-xs flex items-center gap-2">
+                      <Badge variant="secondary" className="font-mono">{p.keyword}</Badge>
+                      <span className="text-red-600">实体库存已售完，未开预售</span>
+                    </div>
+                  ))}
+                  {liveDashboard.outOfStockAlerts.variants.map((v: any) => (
+                    <div key={v.id} className="text-xs flex items-center gap-2">
+                      <Badge variant="secondary" className="font-mono">{v.keyword}</Badge>
+                      <span className="text-red-600">Variant 库存已售完</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {/* Preorder Alerts */}
+          {liveDashboard.preorderAlerts?.length > 0 && (
+            <Card className="border-orange-200 bg-orange-50/50">
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Layers className="h-4 w-4 text-orange-500" />
+                  <span className="text-sm font-medium text-orange-700">预售中</span>
+                </div>
+                <div className="space-y-1">
+                  {liveDashboard.preorderAlerts.map((p: any) => (
+                    <div key={p.id} className="text-xs flex items-center gap-2">
+                      <Badge variant="secondary" className="font-mono">{p.keyword}</Badge>
+                      <span className="text-orange-600">预售: {p.sold}/{p.limit === null ? "∞" : p.limit}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
@@ -387,9 +453,13 @@ function LiveControlCenter({
             </Button>
           </CardHeader>
           <CardContent className="space-y-2 max-h-[600px] overflow-y-auto">
+            {/* Regular Products */}
             {products && products.length > 0 ? (
-              products.map((sp: any) => (
-                <div key={sp.id} className="p-3 border rounded-lg space-y-2">
+              products.map((sp: any) => {
+                const remaining = sp.physicalStockAtStart - sp.physicalSoldQuantity;
+                const isOutOfStock = remaining <= 0 && !sp.preorderEnabled;
+                return (
+                <div key={sp.id} className={`p-3 border rounded-lg space-y-2 ${isOutOfStock ? "opacity-50" : ""}`}>
                   <div className="flex items-center justify-between">
                     <div>
                       <Badge variant="secondary" className="font-mono">{sp.keyword}</Badge>
@@ -431,11 +501,52 @@ function LiveControlCenter({
                     </Button>
                   </div>
                 </div>
-              ))
+              );
+              })
             ) : (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 <Package className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
                 请添加商品到本场次
+              </div>
+            )}
+
+            {/* Variant Products */}
+            {variants && variants.length > 0 && (
+              <div className="pt-2 border-t mt-2">
+                <p className="text-xs font-medium text-muted-foreground mb-2 mt-2">规格商品 (Variant)</p>
+                {variants.map((sv: any) => {
+                  const vRemaining = sv.physicalStockAtStart - sv.physicalSoldQuantity;
+                  const vOutOfStock = vRemaining <= 0 && !sv.preorderEnabled;
+                  return (
+                  <div key={sv.id} className={`p-3 border rounded-lg space-y-2 mb-2 ${vOutOfStock ? "opacity-50" : ""}`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Badge variant="secondary" className="font-mono">{sv.keyword}</Badge>
+                        <span className="text-xs text-muted-foreground ml-2">
+                          {sv.sellingPrice ? `RM ${sv.sellingPrice}` : ""}
+                        </span>
+                      </div>
+                      <Badge variant={sv.sellingStatus === "available" ? "default" : "destructive"} className="text-xs">
+                        {sv.sellingStatus === "available" ? "在售" : "停售"}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-muted-foreground">实体: </span>
+                        <span className="font-medium">{vRemaining}/{sv.physicalStockAtStart}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">预售: </span>
+                        <span className="font-medium">
+                          {sv.preorderEnabled
+                            ? `${sv.preorderLimit === null ? "∞" : (sv.preorderLimit as number) - sv.preorderSoldQuantity}/${sv.preorderLimit === null ? "∞" : sv.preorderLimit}`
+                            : "未开"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>

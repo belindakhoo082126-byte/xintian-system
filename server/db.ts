@@ -15,6 +15,9 @@ import {
   customerAddresses, customerCreditLedger, customerRefunds, customerTimeline, customerAuditLogs,
   // XLCS V1.0 Dashboard/Notes/Facebook Sales imports
   salesSessions, facebookComments, orderNotes, actionItems, sessionProducts,
+  // XLCS V1.0 AI Agent & Live Selling Center imports
+  aiSettings, aiReplyLogs, aiReviewItems, faqEntries, knowledgeEntries,
+  plantDiagnosticTickets, aiChatSessions, sessionProductVariants,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3267,5 +3270,518 @@ export async function getSessionStats(sessionId: number) {
       cancelled: Number(sessionOrders[0]?.cancelled || 0),
     },
     pendingActionCount: Number(pendingActions[0]?.count || 0),
+  };
+}
+
+// ============================================================================
+// XLCS V1.0: AI Agent - Settings
+// ============================================================================
+
+export async function getAiSettings() {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(aiSettings).limit(1);
+  return result[0] || null;
+}
+
+export async function updateAiSettings(data: Partial<typeof aiSettings.$inferInsert> & { updatedBy?: string }) {
+  const db = await getDb();
+  if (!db) return null;
+  const existing = await db.select().from(aiSettings).limit(1);
+  if (existing.length === 0) {
+    const [row] = await db.insert(aiSettings).values({
+      autoReplyEnabled: data.autoReplyEnabled ?? true,
+      learningMode: data.learningMode ?? 'suggestion',
+      minConfidenceThreshold: data.minConfidenceThreshold ?? '70.00',
+      messengerAiEnabled: data.messengerAiEnabled ?? true,
+      whatsappAiEnabled: data.whatsappAiEnabled ?? true,
+      facebookCommentsOrderOnly: data.facebookCommentsOrderOnly ?? false,
+      plantDiagnosticForceHuman: data.plantDiagnosticForceHuman ?? true,
+      paymentRequiresHumanConfirm: data.paymentRequiresHumanConfirm ?? true,
+      parcelAnomalyDays: data.parcelAnomalyDays ?? 5,
+      updatedBy: data.updatedBy || null,
+    });
+    return { id: row.insertId };
+  }
+  await db.update(aiSettings).set({
+    ...(data.autoReplyEnabled !== undefined && { autoReplyEnabled: data.autoReplyEnabled }),
+    ...(data.learningMode && { learningMode: data.learningMode }),
+    ...(data.minConfidenceThreshold && { minConfidenceThreshold: data.minConfidenceThreshold }),
+    ...(data.messengerAiEnabled !== undefined && { messengerAiEnabled: data.messengerAiEnabled }),
+    ...(data.whatsappAiEnabled !== undefined && { whatsappAiEnabled: data.whatsappAiEnabled }),
+    ...(data.facebookCommentsOrderOnly !== undefined && { facebookCommentsOrderOnly: data.facebookCommentsOrderOnly }),
+    ...(data.plantDiagnosticForceHuman !== undefined && { plantDiagnosticForceHuman: data.plantDiagnosticForceHuman }),
+    ...(data.paymentRequiresHumanConfirm !== undefined && { paymentRequiresHumanConfirm: data.paymentRequiresHumanConfirm }),
+    ...(data.parcelAnomalyDays !== undefined && { parcelAnomalyDays: data.parcelAnomalyDays }),
+    updatedBy: data.updatedBy || null,
+  }).where(eq(aiSettings.id, existing[0].id));
+  return { id: existing[0].id };
+}
+
+// ============================================================================
+// XLCS V1.0: AI Agent - Reply Logs
+// ============================================================================
+
+export async function getAiReplyLogs(filters?: {
+  customerId?: number;
+  platform?: string;
+  aiModule?: string;
+  transferredToHuman?: boolean;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (filters?.customerId) conditions.push(eq(aiReplyLogs.customerId, filters.customerId));
+  if (filters?.platform) conditions.push(eq(aiReplyLogs.platform, filters.platform as any));
+  if (filters?.aiModule) conditions.push(eq(aiReplyLogs.aiModule, filters.aiModule as any));
+  if (filters?.transferredToHuman !== undefined) conditions.push(eq(aiReplyLogs.transferredToHuman, filters.transferredToHuman));
+
+  let query = db.select().from(aiReplyLogs);
+  if (conditions.length > 0) {
+    query = query.where(conditions.length === 1 ? conditions[0] : and(...conditions)) as any;
+  }
+  const limit = filters?.limit || 50;
+  const offset = filters?.offset || 0;
+  return await (query as any).orderBy(sql`created_at DESC`).limit(limit).offset(offset);
+}
+
+export async function getAiReplyLogById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(aiReplyLogs).where(eq(aiReplyLogs.id, id)).limit(1);
+  return result[0] || null;
+}
+
+export async function addAiReplyLog(data: typeof aiReplyLogs.$inferInsert) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(aiReplyLogs).values(data);
+  return { id: result.insertId };
+}
+
+export async function updateAiReplyLogHumanReply(id: number, humanReply: string, humanRepliedBy: string) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(aiReplyLogs).set({
+    humanReply,
+    humanRepliedBy,
+    humanRepliedAt: new Date(),
+  }).where(eq(aiReplyLogs.id, id));
+  return { id };
+}
+
+// ============================================================================
+// XLCS V1.0: AI Agent - Review Items
+// ============================================================================
+
+export async function getAiReviewItems(filters?: {
+  status?: string;
+  suggestionType?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (filters?.status) conditions.push(eq(aiReviewItems.status, filters.status as any));
+  if (filters?.suggestionType) conditions.push(eq(aiReviewItems.suggestionType, filters.suggestionType as any));
+
+  let query = db.select().from(aiReviewItems);
+  if (conditions.length > 0) {
+    query = query.where(conditions.length === 1 ? conditions[0] : and(...conditions)) as any;
+  }
+  const limit = filters?.limit || 50;
+  const offset = filters?.offset || 0;
+  return await (query as any).orderBy(sql`created_at DESC`).limit(limit).offset(offset);
+}
+
+export async function createAiReviewItem(data: typeof aiReviewItems.$inferInsert) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(aiReviewItems).values(data);
+  return { id: result.insertId };
+}
+
+export async function updateAiReviewItemStatus(id: number, status: string, reviewedBy: string, adminNote?: string, modifiedReply?: string) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(aiReviewItems).set({
+    status: status as any,
+    reviewedBy,
+    reviewedAt: new Date(),
+    ...(adminNote && { adminNote }),
+    ...(modifiedReply && { modifiedReply }),
+  }).where(eq(aiReviewItems.id, id));
+  return { id };
+}
+
+// ============================================================================
+// XLCS V1.0: AI Agent - FAQ Entries
+// ============================================================================
+
+export async function getFaqEntries(filters?: {
+  category?: string;
+  productId?: number;
+  isActive?: boolean;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (filters?.category) conditions.push(eq(faqEntries.category, filters.category));
+  if (filters?.productId) conditions.push(eq(faqEntries.productId, filters.productId));
+  if (filters?.isActive !== undefined) conditions.push(eq(faqEntries.isActive, filters.isActive));
+  if (filters?.search) {
+    conditions.push(sql`(question LIKE ${'%' + filters.search + '%'} OR answer LIKE ${'%' + filters.search + '%'} OR keywords LIKE ${'%' + filters.search + '%'})`);
+  }
+
+  let query = db.select().from(faqEntries);
+  if (conditions.length > 0) {
+    query = query.where(conditions.length === 1 ? conditions[0] : and(...conditions)) as any;
+  }
+  const limit = filters?.limit || 100;
+  const offset = filters?.offset || 0;
+  return await (query as any).orderBy(sql`sort_order ASC, created_at DESC`).limit(limit).offset(offset);
+}
+
+export async function getFaqEntryById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(faqEntries).where(eq(faqEntries.id, id)).limit(1);
+  return result[0] || null;
+}
+
+export async function createFaqEntry(data: typeof faqEntries.$inferInsert) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(faqEntries).values(data);
+  return { id: result.insertId };
+}
+
+export async function updateFaqEntry(id: number, data: Partial<typeof faqEntries.$inferInsert>) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(faqEntries).set(data).where(eq(faqEntries.id, id));
+  return { id };
+}
+
+export async function deleteFaqEntry(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.delete(faqEntries).where(eq(faqEntries.id, id));
+  return { id };
+}
+
+// ============================================================================
+// XLCS V1.0: AI Agent - Knowledge Entries
+// ============================================================================
+
+export async function getKnowledgeEntries(filters?: {
+  productId?: number;
+  topic?: string;
+  isActive?: boolean;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (filters?.productId) conditions.push(eq(knowledgeEntries.productId, filters.productId));
+  if (filters?.topic) conditions.push(eq(knowledgeEntries.topic, filters.topic));
+  if (filters?.isActive !== undefined) conditions.push(eq(knowledgeEntries.isActive, filters.isActive));
+  if (filters?.search) {
+    conditions.push(sql`(topic LIKE ${'%' + filters.search + '%'} OR content LIKE ${'%' + filters.search + '%'} OR tags LIKE ${'%' + filters.search + '%'})`);
+  }
+
+  let query = db.select().from(knowledgeEntries);
+  if (conditions.length > 0) {
+    query = query.where(conditions.length === 1 ? conditions[0] : and(...conditions)) as any;
+  }
+  const limit = filters?.limit || 100;
+  const offset = filters?.offset || 0;
+  return await (query as any).orderBy(sql`sort_order ASC, created_at DESC`).limit(limit).offset(offset);
+}
+
+export async function getKnowledgeEntryById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(knowledgeEntries).where(eq(knowledgeEntries.id, id)).limit(1);
+  return result[0] || null;
+}
+
+export async function createKnowledgeEntry(data: typeof knowledgeEntries.$inferInsert) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(knowledgeEntries).values(data);
+  return { id: result.insertId };
+}
+
+export async function updateKnowledgeEntry(id: number, data: Partial<typeof knowledgeEntries.$inferInsert>) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(knowledgeEntries).set(data).where(eq(knowledgeEntries.id, id));
+  return { id };
+}
+
+export async function deleteKnowledgeEntry(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.delete(knowledgeEntries).where(eq(knowledgeEntries.id, id));
+  return { id };
+}
+
+// ============================================================================
+// XLCS V1.0: AI Agent - Plant Diagnostic Tickets
+// ============================================================================
+
+export async function getPlantDiagnosticTickets(filters?: {
+  customerId?: number;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (filters?.customerId) conditions.push(eq(plantDiagnosticTickets.customerId, filters.customerId));
+  if (filters?.status) conditions.push(eq(plantDiagnosticTickets.status, filters.status as any));
+
+  let query = db.select().from(plantDiagnosticTickets);
+  if (conditions.length > 0) {
+    query = query.where(conditions.length === 1 ? conditions[0] : and(...conditions)) as any;
+  }
+  const limit = filters?.limit || 50;
+  const offset = filters?.offset || 0;
+  return await (query as any).orderBy(sql`created_at DESC`).limit(limit).offset(offset);
+}
+
+export async function getPlantDiagnosticTicketById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(plantDiagnosticTickets).where(eq(plantDiagnosticTickets.id, id)).limit(1);
+  return result[0] || null;
+}
+
+export async function createPlantDiagnosticTicket(data: typeof plantDiagnosticTickets.$inferInsert) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(plantDiagnosticTickets).values(data);
+  return { id: result.insertId };
+}
+
+export async function updatePlantDiagnosticTicket(id: number, data: Partial<typeof plantDiagnosticTickets.$inferInsert>) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(plantDiagnosticTickets).set(data).where(eq(plantDiagnosticTickets.id, id));
+  return { id };
+}
+
+// ============================================================================
+// XLCS V1.0: AI Agent - Chat Sessions
+// ============================================================================
+
+export async function getAiChatSessions(filters?: {
+  customerId?: number;
+  platform?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (filters?.customerId) conditions.push(eq(aiChatSessions.customerId, filters.customerId));
+  if (filters?.platform) conditions.push(eq(aiChatSessions.platform, filters.platform as any));
+  if (filters?.status) conditions.push(eq(aiChatSessions.status, filters.status as any));
+
+  let query = db.select().from(aiChatSessions);
+  if (conditions.length > 0) {
+    query = query.where(conditions.length === 1 ? conditions[0] : and(...conditions)) as any;
+  }
+  const limit = filters?.limit || 50;
+  const offset = filters?.offset || 0;
+  return await (query as any).orderBy(sql`updated_at DESC`).limit(limit).offset(offset);
+}
+
+export async function getAiChatSessionById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(aiChatSessions).where(eq(aiChatSessions.id, id)).limit(1);
+  return result[0] || null;
+}
+
+export async function createAiChatSession(data: typeof aiChatSessions.$inferInsert) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(aiChatSessions).values(data);
+  return { id: result.insertId };
+}
+
+export async function updateAiChatSession(id: number, data: Partial<typeof aiChatSessions.$inferInsert>) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(aiChatSessions).set(data).where(eq(aiChatSessions.id, id));
+  return { id };
+}
+
+// ============================================================================
+// XLCS V1.0: Session Product Variants (场次 Variant 绑定)
+// ============================================================================
+
+export async function getSessionProductVariants(sessionId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(sessionProductVariants)
+    .where(eq(sessionProductVariants.sessionId, sessionId))
+    .orderBy(sql`created_at ASC`);
+}
+
+export async function addSessionProductVariant(data: typeof sessionProductVariants.$inferInsert) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(sessionProductVariants).values(data);
+  return { id: result.insertId };
+}
+
+export async function updateSessionProductVariant(id: number, data: Partial<typeof sessionProductVariants.$inferInsert>) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(sessionProductVariants).set(data).where(eq(sessionProductVariants.id, id));
+  return { id };
+}
+
+export async function deleteSessionProductVariant(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.delete(sessionProductVariants).where(eq(sessionProductVariants.id, id));
+  return { id };
+}
+
+export async function findSessionProductVariantByKeyword(sessionId: number, keyword: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const normalized = keyword.toUpperCase().trim();
+  const result = await db.select().from(sessionProductVariants)
+    .where(and(
+      eq(sessionProductVariants.sessionId, sessionId),
+      eq(sessionProductVariants.keyword, normalized),
+      eq(sessionProductVariants.sellingStatus, "available")
+    ))
+    .limit(1);
+  return result[0] || null;
+}
+
+// ============================================================================
+// XLCS V1.0: Live Selling Center - Get sellable products for a session
+// ============================================================================
+
+export async function getSellableSessionProducts(sessionId: number) {
+  const db = await getDb();
+  if (!db) return { products: [], variants: [] };
+
+  // Get session products that are available (stock > 0 or preorder enabled)
+  const products = await db.select().from(sessionProducts)
+    .where(and(
+      eq(sessionProducts.sessionId, sessionId),
+      eq(sessionProducts.sellingStatus, "available"),
+      sql`(physical_stock_at_start - physical_sold_quantity > 0 OR preorder_enabled = true)`
+    ))
+    .orderBy(sql`created_at ASC`);
+
+  // Get session product variants that are available
+  const variants = await db.select().from(sessionProductVariants)
+    .where(and(
+      eq(sessionProductVariants.sessionId, sessionId),
+      eq(sessionProductVariants.sellingStatus, "available"),
+      sql`(physical_stock_at_start - physical_sold_quantity > 0 OR preorder_enabled = true)`
+    ))
+    .orderBy(sql`created_at ASC`);
+
+  return { products, variants };
+}
+
+// ============================================================================
+// XLCS V1.0: Live Dashboard Stats (直播期间即时统计)
+// ============================================================================
+
+export async function getLiveDashboardStats(sessionId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  // Order stats for this session
+  const sessionOrders = await db.select({
+    orderCount: sql`COUNT(*)`,
+    customerCount: sql`COUNT(DISTINCT customerId)`,
+    itemCount: sql`COALESCE((SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_items.orderId = orders.id AND order_items.sessionId = ${sessionId}), 0)`,
+    totalAmount: sql`COALESCE(SUM(totalAmount), 0)`,
+    pending: sql`SUM(CASE WHEN CAST(paidAmount AS DECIMAL(10,2)) = 0 AND physicalStatus != 'cancelled' THEN 1 ELSE 0 END)`,
+    paid: sql`SUM(CASE WHEN CAST(paidAmount AS DECIMAL(10,2)) >= CAST(totalAmount AS DECIMAL(10,2)) AND physicalStatus != 'cancelled' THEN 1 ELSE 0 END)`,
+  })
+    .from(orders)
+    .where(sql`id IN (SELECT order_id FROM facebook_comments WHERE session_id = ${sessionId} AND order_id IS NOT NULL)`);
+
+  // Out of stock alerts
+  const outOfStockProducts = await db.select({
+    id: sessionProducts.id,
+    keyword: sessionProducts.keyword,
+    productId: sessionProducts.productId,
+  })
+    .from(sessionProducts)
+    .where(and(
+      eq(sessionProducts.sessionId, sessionId),
+      eq(sessionProducts.sellingStatus, "available"),
+      sql`physical_stock_at_start - physical_sold_quantity <= 0`,
+      sql`preorder_enabled = false`
+    ));
+
+  const outOfStockVariants = await db.select({
+    id: sessionProductVariants.id,
+    keyword: sessionProductVariants.keyword,
+    productId: sessionProductVariants.productId,
+    variantId: sessionProductVariants.variantId,
+  })
+    .from(sessionProductVariants)
+    .where(and(
+      eq(sessionProductVariants.sessionId, sessionId),
+      eq(sessionProductVariants.sellingStatus, "available"),
+      sql`physical_stock_at_start - physical_sold_quantity <= 0`,
+      sql`preorder_enabled = false`
+    ));
+
+  // Preorder alerts
+  const preorderProducts = await db.select({
+    id: sessionProducts.id,
+    keyword: sessionProducts.keyword,
+    productId: sessionProducts.productId,
+    sold: sessionProducts.preorderSoldQuantity,
+    limit: sessionProducts.preorderLimit,
+  })
+    .from(sessionProducts)
+    .where(and(
+      eq(sessionProducts.sessionId, sessionId),
+      eq(sessionProducts.sellingStatus, "available"),
+      eq(sessionProducts.preorderEnabled, true),
+      sql`physical_stock_at_start - physical_sold_quantity <= 0`
+    ));
+
+  return {
+    orderStats: {
+      orderCount: Number(sessionOrders[0]?.orderCount || 0),
+      customerCount: Number(sessionOrders[0]?.customerCount || 0),
+      itemCount: Number(sessionOrders[0]?.itemCount || 0),
+      totalAmount: Number(sessionOrders[0]?.totalAmount || 0),
+      pending: Number(sessionOrders[0]?.pending || 0),
+      paid: Number(sessionOrders[0]?.paid || 0),
+    },
+    outOfStockAlerts: {
+      products: outOfStockProducts,
+      variants: outOfStockVariants,
+    },
+    preorderAlerts: preorderProducts,
   };
 }

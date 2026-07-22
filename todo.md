@@ -243,3 +243,50 @@
 - [x] Vitest 单元测试（26 个新测试 + 99 个旧测试 = 125 个全部通过）
 - [x] TypeScript 编译零错误
 - [x] 保存检查点
+
+## XLCS V1.0: AI Agent & Live Selling Center
+
+### Sprint 1: 数据库
+- [x] ai_settings 表（AI 行为配置 + 默认数据插入）
+- [x] ai_reply_logs 表（AI 回复记录）
+- [x] ai_review_items 表（AI 学习建议）
+- [x] faq_entries 表（FAQ 管理）
+- [x] knowledge_entries 表（Knowledge 管理）
+- [x] plant_diagnostic_tickets 表（植物诊断工单）
+- [x] ai_chat_sessions 表（AI 对话会话）
+- [x] session_product_variants 表（场次 Variant 绑定）
+- [x] 生成迁移 SQL 并执行
+
+### Sprint 2: 后端 API
+- [x] AI Settings CRUD API（get/update，admin 权限）
+- [x] FAQ CRUD API（list/getById/create/update/delete + 搜索）
+- [x] Knowledge CRUD API（list/getById/create/update/delete + 搜索）
+- [x] AI Reply Log API（list/getById/add/updateHumanReply）
+- [x] AI Review Center API（list/create/updateStatus）
+- [x] Plant Diagnostic API（list/getById/create/update + 转人工）
+- [x] AI Chat Session API（list/getById/create/update）
+- [x] Session Product Variants API（list/add/update/delete + 关键词查找）
+- [x] Live Selling Center API（getSellableProducts + getDashboardStats）
+
+### Sprint 3: Live Selling Center 前端增强
+- [x] Variant 自动过滤显示（库存>0 或预售才显示，缺货半透明）
+- [x] Variant 独立关键词显示（独立区域 + 关键词 Badge）
+- [x] 普通商品关键词显示（已有 + 缺货半透明效果）
+- [x] 库存即时同步（通过 liveDashboard 查询自动刷新）
+- [x] Live Dashboard（6 卡片统计 + 缺货提醒 + 预售提醒）
+
+### Sprint 4: AI Settings + FAQ/Knowledge 管理前端
+- [x] AI Settings 页面（自动回复/学习模式/信心值/各平台开关/人工确认）
+- [x] FAQ 管理页面（CRUD + 分类分组 + 关键词 + 搜索 + 附件 URL）
+- [x] Knowledge 管理页面（CRUD + 标签 + 搜索 + 附件 URL）
+- [x] 侧栏菜单添加 AI 管理入口（AI 设置/FAQ/Knowledge）
+
+### Sprint 5: AI Review Center + AI Reply Log 前端
+- [x] AI Review Center 页面（建议列表/批准/修改/拒绝/忽略 + 缓存 invalidation）
+- [x] AI Reply Log 页面（完整对话记录/平台筛选/模组筛选/详情对话框）
+- [ ] Plant Diagnostic 工单页面 — 后续版本
+
+### Sprint 6: 测试与验收
+- [x] Vitest 单元测试（29 个 AI Agent 测试 + 125 个旧测试 = 154 个全部通过）
+- [x] TypeScript 编译零错误
+- [x] 保存检查点

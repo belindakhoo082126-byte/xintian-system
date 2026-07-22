@@ -2053,11 +2053,430 @@ export const appRouter = router({
   }),
 
   // ===========================================================================
+  // XLCS V1.0: AI Agent - Settings
+  // ===========================================================================
+  aiSettings: router({
+    get: protectedProcedure.query(async () => {
+      return await db.getAiSettings();
+    }),
+    update: adminProcedure
+      .input(z.object({
+        autoReplyEnabled: z.boolean().optional(),
+        learningMode: z.enum(['suggestion', 'draft', 'disabled']).optional(),
+        minConfidenceThreshold: z.string().optional(),
+        messengerAiEnabled: z.boolean().optional(),
+        whatsappAiEnabled: z.boolean().optional(),
+        facebookCommentsOrderOnly: z.boolean().optional(),
+        plantDiagnosticForceHuman: z.boolean().optional(),
+        paymentRequiresHumanConfirm: z.boolean().optional(),
+        parcelAnomalyDays: z.number().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.updateAiSettings({
+          ...input,
+          updatedBy: ctx.user?.name || 'Admin',
+        });
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: AI Agent - Reply Logs
+  // ===========================================================================
+  aiReplyLogs: router({
+    list: protectedProcedure
+      .input(z.object({
+        customerId: z.number().optional(),
+        platform: z.string().optional(),
+        aiModule: z.string().optional(),
+        transferredToHuman: z.boolean().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getAiReplyLogs(input || {});
+      }),
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getAiReplyLogById(input.id);
+      }),
+    add: protectedProcedure
+      .input(z.object({
+        customerId: z.number().optional(),
+        customerName: z.string().optional(),
+        platform: z.enum(['messenger', 'whatsapp', 'facebook_comment', 'internal']),
+        aiModule: z.enum(['order', 'parcel', 'plant_diagnostic', 'faq', 'knowledge', 'payment', 'content', 'unknown']),
+        userMessage: z.string().optional(),
+        aiReply: z.string().optional(),
+        flowUsed: z.string().optional(),
+        faqUsed: z.string().optional(),
+        knowledgeUsed: z.string().optional(),
+        confidenceScore: z.string().optional(),
+        transferredToHuman: z.boolean().optional(),
+        chatSessionId: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.addAiReplyLog(input as any);
+      }),
+    updateHumanReply: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        humanReply: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.updateAiReplyLogHumanReply(
+          input.id,
+          input.humanReply,
+          ctx.user?.name || 'Admin'
+        );
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: AI Agent - Review Items (AI 学习建议)
+  // ===========================================================================
+  aiReviewItems: router({
+    list: protectedProcedure
+      .input(z.object({
+        status: z.string().optional(),
+        suggestionType: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getAiReviewItems(input || {});
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        replyLogId: z.number().optional(),
+        customerQuestion: z.string(),
+        humanReply: z.string().optional(),
+        aiSuggestion: z.string(),
+        suggestionType: z.enum(['faq', 'knowledge', 'flow']),
+        suggestedCategory: z.string().optional(),
+        suggestedContent: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createAiReviewItem(input as any);
+      }),
+    updateStatus: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(['pending', 'approved', 'rejected', 'modified', 'ignored']),
+        adminNote: z.string().optional(),
+        modifiedReply: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.updateAiReviewItemStatus(
+          input.id,
+          input.status,
+          ctx.user?.name || 'Admin',
+          input.adminNote,
+          input.modifiedReply
+        );
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: AI Agent - FAQ Entries
+  // ===========================================================================
+  faqEntries: router({
+    list: protectedProcedure
+      .input(z.object({
+        category: z.string().optional(),
+        productId: z.number().optional(),
+        isActive: z.boolean().optional(),
+        search: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getFaqEntries(input || {});
+      }),
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getFaqEntryById(input.id);
+      }),
+    create: adminProcedure
+      .input(z.object({
+        category: z.string(),
+        keywords: z.string().optional(),
+        question: z.string(),
+        answer: z.string(),
+        imageUrl: z.string().optional(),
+        videoUrl: z.string().optional(),
+        pdfUrl: z.string().optional(),
+        productId: z.number().optional(),
+        sortOrder: z.number().optional(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createFaqEntry(input as any);
+      }),
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        category: z.string().optional(),
+        keywords: z.string().optional(),
+        question: z.string().optional(),
+        answer: z.string().optional(),
+        imageUrl: z.string().optional(),
+        videoUrl: z.string().optional(),
+        pdfUrl: z.string().optional(),
+        productId: z.number().optional(),
+        sortOrder: z.number().optional(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return await db.updateFaqEntry(id, data);
+      }),
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.deleteFaqEntry(input.id);
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: AI Agent - Knowledge Entries
+  // ===========================================================================
+  knowledgeEntries: router({
+    list: protectedProcedure
+      .input(z.object({
+        productId: z.number().optional(),
+        topic: z.string().optional(),
+        isActive: z.boolean().optional(),
+        search: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getKnowledgeEntries(input || {});
+      }),
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getKnowledgeEntryById(input.id);
+      }),
+    create: adminProcedure
+      .input(z.object({
+        productId: z.number().optional(),
+        topic: z.string(),
+        content: z.string(),
+        imageUrl: z.string().optional(),
+        videoUrl: z.string().optional(),
+        pdfUrl: z.string().optional(),
+        tags: z.string().optional(),
+        sortOrder: z.number().optional(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createKnowledgeEntry(input as any);
+      }),
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        productId: z.number().optional(),
+        topic: z.string().optional(),
+        content: z.string().optional(),
+        imageUrl: z.string().optional(),
+        videoUrl: z.string().optional(),
+        pdfUrl: z.string().optional(),
+        tags: z.string().optional(),
+        sortOrder: z.number().optional(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return await db.updateKnowledgeEntry(id, data);
+      }),
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.deleteKnowledgeEntry(input.id);
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: AI Agent - Plant Diagnostic Tickets
+  // ===========================================================================
+  plantDiagnostics: router({
+    list: protectedProcedure
+      .input(z.object({
+        customerId: z.number().optional(),
+        status: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getPlantDiagnosticTickets(input || {});
+      }),
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getPlantDiagnosticTicketById(input.id);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        customerId: z.number().optional(),
+        customerName: z.string().optional(),
+        platform: z.enum(['messenger', 'whatsapp', 'internal']).optional(),
+        placement: z.string().optional(),
+        lightingHours: z.string().optional(),
+        wateringFrequency: z.string().optional(),
+        soilDryDays: z.string().optional(),
+        recentFertilized: z.boolean().optional(),
+        fertilizerType: z.string().optional(),
+        recentRepotted: z.boolean().optional(),
+        recentSprayed: z.boolean().optional(),
+        hasPests: z.boolean().optional(),
+        leafCondition: z.string().optional(),
+        branchCondition: z.string().optional(),
+        rootCondition: z.string().optional(),
+        photoUrls: z.string().optional(),
+        chatSessionId: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createPlantDiagnosticTicket(input as any);
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(['collecting', 'pending_human', 'in_progress', 'resolved', 'closed']).optional(),
+        assignedTo: z.string().optional(),
+        humanReply: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        const updateData: any = { ...data };
+        if (data.status === 'resolved') {
+          updateData.resolvedAt = new Date();
+        }
+        return await db.updatePlantDiagnosticTicket(id, updateData);
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: AI Agent - Chat Sessions
+  // ===========================================================================
+  aiChatSessions: router({
+    list: protectedProcedure
+      .input(z.object({
+        customerId: z.number().optional(),
+        platform: z.string().optional(),
+        status: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getAiChatSessions(input || {});
+      }),
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getAiChatSessionById(input.id);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        customerId: z.number().optional(),
+        customerName: z.string().optional(),
+        platform: z.enum(['messenger', 'whatsapp', 'facebook_comment', 'internal']),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createAiChatSession(input as any);
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(['active', 'transferred', 'closed']).optional(),
+        transferredTo: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        const updateData: any = { ...data };
+        if (data.status === 'transferred') {
+          updateData.transferredAt = new Date();
+        }
+        return await db.updateAiChatSession(id, updateData);
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Session Product Variants (场次 Variant 绑定)
+  // ===========================================================================
+  sessionProductVariants: router({
+    list: protectedProcedure
+      .input(z.object({ sessionId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getSessionProductVariants(input.sessionId);
+      }),
+    add: protectedProcedure
+      .input(z.object({
+        sessionId: z.number(),
+        sessionProductId: z.number(),
+        productId: z.number(),
+        variantId: z.number(),
+        keyword: z.string(),
+        sellingPrice: z.string().optional(),
+        physicalStockAtStart: z.number().optional(),
+        preorderEnabled: z.boolean().optional(),
+        preorderLimit: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.addSessionProductVariant({
+          ...input,
+          keyword: input.keyword.toUpperCase().trim(),
+        } as any);
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        sellingPrice: z.string().optional(),
+        physicalStockAtStart: z.number().optional(),
+        preorderEnabled: z.boolean().optional(),
+        preorderLimit: z.number().optional(),
+        sellingStatus: z.enum(['available', 'stopped']).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return await db.updateSessionProductVariant(id, data);
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.deleteSessionProductVariant(input.id);
+      }),
+    findByKeyword: protectedProcedure
+      .input(z.object({ sessionId: z.number(), keyword: z.string() }))
+      .query(async ({ input }) => {
+        return await db.findSessionProductVariantByKeyword(input.sessionId, input.keyword);
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0: Live Selling Center - Sellable Products & Dashboard
+  // ===========================================================================
+  liveSelling: router({
+    getSellableProducts: protectedProcedure
+      .input(z.object({ sessionId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getSellableSessionProducts(input.sessionId);
+      }),
+    getDashboardStats: protectedProcedure
+      .input(z.object({ sessionId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getLiveDashboardStats(input.sessionId);
+      }),
+  }),
+
+  // ===========================================================================
   // Dashboard (legacy - keep for backward compat)
   // ===========================================================================
   dashboard: router({
     stats: protectedProcedure.query(async () => {
-      return await db.getDashboardStats();
+      return await db.getWorkCenterStats();
     }),
   }),
 });
