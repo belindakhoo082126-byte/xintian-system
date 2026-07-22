@@ -2507,7 +2507,88 @@ export const appRouter = router({
   }),
   
   // ===========================================================================
-  // Dashboard
+  // V1.1: Dashboard V11 (仪表板 V1.1)
+  // ===========================================================================
+  dashboardV11: router({
+    stats: protectedProcedure.query(async () => {
+      return await db.getDashboardV11Stats();
+    }),
+  }),
+
+  // ===========================================================================
+  // V1.1: Order Remarks (订单备注 - 3种类型)
+  // ===========================================================================
+  orderRemarks: router({
+    list: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+      return await db.getOrderRemarks(input.orderId);
+    }),
+    create: protectedProcedure.input(z.object({
+      orderId: z.number(),
+      type: z.enum(["live", "customer", "internal"]),
+      content: z.string().min(1),
+      createdBy: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      await db.createOrderRemark({
+        orderId: input.orderId,
+        type: input.type,
+        content: input.content,
+        createdBy: input.createdBy || ctx.user?.name || undefined,
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.deleteOrderRemark(input.id);
+      return { success: true };
+    }),
+  }),
+
+  // ===========================================================================
+  // V1.1: Order Item Repots (换盆功能)
+  // ===========================================================================
+  repots: router({
+    list: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+      return await db.getOrderItemRepots(input.orderId);
+    }),
+    create: protectedProcedure.input(z.object({
+      orderItemId: z.number(),
+      orderId: z.number(),
+      productId: z.number(),
+      productName: z.string(),
+      potProductId: z.number(),
+      potProductName: z.string(),
+      quantity: z.number().min(1),
+    })).mutation(async ({ input }) => {
+      await db.createOrderItemRepot(input);
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.deleteOrderItemRepot(input.id);
+      return { success: true };
+    }),
+    potProducts: protectedProcedure.query(async () => {
+      return await db.getPotProducts();
+    }),
+  }),
+
+  // ===========================================================================
+  // V1.1: Scheduled Shipping (预约发货)
+  // ===========================================================================
+  scheduledShipping: router({
+    setDate: protectedProcedure.input(z.object({
+      orderId: z.number(),
+      date: z.string().nullable(),
+    })).mutation(async ({ input }) => {
+      const date = input.date ? new Date(input.date) : null;
+      await db.setScheduledShippingDate(input.orderId, date);
+      return { success: true };
+    }),
+    today: protectedProcedure.query(async () => {
+      return await db.getTodayScheduledShipping();
+    }),
+  }),
+
+  // ===========================================================================
+  // Dashboard (original)
   // ===========================================================================
   dashboard: router({
     stats: protectedProcedure.query(async () => {

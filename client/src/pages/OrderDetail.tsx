@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { ArrowLeft, Package, Truck, CheckCircle, Clock, AlertCircle, PauseCircle, Bell, History, FileText } from "lucide-react";
+import { ArrowLeft, Package, Truck, CheckCircle, Clock, AlertCircle, PauseCircle, Bell, History, FileText, MessageSquare, User, Lock, Trash2, Plus, Sprout, Calendar } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; variant: any; color: string }> = {
   pending: { label: "挂单", variant: "outline", color: "text-yellow-600" },
@@ -37,6 +37,11 @@ const SOURCE_LABELS: Record<string, string> = {
 export default function OrderDetail({ orderId, onBack }: { orderId: number; onBack: () => void }) {
   const [holdOpen, setHoldOpen] = useState(false);
   const [statusTransitionOpen, setStatusTransitionOpen] = useState(false);
+  const [remarkText, setRemarkText] = useState("");
+  const [remarkType, setRemarkType] = useState<"live" | "customer" | "internal">("live");
+  const [repotOpen, setRepotOpen] = useState(false);
+  const [repotForm, setRepotForm] = useState<any>({ orderItemId: 0, productId: 0, productName: "", potProductId: 0, potProductName: "", quantity: 1 });
+  const [scheduledDate, setScheduledDate] = useState("");
   const [holdForm, setHoldForm] = useState<any>({
     holdType: "wait_next_live",
     scheduledShippingDate: "",
@@ -53,6 +58,9 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
   const { data: statusLogs } = trpc.orderWorkflow.getStatusLogs.useQuery({ orderId });
   const { data: holdInfo } = trpc.holdOrders.getInfo.useQuery({ orderId });
   const { data: notifications } = trpc.notifications.list.useQuery({ orderId });
+  const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
+  const { data: repots } = trpc.repots.list.useQuery({ orderId });
+  const { data: potProducts } = trpc.repots.potProducts.useQuery();
 
   const confirmPaymentMutation = trpc.orderWorkflow.confirmPayment.useMutation({
     onSuccess: () => {
@@ -89,6 +97,47 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
       utils.holdOrders.invalidate();
       utils.orders.invalidate();
       toast.success("保留订单已释放，状态已更新为待包货");
+    },
+    onError: (e) => toast.error(`操作失败: ${e.message}`),
+  });
+
+  const createRemarkMutation = trpc.orderRemarks.create.useMutation({
+    onSuccess: () => {
+      utils.orderRemarks.invalidate();
+      setRemarkText("");
+      toast.success("备注已添加");
+    },
+    onError: (e) => toast.error(`操作失败: ${e.message}`),
+  });
+
+  const deleteRemarkMutation = trpc.orderRemarks.delete.useMutation({
+    onSuccess: () => {
+      utils.orderRemarks.invalidate();
+      toast.success("备注已删除");
+    },
+  });
+
+  const createRepotMutation = trpc.repots.create.useMutation({
+    onSuccess: () => {
+      utils.repots.invalidate();
+      setRepotOpen(false);
+      toast.success("换盆已安排");
+      setRepotForm({ orderItemId: 0, productId: 0, productName: "", potProductId: 0, potProductName: "", quantity: 1 });
+    },
+    onError: (e) => toast.error(`操作失败: ${e.message}`),
+  });
+
+  const deleteRepotMutation = trpc.repots.delete.useMutation({
+    onSuccess: () => {
+      utils.repots.invalidate();
+      toast.success("换盆已取消");
+    },
+  });
+
+  const setScheduledDateMutation = trpc.scheduledShipping.setDate.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      toast.success(scheduledDate ? "预约发货日期已设置" : "预约发货日期已取消");
     },
     onError: (e) => toast.error(`操作失败: ${e.message}`),
   });
@@ -429,6 +478,136 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
         </div>
       </div>
 
+      {/* V1.1: Remarks Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            订单备注 (3种类型)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Add Remark Form */}
+          <div className="flex gap-2 items-start">
+            <Select value={remarkType} onValueChange={(v) => setRemarkType(v as any)}>
+              <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="live">直播备注</SelectItem>
+                <SelectItem value="customer">客户备注</SelectItem>
+                <SelectItem value="internal">内部备注</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              value={remarkText}
+              onChange={(e) => setRemarkText(e.target.value)}
+              placeholder="输入备注内容..."
+              className="flex-1"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && remarkText.trim()) {
+                  createRemarkMutation.mutate({ orderId, type: remarkType, content: remarkText.trim() });
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              onClick={() => remarkText.trim() && createRemarkMutation.mutate({ orderId, type: remarkType, content: remarkText.trim() })}
+              disabled={!remarkText.trim() || createRemarkMutation.isPending}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Remarks List */}
+          <div className="space-y-2">
+            {remarks?.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">暂无备注</p>
+            ) : remarks?.map((r: any) => (
+              <div key={r.id} className="flex items-start gap-2 p-3 border rounded-lg">
+                {r.type === "live" ? <MessageSquare className="h-4 w-4 text-blue-500 mt-0.5" /> :
+                 r.type === "customer" ? <User className="h-4 w-4 text-green-500 mt-0.5" /> :
+                 <Lock className="h-4 w-4 text-orange-500 mt-0.5" />}
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className={r.type === "live" ? "text-blue-600" : r.type === "customer" ? "text-green-600" : "text-orange-600"}>
+                      {r.type === "live" ? "直播" : r.type === "customer" ? "客户" : "内部"}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{r.createdBy} · {new Date(r.createdAt).toLocaleString("zh-CN")}</span>
+                  </div>
+                  <p className="text-sm mt-1">{r.content}</p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => deleteRemarkMutation.mutate({ id: r.id })}>
+                  <Trash2 className="h-3 w-3 text-muted-foreground" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* V1.1: Repot (换盆) Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sprout className="h-5 w-5" />
+            换盆安排
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button size="sm" onClick={() => setRepotOpen(true)} disabled={items.length === 0}>
+            <Plus className="h-4 w-4 mr-2" />
+            新增换盆
+          </Button>
+
+          {/* Repots List */}
+          <div className="space-y-2">
+            {repots?.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">暂无换盆安排</p>
+            ) : repots?.map((r: any) => (
+              <div key={r.id} className="flex items-center gap-3 p-3 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                <Sprout className="h-5 w-5 text-blue-500" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">{r.productName} → {r.potProductName}</p>
+                  <p className="text-xs text-muted-foreground">数量: {r.quantity}</p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => deleteRepotMutation.mutate({ id: r.id })}>
+                  <Trash2 className="h-3 w-3 text-muted-foreground" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* V1.1: Scheduled Shipping Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            预约发货
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center gap-3">
+          <Input
+            type="date"
+            value={scheduledDate || (order?.scheduledShippingDate ? new Date(order.scheduledShippingDate).toISOString().split("T")[0] : "")}
+            onChange={(e) => setScheduledDate(e.target.value)}
+            className="w-48"
+          />
+          <Button
+            size="sm"
+            onClick={() => setScheduledDateMutation.mutate({ orderId, date: scheduledDate || null })}
+            disabled={setScheduledDateMutation.isPending}
+          >
+            设置预约
+          </Button>
+          {order?.scheduledShippingDate && (
+            <Button size="sm" variant="outline" onClick={() => { setScheduledDate(""); setScheduledDateMutation.mutate({ orderId, date: null }); }}>
+              取消预约
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Hold Order Dialog */}
       <Dialog open={holdOpen} onOpenChange={setHoldOpen}>
         <DialogContent className="max-w-md">
@@ -480,6 +659,71 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
           <DialogFooter>
             <Button variant="outline" onClick={() => setHoldOpen(false)}>取消</Button>
             <Button onClick={handleCreateHold} disabled={createHoldMutation.isPending}>确认保留</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* V1.1: Repot Dialog */}
+      <Dialog open={repotOpen} onOpenChange={setRepotOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>新增换盆</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>选择商品</Label>
+              <Select value={String(repotForm.orderItemId)} onValueChange={(v) => {
+                const item = items.find((i: any) => i.id === Number(v));
+                if (item) {
+                  setRepotForm((p: any) => ({ ...p, orderItemId: Number(v), productId: item.productId, productName: item.productName }));
+                }
+              }}>
+                <SelectTrigger><SelectValue placeholder="选择订单商品" /></SelectTrigger>
+                <SelectContent>
+                  {items.map((item: any) => (
+                    <SelectItem key={item.id} value={String(item.id)}>
+                      {item.productName} (x{item.quantity})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>选择花盆</Label>
+              <Select value={String(repotForm.potProductId)} onValueChange={(v) => {
+                const pot = potProducts?.find((p: any) => p.id === Number(v));
+                if (pot) {
+                  setRepotForm((p: any) => ({ ...p, potProductId: Number(v), potProductName: pot.name }));
+                }
+              }}>
+                <SelectTrigger><SelectValue placeholder="选择花盆商品" /></SelectTrigger>
+                <SelectContent>
+                  {potProducts?.map((pot: any) => (
+                    <SelectItem key={pot.id} value={String(pot.id)}>
+                      {pot.name} {pot.potCapacity ? `(${pot.potCapacity})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>换盆数量</Label>
+              <Input
+                type="number"
+                min={1}
+                value={repotForm.quantity}
+                onChange={(e) => setRepotForm((p: any) => ({ ...p, quantity: Number(e.target.value) }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRepotOpen(false)}>取消</Button>
+            <Button
+              onClick={() => createRepotMutation.mutate(repotForm)}
+              disabled={!repotForm.orderItemId || !repotForm.potProductId || createRepotMutation.isPending}
+            >
+              确认换盆
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

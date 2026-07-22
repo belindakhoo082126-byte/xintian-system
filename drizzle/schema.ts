@@ -148,6 +148,10 @@ export const products = mysqlTable("products", {
   syncToMall: boolean("syncToMall").default(false).notNull(),
   mallSortOrder: int("mallSortOrder").default(0).notNull(),
 
+  // V1.1: Pot product support (换盆功能)
+  isPot: boolean("isPot").default(false).notNull(),
+  potCapacity: varchar("potCapacity", { length: 100 }),
+
   // Internal notes
   notes: text("notes"),
 
@@ -458,6 +462,8 @@ export const orders = mysqlTable("orders", {
   shippedAt: timestamp("shippedAt"),
   completedAt: timestamp("completedAt"),
   autoCompleteAt: timestamp("autoCompleteAt"),
+  // V1.1: Scheduled shipping date (预约发货日期)
+  scheduledShippingDate: timestamp("scheduledShippingDate"),
 });
 
 export type Order = typeof orders.$inferSelect;
@@ -1076,3 +1082,43 @@ export const liveOrderCaptures = mysqlTable("live_order_captures", {
 
 export type LiveOrderCapture = typeof liveOrderCaptures.$inferSelect;
 export type InsertLiveOrderCapture = typeof liveOrderCaptures.$inferInsert;
+
+// ============================================================================
+// V1.1: Order Item Repots (换盆功能 - 订单商品换盆记录)
+// ============================================================================
+export const orderItemRepots = mysqlTable("order_item_repots", {
+  id: int("id").autoincrement().primaryKey(),
+  orderItemId: int("orderItemId").notNull(),
+  orderId: int("orderId").notNull(),
+  // Original product (the plant)
+  productId: int("productId").notNull(),
+  productName: varchar("productName", { length: 255 }).notNull(),
+  // Pot product (the replacement pot)
+  potProductId: int("potProductId").notNull(),
+  potProductName: varchar("potProductName", { length: 255 }).notNull(),
+  // How many units of this product get this pot
+  quantity: int("quantity").notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+});
+export type OrderItemRepot = typeof orderItemRepots.$inferSelect;
+export type InsertOrderItemRepot = typeof orderItemRepots.$inferInsert;
+
+// ============================================================================
+// V1.1: Order Remarks (订单备注 - 3种类型: 直播/客户/内部)
+// ============================================================================
+export const orderRemarks = mysqlTable("order_remarks", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  // Type: live (直播备注), customer (客户备注), internal (内部备注)
+  type: mysqlEnum("type", ["live", "customer", "internal"]).notNull(),
+  content: text("content").notNull(),
+  // Who created this remark
+  createdBy: varchar("createdBy", { length: 255 }),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+});
+export type OrderRemark = typeof orderRemarks.$inferSelect;
+export type InsertOrderRemark = typeof orderRemarks.$inferInsert;

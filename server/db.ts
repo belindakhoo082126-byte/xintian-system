@@ -17,6 +17,8 @@ import {
   mallSettings, mallBanners, mallQuickContacts, mallNotices, mallThemeSchedules, mallProductDetailImages,
   // Packing & Shipping imports
   packages, packageItems, liveOrderCaptures,
+  // V1.1 imports
+  orderItemRepots, orderRemarks,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3773,4 +3775,237 @@ export async function getLiveOrderCaptures(limit = 50) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   return await db.select().from(liveOrderCaptures).orderBy(desc(liveOrderCaptures.createdAt)).limit(limit);
+}
+
+// ============================================================================
+// V1.1: Dashboard Stats (仪表板统计)
+// ============================================================================
+
+export async function getDashboardV11Stats() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  // Row 1: Today's tasks
+  const pendingPayment = await db.select({ count: sql`COUNT(*)` }).from(orders)
+    .where(eq(orders.physicalStatus, 'receipt_uploaded')) as any[];
+  const pendingShipment = await db.select({ count: sql`COUNT(*)` }).from(orders)
+    .where(eq(orders.physicalStatus, 'packing')) as any[];
+  const partialShipped = await db.select({ count: sql`COUNT(*)` }).from(orders)
+    .where(eq(orders.physicalStatus, 'partial_shipped')) as any[];
+
+  // Row 2: Orders
+  const unpaidOrders = await db.select({ count: sql`COUNT(*)` }).from(orders)
+    .where(eq(orders.physicalStatus, 'pending')) as any[];
+  const paidThisMonth = await db.select({ count: sql`COUNT(*)` }).from(orders)
+    .where(and(eq(orders.physicalStatus, 'packing'), gte(orders.createdAt, firstOfMonth))) as any[];
+  const holdOrders = await db.select({ count: sql`COUNT(*)` }).from(orders)
+    .where(eq(orders.physicalStatus, 'hold_order')) as any[];
+
+  // Row 3: Inventory
+  const lowStock = await db.select({ count: sql`COUNT(*)` }).from(products)
+    .where(and(eq(products.type, 'physical'), lte(products.stockQuantity, 5), gt(products.stockQuantity, 0))) as any[];
+  const outOfStock = await db.select({ count: sql`COUNT(*)` }).from(products)
+    .where(and(eq(products.type, 'physical'), eq(products.stockQuantity, 0))) as any[];
+
+  // Row 4: Business stats
+  const todayOrders = await db.select({ count: sql`COUNT(*)` }).from(orders)
+    .where(gte(orders.createdAt, today)) as any[];
+  const todayShipped = await db.select({ count: sql`COUNT(*)` }).from(orders)
+    .where(and(eq(orders.physicalStatus, 'shipped'), gte(orders.shippedAt, today))) as any[];
+  const todaySales = await db.select({ total: sql`COALESCE(SUM(totalAmount), 0)` }).from(orders)
+    .where(gte(orders.createdAt, today)) as any[];
+  const monthSales = await db.select({ total: sql`COALESCE(SUM(totalAmount), 0)` }).from(orders)
+    .where(gte(orders.createdAt, firstOfMonth)) as any[];
+
+  // Row 5: Scheduled shipping today
+  const scheduledToday = await db.select({ count: sql`COUNT(*)` }).from(orders)
+    .where(and(eq(orders.physicalStatus, 'packing'), eq(orders.scheduledShippingDate, today))) as any[];
+
+  // Order alerts
+  const repotOrders = await db.select({ count: sql`COUNT(DISTINCT orderId)` }).from(orderItemRepots) as any[];
+  const holdExpiring = await db.select({ count: sql`COUNT(*)` }).from(orders)
+    .where(eq(orders.physicalStatus, 'hold_order')) as any[];
+
+  return {
+    row1: {
+      pendingPayment: Number(pendingPayment[0]?.count || 0),
+      pendingShipment: Number(pendingShipment[0]?.count || 0),
+      partialShipped: Number(partialShipped[0]?.count || 0),
+    },
+    row2: {
+      unpaidOrders: Number(unpaidOrders[0]?.count || 0),
+      paidThisMonth: Number(paidThisMonth[0]?.count || 0),
+      holdOrders: Number(holdOrders[0]?.count || 0),
+    },
+    row3: {
+      lowStock: Number(lowStock[0]?.count || 0),
+      outOfStock: Number(outOfStock[0]?.count || 0),
+    },
+    row4: {
+      todayOrders: Number(todayOrders[0]?.count || 0),
+      todayShipped: Number(todayShipped[0]?.count || 0),
+      todaySales: todaySales[0]?.total || "0.00",
+      monthSales: monthSales[0]?.total || "0.00",
+    },
+    row5: {
+      scheduledToday: Number(scheduledToday[0]?.count || 0),
+    },
+    alerts: {
+      repotOrders: Number(repotOrders[0]?.count || 0),
+      scheduledToday: Number(scheduledToday[0]?.count || 0),
+      holdExpiring: Number(holdExpiring[0]?.count || 0),
+      pendingPayment: Number(pendingPayment[0]?.count || 0),
+    },
+  };
+}
+
+// Helper: gt
+function gt(field: any, value: any) {
+  return sql`${field} > ${value}`;
+}
+
+// ============================================================================
+// V1.1: Order Remarks (订单备注 - 3种类型)
+// ============================================================================
+
+export async function getOrderRemarks(orderId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.select().from(orderRemarks)
+    .where(eq(orderRemarks.orderId, orderId))
+    .orderBy(desc(orderRemarks.createdAt));
+}
+
+export async function createOrderRemark(data: {
+  orderId: number;
+  type: "live" | "customer" | "internal";
+  content: string;
+  createdBy?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(orderRemarks).values({
+    orderId: data.orderId,
+    type: data.type,
+    content: data.content,
+    createdBy: data.createdBy || null,
+  });
+}
+
+export async function deleteOrderRemark(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(orderRemarks).where(eq(orderRemarks.id, id));
+}
+
+// ============================================================================
+// V1.1: Order Item Repots (换盆功能)
+// ============================================================================
+
+export async function getOrderItemRepots(orderId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.select().from(orderItemRepots)
+    .where(eq(orderItemRepots.orderId, orderId))
+    .orderBy(asc(orderItemRepots.createdAt));
+}
+
+export async function createOrderItemRepot(data: {
+  orderItemId: number;
+  orderId: number;
+  productId: number;
+  productName: string;
+  potProductId: number;
+  potProductName: string;
+  quantity: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Validate: total repot quantity for this order item must not exceed the item's purchased quantity
+  const existingRepots = await db.select().from(orderItemRepots)
+    .where(eq(orderItemRepots.orderItemId, data.orderItemId));
+  const totalRepotQty = existingRepots.reduce((sum, r) => sum + r.quantity, 0);
+
+  // Get the order item to check purchased quantity
+  const itemResult = await db.select().from(orderItems)
+    .where(eq(orderItems.id, data.orderItemId)).limit(1);
+  if (itemResult.length === 0) throw new Error("Order item not found");
+  const purchasedQty = itemResult[0].quantity;
+
+  if (totalRepotQty + data.quantity > purchasedQty) {
+    throw new Error(`换盆数量超过购买数量。剩余可安排: ${purchasedQty - totalRepotQty}`);
+  }
+
+  // Insert repot record
+  await db.insert(orderItemRepots).values({
+    orderItemId: data.orderItemId,
+    orderId: data.orderId,
+    productId: data.productId,
+    productName: data.productName,
+    potProductId: data.potProductId,
+    potProductName: data.potProductName,
+    quantity: data.quantity,
+  });
+
+  // Deduct pot product stock
+  await db.update(products)
+    .set({ stockQuantity: sql`stockQuantity - ${data.quantity}` })
+    .where(eq(products.id, data.potProductId));
+}
+
+export async function deleteOrderItemRepot(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Get the repot record to restore stock
+  const repot = await db.select().from(orderItemRepots).where(eq(orderItemRepots.id, id)).limit(1);
+  if (repot.length > 0) {
+    // Restore pot product stock
+    await db.update(products)
+      .set({ stockQuantity: sql`stockQuantity + ${repot[0].quantity}` })
+      .where(eq(products.id, repot[0].potProductId));
+  }
+
+  await db.delete(orderItemRepots).where(eq(orderItemRepots.id, id));
+}
+
+// ============================================================================
+// V1.1: Scheduled Shipping (预约发货)
+// ============================================================================
+
+export async function setScheduledShippingDate(orderId: number, date: Date | null) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(orders)
+    .set({ scheduledShippingDate: date })
+    .where(eq(orders.id, orderId));
+}
+
+export async function getTodayScheduledShipping() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return await db.select().from(orders)
+    .where(and(eq(orders.physicalStatus, 'packing'), eq(orders.scheduledShippingDate, today)))
+    .orderBy(desc(orders.createdAt));
+}
+
+// ============================================================================
+// V1.1: Pot Products (花盆商品)
+// ============================================================================
+
+export async function getPotProducts() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(products)
+    .where(and(eq(products.isPot, true), eq(products.status, 'active')))
+    .orderBy(asc(products.name));
 }

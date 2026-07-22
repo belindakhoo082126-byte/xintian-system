@@ -304,4 +304,56 @@
 ### Sprint 8: 测试与验收
 - [x] TypeScript 编译零错误
 - [x] Vitest 单元测试（60 个全部通过）
+- [x] 保存检查点
+
+## XLCS V1.1: Dashboard 重设计 + 备注系统 + 换盆功能 + 预约发货 + 订单提醒 + 多语言
+
+### Sprint 1: 数据库 Schema
+- [ ] order_item_repots 表（换盆：orderItemId, productId, potProductId, quantity）
+- [ ] order_remarks 表（3种备注：live/customer/internal）
+- [ ] orders 表新增 scheduledShippingDate 字段（预约发货日期）
+- [ ] products 表新增 isPot 字段（标记花盆类商品）+ potCapacity
+
+### Sprint 2: 后端 API
+- [ ] Dashboard 统计 API（今日待处理5排 + 订单提醒）
+- [ ] 备注 CRUD API（3种类型：直播/客户/内部）
+- [ ] 换盆 CRUD API（含数量验证 + 库存同步扣除）
+- [ ] 预约发货 API（设置/查询今日预约发货）
+- [ ] 订单提醒 API（换盆/预约发货/保留到期/待审核付款）
+
+### Sprint 3: Dashboard 重设计
+- [ ] 第一排：待审核付款 + 待出货 + 部分发货 + AI待人工处理
+- [ ] 第二排：未汇款订单 + 本月已汇款订单 + 保留订单
+- [ ] 第三排：库存不足 + 缺货商品
+- [ ] 第四排：今日订单 + 今日已发货 + 今日销售额 + 本月销售额
+- [ ] 第五排：未读 Messenger + AI待人工处理
+- [ ] 订单提醒 Banner（换盆/预约发货/保留到期/待审核付款）
+- [ ] 所有卡片可点击进入对应页面
+
+### Sprint 4: 备注系统
+- [ ] OrderDetail 新增 3 种备注（直播/客户/内部）
+- [ ] PackingDetail 显示直播备注 + 客户备注
+- [ ] A5 包货单显示客户备注
+
+### Sprint 5: 换盆功能
+- [ ] OrderDetail 新增换盆 UI（选商品→数量→花盆，可多次新增）
+- [ ] 数量自动验证（不可超过购买数量）
+- [ ] PackingDetail 显示换盆安排（⚠️ 换盆标识）
+- [ ] A5 包货单显示换盆安排
+- [ ] 完成换盆后自动扣除花盆库存
+
+### Sprint 6: 预约发货
+- [ ] OrderDetail 新增预约发货日期选择
+- [ ] Dashboard 今日预约发货提醒
+- [ ] 预约发货订单列表
+
+### Sprint 7: 多语言
+- [ ] i18n 框架搭建（中文/英文切换）
+- [ ] 右上角语言切换按钮
+- [ ] 记住用户语言偏好（localStorage）
+- [ ] 翻译关键 UI 字符串
+
+### Sprint 8: 测试与验收
+- [ ] Vitest 单元测试
+- [ ] TypeScript 编译零错误
 - [ ] 保存检查点
