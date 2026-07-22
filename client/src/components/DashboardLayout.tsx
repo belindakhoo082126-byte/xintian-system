@@ -1,12 +1,15 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useI18n } from "@/contexts/I18nContext";
-import { Languages } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
+import { Languages, Sun, Moon, Leaf } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import {
   Sidebar,
@@ -128,6 +131,7 @@ function DashboardLayoutContent({
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
   const { lang, setLang } = useI18n();
+  const { theme, setTheme } = useTheme();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -191,11 +195,14 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-semibold tracking-tight truncate">
-                    Navigation
+                  <Leaf className="h-5 w-5 text-primary shrink-0" />
+                  <span className="font-bold tracking-tight truncate text-primary">
+                    心田 XLCS
                   </span>
                 </div>
-              ) : null}
+              ) : (
+                <Leaf className="h-5 w-5 text-primary mx-auto" />
+              )}
             </div>
           </SidebarHeader>
 
@@ -241,7 +248,25 @@ function DashboardLayoutContent({
                   </div>
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">主题 Theme</DropdownMenuLabel>
+                <DropdownMenuItem
+                  onClick={() => setTheme("nature")}
+                  className="cursor-pointer"
+                >
+                  <Leaf className="mr-2 h-4 w-4" />
+                  <span>🌿 Xintian Nature</span>
+                  {theme === "nature" && <span className="ml-auto text-primary">✓</span>}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setTheme("dark")}
+                  className="cursor-pointer"
+                >
+                  <Moon className="mr-2 h-4 w-4" />
+                  <span>🌙 Dark Mode</span>
+                  {theme === "dark" && <span className="ml-auto text-primary">✓</span>}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => setLang(lang === "zh" ? "en" : "zh")}
                   className="cursor-pointer"
@@ -249,6 +274,7 @@ function DashboardLayoutContent({
                   <Languages className="mr-2 h-4 w-4" />
                   <span>{lang === "zh" ? "English" : "中文"}</span>
                 </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={logout}
                   className="cursor-pointer text-destructive focus:text-destructive"

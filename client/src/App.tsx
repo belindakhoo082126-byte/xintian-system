@@ -95,7 +95,7 @@ function DashboardRoutes() {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="light">
+      <ThemeProvider defaultTheme="nature">
         <TooltipProvider>
           <Toaster />
           {/* Public routes bypass DashboardLayout (no auth gate) */}

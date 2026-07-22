@@ -357,3 +357,13 @@
 - [x] Vitest 单元测试（60 个全部通过）
 - [x] TypeScript 编译零错误
 - [x] 保存检查点
+
+## V1.2 Design System - 统一后台主题
+
+- [x] 定义 Xintian Nature + Dark Mode 色彩系统 (index.css)
+- [x] 更新 ThemeContext 支持两个后台主题
+- [x] 添加 Google Font (Plus Jakarta Sans)
+- [x] 修复 sonner.tsx 使用项目 ThemeContext
+- [x] DashboardLayout 右上角添加主题切换器
+- [x] CustomerOrderTracking 适配主题
+- [x] TypeScript 零错误 + 测试通过 + checkpoint

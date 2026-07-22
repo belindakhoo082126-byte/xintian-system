@@ -6,17 +6,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Search, Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink } from "lucide-react";
+import { Search, Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink, Leaf } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { color: string; icon: any }> = {
-  "等待付款": { color: "bg-yellow-100 text-yellow-800", icon: Clock },
-  "付款审核中": { color: "bg-blue-100 text-blue-800", icon: Clock },
-  "已确认付款": { color: "bg-green-100 text-green-800", icon: CheckCircle2 },
-  "正在准备商品": { color: "bg-blue-100 text-blue-800", icon: Package },
-  "部分发货": { color: "bg-orange-100 text-orange-800", icon: Truck },
-  "已发货": { color: "bg-green-100 text-green-800", icon: Truck },
-  "已完成": { color: "bg-gray-100 text-gray-800", icon: CheckCircle2 },
-  "已取消": { color: "bg-red-100 text-red-800", icon: Clock },
+  "等待付款": { color: "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200", icon: Clock },
+  "付款审核中": { color: "bg-sky-100 text-sky-900 dark:bg-sky-900/30 dark:text-sky-200", icon: Clock },
+  "已确认付款": { color: "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200", icon: CheckCircle2 },
+  "正在准备商品": { color: "bg-sky-100 text-sky-900 dark:bg-sky-900/30 dark:text-sky-200", icon: Package },
+  "部分发货": { color: "bg-orange-100 text-orange-900 dark:bg-orange-900/30 dark:text-orange-200", icon: Truck },
+  "已发货": { color: "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200", icon: Truck },
+  "已完成": { color: "bg-muted text-muted-foreground", icon: CheckCircle2 },
+  "已取消": { color: "bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-200", icon: Clock },
 };
 
 export default function CustomerOrderTracking() {
@@ -38,6 +38,13 @@ export default function CustomerOrderTracking() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Xintian Brand Header */}
+      <div className="border-b bg-card">
+        <div className="container max-w-2xl mx-auto py-4 px-4 flex items-center gap-2">
+          <Leaf className="h-6 w-6 text-primary" />
+          <span className="font-bold text-lg text-primary">心田 Xintian</span>
+        </div>
+      </div>
       <div className="container max-w-2xl mx-auto py-8 px-4">
         <h1 className="text-2xl font-bold text-center mb-2">订单查询</h1>
         <p className="text-sm text-muted-foreground text-center mb-8">输入订单编号查询您的订单状态</p>
@@ -163,7 +170,7 @@ export default function CustomerOrderTracking() {
                             href={`https://www.trackingmore.com/track/${pkg.trackingNumber}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                            className="text-xs text-primary hover:underline flex items-center gap-1"
                           >
                             查询物流 <ExternalLink className="h-3 w-3" />
                           </a>
