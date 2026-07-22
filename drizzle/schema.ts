@@ -365,28 +365,64 @@ export type InsertProductVariation = typeof productVariations.$inferInsert;
 
 export const customers = mysqlTable("customers", {
   id: int("id").autoincrement().primaryKey(),
+
+  // XLCS V1.0 Module 3: Human-readable Customer ID (C000001)
+  customerId: varchar("customerId", { length: 20 }).notNull().unique(),
+
+  // Facebook identity (use facebookId as unique FB identity, not facebookName)
   facebookId: varchar("facebookId", { length: 255 }),
   facebookName: varchar("facebookName", { length: 255 }),
   messengerId: varchar("messengerId", { length: 255 }),
+
+  // Display Name (admin-facing, defaults to facebookName)
+  displayName: varchar("displayName", { length: 255 }),
+
+  // Contact info
   name: varchar("name", { length: 255 }),
   phoneNumber: varchar("phoneNumber", { length: 20 }),
+  whatsappPhone: varchar("whatsappPhone", { length: 20 }),
   email: varchar("email", { length: 255 }),
+
+  // Legacy address fields (kept for backward compat; new addresses go to customer_addresses)
   address: text("address"),
   city: varchar("city", { length: 100 }),
   state: varchar("state", { length: 100 }),
   postalCode: varchar("postalCode", { length: 20 }),
   country: varchar("country", { length: 100 }),
+
+  // Avatars
+  avatarUrl: varchar("avatarUrl", { length: 500 }), // Facebook avatar (auto-fetched)
+  overrideAvatarUrl: varchar("overrideAvatarUrl", { length: 500 }), // Admin-uploaded override
+
+  // Customer source tracking
+  customerSource: mysqlEnum("customerSource", [
+    "facebook_live", "facebook_messenger", "whatsapp", "store", "admin"
+  ]).default("admin").notNull(),
+
   shopLinkIdentifier: varchar("shopLinkIdentifier", { length: 255 }),
+
+  // Statistics (auto-calculated)
   totalOrders: int("totalOrders").default(0),
   totalSpent: decimal("totalSpent", { precision: 12, scale: 2 }).default("0"),
   membershipLevel: mysqlEnum("membershipLevel", ["regular", "member", "vip"]).default("regular"),
   pointsBalance: int("pointsBalance").default(0),
+
+  // Blacklist (enhanced with audit fields)
   isBlacklisted: boolean("isBlacklisted").default(false),
   blacklistReason: text("blacklistReason"),
+  blacklistAt: timestamp("blacklistAt"),
+  blacklistBy: int("blacklistBy"),
+  unblacklistAt: timestamp("unblacklistAt"),
+  unblacklistBy: int("unblacklistBy"),
+
+  // Merge support
   mergedIntoCustomerId: int("mergedIntoCustomerId"),
+
+  // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastOrderAt: timestamp("lastOrderAt"),
+  lastInteractionAt: timestamp("lastInteractionAt"),
 });
 
 export type Customer = typeof customers.$inferSelect;
@@ -670,3 +706,133 @@ export const orderAuditLogs = mysqlTable("order_audit_logs", {
 
 export type OrderAuditLog = typeof orderAuditLogs.$inferSelect;
 export type InsertOrderAuditLog = typeof orderAuditLogs.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0 Module 3: Customer Management - Enhanced customers table
+// ============================================================================
+
+// Add new columns to existing customers table via ALTER TABLE in migration.
+// New fields documented here for reference (added via SQL migration):
+//   customerId       varchar(20)  - Human-readable Customer ID (C000001)
+//   displayName      varchar(255) - Admin-facing display name (defaults to facebookName)
+//   whatsappPhone    varchar(20)  - WhatsApp phone number
+//   avatarUrl        varchar(500) - Facebook avatar URL (auto-fetched)
+//   overrideAvatarUrl varchar(500) - Admin-uploaded avatar (overrides FB)
+//   customerSource   enum         - Where customer was created
+//   lastInteractionAt timestamp   - Last interaction (message, order, etc.)
+//   blacklistAt      timestamp    - When blacklisted
+//   blacklistBy      int          - Admin user ID who blacklisted
+//   unblacklistAt    timestamp    - When unblacklisted
+//   unblacklistBy    int          - Admin user ID who unblacklisted
+
+// ============================================================================
+// XLCS V1.0 Module 3: Customer Addresses (多地址管理)
+// ============================================================================
+
+export const customerAddresses = mysqlTable("customer_addresses", {
+  id: int("id").autoincrement().primaryKey(),
+  customerId: int("customerId").notNull(), // links to customers.id
+  label: varchar("label", { length: 50 }).notNull(), // e.g. "Home", "Office", "Parents"
+  recipientName: varchar("recipientName", { length: 255 }).notNull(),
+  recipientPhone: varchar("recipientPhone", { length: 20 }).notNull(),
+  address: text("address").notNull(),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 100 }),
+  postalCode: varchar("postalCode", { length: 20 }),
+  country: varchar("country", { length: 100 }).default("Malaysia").notNull(),
+  isDefault: boolean("isDefault").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CustomerAddress = typeof customerAddresses.$inferSelect;
+export type InsertCustomerAddress = typeof customerAddresses.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0 Module 3: Customer Credit Ledger (Credit 纪录)
+// ============================================================================
+
+export const customerCreditLedger = mysqlTable("customer_credit_ledger", {
+  id: int("id").autoincrement().primaryKey(),
+  customerId: int("customerId").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(), // positive = add, negative = deduct
+  balanceAfter: decimal("balanceAfter", { precision: 10, scale: 2 }).notNull(),
+  type: mysqlEnum("type", ["topup", "refund", "adjustment", "order_deduction", "manual"]).notNull(),
+  reason: text("reason"),
+  orderId: int("orderId"), // related order if applicable
+  operatorId: int("operatorId"),
+  operatorName: varchar("operatorName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CustomerCreditLedger = typeof customerCreditLedger.$inferSelect;
+export type InsertCustomerCreditLedger = typeof customerCreditLedger.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0 Module 3: Customer Refunds (退款纪录)
+// ============================================================================
+
+export const customerRefunds = mysqlTable("customer_refunds", {
+  id: int("id").autoincrement().primaryKey(),
+  customerId: int("customerId").notNull(),
+  orderId: int("orderId").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  refundMethod: mysqlEnum("refundMethod", [
+    "bank_transfer", "tng", "cash", "store_credit", "other"
+  ]).notNull(),
+  reason: text("reason"),
+  operatorId: int("operatorId"),
+  operatorName: varchar("operatorName", { length: 255 }),
+  refundDate: timestamp("refundDate").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CustomerRefund = typeof customerRefunds.$inferSelect;
+export type InsertCustomerRefund = typeof customerRefunds.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0 Module 3: Customer Timeline (客户时间轴)
+// ============================================================================
+
+export const customerTimeline = mysqlTable("customer_timeline", {
+  id: int("id").autoincrement().primaryKey(),
+  customerId: int("customerId").notNull(),
+  eventType: mysqlEnum("eventType", [
+    "order_created", "order_shipped", "order_completed", "order_cancelled",
+    "payment_received", "refund_issued", "credit_topup", "credit_deduction",
+    "blacklist_added", "blacklist_removed", "address_added", "address_updated",
+    "profile_updated", "messenger_message", "whatsapp_message",
+    "notification_sent", "notification_failed", "live_comment", "other"
+  ]).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  orderId: int("orderId"),
+  paymentId: int("paymentId"),
+  metadata: text("metadata"), // JSON string for extra data
+  operatorId: int("operatorId"),
+  operatorName: varchar("operatorName", { length: 255 }),
+  eventDate: timestamp("eventDate").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CustomerTimeline = typeof customerTimeline.$inferSelect;
+export type InsertCustomerTimeline = typeof customerTimeline.$inferInsert;
+
+// ============================================================================
+// XLCS V1.0 Module 3: Customer Audit Logs (客户审计日志)
+// ============================================================================
+
+export const customerAuditLogs = mysqlTable("customer_audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  customerId: int("customerId").notNull(),
+  action: varchar("action", { length: 100 }).notNull(),
+  fieldName: varchar("fieldName", { length: 100 }),
+  oldValue: text("oldValue"),
+  newValue: text("newValue"),
+  operatorId: int("operatorId"),
+  operatorName: varchar("operatorName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CustomerAuditLog = typeof customerAuditLogs.$inferSelect;
+export type InsertCustomerAuditLog = typeof customerAuditLogs.$inferInsert;

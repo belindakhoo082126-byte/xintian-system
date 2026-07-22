@@ -13,7 +13,7 @@ import ProductPreview from "./pages/ProductPreview";
 import OrdersV2 from "./pages/OrdersV2";
 import Couriers from "./pages/Couriers";
 import Membership from "./pages/Membership";
-import Customers from "./pages/Customers";
+import CustomersV2 from "./pages/CustomersV2";
 import Flows from "@/pages/Flows";
 import Suppliers from "@/pages/Suppliers";
 import PurchaseOrders from "@/pages/PurchaseOrders";
@@ -41,7 +41,7 @@ function DashboardRoutes() {
       <Route path={"/orders"} component={OrdersV2} />
       <Route path={"/couriers"} component={Couriers} />
       <Route path={"/membership"} component={Membership} />
-      <Route path={"/customers"} component={Customers} />
+      <Route path={"/customers"} component={CustomersV2} />
       <Route path={"/flows"} component={Flows} />
       <Route path={"/suppliers"} component={Suppliers} />
       <Route path={"/purchase-orders"} component={PurchaseOrders} />

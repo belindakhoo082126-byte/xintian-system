@@ -159,3 +159,43 @@
 - [x] Vitest 单元测试（23 个 XLCS 测试 + 34 Phase 1 + 18 旧测试 + 1 auth = 76 个全部通过）
 - [x] TypeScript 编译零错误
 - [x] 保存检查点
+
+## XLCS V1.0: 客户管理模块（Module 3）
+
+### Sprint 1: 数据库重构
+- [x] customers 表新增字段（customerId, displayName, whatsappPhone, avatarUrl, overrideAvatarUrl, customerSource, lastInteractionAt, blacklistAt, blacklistBy, unblacklistAt, unblacklistBy）
+- [x] 新增 customer_addresses 表（多地址管理 + 默认地址）
+- [x] 新增 customer_credit_ledger 表（Credit 纪录：日期、金额、类型、原因、操作人）
+- [x] 新增 customer_refunds 表（退款纪录）
+- [x] 新增 customer_timeline 表（客户时间轴）
+- [x] 新增 customer_audit_logs 表（客户审计日志）
+- [x] 生成 Customer ID（C000001 格式）+ 回填 displayName + customerSource
+
+### Sprint 2: 后端 API
+- [x] 客户 CRUD 增强（Display Name、头像、WhatsApp、来源 + 审计日志）
+- [x] 全局客户搜索（模糊搜索多字段：Customer ID、Display Name、Facebook Name、FB ID、Messenger ID、WhatsApp、电话、Email、收件人）
+- [x] 客户地址 CRUD（多地址 + 默认地址设定）
+- [x] Customer Credit Ledger API（列表 + 添加 + 余额计算，禁止直接修改余额）
+- [x] 退款纪录 API
+- [x] 黑名单增强（加入/解除 + 记录原因/日期/操作人 + 审计日志 + 时间轴）
+- [x] 客户统计自动计算（累计消费、下单次数、完成/取消数、取消率、累计商品数、平均订单、最近购买）
+- [x] 客户时间轴 API（聚合订单事件、付款、发货、通知、黑名单等）
+- [x] 客户审计日志 API
+- [x] 重复客户检测增强（电话/Messenger/WhatsApp/相似 Facebook Name）
+
+### Sprint 3: 前端客户管理页面升级
+- [x] 客户列表增强（头像、Customer ID、Display Name、来源、黑名单状态、累计消费）
+- [x] 全局客户搜索组件（模糊搜索多字段 + 搜索结果列表 + 新增客户入口）
+- [x] 客户详情页重构（基本资料 + 头像 + 统计卡片 + 时间轴 + 地址/Credit/退款/审计/重复 Tab）
+- [x] 地址管理（多地址 CRUD + 默认地址 + 删除）
+- [x] Credit Ledger 查看 + 添加（余额显示 + 类型选择 + 原因输入）
+- [x] 黑名单管理（加入/解除 + 原因必填校验 + 审计日志 + 时间轴）
+- [x] 快速操作（编辑资料、黑名单、新增地址、Credit 操作）
+- [x] 客户时间轴展示（按时间倒序，图标 + 事件描述 + 时间 + 操作人）
+- [x] 审计日志 Tab
+- [x] 增强重复客户检测 Tab（电话/Messenger/WhatsApp/相似 FB Name）
+
+### Sprint 4: 测试与验收
+- [x] Vitest 单元测试（23 个 Module 3 测试 + 76 个旧测试 = 99 个全部通过）
+- [x] TypeScript 编译零错误
+- [x] 保存检查点

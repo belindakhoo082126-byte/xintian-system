@@ -1624,6 +1624,222 @@ export const appRouter = router({
   }),
 
   // ===========================================================================
+  // XLCS V1.0 Module 3: Customer Management - Enhanced routes
+  // ===========================================================================
+  customersV2: router({
+    // Global customer search (fuzzy search across all fields)
+    search: protectedProcedure
+      .input(z.object({ term: z.string().min(1), limit: z.number().optional() }))
+      .query(async ({ input }) => {
+        return await db.globalCustomerSearch(input.term, input.limit ?? 20);
+      }),
+
+    // Get customer detail with all related data
+    getDetail: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const detail = await db.getCustomerDetail(input.id);
+        if (!detail) throw new Error("Customer not found");
+        return detail;
+      }),
+
+    // Update customer with audit logging
+    updateWithAudit: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        displayName: z.string().optional(),
+        phoneNumber: z.string().optional(),
+        whatsappPhone: z.string().optional(),
+        email: z.string().optional(),
+        facebookName: z.string().optional(),
+        name: z.string().optional(),
+        membershipLevel: z.enum(["regular", "member", "vip"]).optional(),
+        avatarUrl: z.string().optional(),
+        overrideAvatarUrl: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+        await db.updateCustomerWithAudit(id, data, ctx.user.id, ctx.user.name || undefined);
+        return { success: true };
+      }),
+
+    // Enhanced blacklist management
+    setBlacklist: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        blacklisted: z.boolean(),
+        reason: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.setBlacklist(input.id, input.blacklisted, input.reason || "", ctx.user.id, ctx.user.name || "");
+        return { success: true };
+      }),
+
+    // Customer statistics (auto-calculated)
+    stats: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCustomerStats(input.id);
+      }),
+
+    // Enhanced duplicate detection
+    findEnhancedDuplicates: protectedProcedure
+      .input(z.object({ customerId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.findEnhancedDuplicates(input.customerId);
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0 Module 3: Customer Addresses
+  // ===========================================================================
+  customerAddresses: router({
+    list: protectedProcedure
+      .input(z.object({ customerId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCustomerAddresses(input.customerId);
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        customerId: z.number(),
+        label: z.string(),
+        recipientName: z.string(),
+        recipientPhone: z.string(),
+        address: z.string(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        postalCode: z.string().optional(),
+        country: z.string().optional(),
+        isDefault: z.boolean().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.createCustomerAddress(input);
+        // Timeline event
+        await db.addTimelineEvent({
+          customerId: input.customerId,
+          eventType: "address_added",
+          title: `新增地址: ${input.label}`,
+          description: input.address,
+          operatorId: ctx.user.id,
+          operatorName: ctx.user.name || undefined,
+        });
+        return { success: true };
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        label: z.string().optional(),
+        recipientName: z.string().optional(),
+        recipientPhone: z.string().optional(),
+        address: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        postalCode: z.string().optional(),
+        country: z.string().optional(),
+        isDefault: z.boolean().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+        await db.updateCustomerAddress(id, data);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteCustomerAddress(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0 Module 3: Customer Credit Ledger
+  // ===========================================================================
+  customerCredit: router({
+    list: protectedProcedure
+      .input(z.object({ customerId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCustomerCreditLedger(input.customerId);
+      }),
+
+    balance: protectedProcedure
+      .input(z.object({ customerId: z.number() }))
+      .query(async ({ input }) => {
+        const balance = await db.getCustomerCreditBalance(input.customerId);
+        return { balance };
+      }),
+
+    add: protectedProcedure
+      .input(z.object({
+        customerId: z.number(),
+        amount: z.number(),
+        type: z.enum(["topup", "refund", "adjustment", "order_deduction", "manual"]),
+        reason: z.string().optional(),
+        orderId: z.number().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const result = await db.addCustomerCredit({
+          ...input,
+          operatorId: ctx.user.id,
+          operatorName: ctx.user.name || undefined,
+        });
+        return result;
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0 Module 3: Customer Refunds
+  // ===========================================================================
+  customerRefunds: router({
+    list: protectedProcedure
+      .input(z.object({ customerId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCustomerRefunds(input.customerId);
+      }),
+
+    add: protectedProcedure
+      .input(z.object({
+        customerId: z.number(),
+        orderId: z.number(),
+        amount: z.number(),
+        refundMethod: z.enum(["bank_transfer", "tng", "cash", "store_credit", "other"]),
+        reason: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const result = await db.addCustomerRefund({
+          ...input,
+          operatorId: ctx.user.id,
+          operatorName: ctx.user.name || undefined,
+        });
+        return result;
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0 Module 3: Customer Timeline
+  // ===========================================================================
+  customerTimeline: router({
+    list: protectedProcedure
+      .input(z.object({ customerId: z.number(), limit: z.number().optional() }))
+      .query(async ({ input }) => {
+        return await db.getCustomerTimeline(input.customerId, input.limit ?? 50);
+      }),
+  }),
+
+  // ===========================================================================
+  // XLCS V1.0 Module 3: Customer Audit Logs
+  // ===========================================================================
+  customerAuditLogs: router({
+    list: protectedProcedure
+      .input(z.object({ customerId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCustomerAuditLogs(input.customerId);
+      }),
+  }),
+
+  // ===========================================================================
   // Dashboard
   // ===========================================================================
   dashboard: router({

@@ -11,6 +11,8 @@ import {
   categories, units, variants, memberLinks, productImages, productVideos, productAttributes,
   // XLCS V1.0 imports
   couriers, orderPayments, orderNotifications, orderAuditLogs,
+  // XLCS V1.0 Module 3: Customer Management imports
+  customerAddresses, customerCreditLedger, customerRefunds, customerTimeline, customerAuditLogs,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -172,8 +174,10 @@ export async function findOrCreateCustomer(data: {
   messengerId?: string;
   name?: string;
   phoneNumber?: string;
+  whatsappPhone?: string;
   email?: string;
   shopLinkIdentifier?: string;
+  customerSource?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -205,14 +209,22 @@ export async function findOrCreateCustomer(data: {
     }
   }
 
-  // Create new
+  // Create new - generate Customer ID (C000001 format)
+  const countResult = await db.select({ count: sql`count(*)` as any }).from(customers);
+  const nextNum = Number(countResult[0]?.count || 0) + 1;
+  const newCustomerId = `C${String(nextNum).padStart(6, '0')}`;
+
   const result = await db.insert(customers).values({
+    customerId: newCustomerId,
     facebookId: data.facebookId || null,
     facebookName: data.facebookName || null,
     messengerId: data.messengerId || null,
+    displayName: data.facebookName || data.name || null,
     name: data.name || null,
     phoneNumber: data.phoneNumber || null,
+    whatsappPhone: data.whatsappPhone || null,
     email: data.email || null,
+    customerSource: (data.customerSource as any) || 'admin',
     shopLinkIdentifier: data.shopLinkIdentifier || null,
   });
   const inserted = await db.select().from(customers)
@@ -2189,4 +2201,495 @@ export async function getOrderDetail(orderId: number) {
     .where(eq(orderAuditLogs.orderId, orderId))
     .orderBy(desc(orderAuditLogs.createdAt));
   return { ...order, items, payments, notifications, auditLogs };
+}
+
+// ============================================================================
+// XLCS V1.0 Module 3: Customer Management helpers
+// ============================================================================
+
+// --- Global Customer Search ---
+
+export async function globalCustomerSearch(searchTerm: string, limit: number = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  const term = `%${searchTerm}%`;
+  // Search across customerId, displayName, facebookName, facebookId, messengerId,
+  // whatsappPhone, phoneNumber, email, and recipientName in customer_addresses
+  const results = await db.select({
+    id: customers.id,
+    customerId: customers.customerId,
+    displayName: customers.displayName,
+    facebookName: customers.facebookName,
+    facebookId: customers.facebookId,
+    messengerId: customers.messengerId,
+    phoneNumber: customers.phoneNumber,
+    whatsappPhone: customers.whatsappPhone,
+    email: customers.email,
+    avatarUrl: customers.avatarUrl,
+    overrideAvatarUrl: customers.overrideAvatarUrl,
+    customerSource: customers.customerSource,
+    isBlacklisted: customers.isBlacklisted,
+    totalSpent: customers.totalSpent,
+    totalOrders: customers.totalOrders,
+    membershipLevel: customers.membershipLevel,
+    lastOrderAt: customers.lastOrderAt,
+    createdAt: customers.createdAt,
+  }).from(customers)
+    .where(or(
+      like(customers.customerId, term),
+      like(customers.displayName, term),
+      like(customers.facebookName, term),
+      like(customers.facebookId, term),
+      like(customers.messengerId, term),
+      like(customers.whatsappPhone, term),
+      like(customers.phoneNumber, term),
+      like(customers.email, term),
+      // Also search by recipientName in addresses
+      sql`EXISTS (SELECT 1 FROM customer_addresses WHERE customer_addresses.customerId = customers.id AND customer_addresses.recipientName LIKE ${term})`
+    ))
+    .limit(limit);
+  return results;
+}
+
+// --- Customer Addresses ---
+
+export async function getCustomerAddresses(customerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(customerAddresses)
+    .where(eq(customerAddresses.customerId, customerId))
+    .orderBy(desc(customerAddresses.isDefault), desc(customerAddresses.createdAt));
+}
+
+export async function createCustomerAddress(data: {
+  customerId: number;
+  label: string;
+  recipientName: string;
+  recipientPhone: string;
+  address: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  isDefault?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // If setting as default, unset other defaults first
+  if (data.isDefault) {
+    await db.update(customerAddresses).set({ isDefault: false })
+      .where(eq(customerAddresses.customerId, data.customerId));
+  }
+  const result = await db.insert(customerAddresses).values({
+    customerId: data.customerId,
+    label: data.label,
+    recipientName: data.recipientName,
+    recipientPhone: data.recipientPhone,
+    address: data.address,
+    city: data.city || null,
+    state: data.state || null,
+    postalCode: data.postalCode || null,
+    country: data.country || "Malaysia",
+    isDefault: data.isDefault ?? false,
+  });
+  return { id: result[0].insertId };
+}
+
+export async function updateCustomerAddress(id: number, data: Partial<{
+  label: string;
+  recipientName: string;
+  recipientPhone: string;
+  address: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  isDefault: boolean;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // If setting as default, unset other defaults for same customer
+  if (data.isDefault) {
+    const addr = await db.select().from(customerAddresses).where(eq(customerAddresses.id, id)).limit(1);
+    if (addr.length > 0) {
+      await db.update(customerAddresses).set({ isDefault: false })
+        .where(eq(customerAddresses.customerId, addr[0].customerId));
+    }
+  }
+  await db.update(customerAddresses).set(data).where(eq(customerAddresses.id, id));
+}
+
+export async function deleteCustomerAddress(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(customerAddresses).where(eq(customerAddresses.id, id));
+}
+
+// --- Customer Credit Ledger ---
+
+export async function getCustomerCreditLedger(customerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(customerCreditLedger)
+    .where(eq(customerCreditLedger.customerId, customerId))
+    .orderBy(desc(customerCreditLedger.createdAt));
+}
+
+export async function getCustomerCreditBalance(customerId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ balance: sql`COALESCE((SELECT balanceAfter FROM customer_credit_ledger WHERE customerId = ${customerId} ORDER BY createdAt DESC LIMIT 1), 0)` as any })
+    .from(sql`dual`);
+  return Number(result[0]?.balance) || 0;
+}
+
+export async function addCustomerCredit(data: {
+  customerId: number;
+  amount: number;
+  type: "topup" | "refund" | "adjustment" | "order_deduction" | "manual";
+  reason?: string;
+  orderId?: number;
+  operatorId?: number;
+  operatorName?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Get current balance
+  const currentBalance = await getCustomerCreditBalance(data.customerId);
+  const newBalance = currentBalance + data.amount;
+  const result = await db.insert(customerCreditLedger).values({
+    customerId: data.customerId,
+    amount: data.amount.toFixed(2),
+    balanceAfter: newBalance.toFixed(2),
+    type: data.type,
+    reason: data.reason || null,
+    orderId: data.orderId || null,
+    operatorId: data.operatorId || null,
+    operatorName: data.operatorName || null,
+  });
+  // Add timeline event
+  await addTimelineEvent({
+    customerId: data.customerId,
+    eventType: data.amount >= 0 ? "credit_topup" : "credit_deduction",
+    title: `Credit ${data.amount >= 0 ? "充值" : "扣除"} RM${Math.abs(data.amount).toFixed(2)}`,
+    description: data.reason || undefined,
+    operatorId: data.operatorId,
+    operatorName: data.operatorName,
+  });
+  return { id: result[0].insertId, newBalance };
+}
+
+// --- Customer Refunds ---
+
+export async function getCustomerRefunds(customerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(customerRefunds)
+    .where(eq(customerRefunds.customerId, customerId))
+    .orderBy(desc(customerRefunds.refundDate));
+}
+
+export async function addCustomerRefund(data: {
+  customerId: number;
+  orderId: number;
+  amount: number;
+  refundMethod: "bank_transfer" | "tng" | "cash" | "store_credit" | "other";
+  reason?: string;
+  operatorId?: number;
+  operatorName?: string;
+  refundDate?: Date;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(customerRefunds).values({
+    customerId: data.customerId,
+    orderId: data.orderId,
+    amount: data.amount.toFixed(2),
+    refundMethod: data.refundMethod,
+    reason: data.reason || null,
+    operatorId: data.operatorId || null,
+    operatorName: data.operatorName || null,
+    refundDate: data.refundDate || new Date(),
+  });
+  // Add timeline event
+  await addTimelineEvent({
+    customerId: data.customerId,
+    eventType: "refund_issued",
+    title: `退款 RM${data.amount.toFixed(2)}`,
+    description: data.reason || undefined,
+    orderId: data.orderId,
+    operatorId: data.operatorId,
+    operatorName: data.operatorName,
+  });
+  return { id: result[0].insertId };
+}
+
+// --- Customer Timeline ---
+
+export async function getCustomerTimeline(customerId: number, limit: number = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(customerTimeline)
+    .where(eq(customerTimeline.customerId, customerId))
+    .orderBy(desc(customerTimeline.eventDate))
+    .limit(limit);
+}
+
+export async function addTimelineEvent(data: {
+  customerId: number;
+  eventType: "order_created" | "order_shipped" | "order_completed" | "order_cancelled" |
+    "payment_received" | "refund_issued" | "credit_topup" | "credit_deduction" |
+    "blacklist_added" | "blacklist_removed" | "address_added" | "address_updated" |
+    "profile_updated" | "messenger_message" | "whatsapp_message" |
+    "notification_sent" | "notification_failed" | "live_comment" | "other";
+  title: string;
+  description?: string;
+  orderId?: number;
+  paymentId?: number;
+  metadata?: string;
+  operatorId?: number;
+  operatorName?: string;
+  eventDate?: Date;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(customerTimeline).values({
+    customerId: data.customerId,
+    eventType: data.eventType,
+    title: data.title,
+    description: data.description || null,
+    orderId: data.orderId || null,
+    paymentId: data.paymentId || null,
+    metadata: data.metadata || null,
+    operatorId: data.operatorId || null,
+    operatorName: data.operatorName || null,
+    eventDate: data.eventDate || new Date(),
+  });
+}
+
+// --- Customer Audit Logs ---
+
+export async function getCustomerAuditLogs(customerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(customerAuditLogs)
+    .where(eq(customerAuditLogs.customerId, customerId))
+    .orderBy(desc(customerAuditLogs.createdAt));
+}
+
+export async function createCustomerAuditLog(data: {
+  customerId: number;
+  action: string;
+  fieldName?: string;
+  oldValue?: string;
+  newValue?: string;
+  operatorId?: number;
+  operatorName?: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(customerAuditLogs).values({
+    customerId: data.customerId,
+    action: data.action,
+    fieldName: data.fieldName || null,
+    oldValue: data.oldValue || null,
+    newValue: data.newValue || null,
+    operatorId: data.operatorId || null,
+    operatorName: data.operatorName || null,
+  });
+}
+
+// --- Enhanced Blacklist ---
+
+export async function setBlacklist(customerId: number, blacklisted: boolean, reason: string, operatorId: number, operatorName: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const oldData = await db.select().from(customers).where(eq(customers.id, customerId)).limit(1);
+  const oldValue = oldData[0]?.isBlacklisted ? "true" : "false";
+  await db.update(customers).set({
+    isBlacklisted: blacklisted,
+    blacklistReason: blacklisted ? reason : null,
+    blacklistAt: blacklisted ? new Date() : null,
+    blacklistBy: blacklisted ? operatorId : null,
+    unblacklistAt: !blacklisted ? new Date() : null,
+    unblacklistBy: !blacklisted ? operatorId : null,
+  }).where(eq(customers.id, customerId));
+  // Audit log
+  await createCustomerAuditLog({
+    customerId,
+    action: blacklisted ? "blacklist_add" : "blacklist_remove",
+    fieldName: "isBlacklisted",
+    oldValue,
+    newValue: blacklisted ? "true" : "false",
+    operatorId,
+    operatorName,
+  });
+  // Timeline event
+  await addTimelineEvent({
+    customerId,
+    eventType: blacklisted ? "blacklist_added" : "blacklist_removed",
+    title: blacklisted ? "加入黑名单" : "解除黑名单",
+    description: reason,
+    operatorId,
+    operatorName,
+  });
+}
+
+// --- Customer Statistics (auto-calculated) ---
+
+export async function getCustomerStats(customerId: number) {
+  const db = await getDb();
+  if (!db) return { totalSpent: 0, totalOrders: 0, completedOrders: 0, cancelledOrders: 0, cancelRate: 0, totalItems: 0, avgOrderAmount: 0, lastOrderAt: null };
+  // Get all orders for this customer
+  const customerOrders = await db.select({
+    id: orders.id,
+    totalAmount: orders.totalAmount,
+    physicalStatus: orders.physicalStatus,
+    membershipStatus: orders.membershipStatus,
+    createdAt: orders.createdAt,
+  }).from(orders).where(eq(orders.customerId, customerId));
+
+  const totalOrders = customerOrders.length;
+  const totalSpent = customerOrders.reduce((sum, o) => sum + Number(o.totalAmount), 0);
+  const completedOrders = customerOrders.filter(o => o.physicalStatus === "completed" || o.membershipStatus === "completed").length;
+  const cancelledOrders = customerOrders.filter(o => o.physicalStatus === "cancelled" || o.membershipStatus === "cancelled").length;
+  const cancelRate = totalOrders > 0 ? (cancelledOrders / totalOrders) * 100 : 0;
+
+  // Get total items purchased
+  const orderIds = customerOrders.map(o => o.id);
+  let totalItems = 0;
+  if (orderIds.length > 0) {
+    const itemsResult = await db.select({ totalQty: sql`COALESCE(SUM(quantity), 0)` as any })
+      .from(orderItems).where(sql`${orderItems.orderId} IN (${sql.join(orderIds, sql`,`)})`);
+    totalItems = Number(itemsResult[0]?.totalQty) || 0;
+  }
+
+  const avgOrderAmount = totalOrders > 0 ? totalSpent / totalOrders : 0;
+  const lastOrderAt = customerOrders.length > 0
+    ? customerOrders.reduce((latest, o) => o.createdAt > latest ? o.createdAt : latest, customerOrders[0].createdAt)
+    : null;
+
+  return {
+    totalSpent,
+    totalOrders,
+    completedOrders,
+    cancelledOrders,
+    cancelRate: Math.round(cancelRate * 100) / 100,
+    totalItems,
+    avgOrderAmount: Math.round(avgOrderAmount * 100) / 100,
+    lastOrderAt,
+  };
+}
+
+// --- Customer Detail (enhanced with all related data) ---
+
+export async function getCustomerDetail(customerId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const customerResult = await db.select().from(customers).where(eq(customers.id, customerId)).limit(1);
+  if (customerResult.length === 0) return undefined;
+  const customer = customerResult[0];
+
+  const [addresses, creditLedger, refunds, timeline, auditLogs, stats] = await Promise.all([
+    getCustomerAddresses(customerId),
+    getCustomerCreditLedger(customerId),
+    getCustomerRefunds(customerId),
+    getCustomerTimeline(customerId),
+    getCustomerAuditLogs(customerId),
+    getCustomerStats(customerId),
+  ]);
+
+  const creditBalance = await getCustomerCreditBalance(customerId);
+
+  return {
+    ...customer,
+    addresses,
+    creditLedger,
+    creditBalance,
+    refunds,
+    timeline,
+    auditLogs,
+    stats,
+  };
+}
+
+// --- Enhanced duplicate detection ---
+
+export async function findEnhancedDuplicates(customerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const customer = await db.select().from(customers).where(eq(customers.id, customerId)).limit(1);
+  if (customer.length === 0) return [];
+  const c = customer[0];
+  const conditions: any[] = [];
+  // Exclude self and already-merged customers
+  const excludeCond = and(
+    ne(customers.id, customerId),
+    sql`${customers.mergedIntoCustomerId} IS NULL`
+  );
+
+  if (c.phoneNumber) conditions.push(like(customers.phoneNumber, c.phoneNumber));
+  if (c.messengerId) conditions.push(like(customers.messengerId, c.messengerId));
+  if (c.whatsappPhone) conditions.push(like(customers.whatsappPhone, c.whatsappPhone));
+  if (c.facebookName) {
+    // Similar Facebook name (first 3 chars match)
+    const prefix = c.facebookName.substring(0, 3);
+    if (prefix.length >= 3) conditions.push(like(customers.facebookName, `${prefix}%`));
+  }
+
+  if (conditions.length === 0) return [];
+
+  const results = await db.select().from(customers)
+    .where(and(excludeCond, or(...conditions)))
+    .limit(10);
+  return results;
+}
+
+// --- Update customer with audit logging ---
+
+export async function updateCustomerWithAudit(
+  id: number,
+  data: Partial<typeof customers.$inferInsert>,
+  operatorId?: number,
+  operatorName?: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const oldData = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
+  if (oldData.length === 0) throw new Error("Customer not found");
+  const old = oldData[0];
+
+  // Track field changes for audit log
+  const fieldsToAudit = ["displayName", "phoneNumber", "whatsappPhone", "email", "facebookName", "name", "membershipLevel", "avatarUrl", "overrideAvatarUrl"];
+  for (const field of fieldsToAudit) {
+    const oldVal = (old as any)[field];
+    const newVal = (data as any)[field];
+    if (newVal !== undefined && String(oldVal) !== String(newVal)) {
+      await createCustomerAuditLog({
+        customerId: id,
+        action: "update_field",
+        fieldName: field,
+        oldValue: String(oldVal || ""),
+        newValue: String(newVal || ""),
+        operatorId,
+        operatorName,
+      });
+    }
+  }
+
+  // Update the customer
+  const updateData: any = {};
+  for (const key of Object.keys(data)) {
+    updateData[key] = (data as any)[key];
+  }
+  await db.update(customers).set(updateData).where(eq(customers.id, id));
+
+  // Add timeline event for profile update
+  await addTimelineEvent({
+    customerId: id,
+    eventType: "profile_updated",
+    title: "更新客户资料",
+    operatorId,
+    operatorName,
+  });
 }
