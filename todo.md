@@ -68,3 +68,53 @@
 - [x] 新增后台手动建单功能
 - [x] 新增每月利润报表（按进货成本计算精准利润）
 - [x] Facebook Page ID 获取指引
+
+## Phase 1: 商品核心模块
+
+### Sprint 1: 数据库与基础 API
+- [x] 重构 categories 表（中英文、排序、显示控制）
+- [x] 新增 units 表（销售单位）
+- [x] 重构 products 表（Simple/Variant、关键词、SKU、三种价格、尺寸、影片、缺货状态、推荐、属性预留）
+- [x] 新增 product_images 表
+- [x] 新增 product_videos 表（商品影片）
+- [x] 新增 variants 表（规格管理、价格继承/覆盖）
+- [x] 新增 member_links 表（安全会员链接）
+- [x] 新增 product_attributes 表（商品属性预留）
+- [x] 生成迁移 SQL 并执行
+- [x] 插入默认数据（Uncategorized 分类、预设单位）
+- [x] 实现 Admin API（商品 CRUD、分类 CRUD、关键词检查）
+- [x] 实现 Public API（价格隔离）
+- [x] 实现 Member Link API（Token 验证 + 会员价）
+- [x] 成本区分：estimatedCost + currentCost（FIFO 预留）
+- [x] 商品状态增加 out_of_stock
+- [x] 商品增加 isFeatured + featuredSortOrder
+- [x] 商品增加 dimensions JSON 字段
+- [x] Public API 价格隔离修复（不暴露 fileKey，关键词查询加 visibility='public' 检查）
+- [x] categories.reorder 路由与 db helper
+- [x] variants.update 规格关键词冲突检测
+
+### Sprint 2: 后台商品管理页面
+- [ ] 商品列表页（搜索、筛选、分页、操作菜单）
+- [ ] 步骤式新增/编辑商品页（6步流程）
+- [ ] 分类管理页
+- [ ] 图片上传（S3）
+- [ ] 影片上传
+- [ ] 规格管理（关键词冲突检测）
+- [ ] 价格模拟器
+- [ ] 预计利润显示
+
+### Sprint 3: 会员链接与预览
+- [ ] 会员链接生成/重新生成/停用
+- [ ] 普通商品预览
+- [ ] 会员商品预览
+- [ ] 商品复制功能
+- [ ] 中英文切换
+
+### Sprint 4: 测试与验收
+- [ ] Vitest 单元测试
+- [ ] TypeScript 编译零错误
+- [ ] 保存检查点
+
+### 多设备同步
+- [ ] React Query cache invalidation 机制
+- [ ] tRPC 实时刷新确保多设备数据一致

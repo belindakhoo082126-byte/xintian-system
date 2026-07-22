@@ -19,28 +19,100 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 // ============================================================================
-// Products
+// Phase 1: Product Core Module - Categories (商品分类)
+// ============================================================================
+
+export const categories = mysqlTable("categories", {
+  id: int("id").autoincrement().primaryKey(),
+  nameZh: varchar("nameZh", { length: 100 }).notNull(),
+  nameEn: varchar("nameEn", { length: 100 }).notNull(),
+  descZh: text("descZh"),
+  descEn: text("descEn"),
+  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  showInStore: boolean("showInStore").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  imageUrl: varchar("imageUrl", { length: 500 }),
+  iconUrl: varchar("iconUrl", { length: 500 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Category = typeof categories.$inferSelect;
+export type InsertCategory = typeof categories.$inferInsert;
+
+// ============================================================================
+// Phase 1: Product Core Module - Units (销售单位)
+// ============================================================================
+
+export const units = mysqlTable("units", {
+  id: int("id").autoincrement().primaryKey(),
+  nameZh: varchar("nameZh", { length: 20 }).notNull(),
+  nameEn: varchar("nameEn", { length: 20 }).notNull(),
+  isDefault: boolean("isDefault").default(false).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+});
+
+export type Unit = typeof units.$inferSelect;
+export type InsertUnit = typeof units.$inferInsert;
+
+// ============================================================================
+// Products (商品主表 - Phase 1 enhanced)
 // ============================================================================
 
 export const products = mysqlTable("products", {
   id: int("id").autoincrement().primaryKey(),
-  name: varchar("name", { length: 255 }).notNull(),
+  name: varchar("name", { length: 200 }).notNull(),
+
+  // Product category (physical / membership / gift)
   type: mysqlEnum("type", ["physical", "membership", "gift"]).notNull(),
 
-  // Sub-category for physical products (e.g. 花类, 叶类, 果树, 肥料)
-  categoryId: int("categoryId"),
+  // Product mode (simple / variant) - Phase 1
+  productMode: mysqlEnum("productMode", ["simple", "variant"]).default("simple").notNull(),
 
-  // Basic info
+  // Category & Unit
+  categoryId: int("categoryId"),
+  unitId: int("unitId"),
+
+  // Keyword & SKU (Phase 1)
+  keyword: varchar("keyword", { length: 50 }).notNull().unique(),
+  sku: varchar("sku", { length: 30 }).notNull().unique(),
+
+  // Status & Visibility (Phase 1)
+  status: mysqlEnum("status", ["draft", "active", "inactive", "out_of_stock"]).default("draft").notNull(),
+  visibility: mysqlEnum("visibility", ["public", "link_only", "hidden"]).default("public").notNull(),
+  priceVisibility: mysqlEnum("priceVisibility", ["show", "hide", "member_link"]).default("show").notNull(),
+
+  // Descriptions (bilingual - Phase 1)
+  shortDescZh: text("shortDescZh"),
+  shortDescEn: text("shortDescEn"),
+  fullDescZh: text("fullDescZh"),
+  fullDescEn: text("fullDescEn"),
+  careZh: text("careZh"),
+  careEn: text("careEn"),
+
+  // Legacy description (kept for backward compatibility)
   description: text("description"),
   coverImageUrl: varchar("coverImageUrl", { length: 500 }),
-  images: text("images"), // JSON array of URLs
+  images: text("images"), // JSON array of URLs (legacy, will be replaced by product_images table)
 
-  // Pricing
+  // Pricing (Phase 1 - three prices)
+  sellingPrice: decimal("sellingPrice", { precision: 10, scale: 2 }),
+  compareAtPrice: decimal("compareAtPrice", { precision: 10, scale: 2 }),
+  memberPrice: decimal("memberPrice", { precision: 10, scale: 2 }),
+
+  // Cost (Phase 1 - estimated + current for FIFO)
+  estimatedCost: decimal("estimatedCost", { precision: 10, scale: 2 }),
+  currentCost: decimal("currentCost", { precision: 10, scale: 2 }),
+
+  // Legacy cost field (kept for backward compatibility, will be migrated to estimatedCost)
   cost: decimal("cost", { precision: 10, scale: 2 }),
   regularPrice: decimal("regularPrice", { precision: 10, scale: 2 }),
-  memberPrice: decimal("memberPrice", { precision: 10, scale: 2 }),
   originalPrice: decimal("originalPrice", { precision: 10, scale: 2 }),
   specialPrice: decimal("specialPrice", { precision: 10, scale: 2 }),
+
+  // Dimensions (Phase 1 - user adjustment #1)
+  dimensions: json("dimensions"), // { diameter, height, length, width }
 
   // Inventory
   weightKg: decimal("weightKg", { precision: 8, scale: 2 }),
@@ -52,20 +124,28 @@ export const products = mysqlTable("products", {
   isSpecialItem: boolean("isSpecialItem").default(false),
   allowFreeShipping: boolean("allowFreeShipping").default(true),
 
-  // Categories & keywords
-  categories: text("categories"), // JSON array
+  // Featured (Phase 1 - user adjustment #5)
+  isFeatured: boolean("isFeatured").default(false).notNull(),
+  featuredSortOrder: int("featuredSortOrder").default(0).notNull(),
+
+  // Legacy categories & keywords
+  categories: text("categories"), // JSON array (legacy)
   keywords: varchar("keywords", { length: 500 }),
   videoUrl: varchar("videoUrl", { length: 500 }),
 
-  // Membership-specific fields (no stock, no shipping, no weight)
+  // Membership-specific fields
   membershipIntro: text("membershipIntro"),
   telegramFlowLink: varchar("telegramFlowLink", { length: 500 }),
   facebookFlowId: varchar("facebookFlowId", { length: 255 }),
   allowStandalonePurchase: boolean("allowStandalonePurchase").default(true),
   allowMixedCheckout: boolean("allowMixedCheckout").default(true),
 
-  // Gift-specific: has stock + shipping, but price is 0
-  // (no extra fields needed - stockQuantity & weightKg already exist above)
+  // SEO (reserved)
+  seoTitle: varchar("seoTitle", { length: 200 }),
+  seoDesc: text("seoDesc"),
+
+  // Internal notes
+  notes: text("notes"),
 
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -75,13 +155,125 @@ export type Product = typeof products.$inferSelect;
 export type InsertProduct = typeof products.$inferInsert;
 
 // ============================================================================
-// Product Categories (sub-categories for physical products)
+// Phase 1: Product Images (商品图片)
+// ============================================================================
+
+export const productImages = mysqlTable("product_images", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  url: varchar("url", { length: 500 }).notNull(),
+  fileKey: varchar("fileKey", { length: 300 }).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  isMain: boolean("isMain").default(false).notNull(),
+  altText: varchar("altText", { length: 200 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ProductImage = typeof productImages.$inferSelect;
+export type InsertProductImage = typeof productImages.$inferInsert;
+
+// ============================================================================
+// Phase 1: Product Videos (商品影片 - user adjustment #3)
+// ============================================================================
+
+export const productVideos = mysqlTable("product_videos", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  url: varchar("url", { length: 500 }).notNull(),
+  fileKey: varchar("fileKey", { length: 300 }).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  isMain: boolean("isMain").default(false).notNull(),
+  thumbnailUrl: varchar("thumbnailUrl", { length: 500 }),
+  duration: int("duration"), // seconds
+  altText: varchar("altText", { length: 200 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ProductVideo = typeof productVideos.$inferSelect;
+export type InsertProductVideo = typeof productVideos.$inferInsert;
+
+// ============================================================================
+// Phase 1: Variants (商品规格 - replaces productVariations)
+// ============================================================================
+
+export const variants = mysqlTable("variants", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  keyword: varchar("keyword", { length: 50 }).notNull(),
+  sku: varchar("sku", { length: 30 }).notNull().unique(),
+
+  // Price override (NULL = inherit from product)
+  sellingPrice: decimal("sellingPrice", { precision: 10, scale: 2 }),
+  compareAtPrice: decimal("compareAtPrice", { precision: 10, scale: 2 }),
+  memberPrice: decimal("memberPrice", { precision: 10, scale: 2 }),
+  estimatedCost: decimal("estimatedCost", { precision: 10, scale: 2 }),
+  currentCost: decimal("currentCost", { precision: 10, scale: 2 }),
+
+  // Physical attributes override
+  weight: decimal("weight", { precision: 8, scale: 2 }),
+  dimensions: json("dimensions"),
+
+  // Status
+  status: mysqlEnum("status", ["active", "inactive", "hidden"]).default("active").notNull(),
+  visibility: mysqlEnum("visibility", ["public", "link_only", "hidden"]).default("public").notNull(),
+
+  // Display
+  sortOrder: int("sortOrder").default(0).notNull(),
+  imageUrl: varchar("imageUrl", { length: 500 }),
+
+  // Inventory
+  stockQuantity: int("stockQuantity").default(0),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Variant = typeof variants.$inferSelect;
+export type InsertVariant = typeof variants.$inferInsert;
+
+// ============================================================================
+// Phase 1: Member Links (安全会员购买链接)
+// ============================================================================
+
+export const memberLinks = mysqlTable("member_links", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  isActive: boolean("isActive").default(true).notNull(),
+  expiresAt: timestamp("expiresAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type MemberLink = typeof memberLinks.$inferSelect;
+export type InsertMemberLink = typeof memberLinks.$inferInsert;
+
+// ============================================================================
+// Phase 1: Product Attributes (商品属性 - user adjustment #6, reserved for filtering)
+// ============================================================================
+
+export const productAttributes = mysqlTable("product_attributes", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  attributeName: varchar("attributeName", { length: 100 }).notNull(), // e.g. "光照需求"
+  attributeValue: varchar("attributeValue", { length: 255 }).notNull(), // e.g. "半日照"
+  sortOrder: int("sortOrder").default(0).notNull(),
+  isFilterable: boolean("isFilterable").default(false).notNull(), // reserved for future filtering
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ProductAttribute = typeof productAttributes.$inferSelect;
+export type InsertProductAttribute = typeof productAttributes.$inferInsert;
+
+// ============================================================================
+// Legacy: Product Categories (kept for backward compatibility)
 // ============================================================================
 
 export const productCategories = mysqlTable("product_categories", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 100 }).notNull(),
-  parentId: int("parentId"), // null = top-level category
+  parentId: int("parentId"),
   sortOrder: int("sortOrder").default(0),
   isActive: boolean("isActive").default(true),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -92,7 +284,7 @@ export type ProductCategory = typeof productCategories.$inferSelect;
 export type InsertProductCategory = typeof productCategories.$inferInsert;
 
 // ============================================================================
-// Suppliers (进货供应商 - different suppliers have different costs)
+// Suppliers (进货供应商)
 // ============================================================================
 
 export const suppliers = mysqlTable("suppliers", {
@@ -113,7 +305,7 @@ export type Supplier = typeof suppliers.$inferSelect;
 export type InsertSupplier = typeof suppliers.$inferInsert;
 
 // ============================================================================
-// Purchase Orders (进货单 - record each procurement from a supplier)
+// Purchase Orders (进货单)
 // ============================================================================
 
 export const purchaseOrders = mysqlTable("purchase_orders", {
@@ -133,7 +325,7 @@ export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
 export type InsertPurchaseOrder = typeof purchaseOrders.$inferInsert;
 
 // ============================================================================
-// Purchase Order Items (进货明细 - each product from each supplier with its own cost)
+// Purchase Order Items (进货明细)
 // ============================================================================
 
 export const purchaseOrderItems = mysqlTable("purchase_order_items", {
@@ -150,7 +342,7 @@ export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
 export type InsertPurchaseOrderItem = typeof purchaseOrderItems.$inferInsert;
 
 // ============================================================================
-// Product Variations
+// Legacy: Product Variations (kept for backward compatibility)
 // ============================================================================
 
 export const productVariations = mysqlTable("product_variations", {
@@ -173,42 +365,25 @@ export type InsertProductVariation = typeof productVariations.$inferInsert;
 
 export const customers = mysqlTable("customers", {
   id: int("id").autoincrement().primaryKey(),
-
-  // Facebook identity
   facebookId: varchar("facebookId", { length: 255 }),
   facebookName: varchar("facebookName", { length: 255 }),
   messengerId: varchar("messengerId", { length: 255 }),
-
-  // Personal info
   name: varchar("name", { length: 255 }),
   phoneNumber: varchar("phoneNumber", { length: 20 }),
   email: varchar("email", { length: 255 }),
-
-  // Address
   address: text("address"),
   city: varchar("city", { length: 100 }),
   state: varchar("state", { length: 100 }),
   postalCode: varchar("postalCode", { length: 20 }),
   country: varchar("country", { length: 100 }),
-
-  // Shop link identifier
   shopLinkIdentifier: varchar("shopLinkIdentifier", { length: 255 }),
-
-  // Stats
   totalOrders: int("totalOrders").default(0),
   totalSpent: decimal("totalSpent", { precision: 12, scale: 2 }).default("0"),
-
-  // Membership & points
   membershipLevel: mysqlEnum("membershipLevel", ["regular", "member", "vip"]).default("regular"),
   pointsBalance: int("pointsBalance").default(0),
-
-  // Blacklist
   isBlacklisted: boolean("isBlacklisted").default(false),
   blacklistReason: text("blacklistReason"),
-
-  // Merged customer reference (if this customer was merged into another)
   mergedIntoCustomerId: int("mergedIntoCustomerId"),
-
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastOrderAt: timestamp("lastOrderAt"),
@@ -224,37 +399,25 @@ export type InsertCustomer = typeof customers.$inferInsert;
 export const orders = mysqlTable("orders", {
   id: int("id").autoincrement().primaryKey(),
   orderNumber: varchar("orderNumber", { length: 50 }).notNull().unique(),
-
-  // Customer
   customerId: int("customerId").notNull(),
   facebookName: varchar("facebookName", { length: 255 }),
   facebookId: varchar("facebookId", { length: 255 }),
   messengerId: varchar("messengerId", { length: 255 }),
-
-  // Order type
   orderType: mysqlEnum("orderType", ["physical", "membership", "mixed"]).notNull(),
-
-  // Amounts
   physicalSubtotal: decimal("physicalSubtotal", { precision: 10, scale: 2 }).default("0"),
   membershipSubtotal: decimal("membershipSubtotal", { precision: 10, scale: 2 }).default("0"),
   shippingFee: decimal("shippingFee", { precision: 10, scale: 2 }).default("0"),
   totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }).notNull(),
   paidAmount: decimal("paidAmount", { precision: 10, scale: 2 }).default("0"),
-
-  // Physical order status
   physicalStatus: mysqlEnum("physicalStatus", [
     "pending", "receipt_uploaded", "payment_confirmed",
     "packing", "shipped", "completed", "cancelled"
   ]).default("pending"),
-
-  // Membership order status
   membershipStatus: mysqlEnum("membershipStatus", [
     "pending", "receipt_uploaded", "pending_review",
     "fee_confirmed", "flow_sent", "flow_failed",
     "manual_follow_up", "completed", "cancelled"
   ]).default("pending"),
-
-  // Shipping
   shippingAddress: text("shippingAddress"),
   shippingMethod: mysqlEnum("shippingMethod", [
     "west_malaysia", "east_malaysia_shopee",
@@ -262,12 +425,8 @@ export const orders = mysqlTable("orders", {
   ]),
   courierCompany: varchar("courierCompany", { length: 100 }),
   trackingNumber: varchar("trackingNumber", { length: 100 }),
-
-  // Payment
   paymentMethod: mysqlEnum("paymentMethod", ["online_banking", "tng"]),
   receiptUrl: varchar("receiptUrl", { length: 500 }),
-
-  // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   paymentUploadedAt: timestamp("paymentUploadedAt"),
   paymentConfirmedAt: timestamp("paymentConfirmedAt"),
@@ -287,20 +446,13 @@ export const orderItems = mysqlTable("order_items", {
   id: int("id").autoincrement().primaryKey(),
   orderId: int("orderId").notNull(),
   productId: int("productId").notNull(),
-
-  // Snapshot
   productName: varchar("productName", { length: 255 }),
   productType: mysqlEnum("productType", ["physical", "membership", "gift"]),
-
-  // Quantity & price
   quantity: int("quantity").notNull(),
   unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).notNull(),
   subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
-
-  // Variation
   variationId: int("variationId"),
   variationName: varchar("variationName", { length: 255 }),
-
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -314,32 +466,21 @@ export type InsertOrderItem = typeof orderItems.$inferInsert;
 export const membershipFeeReviews = mysqlTable("membership_fee_reviews", {
   id: int("id").autoincrement().primaryKey(),
   orderId: int("orderId").notNull(),
-
-  // Receipt
   receiptFileUrl: varchar("receiptFileUrl", { length: 500 }),
   receiptUploadedAt: timestamp("receiptUploadedAt").notNull(),
-
-  // Review
   reviewedByStaffId: int("reviewedByStaffId"),
   reviewStatus: mysqlEnum("reviewStatus", ["pending", "approved", "rejected"]).default("pending").notNull(),
   reviewNotes: text("reviewNotes"),
   reviewedAt: timestamp("reviewedAt"),
-
-  // Flow tracking
   flowSentAt: timestamp("flowSentAt"),
   flowStatus: mysqlEnum("flowStatus", ["pending", "sent", "failed"]).default("pending").notNull(),
   flowErrorMessage: text("flowErrorMessage"),
   flowTemplateId: int("flowTemplateId"),
-
-  // Customer interaction
   telegramLinkClicked: boolean("telegramLinkClicked").default(false),
   telegramLinkClickedAt: timestamp("telegramLinkClickedAt"),
-
-  // Manual follow-up
   needsManualFollowUp: boolean("needsManualFollowUp").default(false),
   followUpNotes: text("followUpNotes"),
   followUpCount: int("followUpCount").default(0),
-
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -355,26 +496,17 @@ export const messengerFlowTemplates = mysqlTable("messenger_flow_templates", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-
-  // Default message content
   messageContent: text("messageContent").notNull(),
   imageUrl: varchar("imageUrl", { length: 500 }),
   videoUrl: varchar("videoUrl", { length: 500 }),
-
-  // Button config
   buttonName: varchar("buttonName", { length: 100 }).default("进入心田会员系统"),
   buttonLink: varchar("buttonLink", { length: 500 }),
-
-  // Reminder config
   reminderEnabled: boolean("reminderEnabled").default(true),
   reminderDelayHours: int("reminderDelayHours").default(24),
   reminderMessage: text("reminderMessage"),
   reminderMaxCount: int("reminderMaxCount").default(3),
-
-  // Follow-up
   followUpEnabled: boolean("followUpEnabled").default(true),
   followUpDelayHours: int("followUpDelayHours").default(72),
-
   isActive: boolean("isActive").default(true),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -384,7 +516,7 @@ export type MessengerFlowTemplate = typeof messengerFlowTemplates.$inferSelect;
 export type InsertMessengerFlowTemplate = typeof messengerFlowTemplates.$inferInsert;
 
 // ============================================================================
-// Flow Steps (multi-step flow configuration)
+// Flow Steps
 // ============================================================================
 
 export const flowSteps = mysqlTable("flow_steps", {
@@ -392,21 +524,14 @@ export const flowSteps = mysqlTable("flow_steps", {
   flowTemplateId: int("flowTemplateId").notNull(),
   stepOrder: int("stepOrder").notNull(),
   stepName: varchar("stepName", { length: 255 }).notNull(),
-
-  // Content
   messageType: mysqlEnum("messageType", ["text", "image", "video", "button", "contact_support"]).notNull(),
   messageContent: text("messageContent"),
   mediaUrl: varchar("mediaUrl", { length: 500 }),
   buttonName: varchar("buttonName", { length: 100 }),
   buttonLink: varchar("buttonLink", { length: 500 }),
-
-  // Timing
   delaySeconds: int("delaySeconds").default(0),
-
-  // Condition (e.g., only send if previous link not clicked)
   conditionType: mysqlEnum("conditionType", ["always", "if_not_clicked", "if_clicked"]),
   conditionValue: text("conditionValue"),
-
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -422,15 +547,10 @@ export const customerMergeSuggestions = mysqlTable("customer_merge_suggestions",
   id: int("id").autoincrement().primaryKey(),
   customerAId: int("customerAId").notNull(),
   customerBId: int("customerBId").notNull(),
-
-  // Match reasons (JSON array of match dimensions)
   matchReasons: text("matchReasons"),
-
-  // Status
   status: mysqlEnum("status", ["pending", "approved", "rejected", "auto_merged"]).default("pending").notNull(),
   reviewedByStaffId: int("reviewedByStaffId"),
   reviewedAt: timestamp("reviewedAt"),
-
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -439,7 +559,7 @@ export type CustomerMergeSuggestion = typeof customerMergeSuggestions.$inferSele
 export type InsertCustomerMergeSuggestion = typeof customerMergeSuggestions.$inferInsert;
 
 // ============================================================================
-// Flow Send Logs (track each individual Flow message sent)
+// Flow Send Logs
 // ============================================================================
 
 export const flowSendLogs = mysqlTable("flow_send_logs", {
@@ -447,15 +567,10 @@ export const flowSendLogs = mysqlTable("flow_send_logs", {
   reviewId: int("reviewId").notNull(),
   flowTemplateId: int("flowTemplateId").notNull(),
   stepOrder: int("stepOrder").notNull(),
-
-  // Send status
   status: mysqlEnum("status", ["pending", "sent", "failed"]).default("pending").notNull(),
   errorMessage: text("errorMessage"),
-
-  // Content snapshot
   messageContent: text("messageContent"),
   sentAt: timestamp("sentAt"),
-
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

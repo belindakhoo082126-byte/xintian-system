@@ -217,7 +217,7 @@ export default function Products() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {categories?.find(c => c.id === p.categoryId)?.name || "—"}
+                    {categories?.find(c => c.id === p.categoryId)?.nameZh || "—"}
                   </TableCell>
                   <TableCell>
                     {p.type === "gift"
@@ -293,7 +293,7 @@ export default function Products() {
                   <SelectContent>
                     <SelectItem value="none">无分类</SelectItem>
                     {categories?.map(c => (
-                      <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+                      <SelectItem key={c.id} value={c.id.toString()}>{c.nameZh}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

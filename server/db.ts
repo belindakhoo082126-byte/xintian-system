@@ -7,6 +7,8 @@ import {
   membershipFeeReviews, messengerFlowTemplates, flowSteps,
   customerMergeSuggestions, flowSendLogs,
   suppliers, purchaseOrders, purchaseOrderItems,
+  // Phase 1 imports
+  categories, units, variants, memberLinks, productImages, productVideos, productAttributes,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -953,5 +955,787 @@ export async function getMonthlyProfitReport(year: number, month: number) {
     shippingRevenue: shippingRevenue.toFixed(2),
     productCost: productCost.toFixed(2),
     details,
+  };
+}
+
+// ============================================================================
+// Phase 1: Product Core Module - Category helpers
+// ============================================================================
+
+export async function getAllCategories() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(categories).orderBy(asc(categories.sortOrder));
+}
+
+export async function getActiveCategories() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(categories).where(eq(categories.status, 'active')).orderBy(asc(categories.sortOrder));
+}
+
+export async function getStoreCategories() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(categories)
+    .where(and(eq(categories.status, 'active'), eq(categories.showInStore, true)))
+    .orderBy(asc(categories.sortOrder));
+}
+
+export async function getCategoryById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(categories).where(eq(categories.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createCategory(data: { nameZh: string; nameEn: string; descZh?: string; descEn?: string; showInStore?: boolean; sortOrder?: number; imageUrl?: string; iconUrl?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const result = await db.insert(categories).values({
+    nameZh: data.nameZh,
+    nameEn: data.nameEn,
+    descZh: data.descZh,
+    descEn: data.descEn,
+    showInStore: data.showInStore ?? true,
+    sortOrder: data.sortOrder ?? 0,
+    imageUrl: data.imageUrl,
+    iconUrl: data.iconUrl,
+  });
+  return { id: result[0].insertId };
+}
+
+export async function updateCategory(id: number, data: Partial<{ nameZh: string; nameEn: string; descZh: string; descEn: string; status: 'active' | 'inactive'; showInStore: boolean; sortOrder: number; imageUrl: string; iconUrl: string }>) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.update(categories).set(data).where(eq(categories.id, id));
+}
+
+export async function deleteCategory(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  // Check if any products use this category
+  const productsInCategory = await db.select({ count: sql`count(*)` }).from(products).where(eq(products.categoryId, id));
+  if (Number(productsInCategory[0]?.count) > 0) {
+    return { success: false, reason: '此分类内仍有商品，不能删除' };
+  }
+  await db.delete(categories).where(eq(categories.id, id));
+  return { success: true };
+}
+
+export async function reorderCategories(items: Array<{ id: number; sortOrder: number }>) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  for (const item of items) {
+    await db.update(categories).set({ sortOrder: item.sortOrder }).where(eq(categories.id, item.id));
+  }
+}
+
+export async function countProductsInCategory(categoryId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ count: sql`count(*)` }).from(products).where(eq(products.categoryId, categoryId));
+  return Number(result[0]?.count) || 0;
+}
+
+// ============================================================================
+// Phase 1: Unit helpers
+// ============================================================================
+
+export async function getAllUnits() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(units).where(eq(units.isActive, true)).orderBy(asc(units.sortOrder));
+}
+
+export async function createUnit(data: { nameZh: string; nameEn: string; isDefault?: boolean; sortOrder?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const result = await db.insert(units).values({
+    nameZh: data.nameZh,
+    nameEn: data.nameEn,
+    isDefault: data.isDefault ?? false,
+    sortOrder: data.sortOrder ?? 0,
+  });
+  return { id: result[0].insertId };
+}
+
+// ============================================================================
+// Phase 1: Product helpers (enhanced)
+// ============================================================================
+
+export async function generateSku(mode: 'simple' | 'variant'): Promise<string> {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const prefix = mode === 'simple' ? 'XTN-P' : 'XTN-V';
+  // Find the max number for this prefix
+  const result = await db.select({ maxSku: sql`MAX(sku)` }).from(products)
+    .where(like(products.sku, `${prefix}-%`));
+  const maxSku = result[0]?.maxSku as string | null;
+  let nextNum = 1;
+  if (maxSku) {
+    const match = maxSku.match(/(\d+)$/);
+    if (match) nextNum = parseInt(match[1], 10) + 1;
+  }
+  return `${prefix}-${String(nextNum).padStart(6, '0')}`;
+}
+
+export async function generateVariantSku(productSku: string): Promise<string> {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  // Find max variant number for this product
+  const result = await db.select({ maxSku: sql`MAX(sku)` }).from(variants)
+    .where(like(variants.sku, `${productSku}-%`));
+  const maxSku = result[0]?.maxSku as string | null;
+  let nextNum = 1;
+  if (maxSku) {
+    const match = maxSku.match(/-(\d+)$/);
+    if (match) nextNum = parseInt(match[1], 10) + 1;
+  }
+  return `${productSku}-${String(nextNum).padStart(2, '0')}`;
+}
+
+export async function checkKeywordConflict(keyword: string, excludeProductId?: number) {
+  const db = await getDb();
+  if (!db) return { available: true };
+  const normalizedKeyword = keyword.toUpperCase().replace(/\s+/g, '');
+  const conditions = [eq(products.keyword, normalizedKeyword)];
+  if (excludeProductId) {
+    conditions.push(ne(products.id, excludeProductId));
+  }
+  const result = await db.select({ id: products.id, name: products.name })
+    .from(products).where(and(...conditions)).limit(1);
+  if (result.length > 0) {
+    return { available: false, conflictWith: result[0] };
+  }
+  return { available: true };
+}
+
+export async function checkVariantKeywordConflict(productId: number, keyword: string, excludeVariantId?: number) {
+  const db = await getDb();
+  if (!db) return { available: true };
+  const normalizedKeyword = keyword.toUpperCase().replace(/\s+/g, '');
+  const conditions = [eq(variants.productId, productId), eq(variants.keyword, normalizedKeyword)];
+  if (excludeVariantId) {
+    conditions.push(ne(variants.id, excludeVariantId));
+  }
+  const result = await db.select({ id: variants.id, name: variants.name })
+    .from(variants).where(and(...conditions)).limit(1);
+  if (result.length > 0) {
+    return { available: false, conflictWith: result[0] };
+  }
+  return { available: true };
+}
+
+export async function getProductsEnhanced(params: {
+  search?: string;
+  categoryId?: number;
+  status?: string;
+  productMode?: string;
+  visibility?: string;
+  type?: string;
+  isFeatured?: boolean;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return { items: [], total: 0 };
+  const conditions: any[] = [];
+  if (params.search) {
+    conditions.push(like(products.name, `%${params.search}%`));
+  }
+  if (params.categoryId) {
+    conditions.push(eq(products.categoryId, params.categoryId));
+  }
+  if (params.status) {
+    conditions.push(eq(products.status, params.status as any));
+  }
+  if (params.productMode) {
+    conditions.push(eq(products.productMode, params.productMode as any));
+  }
+  if (params.visibility) {
+    conditions.push(eq(products.visibility, params.visibility as any));
+  }
+  if (params.type) {
+    conditions.push(eq(products.type, params.type as any));
+  }
+  if (params.isFeatured !== undefined) {
+    conditions.push(eq(products.isFeatured, params.isFeatured));
+  }
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const limit = params.limit ?? 20;
+  const offset = params.offset ?? 0;
+  const items = await db.select().from(products)
+    .where(where)
+    .orderBy(desc(products.createdAt))
+    .limit(limit)
+    .offset(offset);
+  const countResult = await db.select({ count: sql`count(*)` }).from(products).where(where);
+  const total = Number(countResult[0]?.count) || 0;
+  return { items, total };
+}
+
+export async function getProductByIdEnhanced(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const productResult = await db.select().from(products).where(eq(products.id, id)).limit(1);
+  if (productResult.length === 0) return undefined;
+  const product = productResult[0];
+  const images = await db.select().from(productImages).where(eq(productImages.productId, id)).orderBy(asc(productImages.sortOrder));
+  const videos = await db.select().from(productVideos).where(eq(productVideos.productId, id)).orderBy(asc(productVideos.sortOrder));
+  const variantList = await db.select().from(variants).where(eq(variants.productId, id)).orderBy(asc(variants.sortOrder));
+  const links = await db.select().from(memberLinks).where(eq(memberLinks.productId, id));
+  const attrs = await db.select().from(productAttributes).where(eq(productAttributes.productId, id)).orderBy(asc(productAttributes.sortOrder));
+  return { ...product, images, videos, variants: variantList, memberLinks: links, attributes: attrs };
+}
+
+export async function createProductEnhanced(data: {
+  name: string;
+  type: 'physical' | 'membership' | 'gift';
+  productMode: 'simple' | 'variant';
+  categoryId?: number;
+  unitId?: number;
+  keyword: string;
+  sku?: string;
+  status?: string;
+  visibility?: string;
+  priceVisibility?: string;
+  shortDescZh?: string;
+  shortDescEn?: string;
+  fullDescZh?: string;
+  fullDescEn?: string;
+  careZh?: string;
+  careEn?: string;
+  sellingPrice?: string;
+  compareAtPrice?: string;
+  memberPrice?: string;
+  estimatedCost?: string;
+  currentCost?: string;
+  dimensions?: any;
+  weightKg?: string;
+  stockQuantity?: number;
+  isFeatured?: boolean;
+  featuredSortOrder?: number;
+  isMemberOnly?: boolean;
+  membershipIntro?: string;
+  telegramFlowLink?: string;
+  allowStandalonePurchase?: boolean;
+  allowMixedCheckout?: boolean;
+  notes?: string;
+  coverImageUrl?: string;
+  images?: string;
+  videoUrl?: string;
+  description?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const normalizedKeyword = data.keyword.toUpperCase().replace(/\s+/g, '');
+  const sku = data.sku || await generateSku(data.productMode);
+  const result = await db.insert(products).values({
+    name: data.name,
+    type: data.type,
+    productMode: data.productMode,
+    categoryId: data.categoryId,
+    unitId: data.unitId,
+    keyword: normalizedKeyword,
+    sku,
+    status: (data.status as any) || 'draft',
+    visibility: (data.visibility as any) || 'public',
+    priceVisibility: (data.priceVisibility as any) || 'show',
+    shortDescZh: data.shortDescZh,
+    shortDescEn: data.shortDescEn,
+    fullDescZh: data.fullDescZh,
+    fullDescEn: data.fullDescEn,
+    careZh: data.careZh,
+    careEn: data.careEn,
+    sellingPrice: data.sellingPrice,
+    compareAtPrice: data.compareAtPrice,
+    memberPrice: data.memberPrice,
+    estimatedCost: data.estimatedCost,
+    currentCost: data.currentCost,
+    dimensions: data.dimensions,
+    weightKg: data.weightKg,
+    stockQuantity: data.stockQuantity,
+    isFeatured: data.isFeatured ?? false,
+    featuredSortOrder: data.featuredSortOrder ?? 0,
+    membershipIntro: data.membershipIntro,
+    telegramFlowLink: data.telegramFlowLink,
+    allowStandalonePurchase: data.allowStandalonePurchase,
+    allowMixedCheckout: data.allowMixedCheckout,
+    notes: data.notes,
+    coverImageUrl: data.coverImageUrl,
+    images: data.images,
+    videoUrl: data.videoUrl,
+    description: data.description,
+  });
+  return { id: result[0].insertId, sku };
+}
+
+export async function updateProductEnhanced(id: number, data: Partial<{
+  name: string;
+  type: 'physical' | 'membership' | 'gift';
+  productMode: 'simple' | 'variant';
+  categoryId: number;
+  unitId: number;
+  keyword: string;
+  status: string;
+  visibility: string;
+  priceVisibility: string;
+  shortDescZh: string;
+  shortDescEn: string;
+  fullDescZh: string;
+  fullDescEn: string;
+  careZh: string;
+  careEn: string;
+  sellingPrice: string;
+  compareAtPrice: string;
+  memberPrice: string;
+  estimatedCost: string;
+  currentCost: string;
+  dimensions: any;
+  weightKg: string;
+  stockQuantity: number;
+  isFeatured: boolean;
+  featuredSortOrder: number;
+  isMemberOnly: boolean;
+  membershipIntro: string;
+  telegramFlowLink: string;
+  allowStandalonePurchase: boolean;
+  allowMixedCheckout: boolean;
+  notes: string;
+  coverImageUrl: string;
+  images: string;
+  videoUrl: string;
+  description: string;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const updateData: any = { ...data };
+  if (data.keyword) {
+    updateData.keyword = data.keyword.toUpperCase().replace(/\s+/g, '');
+  }
+  await db.update(products).set(updateData).where(eq(products.id, id));
+}
+
+export async function deleteProductEnhanced(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  // Check if product has orders
+  const orderCount = await db.select({ count: sql`count(*)` }).from(orderItems).where(eq(orderItems.productId, id));
+  if (Number(orderCount[0]?.count) > 0) {
+    return { success: false, reason: '此商品已有订单记录，只能停用不能删除' };
+  }
+  // Delete related data
+  await db.delete(productImages).where(eq(productImages.productId, id));
+  await db.delete(productVideos).where(eq(productVideos.productId, id));
+  await db.delete(variants).where(eq(variants.productId, id));
+  await db.delete(memberLinks).where(eq(memberLinks.productId, id));
+  await db.delete(productAttributes).where(eq(productAttributes.productId, id));
+  await db.delete(products).where(eq(products.id, id));
+  return { success: true };
+}
+
+// ============================================================================
+// Phase 1: Product Images helpers
+// ============================================================================
+
+export async function addProductImage(data: { productId: number; url: string; fileKey: string; sortOrder?: number; isMain?: boolean; altText?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  // If isMain, unset other main images
+  if (data.isMain) {
+    await db.update(productImages).set({ isMain: false }).where(eq(productImages.productId, data.productId));
+  }
+  const result = await db.insert(productImages).values({
+    productId: data.productId,
+    url: data.url,
+    fileKey: data.fileKey,
+    sortOrder: data.sortOrder ?? 0,
+    isMain: data.isMain ?? false,
+    altText: data.altText,
+  });
+  return { id: result[0].insertId };
+}
+
+export async function deleteProductImage(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.delete(productImages).where(eq(productImages.id, id));
+}
+
+export async function updateProductImageOrder(id: number, sortOrder: number, isMain?: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const updateData: any = { sortOrder };
+  if (isMain !== undefined) {
+    if (isMain) {
+      // Get productId first
+      const img = await db.select().from(productImages).where(eq(productImages.id, id)).limit(1);
+      if (img.length > 0) {
+        await db.update(productImages).set({ isMain: false }).where(eq(productImages.productId, img[0].productId));
+      }
+    }
+    updateData.isMain = isMain;
+  }
+  await db.update(productImages).set(updateData).where(eq(productImages.id, id));
+}
+
+// ============================================================================
+// Phase 1: Product Videos helpers
+// ============================================================================
+
+export async function addProductVideo(data: { productId: number; url: string; fileKey: string; sortOrder?: number; isMain?: boolean; thumbnailUrl?: string; duration?: number; altText?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  if (data.isMain) {
+    await db.update(productVideos).set({ isMain: false }).where(eq(productVideos.productId, data.productId));
+  }
+  const result = await db.insert(productVideos).values({
+    productId: data.productId,
+    url: data.url,
+    fileKey: data.fileKey,
+    sortOrder: data.sortOrder ?? 0,
+    isMain: data.isMain ?? false,
+    thumbnailUrl: data.thumbnailUrl,
+    duration: data.duration,
+    altText: data.altText,
+  });
+  return { id: result[0].insertId };
+}
+
+export async function deleteProductVideo(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.delete(productVideos).where(eq(productVideos.id, id));
+}
+
+// ============================================================================
+// Phase 1: Variant helpers
+// ============================================================================
+
+export async function createVariant(data: {
+  productId: number;
+  name: string;
+  keyword: string;
+  sku?: string;
+  sellingPrice?: string;
+  compareAtPrice?: string;
+  memberPrice?: string;
+  estimatedCost?: string;
+  currentCost?: string;
+  weight?: string;
+  dimensions?: any;
+  status?: string;
+  visibility?: string;
+  sortOrder?: number;
+  imageUrl?: string;
+  stockQuantity?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const normalizedKeyword = data.keyword.toUpperCase().replace(/\s+/g, '');
+  // Get product SKU to generate variant SKU
+  const product = await db.select({ sku: products.sku }).from(products).where(eq(products.id, data.productId)).limit(1);
+  if (product.length === 0) throw new Error('Product not found');
+  const sku = data.sku || await generateVariantSku(product[0].sku);
+  const result = await db.insert(variants).values({
+    productId: data.productId,
+    name: data.name,
+    keyword: normalizedKeyword,
+    sku,
+    sellingPrice: data.sellingPrice,
+    compareAtPrice: data.compareAtPrice,
+    memberPrice: data.memberPrice,
+    estimatedCost: data.estimatedCost,
+    currentCost: data.currentCost,
+    weight: data.weight,
+    dimensions: data.dimensions,
+    status: (data.status as any) || 'active',
+    visibility: (data.visibility as any) || 'public',
+    sortOrder: data.sortOrder ?? 0,
+    imageUrl: data.imageUrl,
+    stockQuantity: data.stockQuantity ?? 0,
+  });
+  return { id: result[0].insertId, sku };
+}
+
+export async function updateVariant(id: number, data: Partial<{
+  name: string;
+  keyword: string;
+  sellingPrice: string;
+  compareAtPrice: string;
+  memberPrice: string;
+  estimatedCost: string;
+  currentCost: string;
+  weight: string;
+  dimensions: any;
+  status: string;
+  visibility: string;
+  sortOrder: number;
+  imageUrl: string;
+  stockQuantity: number;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const updateData: any = { ...data };
+  if (data.keyword) {
+    updateData.keyword = data.keyword.toUpperCase().replace(/\s+/g, '');
+  }
+  await db.update(variants).set(updateData).where(eq(variants.id, id));
+}
+
+export async function deleteVariant(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.delete(variants).where(eq(variants.id, id));
+}
+
+// ============================================================================
+// Phase 1: Member Link helpers
+// ============================================================================
+
+export async function generateMemberLink(productId: number): Promise<{ token: string; url: string }> {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  // Deactivate existing links
+  await db.update(memberLinks).set({ isActive: false }).where(eq(memberLinks.productId, productId));
+  // Generate new token using nanoid-like approach
+  const token = generateToken(32);
+  await db.insert(memberLinks).values({
+    productId,
+    token,
+    isActive: true,
+  });
+  const url = `/m/${token}`;
+  return { token, url };
+}
+
+export async function getMemberLinkByToken(token: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const linkResult = await db.select().from(memberLinks)
+    .where(and(eq(memberLinks.token, token), eq(memberLinks.isActive, true)))
+    .limit(1);
+  if (linkResult.length === 0) return undefined;
+  const link = linkResult[0];
+  // Check expiry
+  if (link.expiresAt && new Date(link.expiresAt) < new Date()) {
+    return undefined;
+  }
+  // Get product with member price
+  const productResult = await db.select().from(products).where(eq(products.id, link.productId)).limit(1);
+  if (productResult.length === 0) return undefined;
+  const product = productResult[0];
+  const images = await db.select().from(productImages).where(eq(productImages.productId, product.id)).orderBy(asc(productImages.sortOrder));
+  const videos = await db.select().from(productVideos).where(eq(productVideos.productId, product.id)).orderBy(asc(productVideos.sortOrder));
+  const variantList = await db.select().from(variants).where(eq(variants.productId, product.id)).orderBy(asc(variants.sortOrder));
+  return {
+    ...product,
+    images,
+    videos,
+    variants: variantList,
+    // Include memberPrice for member link API
+    memberPrice: product.memberPrice,
+  };
+}
+
+export async function deactivateMemberLink(linkId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.update(memberLinks).set({ isActive: false }).where(eq(memberLinks.id, linkId));
+}
+
+export async function getMemberLinksByProductId(productId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(memberLinks).where(eq(memberLinks.productId, productId)).orderBy(desc(memberLinks.createdAt));
+}
+
+// ============================================================================
+// Phase 1: Product Attributes helpers
+// ============================================================================
+
+export async function addProductAttribute(data: { productId: number; attributeName: string; attributeValue: string; sortOrder?: number; isFilterable?: boolean }) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const result = await db.insert(productAttributes).values({
+    productId: data.productId,
+    attributeName: data.attributeName,
+    attributeValue: data.attributeValue,
+    sortOrder: data.sortOrder ?? 0,
+    isFilterable: data.isFilterable ?? false,
+  });
+  return { id: result[0].insertId };
+}
+
+export async function deleteProductAttribute(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.delete(productAttributes).where(eq(productAttributes.id, id));
+}
+
+export async function getAttributesByProductId(productId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(productAttributes).where(eq(productAttributes.productId, productId)).orderBy(asc(productAttributes.sortOrder));
+}
+
+// ============================================================================
+// Phase 1: Public API helpers (price isolation)
+// ============================================================================
+
+export async function getPublicProducts(params: { categoryId?: number; search?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return { items: [], total: 0 };
+  const conditions: any[] = [
+    eq(products.status, 'active'),
+    eq(products.visibility, 'public'),
+  ];
+  if (params.categoryId) {
+    conditions.push(eq(products.categoryId, params.categoryId));
+  }
+  if (params.search) {
+    conditions.push(like(products.name, `%${params.search}%`));
+  }
+  const limit = params.limit ?? 20;
+  const offset = params.offset ?? 0;
+  const items = await db.select({
+    id: products.id,
+    name: products.name,
+    type: products.type,
+    productMode: products.productMode,
+    categoryId: products.categoryId,
+    keyword: products.keyword,
+    shortDescZh: products.shortDescZh,
+    shortDescEn: products.shortDescEn,
+    sellingPrice: products.sellingPrice,
+    compareAtPrice: products.compareAtPrice,
+    weightKg: products.weightKg,
+    isFeatured: products.isFeatured,
+    coverImageUrl: products.coverImageUrl,
+  }).from(products)
+    .where(and(...conditions))
+    .orderBy(desc(products.createdAt))
+    .limit(limit)
+    .offset(offset);
+  const countResult = await db.select({ count: sql`count(*)` }).from(products).where(and(...conditions));
+  const total = Number(countResult[0]?.count) || 0;
+  return { items, total };
+}
+
+export async function getPublicProductById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const productResult = await db.select({
+    id: products.id,
+    name: products.name,
+    type: products.type,
+    productMode: products.productMode,
+    categoryId: products.categoryId,
+    keyword: products.keyword,
+    shortDescZh: products.shortDescZh,
+    shortDescEn: products.shortDescEn,
+    fullDescZh: products.fullDescZh,
+    fullDescEn: products.fullDescEn,
+    careZh: products.careZh,
+    careEn: products.careEn,
+    sellingPrice: products.sellingPrice,
+    compareAtPrice: products.compareAtPrice,
+    weightKg: products.weightKg,
+    dimensions: products.dimensions,
+    coverImageUrl: products.coverImageUrl,
+    isFeatured: products.isFeatured,
+  }).from(products)
+    .where(and(eq(products.id, id), eq(products.status, 'active'), eq(products.visibility, 'public')))
+    .limit(1);
+  if (productResult.length === 0) return undefined;
+  const product = productResult[0];
+  // Only expose public-safe fields (no fileKey or internal fields)
+  const images = await db.select({
+    id: productImages.id,
+    url: productImages.url,
+    sortOrder: productImages.sortOrder,
+    isMain: productImages.isMain,
+    altText: productImages.altText,
+  }).from(productImages).where(eq(productImages.productId, id)).orderBy(asc(productImages.sortOrder));
+  const videos = await db.select({
+    id: productVideos.id,
+    url: productVideos.url,
+    sortOrder: productVideos.sortOrder,
+    isMain: productVideos.isMain,
+    thumbnailUrl: productVideos.thumbnailUrl,
+    duration: productVideos.duration,
+    altText: productVideos.altText,
+  }).from(productVideos).where(eq(productVideos.productId, id)).orderBy(asc(productVideos.sortOrder));
+  const variantList = await db.select({
+    id: variants.id,
+    name: variants.name,
+    keyword: variants.keyword,
+    sellingPrice: variants.sellingPrice,
+    compareAtPrice: variants.compareAtPrice,
+    weight: variants.weight,
+    imageUrl: variants.imageUrl,
+    status: variants.status,
+    sortOrder: variants.sortOrder,
+  }).from(variants).where(and(eq(variants.productId, id), eq(variants.status, 'active'), eq(variants.visibility, 'public')));
+  return { ...product, images, videos, variants: variantList };
+}
+
+export async function getPublicProductByKeyword(keyword: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const normalizedKeyword = keyword.toUpperCase().replace(/\s+/g, '');
+  const productResult = await db.select({
+    id: products.id,
+    name: products.name,
+    type: products.type,
+    productMode: products.productMode,
+    keyword: products.keyword,
+    sellingPrice: products.sellingPrice,
+    compareAtPrice: products.compareAtPrice,
+    weightKg: products.weightKg,
+    coverImageUrl: products.coverImageUrl,
+  }).from(products)
+    .where(and(
+      eq(products.keyword, normalizedKeyword),
+      eq(products.status, 'active'),
+      eq(products.visibility, 'public'),
+    ))
+    .limit(1);
+  if (productResult.length === 0) return undefined;
+  return productResult[0];
+}
+
+// ============================================================================
+// Phase 1: Utility - Token generator
+// ============================================================================
+
+function generateToken(length: number): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// ============================================================================
+// Phase 1: Dashboard stats helpers (enhanced)
+// ============================================================================
+
+export async function getProductStats() {
+  const db = await getDb();
+  if (!db) return { total: 0, active: 0, draft: 0, outOfStock: 0, featured: 0 };
+  const total = await db.select({ count: sql`count(*)` }).from(products);
+  const active = await db.select({ count: sql`count(*)` }).from(products).where(eq(products.status, 'active'));
+  const draft = await db.select({ count: sql`count(*)` }).from(products).where(eq(products.status, 'draft'));
+  const outOfStock = await db.select({ count: sql`count(*)` }).from(products).where(eq(products.status, 'out_of_stock'));
+  const featured = await db.select({ count: sql`count(*)` }).from(products).where(eq(products.isFeatured, true));
+  return {
+    total: Number(total[0]?.count) || 0,
+    active: Number(active[0]?.count) || 0,
+    draft: Number(draft[0]?.count) || 0,
+    outOfStock: Number(outOfStock[0]?.count) || 0,
+    featured: Number(featured[0]?.count) || 0,
   };
 }

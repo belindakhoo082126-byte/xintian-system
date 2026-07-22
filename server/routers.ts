@@ -4,6 +4,8 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
+import { eq } from "drizzle-orm";
+import { variants } from "../drizzle/schema";
 import { sendTelegramJoinFlow, sendMembershipFlow, getUserProfile, sendTextMessage } from "./messenger";
 
 export const appRouter = router({
@@ -114,9 +116,9 @@ export const appRouter = router({
   }),
 
   // ===========================================================================
-  // Product Categories
+  // Product Categories (Legacy - kept for backward compatibility)
   // ===========================================================================
-  categories: router({
+  productCategoriesLegacy: router({
     list: protectedProcedure
       .input(z.object({ activeOnly: z.boolean().optional() }).optional())
       .query(async ({ input }) => {
@@ -151,6 +153,517 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteProductCategory(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // Phase 1: Categories (商品分类 - 新版)
+  // ===========================================================================
+  categories: router({
+    list: protectedProcedure
+      .input(z.object({ activeOnly: z.boolean().optional(), storeOnly: z.boolean().optional() }).optional())
+      .query(async ({ input }) => {
+        if (input?.storeOnly) {
+          return await db.getStoreCategories();
+        }
+        if (input?.activeOnly) {
+          return await db.getActiveCategories();
+        }
+        return await db.getAllCategories();
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const category = await db.getCategoryById(input.id);
+        if (!category) throw new Error('分类不存在');
+        const productCount = await db.countProductsInCategory(input.id);
+        return { ...category, productCount };
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        nameZh: z.string().min(1),
+        nameEn: z.string().min(1),
+        descZh: z.string().optional(),
+        descEn: z.string().optional(),
+        showInStore: z.boolean().optional(),
+        sortOrder: z.number().optional(),
+        imageUrl: z.string().optional(),
+        iconUrl: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createCategory(input);
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        nameZh: z.string().optional(),
+        nameEn: z.string().optional(),
+        descZh: z.string().optional(),
+        descEn: z.string().optional(),
+        status: z.enum(['active', 'inactive']).optional(),
+        showInStore: z.boolean().optional(),
+        sortOrder: z.number().optional(),
+        imageUrl: z.string().optional(),
+        iconUrl: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateCategory(id, data);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.deleteCategory(input.id);
+      }),
+
+    reorder: protectedProcedure
+      .input(z.object({ items: z.array(z.object({ id: z.number(), sortOrder: z.number() })) }))
+      .mutation(async ({ input }) => {
+        await db.reorderCategories(input.items);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // Phase 1: Units (销售单位)
+  // ===========================================================================
+  units: router({
+    list: protectedProcedure.query(async () => {
+      return await db.getAllUnits();
+    }),
+
+    create: protectedProcedure
+      .input(z.object({
+        nameZh: z.string().min(1),
+        nameEn: z.string().min(1),
+        isDefault: z.boolean().optional(),
+        sortOrder: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createUnit(input);
+      }),
+  }),
+
+  // ===========================================================================
+  // Phase 1: Products V2 (Admin - 三层 API: Admin / Public / Member Link)
+  // ===========================================================================
+  productsV2: router({
+    // --- Admin API ---
+    list: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        categoryId: z.number().optional(),
+        status: z.enum(['draft', 'active', 'inactive', 'out_of_stock']).optional(),
+        productMode: z.enum(['simple', 'variant']).optional(),
+        visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
+        type: z.enum(['physical', 'membership', 'gift']).optional(),
+        isFeatured: z.boolean().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getProductsEnhanced(input || {});
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const product = await db.getProductByIdEnhanced(input.id);
+        if (!product) throw new Error('商品不存在');
+        return product;
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        type: z.enum(['physical', 'membership', 'gift']),
+        productMode: z.enum(['simple', 'variant']),
+        categoryId: z.number().optional(),
+        unitId: z.number().optional(),
+        keyword: z.string().min(1),
+        sku: z.string().optional(),
+        status: z.enum(['draft', 'active', 'inactive', 'out_of_stock']).optional(),
+        visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
+        priceVisibility: z.enum(['show', 'hide', 'member_link']).optional(),
+        shortDescZh: z.string().optional(),
+        shortDescEn: z.string().optional(),
+        fullDescZh: z.string().optional(),
+        fullDescEn: z.string().optional(),
+        careZh: z.string().optional(),
+        careEn: z.string().optional(),
+        sellingPrice: z.string().optional(),
+        compareAtPrice: z.string().optional(),
+        memberPrice: z.string().optional(),
+        estimatedCost: z.string().optional(),
+        currentCost: z.string().optional(),
+        dimensions: z.any().optional(),
+        weightKg: z.string().optional(),
+        stockQuantity: z.number().optional(),
+        isFeatured: z.boolean().optional(),
+        featuredSortOrder: z.number().optional(),
+        membershipIntro: z.string().optional(),
+        telegramFlowLink: z.string().optional(),
+        allowStandalonePurchase: z.boolean().optional(),
+        allowMixedCheckout: z.boolean().optional(),
+        notes: z.string().optional(),
+        coverImageUrl: z.string().optional(),
+        images: z.string().optional(),
+        videoUrl: z.string().optional(),
+        description: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        // Check keyword conflict
+        const conflict = await db.checkKeywordConflict(input.keyword);
+        if (!conflict.available) {
+          throw new Error(`关键词「${input.keyword}」已被商品「${conflict.conflictWith?.name}」使用`);
+        }
+        return await db.createProductEnhanced(input);
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        type: z.enum(['physical', 'membership', 'gift']).optional(),
+        productMode: z.enum(['simple', 'variant']).optional(),
+        categoryId: z.number().optional(),
+        unitId: z.number().optional(),
+        keyword: z.string().optional(),
+        status: z.enum(['draft', 'active', 'inactive', 'out_of_stock']).optional(),
+        visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
+        priceVisibility: z.enum(['show', 'hide', 'member_link']).optional(),
+        shortDescZh: z.string().optional(),
+        shortDescEn: z.string().optional(),
+        fullDescZh: z.string().optional(),
+        fullDescEn: z.string().optional(),
+        careZh: z.string().optional(),
+        careEn: z.string().optional(),
+        sellingPrice: z.string().optional(),
+        compareAtPrice: z.string().optional(),
+        memberPrice: z.string().optional(),
+        estimatedCost: z.string().optional(),
+        currentCost: z.string().optional(),
+        dimensions: z.any().optional(),
+        weightKg: z.string().optional(),
+        stockQuantity: z.number().optional(),
+        isFeatured: z.boolean().optional(),
+        featuredSortOrder: z.number().optional(),
+        membershipIntro: z.string().optional(),
+        telegramFlowLink: z.string().optional(),
+        allowStandalonePurchase: z.boolean().optional(),
+        allowMixedCheckout: z.boolean().optional(),
+        notes: z.string().optional(),
+        coverImageUrl: z.string().optional(),
+        images: z.string().optional(),
+        videoUrl: z.string().optional(),
+        description: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        // Check keyword conflict if keyword is being updated
+        if (data.keyword) {
+          const conflict = await db.checkKeywordConflict(data.keyword, id);
+          if (!conflict.available) {
+            throw new Error(`关键词「${data.keyword}」已被商品「${conflict.conflictWith?.name}」使用`);
+          }
+        }
+        await db.updateProductEnhanced(id, data);
+        return { success: true };
+      }),
+
+    setStatus: protectedProcedure
+      .input(z.object({ id: z.number(), status: z.enum(['draft', 'active', 'inactive', 'out_of_stock']) }))
+      .mutation(async ({ input }) => {
+        await db.updateProductEnhanced(input.id, { status: input.status });
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.deleteProductEnhanced(input.id);
+      }),
+
+    duplicate: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const product = await db.getProductByIdEnhanced(input.id);
+        if (!product) throw new Error('商品不存在');
+        // Generate new keyword and SKU
+        const newKeyword = `${product.keyword}_COPY`;
+        const conflict = await db.checkKeywordConflict(newKeyword);
+        if (!conflict.available) {
+          throw new Error(`复制关键词「${newKeyword}」冲突，请手动修改`);
+        }
+        const result = await db.createProductEnhanced({
+          name: `${product.name} (副本)`,
+          type: product.type as any,
+          productMode: product.productMode as any,
+          categoryId: product.categoryId ?? undefined,
+          unitId: product.unitId ?? undefined,
+          keyword: newKeyword,
+          status: 'draft',
+          visibility: product.visibility as any,
+          priceVisibility: product.priceVisibility as any,
+          shortDescZh: product.shortDescZh ?? undefined,
+          shortDescEn: product.shortDescEn ?? undefined,
+          fullDescZh: product.fullDescZh ?? undefined,
+          fullDescEn: product.fullDescEn ?? undefined,
+          careZh: product.careZh ?? undefined,
+          careEn: product.careEn ?? undefined,
+          sellingPrice: product.sellingPrice ?? undefined,
+          compareAtPrice: product.compareAtPrice ?? undefined,
+          memberPrice: product.memberPrice ?? undefined,
+          estimatedCost: product.estimatedCost ?? undefined,
+          currentCost: product.currentCost ?? undefined,
+          dimensions: product.dimensions,
+          weightKg: product.weightKg ?? undefined,
+          stockQuantity: 0,
+          isFeatured: false,
+          notes: product.notes ?? undefined,
+          coverImageUrl: product.coverImageUrl ?? undefined,
+          description: product.description ?? undefined,
+        });
+        return { id: result.id, sku: result.sku };
+      }),
+
+    checkKeyword: protectedProcedure
+      .input(z.object({ keyword: z.string().min(1), excludeProductId: z.number().optional() }))
+      .query(async ({ input }) => {
+        return await db.checkKeywordConflict(input.keyword, input.excludeProductId);
+      }),
+
+    checkVariantKeyword: protectedProcedure
+      .input(z.object({ productId: z.number(), keyword: z.string().min(1), excludeVariantId: z.number().optional() }))
+      .query(async ({ input }) => {
+        return await db.checkVariantKeywordConflict(input.productId, input.keyword, input.excludeVariantId);
+      }),
+
+    // --- Public API (价格隔离: 不返回 memberPrice / estimatedCost / currentCost / sku / notes) ---
+    publicList: publicProcedure
+      .input(z.object({
+        categoryId: z.number().optional(),
+        search: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getPublicProducts(input || {});
+      }),
+
+    publicGetById: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const product = await db.getPublicProductById(input.id);
+        if (!product) throw new Error('商品不存在或未上架');
+        return product;
+      }),
+
+    publicGetByKeyword: publicProcedure
+      .input(z.object({ keyword: z.string().min(1) }))
+      .query(async ({ input }) => {
+        const product = await db.getPublicProductByKeyword(input.keyword);
+        if (!product) throw new Error('关键词未匹配到商品');
+        return product;
+      }),
+
+    // --- Member Link API (Token 验证后返回含 memberPrice) ---
+    memberGetByToken: publicProcedure
+      .input(z.object({ token: z.string().min(1) }))
+      .query(async ({ input }) => {
+        const product = await db.getMemberLinkByToken(input.token);
+        if (!product) throw new Error('链接无效或已过期');
+        return product;
+      }),
+  }),
+
+  // ===========================================================================
+  // Phase 1: Variants (商品规格)
+  // ===========================================================================
+  variants: router({
+    create: protectedProcedure
+      .input(z.object({
+        productId: z.number(),
+        name: z.string().min(1),
+        keyword: z.string().min(1),
+        sku: z.string().optional(),
+        sellingPrice: z.string().optional(),
+        compareAtPrice: z.string().optional(),
+        memberPrice: z.string().optional(),
+        estimatedCost: z.string().optional(),
+        currentCost: z.string().optional(),
+        weight: z.string().optional(),
+        dimensions: z.any().optional(),
+        status: z.enum(['active', 'inactive', 'hidden']).optional(),
+        visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
+        sortOrder: z.number().optional(),
+        imageUrl: z.string().optional(),
+        stockQuantity: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        // Check variant keyword conflict within the same product
+        const conflict = await db.checkVariantKeywordConflict(input.productId, input.keyword);
+        if (!conflict.available) {
+          throw new Error(`规格关键词「${input.keyword}」已被规格「${conflict.conflictWith?.name}」使用`);
+        }
+        return await db.createVariant(input);
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        keyword: z.string().optional(),
+        sellingPrice: z.string().optional(),
+        compareAtPrice: z.string().optional(),
+        memberPrice: z.string().optional(),
+        estimatedCost: z.string().optional(),
+        currentCost: z.string().optional(),
+        weight: z.string().optional(),
+        dimensions: z.any().optional(),
+        status: z.enum(['active', 'inactive', 'hidden']).optional(),
+        visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
+        sortOrder: z.number().optional(),
+        imageUrl: z.string().optional(),
+        stockQuantity: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        // Check keyword conflict if keyword is being updated
+        if (data.keyword) {
+          // Need productId for conflict check - get the variant first
+          const db2 = await db.getDb();
+          if (db2) {
+            const variantRow = await db2.select().from(variants).where(eq(variants.id, id)).limit(1);
+            if (variantRow.length > 0) {
+              const conflict = await db.checkVariantKeywordConflict(variantRow[0].productId, data.keyword, id);
+              if (!conflict.available) {
+                throw new Error(`规格关键词「${data.keyword}」已被规格「${conflict.conflictWith?.name}」使用`);
+              }
+            }
+          }
+        }
+        await db.updateVariant(id, data);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteVariant(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // Phase 1: Member Links (安全会员购买链接)
+  // ===========================================================================
+  memberLinks: router({
+    generate: protectedProcedure
+      .input(z.object({ productId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.generateMemberLink(input.productId);
+      }),
+
+    list: protectedProcedure
+      .input(z.object({ productId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getMemberLinksByProductId(input.productId);
+      }),
+
+    deactivate: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deactivateMemberLink(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // Phase 1: Product Images (商品图片管理)
+  // ===========================================================================
+  productImages: router({
+    add: protectedProcedure
+      .input(z.object({
+        productId: z.number(),
+        url: z.string().min(1),
+        fileKey: z.string().min(1),
+        sortOrder: z.number().optional(),
+        isMain: z.boolean().optional(),
+        altText: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.addProductImage(input);
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteProductImage(input.id);
+        return { success: true };
+      }),
+
+    updateOrder: protectedProcedure
+      .input(z.object({ id: z.number(), sortOrder: z.number(), isMain: z.boolean().optional() }))
+      .mutation(async ({ input }) => {
+        await db.updateProductImageOrder(input.id, input.sortOrder, input.isMain);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // Phase 1: Product Videos (商品影片管理)
+  // ===========================================================================
+  productVideos: router({
+    add: protectedProcedure
+      .input(z.object({
+        productId: z.number(),
+        url: z.string().min(1),
+        fileKey: z.string().min(1),
+        sortOrder: z.number().optional(),
+        isMain: z.boolean().optional(),
+        thumbnailUrl: z.string().optional(),
+        duration: z.number().optional(),
+        altText: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.addProductVideo(input);
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteProductVideo(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // Phase 1: Product Attributes (商品属性管理)
+  // ===========================================================================
+  productAttributes: router({
+    add: protectedProcedure
+      .input(z.object({
+        productId: z.number(),
+        attributeName: z.string().min(1),
+        attributeValue: z.string().min(1),
+        sortOrder: z.number().optional(),
+        isFilterable: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.addProductAttribute(input);
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteProductAttribute(input.id);
         return { success: true };
       }),
   }),
