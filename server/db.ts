@@ -3075,6 +3075,20 @@ export async function mallCheckout(data: {
     });
   }
 
+  // Deduct stock for each item
+  for (const item of data.items) {
+    if (item.variationId) {
+      // Deduct from variant stock
+      await db.update(productVariations).set({
+        stockQuantity: sql`${productVariations.stockQuantity} - ${item.quantity}`,
+      }).where(eq(productVariations.id, item.variationId));
+    }
+    // Deduct from product stock
+    await db.update(products).set({
+      stockQuantity: sql`${products.stockQuantity} - ${item.quantity}`,
+    }).where(eq(products.id, item.productId));
+  }
+
   // Update customer stats
   await db.update(customers).set({
     totalOrders: sql`${customers.totalOrders} + 1`,
