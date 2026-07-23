@@ -4166,6 +4166,14 @@ export async function createOrderItemRepot(data: {
   await db.update(products)
     .set({ stockQuantity: sql`stockQuantity - ${data.quantity}` })
     .where(eq(products.id, data.potProductId));
+
+  // Auto-create an internal remark so it shows on Dashboard
+  await db.insert(orderRemarks).values({
+    orderId: data.orderId,
+    type: "internal",
+    content: `换盆：${data.productName} → ${data.potProductName} x ${data.quantity}`,
+    createdBy: "system",
+  });
 }
 
 export async function deleteOrderItemRepot(id: number) {
@@ -4179,6 +4187,16 @@ export async function deleteOrderItemRepot(id: number) {
     await db.update(products)
       .set({ stockQuantity: sql`stockQuantity + ${repot[0].quantity}` })
       .where(eq(products.id, repot[0].potProductId));
+  }
+
+  // Auto-create an internal remark for the cancellation
+  if (repot.length > 0) {
+    await db.insert(orderRemarks).values({
+      orderId: repot[0].orderId,
+      type: "internal",
+      content: `取消换盆：${repot[0].productName} → ${repot[0].potProductName} x ${repot[0].quantity}`,
+      createdBy: "system",
+    });
   }
 
   await db.delete(orderItemRepots).where(eq(orderItemRepots.id, id));
