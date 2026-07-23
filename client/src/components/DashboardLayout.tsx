@@ -323,7 +323,21 @@ function DashboardLayoutContent({
             </div>
           </div>
         )}
-        <main className="flex-1 p-4">{children}</main>
+        <main className="flex-1 p-4">
+          {/* Top-right language toggle — always visible */}
+          <div className="fixed top-3 right-4 z-50">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+              className="h-8 px-3 text-xs gap-1.5 bg-background/80 backdrop-blur shadow-sm"
+            >
+              <Languages className="h-3.5 w-3.5" />
+              {lang === "zh" ? "EN" : "中文"}
+            </Button>
+          </div>
+          {children}
+        </main>
       </SidebarInset>
     </>
   );
