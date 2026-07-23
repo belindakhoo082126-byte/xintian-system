@@ -422,3 +422,23 @@
 - [x] 修复付款凭证已上传后前端仍显示上传控件且公开接口允许在 `receipt_uploaded` 状态重复覆盖凭证的问题，防止已提交证据被篡改（SAT-022；前端隐藏控件与接口拒绝回归通过）
 - [x] 修复付款凭证非法路径校验将 Zod 原始 JSON 错误直接返回顾客的问题，改为统一且可理解的业务拒绝提示（SAT-022；接口回归验证友好错误）
 - [x] 排查并修复商城公开首页在已有上架商品时仍显示“0 件商品”的不稳定回归问题，确保顾客可持续浏览与下单（SAT-023；已添加加载骨架屏避免初始空状态闪烁）
+
+## Parcel King Partner API Integration
+
+- [x] 添加 Parcel King 环境变量（PARCELKING_API_KEY test/live, PARCELKING_ENV）至 env.ts 与 webdev_request_secrets
+- [x] 创建 server/parcelking.ts API 客户端（services, price/query, order/create, order/tracking, balance, cancel, label download）
+- [x] 在 shippingProvider.ts 中注册 parcelKingProvider 适配器
+- [x] 在 routers.ts 中新增 parcelking tRPC 路由命名空间（services, priceQuery, createShipment, getTracking, getBalance, cancelOrder, downloadLabel, resyncTracking）
+- [x] 在 shippingProviders.testConnection 中支持 parcel_king 供应商测试连接
+- [x] 整合包货发货流程：选择 Parcel King 自动建单 → 获取 Tracking Number → 下载 Shipping Label PDF → 写入包裹记录
+- [x] 支援多包裹：每个 Package 独立建立 Parcel King Shipment
+- [x] 自动更新订单状态：Parcel King 建单后自动更新包裹与订单状态
+- [x] Messenger 自动通知客户 Tracking Number（发货后发送 Messenger 消息）
+- [x] 完整错误处理：API Timeout、余额不足、Key Invalid、429 Rate Limit 等
+- [x] 支援重新下载 Shipping Label（从 Parcel King API 或缓存 URL）
+- [x] 支援重新同步 Tracking（调用 Parcel King tracking API 更新本地状态）
+- [x] 更新 LogisticsIntegration.tsx 前端页面：Parcel King 标签页显示余额、服务列表、测试连接
+- [x] 更新 PackingDetail.tsx：包货操作支持选择 Parcel King 自动发货
+- [x] 编写 parcelking.test.ts 单元测试
+- [x] 使用 Test Key 验证全部功能
+- [x] 切换至 Live Key 并保存发布版本

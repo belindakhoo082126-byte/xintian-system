@@ -6,6 +6,7 @@
  */
 
 import * as parceldaily from "./parceldaily";
+import * as parcelking from "./parcelking";
 import { ENV } from "./_core/env";
 
 export interface QuoteResult {
@@ -174,6 +175,115 @@ export const parcelDailyProvider: ShippingProvider = {
 };
 
 // ============================================================================
+// ParcelKing Provider Adapter
+// ============================================================================
+
+export const parcelKingProvider: ShippingProvider = {
+  key: "parcel_king",
+  displayName: "Parcel King",
+  isConfigured: parcelking.isParcelKingConfigured(),
+
+  async checkAccount() {
+    const balance = await parcelking.getBalance();
+    return {
+      balance: balance.result.balance,
+      info: balance.result,
+    };
+  },
+
+  async checkPostcode(postcode: string) {
+    // ParcelKing doesn't have a dedicated postcode check endpoint;
+    // use price query to verify serviceability
+    try {
+      await parcelking.priceQuery({
+        from_postcode: postcode,
+        to_postcode: postcode,
+        parcel_weight_kg: 1,
+      });
+      return { ok: true };
+    } catch (error: any) {
+      return { ok: false, message: error.message };
+    }
+  },
+
+  async getQuotes(params) {
+    const result = await parcelking.priceQuery({
+      from_postcode: params.fromPostcode,
+      to_postcode: params.toPostcode,
+      parcel_weight_kg: params.weightKg,
+    });
+    return result.services.map((s) => ({
+      courier: s.service_name,
+      price: s.total_price,
+      currency: "MYR",
+      estimatedDays: s.estimated_days,
+    }));
+  },
+
+  async createShipment(params) {
+    // ParcelKing createOrder directly returns tracking number (unlike ParcelDaily's two-step flow)
+    const { dial_code, mobile } = parcelking.normalizePhone(params.deliveryAddress.phone || "");
+    const senderPhone = parcelking.normalizePhone(params.pickupAddress.phone || "");
+
+    const response = await parcelking.createOrder({
+      service_id: parseInt(params.courier, 10),
+      sender: {
+        name: params.pickupAddress.fullName,
+        phone: params.pickupAddress.phone,
+        dial_code: senderPhone.dial_code,
+        mobile: senderPhone.mobile,
+        line1: params.pickupAddress.line1,
+        city: params.pickupAddress.city,
+        postcode: params.pickupAddress.postcode,
+        state: params.pickupAddress.state,
+        country: params.pickupAddress.country || "Malaysia",
+      },
+      recipient: {
+        name: params.deliveryAddress.fullName,
+        phone: params.deliveryAddress.phone,
+        dial_code: dial_code,
+        mobile: mobile,
+        line1: params.deliveryAddress.line1,
+        city: params.deliveryAddress.city,
+        postcode: params.deliveryAddress.postcode,
+        state: params.deliveryAddress.state,
+        country: params.deliveryAddress.country || "Malaysia",
+      },
+      parcel: {
+        weight_kg: params.weightKg,
+        name: params.content || "Goods",
+        declared_value: params.contentValue,
+      },
+      reference: params.reference,
+    });
+
+    return {
+      providerOrderId: response.result.tracking_no, // Use tracking_no as providerOrderId
+      status: "created" as const,
+      rawResponse: response,
+    };
+  },
+
+  async checkoutShipment(providerOrderId: string) {
+    // ParcelKing creates and checks out in one step (order/create)
+    // This method is a no-op that returns the tracking number already obtained
+    const details = await parcelking.getOrderDetails(providerOrderId);
+    return {
+      trackingNumber: providerOrderId, // tracking_no IS the providerOrderId
+      consignmentNoteUrl: details.result?.label_url || undefined,
+      shippingCost: details.result?.final_amount || 0,
+      rawResponse: details,
+    };
+  },
+
+  async getConsignmentNote(providerOrderId: string) {
+    // Re-fetch order details to get the label URL
+    const details = await parcelking.getOrderDetails(providerOrderId);
+    return { url: details.result?.label_url || undefined };
+  },
+};
+
+// ============================================================================
 // Manual Shipping Provider (no API, manual tracking)
 // ============================================================================
 
@@ -214,6 +324,7 @@ export const manualProvider: ShippingProvider = {
 
 const providers: Record<string, ShippingProvider> = {
   parceldaily: parcelDailyProvider,
+  parcel_king: parcelKingProvider,
   manual: manualProvider,
 };
 

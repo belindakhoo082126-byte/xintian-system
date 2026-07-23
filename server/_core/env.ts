@@ -11,6 +11,9 @@ export const ENV = {
   parceldailyMerchantId: process.env.PARCELDAILY_MERCHANT_ID ?? "",
   parceldailyToken: process.env.PARCELDAILY_TOKEN ?? "",
   parceldailyEnv: (process.env.PARCELDAILY_ENV as "production" | "sandbox") ?? "production",
+  // ParcelKing
+  parcelkingApiKey: process.env.PARCELKING_API_KEY ?? "",
+  parcelkingEnv: (process.env.PARCELKING_ENV as "test" | "live") ?? "test",
   // Facebook
   fbAppId: process.env.FB_APP_ID ?? "",
   fbAppSecret: process.env.FB_APP_SECRET ?? "",

@@ -9,6 +9,8 @@ import { eq } from "drizzle-orm";
 import { variants } from "../drizzle/schema";
 import { sendTelegramJoinFlow, sendMembershipFlow, getUserProfile, sendTextMessage } from "./messenger";
 import * as parceldaily from "./parceldaily";
+import * as parcelking from "./parcelking";
+import { ParcelKingError } from "./parcelking";
 import * as shippingProvider from "./shippingProvider";
 
 const PACKING_SHIPPING_ERROR_MESSAGES: Record<string, string> = {
@@ -1897,6 +1899,257 @@ export const appRouter = router({
   }),
 
   // ===========================================================================
+  // ParcelKing Operations (Parcel King 物流操作)
+  // ===========================================================================
+  parcelking: router({
+    // Check if ParcelKing is configured
+    isConfigured: adminProcedure.query(async () => {
+      return { configured: parcelking.isParcelKingConfigured(), testMode: parcelking.isTestMode() };
+    }),
+
+    // Get e-wallet balance
+    getBalance: adminProcedure.query(async () => {
+      if (!parcelking.isParcelKingConfigured()) {
+        return { success: false, error: "Parcel King API key not configured" };
+      }
+      try {
+        const balance = await parcelking.getBalance();
+        return { success: true, balance: balance.result.balance, currency: balance.result.currency };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+
+    // List available courier services
+    getServices: adminProcedure.query(async () => {
+      if (!parcelking.isParcelKingConfigured()) {
+        return { success: false, error: "Parcel King API key not configured", services: [] };
+      }
+      try {
+        const services = await parcelking.getServices();
+        return { success: true, services };
+      } catch (error: any) {
+        return { success: false, error: error.message, services: [] };
+      }
+    }),
+
+    // Query shipping prices
+    priceQuery: adminProcedure.input(z.object({
+      fromPostcode: z.string(),
+      toPostcode: z.string(),
+      weightKg: z.number(),
+      parcelValue: z.number().optional(),
+    })).query(async ({ input }) => {
+      if (!parcelking.isParcelKingConfigured()) {
+        return { success: false, error: "Parcel King API key not configured", services: [] };
+      }
+      try {
+        const result = await parcelking.priceQuery({
+          from_postcode: input.fromPostcode,
+          to_postcode: input.toPostcode,
+          parcel_weight_kg: input.weightKg,
+          parcel_value: input.parcelValue,
+        });
+        return { success: true, services: result.services, weightUsedKg: result.weightUsedKg, totalParcels: result.totalParcels, isMps: result.isMps };
+      } catch (error: any) {
+        return { success: false, error: error.message, services: [] };
+      }
+    }),
+
+    // Create a shipment for a specific package (auto tracking + label)
+    createShipment: adminProcedure.input(z.object({
+      orderId: z.number(),
+      serviceId: z.number(),
+      weightKg: z.number(),
+      content: z.string().optional(),
+      contentValue: z.number().optional(),
+      handoverMethod: z.enum(["pickup", "dropoff"]).optional(),
+      pickupTime: z.number().optional(),
+      pickupTimeRangeId: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      if (!parcelking.isParcelKingConfigured()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Parcel King API key not configured" });
+      }
+      try {
+        // Get order + customer + system settings for addresses
+        const order = await db.getOrderById(input.orderId);
+        if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "订单不存在" });
+
+        const settings = await db.getSystemSettings();
+        if (!settings || !settings.defaultShipFromAddress) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "系统设置中缺少发货地址，请先在系统设置中填写默认发货地址" });
+        }
+
+        const customer = await db.getCustomerById(order.customerId);
+        if (!customer) throw new TRPCError({ code: "NOT_FOUND", message: "客户不存在" });
+
+        const senderPhone = parcelking.normalizePhone(settings.defaultShipFromPhone || settings.companyPhone || "");
+        const recipientPhone = parcelking.normalizePhone(customer.phoneNumber || "");
+
+        const response = await parcelking.createOrder({
+          service_id: input.serviceId,
+          sender: {
+            name: settings.defaultShipFromName || settings.companyName || "Store",
+            phone: settings.defaultShipFromPhone || settings.companyPhone || "",
+            dial_code: senderPhone.dial_code,
+            mobile: senderPhone.mobile,
+            line1: settings.defaultShipFromAddress || settings.companyAddress || "",
+            city: settings.defaultShipFromCity || "",
+            postcode: settings.defaultShipFromPostcode || "",
+            state: settings.defaultShipFromState || "",
+            country: "Malaysia",
+          },
+          recipient: {
+            name: customer.name || customer.displayName || "Customer",
+            phone: customer.phoneNumber || "",
+            dial_code: recipientPhone.dial_code,
+            mobile: recipientPhone.mobile,
+            line1: order.shippingAddress || customer.address || "",
+            city: customer.city || "",
+            postcode: customer.postalCode || "",
+            state: customer.state || "",
+            country: "Malaysia",
+          },
+          parcel: {
+            weight_kg: input.weightKg,
+            name: input.content || "Goods",
+            declared_value: input.contentValue,
+          },
+          delivery_options: input.handoverMethod ? {
+            handover_method: input.handoverMethod,
+            pickup_time: input.pickupTime,
+            pickup_time_range_id: input.pickupTimeRangeId,
+          } : undefined,
+          reference: order.orderNumber,
+        });
+
+        const trackingNo = response.result.tracking_no;
+        const labelUrl = response.result.label_url || null;
+        const shippingCost = response.result.final_amount || 0;
+
+        return {
+          success: true,
+          trackingNumber: trackingNo,
+          labelUrl,
+          shippingCost,
+          testMode: response.result.test_mode,
+        };
+      } catch (error: any) {
+        if (error instanceof ParcelKingError) {
+          throw new TRPCError({
+            code: error.statusCode >= 500 ? "INTERNAL_SERVER_ERROR" : "BAD_REQUEST",
+            message: error.message,
+          });
+        }
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+      }
+    }),
+
+    // Get order details / tracking from ParcelKing
+    getOrderDetails: adminProcedure.input(z.object({
+      trackingNo: z.string(),
+    })).query(async ({ input }) => {
+      if (!parcelking.isParcelKingConfigured()) {
+        return { success: false, error: "Parcel King API key not configured" };
+      }
+      try {
+        const details = await parcelking.getOrderDetails(input.trackingNo);
+        return { success: true, details: details.result };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+
+    // Get live tracking timeline
+    getTracking: adminProcedure.input(z.object({
+      trackingNo: z.string(),
+    })).query(async ({ input }) => {
+      if (!parcelking.isParcelKingConfigured()) {
+        return { success: false, error: "Parcel King API key not configured" };
+      }
+      try {
+        const tracking = await parcelking.getTracking(input.trackingNo);
+        return { success: true, tracking: tracking.result };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+
+    // Cancel an order
+    cancelOrder: adminProcedure.input(z.object({
+      trackingNo: z.string(),
+    })).mutation(async ({ input }) => {
+      if (!parcelking.isParcelKingConfigured()) {
+        return { success: false, error: "Parcel King API key not configured" };
+      }
+      try {
+        const result = await parcelking.cancelOrder(input.trackingNo);
+        return { success: true, result: result.result };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+
+    // Re-download shipping label
+    downloadLabel: adminProcedure.input(z.object({
+      trackingNo: z.string(),
+    })).query(async ({ input }) => {
+      if (!parcelking.isParcelKingConfigured()) {
+        return { success: false, error: "Parcel King API key not configured" };
+      }
+      try {
+        const url = await parcelking.getShippingLabelUrl(input.trackingNo);
+        return { success: true, url };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+
+    // Re-sync tracking status from ParcelKing
+    resyncTracking: adminProcedure.input(z.object({
+      trackingNo: z.string(),
+      packageId: z.number(),
+    })).mutation(async ({ input }) => {
+      if (!parcelking.isParcelKingConfigured()) {
+        return { success: false, error: "Parcel King API key not configured" };
+      }
+      try {
+        const tracking = await parcelking.getTracking(input.trackingNo);
+        const timeline = tracking.result.timeline || [];
+        const latest = timeline[timeline.length - 1];
+
+        // Update package status based on tracking events
+        let newStatus = "shipped";
+        if (latest?.description?.toLowerCase().includes("deliver")) {
+          newStatus = "delivered";
+        }
+
+        const dbAny = db as any;
+        if (dbAny.updatePackageStatus) {
+          await dbAny.updatePackageStatus(input.packageId, newStatus);
+        }
+
+        return { success: true, timeline, latestEvent: latest, newStatus };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+
+    // Get SPX pickup slots
+    getSpxPickupSlots: adminProcedure.query(async () => {
+      if (!parcelking.isParcelKingConfigured()) {
+        return { success: false, error: "Parcel King API key not configured", slots: [] };
+      }
+      try {
+        const slots = await parcelking.getSpxPickupSlots();
+        return { success: true, slots };
+      } catch (error: any) {
+        return { success: false, error: error.message, slots: [] };
+      }
+    }),
+  }),
+
+  // ===========================================================================
   // Payment Methods (付款方式设定)
   // ===========================================================================
   paymentMethods: router({
@@ -2489,6 +2742,178 @@ export const appRouter = router({
     }),
     
     // Create ParcelDaily shipment (auto)
+    // Create ParcelKing shipment (auto tracking + label)
+    createParcelKing: shippingProcedure.input(z.object({
+      orderId: z.number(),
+      serviceId: z.number(),
+      weightKg: z.number(),
+      content: z.string().optional(),
+      contentValue: z.number().optional(),
+      handoverMethod: z.enum(["pickup", "dropoff"]).optional(),
+      pickupTime: z.number().optional(),
+      pickupTimeRangeId: z.number().optional(),
+      // For partial shipping: which item IDs go in this package
+      itemIds: z.array(z.number()).optional(),
+      isPartial: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      if (!parcelking.isParcelKingConfigured()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Parcel King API key not configured" });
+      }
+      try {
+        // Get order + customer + system settings
+        const order = await db.getOrderById(input.orderId);
+        if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "订单不存在" });
+
+        const settings = await db.getSystemSettings();
+        if (!settings || !settings.defaultShipFromAddress) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "系统设置中缺少发货地址" });
+        }
+
+        const customer = await db.getCustomerById(order.customerId);
+        if (!customer) throw new TRPCError({ code: "NOT_FOUND", message: "客户不存在" });
+
+        const senderPhone = parcelking.normalizePhone(settings.defaultShipFromPhone || settings.companyPhone || "");
+        const recipientPhone = parcelking.normalizePhone(customer.phoneNumber || "");
+
+        // Call ParcelKing API to create shipment
+        const response = await parcelking.createOrder({
+          service_id: input.serviceId,
+          sender: {
+            name: settings.defaultShipFromName || settings.companyName || "Store",
+            phone: settings.defaultShipFromPhone || settings.companyPhone || "",
+            dial_code: senderPhone.dial_code,
+            mobile: senderPhone.mobile,
+            line1: settings.defaultShipFromAddress || settings.companyAddress || "",
+            city: settings.defaultShipFromCity || "",
+            postcode: settings.defaultShipFromPostcode || "",
+            state: settings.defaultShipFromState || "",
+            country: "Malaysia",
+          },
+          recipient: {
+            name: customer.name || customer.displayName || "Customer",
+            phone: customer.phoneNumber || "",
+            dial_code: recipientPhone.dial_code,
+            mobile: recipientPhone.mobile,
+            line1: order.shippingAddress || customer.address || "",
+            city: customer.city || "",
+            postcode: customer.postalCode || "",
+            state: customer.state || "",
+            country: "Malaysia",
+          },
+          parcel: {
+            weight_kg: input.weightKg,
+            name: input.content || "Goods",
+            declared_value: input.contentValue,
+          },
+          delivery_options: input.handoverMethod ? {
+            handover_method: input.handoverMethod,
+            pickup_time: input.pickupTime,
+            pickup_time_range_id: input.pickupTimeRangeId,
+          } : undefined,
+          reference: order.orderNumber,
+        });
+
+        const trackingNo = response.result.tracking_no;
+        const labelUrl = response.result.label_url || null;
+        const shippingCost = String(response.result.final_amount || 0);
+
+        // Create package record in database
+        if (input.isPartial && input.itemIds && input.itemIds.length > 0) {
+          await db.partialShipping(input.orderId, input.itemIds, {
+            courier: `ParcelKing #${input.serviceId}`,
+            shippingType: "auto",
+            trackingNumber: trackingNo,
+            shippingLabelUrl: labelUrl || undefined,
+            providerOrderId: trackingNo,
+            weight: String(input.weightKg),
+            shippingCost,
+          });
+        } else {
+          await db.fullShipping(input.orderId, [{
+            courier: `ParcelKing #${input.serviceId}`,
+            shippingType: "auto",
+            trackingNumber: trackingNo,
+            shippingLabelUrl: labelUrl || undefined,
+            providerOrderId: trackingNo,
+            weight: String(input.weightKg),
+            shippingCost,
+          }]);
+        }
+
+        // Send Messenger notification with tracking number
+        if (customer.messengerId && settings.notifyOnShipment) {
+          try {
+            const trackingMsg = `您的订单 ${order.orderNumber} 已发货！\n追踪号码: ${trackingNo}\n物流公司: ParcelKing\n您可在此查询物流状态: https://www.myparcelking.com/tracking/${trackingNo}`;
+            await sendTextMessage(customer.messengerId, trackingMsg);
+          } catch (msgError: any) {
+            // Log but don't fail the shipment creation
+            console.error('[ParcelKing] Messenger notification failed:', msgError.message);
+          }
+        }
+
+        return {
+          success: true,
+          trackingNumber: trackingNo,
+          labelUrl,
+          shippingCost,
+          testMode: response.result.test_mode,
+        };
+      } catch (error: any) {
+        if (error instanceof ParcelKingError) {
+          throw new TRPCError({
+            code: error.statusCode >= 500 ? "INTERNAL_SERVER_ERROR" : "BAD_REQUEST",
+            message: error.message,
+          });
+        }
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+      }
+    }),
+
+    // Re-download shipping label for an existing package
+    redownloadLabel: shippingProcedure.input(z.object({
+      trackingNo: z.string(),
+    })).mutation(async ({ input }) => {
+      if (!parcelking.isParcelKingConfigured()) {
+        return { success: false, error: "Parcel King API key not configured" };
+      }
+      try {
+        const url = await parcelking.getShippingLabelUrl(input.trackingNo);
+        return { success: true, url };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+
+    // Re-sync tracking from ParcelKing
+    resyncTracking: shippingProcedure.input(z.object({
+      trackingNo: z.string(),
+      packageId: z.number(),
+    })).mutation(async ({ input }) => {
+      if (!parcelking.isParcelKingConfigured()) {
+        return { success: false, error: "Parcel King API key not configured" };
+      }
+      try {
+        const tracking = await parcelking.getTracking(input.trackingNo);
+        const timeline = tracking.result.timeline || [];
+        const latest = timeline[timeline.length - 1];
+
+        let newStatus = "shipped";
+        if (latest?.description?.toLowerCase().includes("deliver")) {
+          newStatus = "delivered";
+        }
+
+        const dbAny = db as any;
+        if (dbAny.updatePackageStatus) {
+          await dbAny.updatePackageStatus(input.packageId, newStatus);
+        }
+
+        return { success: true, timeline, latestEvent: latest, newStatus };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    }),
+
     createParcelDaily: shippingProcedure.input(z.object({
       orderId: z.number(),
       weight: z.number(),

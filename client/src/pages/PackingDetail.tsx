@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare } from "lucide-react";
+import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare, RefreshCw } from "lucide-react";
 
 const COURIERS = [
   "Parcel Daily", "Parcel King", "PosLaju", "JNT", "Ninja Van", "DHL", "Lalamove", "Shopee Xpress", "Other"
@@ -32,10 +32,51 @@ export default function PackingDetail() {
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
   const [packages, setPackages] = useState<Array<{
     courier: string;
-    shippingType: "auto" | "manual";
+    shippingType: "auto" | "manual" | "parcelking";
     trackingNumber: string;
     weight: string;
-  }>>([{ courier: "Parcel Daily", shippingType: "manual", trackingNumber: "", weight: "1" }]);
+    serviceId: string;
+  }>>([{ courier: "Parcel Daily", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
+
+  const parcelKingServicesQuery = trpc.parcelking.getServices.useQuery(undefined, {
+    enabled: !!detail,
+  });
+
+  const createParcelKingMutation = trpc.shipping.createParcelKing.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`Parcel King 运单已创建！追踪号: ${data.trackingNumber}${data.testMode ? " (Test)" : ""}`);
+      utils.packing.list.invalidate();
+      utils.packing.detail.invalidate({ orderId });
+      utils.shipping.packages.invalidate({ orderId });
+      setPackages([{ courier: "Parcel Daily", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
+      setSelectedItems([]);
+    },
+    onError: (err) => toast.error(`Parcel King 发货失败: ${err.message}`),
+  });
+
+  const redownloadLabelMutation = trpc.shipping.redownloadLabel.useMutation({
+    onSuccess: (data: any) => {
+      if (data.success && data.url) {
+        window.open(data.url, "_blank");
+        toast.success("标签已打开");
+      } else {
+        toast.error("下载标签失败: " + (data.error || "未知错误"));
+      }
+    },
+    onError: (err: any) => toast.error("下载标签失败: " + err.message),
+  });
+
+  const resyncTrackingMutation = trpc.shipping.resyncTracking.useMutation({
+    onSuccess: (data: any) => {
+      if (data.success) {
+        toast.success(`追踪已同步！最新状态: ${data.newStatus}`);
+        utils.shipping.packages.invalidate({ orderId });
+      } else {
+        toast.error("同步失败: " + (data.error || "未知错误"));
+      }
+    },
+    onError: (err) => toast.error("同步失败: " + err.message),
+  });
 
   const fullShipMutation = trpc.shipping.fullShip.useMutation({
     onSuccess: () => {
@@ -63,6 +104,28 @@ export default function PackingDetail() {
   });
 
   const handleShip = (mode: "full" | "partial") => {
+    // Check for Parcel King packages
+    const hasParcelKing = packages.some((p) => p.shippingType === "parcelking");
+    if (hasParcelKing) {
+      const pkPkg = packages.find((p) => p.shippingType === "parcelking")!;
+      if (!pkPkg.serviceId) {
+        toast.error("请选择 Parcel King 服务");
+        return;
+      }
+      if (!pkPkg.weight || parseFloat(pkPkg.weight) <= 0) {
+        toast.error("请输入包裹重量");
+        return;
+      }
+      createParcelKingMutation.mutate({
+        orderId,
+        serviceId: parseInt(pkPkg.serviceId),
+        weightKg: parseFloat(pkPkg.weight),
+        isPartial: mode === "partial",
+        itemIds: mode === "partial" ? selectedItems : undefined,
+      });
+      return;
+    }
+
     if (mode === "full") {
       if (packages.length === 0) {
         toast.error("请至少添加一个包裹");
@@ -77,7 +140,7 @@ export default function PackingDetail() {
         orderId,
         packages: packages.map((p) => ({
           courier: p.courier,
-          shippingType: p.shippingType,
+          shippingType: p.shippingType as "auto" | "manual",
           trackingNumber: p.trackingNumber || undefined,
           weight: p.weight || undefined,
         })),
@@ -101,7 +164,7 @@ export default function PackingDetail() {
         itemIds: selectedItems,
         packageData: {
           courier: pkg.courier,
-          shippingType: pkg.shippingType,
+          shippingType: pkg.shippingType as "auto" | "manual",
           trackingNumber: pkg.trackingNumber || undefined,
           weight: pkg.weight || undefined,
         },
@@ -116,7 +179,7 @@ export default function PackingDetail() {
   };
 
   const addPackage = () => {
-    setPackages((prev) => [...prev, { courier: "Parcel Daily", shippingType: "manual", trackingNumber: "", weight: "1" }]);
+    setPackages((prev) => [...prev, { courier: "Parcel Daily", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
   };
 
   const removePackage = (index: number) => {
@@ -226,9 +289,33 @@ export default function PackingDetail() {
                   <div>
                     <div className="font-medium text-sm">包裹 {pkg.packageNumber} - {pkg.courier}</div>
                     <div className="text-xs text-muted-foreground">Tracking: {pkg.trackingNumber || "未填写"}</div>
+                    {pkg.weight && <div className="text-xs text-muted-foreground">重量: {pkg.weight} kg</div>}
                   </div>
                 </div>
-                <Badge variant={pkg.status === "shipped" ? "default" : "secondary"}>{pkg.status}</Badge>
+                <div className="flex items-center gap-2">
+                  {/* Download label button for Parcel King packages */}
+                  {pkg.providerOrderId && pkg.trackingNumber && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => redownloadLabelMutation.mutate({ trackingNo: pkg.trackingNumber })}
+                        disabled={redownloadLabelMutation.isPending}
+                      >
+                        <Package className="h-3 w-3 mr-1" />下载标签
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => resyncTrackingMutation.mutate({ trackingNo: pkg.trackingNumber, packageId: pkg.id })}
+                        disabled={resyncTrackingMutation.isPending}
+                      >
+                        <RefreshCw className="h-3 w-3 mr-1" />同步追踪
+                      </Button>
+                    </>
+                  )}
+                  <Badge variant={pkg.status === "shipped" ? "default" : "secondary"}>{pkg.status}</Badge>
+                </div>
               </div>
             ))}
           </CardContent>
@@ -342,27 +429,62 @@ export default function PackingDetail() {
                       <SelectContent>
                         <SelectItem value="manual">手动填写 Tracking</SelectItem>
                         <SelectItem value="auto">自动获取 (ParcelDaily)</SelectItem>
+                        <SelectItem value="parcelking">Parcel King 自动发货</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <Label className="text-xs">Tracking Number</Label>
-                    <Input
-                      value={pkg.trackingNumber}
-                      onChange={(e) => updatePackage(index, "trackingNumber", e.target.value)}
-                      placeholder="输入追踪号"
-                      disabled={pkg.shippingType === "auto"}
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">重量 (kg)</Label>
-                    <Input
-                      value={pkg.weight}
-                      onChange={(e) => updatePackage(index, "weight", e.target.value)}
-                      placeholder="1"
-                      type="number"
-                    />
-                  </div>
+                  {pkg.shippingType === "parcelking" ? (
+                    <div className="col-span-2 space-y-3">
+                      <div>
+                        <Label className="text-xs">Parcel King 服务</Label>
+                        <Select value={pkg.serviceId} onValueChange={(v) => updatePackage(index, "serviceId", v)}>
+                          <SelectTrigger><SelectValue placeholder="选择服务" /></SelectTrigger>
+                          <SelectContent>
+                            {(parcelKingServicesQuery.data as any)?.success && (parcelKingServicesQuery.data as any).services?.map((svc: any) => (
+                              <SelectItem key={svc.service_id} value={String(svc.service_id)}>
+                                {svc.service_name} {svc.estimated_days ? `(~${svc.estimated_days})` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">重量 (kg)</Label>
+                          <Input
+                            value={pkg.weight}
+                            onChange={(e) => updatePackage(index, "weight", e.target.value)}
+                            placeholder="1"
+                            type="number"
+                          />
+                        </div>
+                        <div className="flex items-end">
+                          <p className="text-xs text-muted-foreground">追踪号将在提交后自动获取</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <Label className="text-xs">Tracking Number</Label>
+                        <Input
+                          value={pkg.trackingNumber}
+                          onChange={(e) => updatePackage(index, "trackingNumber", e.target.value)}
+                          placeholder="输入追踪号"
+                          disabled={pkg.shippingType === "auto"}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">重量 (kg)</Label>
+                        <Input
+                          value={pkg.weight}
+                          onChange={(e) => updatePackage(index, "weight", e.target.value)}
+                          placeholder="1"
+                          type="number"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -373,7 +495,7 @@ export default function PackingDetail() {
 
           <Button
             onClick={() => handleShip(activeShippingMode)}
-            disabled={fullShipMutation.isPending || partialShipMutation.isPending || (activeShippingMode === "partial" && shippableItems.length === 0)}
+            disabled={fullShipMutation.isPending || partialShipMutation.isPending || createParcelKingMutation.isPending || (activeShippingMode === "partial" && shippableItems.length === 0)}
             className="w-full"
           >
             <Ship className="h-4 w-4 mr-2" />
