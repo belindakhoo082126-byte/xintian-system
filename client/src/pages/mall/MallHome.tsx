@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Search, ShoppingCart, Phone, MessageCircle, MapPin, ChevronRight, Home as HomeIcon, Package } from "lucide-react";
+import { MallLangToggle } from "@/components/MallLangToggle";
 
 export default function MallHome() {
   const [search, setSearch] = useState("");
@@ -61,6 +62,7 @@ export default function MallHome() {
           <Link href="/mall/order-query">
             <Button variant="ghost" size="sm">订单查询</Button>
           </Link>
+          <MallLangToggle />
         </div>
         {/* Category bar */}
         {categories && categories.length > 0 && (
