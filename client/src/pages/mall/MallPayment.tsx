@@ -18,6 +18,7 @@ const TYPE_ICONS: Record<string, any> = {
 export default function MallPayment() {
   const [location] = useLocation();
   const orderNumber = location.split("/").pop() || "";
+  const contactNumber = new URLSearchParams(window.location.search).get("phone") || "";
   const [selectedMethod, setSelectedMethod] = useState<any>(null);
   const [qrZoomOpen, setQrZoomOpen] = useState(false);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -39,7 +40,7 @@ export default function MallPayment() {
 
   const { data: order, isLoading } = trpc.mall.queryOrder.useQuery({
     orderNumber,
-    contactNumber: new URLSearchParams(location.split("?")[1] || "").get("phone") || "",
+    contactNumber,
   });
   const { data: paymentMethods } = trpc.paymentMethods.listEnabled.useQuery();
 
@@ -60,8 +61,14 @@ export default function MallPayment() {
   const totalAmount = Number(order.totalAmount);
   const paidAmount = Number(order.paidAmount || 0);
   const remaining = totalAmount - paidAmount;
+  const receiptAlreadyUploaded = order.physicalStatus === "receipt_uploaded";
+  const canUploadReceipt = ["pending", "partial_payment"].includes(order.physicalStatus ?? "");
 
   async function handleUploadReceipt() {
+    if (!selectedMethod) {
+      toast.error("请选择付款方式");
+      return;
+    }
     if (!receiptFile) {
       toast.error("请选择付款凭证图片");
       return;
@@ -80,7 +87,9 @@ export default function MallPayment() {
             const data = await res.json();
             uploadReceiptMutation.mutate({
               orderNumber,
+              contactNumber,
               receiptUrl: data.url,
+              paymentMethodId: selectedMethod.id,
             });
           } else {
             toast.error("文件上传失败");
@@ -141,7 +150,7 @@ export default function MallPayment() {
           </CardContent>
         </Card>
 
-        {uploaded && (
+        {(uploaded || receiptAlreadyUploaded) && (
           <Card className="border-green-500 bg-green-50">
             <CardContent className="p-4 flex items-center gap-3">
               <CheckCircle className="h-6 w-6 text-green-600" />
@@ -255,7 +264,7 @@ export default function MallPayment() {
               )}
 
               {/* Upload Payment Proof */}
-              {!uploaded && (
+              {canUploadReceipt && !uploaded && (
                 <div className="space-y-3 pt-4 border-t">
                   <h3 className="font-medium">上传付款凭证</h3>
                   <p className="text-sm text-muted-foreground">请在付款后截图或保留收据，并上传以便商家核对。</p>

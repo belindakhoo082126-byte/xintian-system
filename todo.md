@@ -367,3 +367,58 @@
 - [x] DashboardLayout 右上角添加主题切换器
 - [x] CustomerOrderTracking 适配主题
 - [x] TypeScript 零错误 + 测试通过 + checkpoint
+
+## V1.3 System Acceptance Testing (SAT)
+
+- [x] ERP Dashboard - all buttons, links, pages（真实前端回归通过）
+- [x] Product Management - CRUD, images, categories, stock, variants, keywords, status（真实前端回归通过）
+- [x] Order Management - create, edit, delete, payment review, merge, hold, shipping（真实前端回归通过）
+- [x] Customer Management - CRUD, search, history, notes（真实前端回归通过）
+- [x] Packing System - role isolation, packing flow, A5 slip（真实前端回归通过）
+- [x] Mall - browse, cart, checkout, payment upload, order creation（真实前端回归通过）
+- [x] Customer Order Tracking - search, status, tracking, packages（真实前端回归通过）
+- [x] Facebook Live keyword capture - parsing, orders, replies, duplicates（安全与幂等回归通过）
+- [x] Role Permissions - Admin vs Shipping Staff（真实前端与接口回归通过）
+- [x] Full flow simulation: product → mall order → payment → review → pack → ship → track（端到端真实前端回归通过）
+- [x] Compile acceptance report（SAT_TEST_LOG.md 已完成）
+- [x] 修复商城公开路由重复前缀与商品详情页无法进入的问题（SAT 发现）
+- [x] 修复 MySQL Drizzle 插入结果取值错误，确保商城、ERP、直播建单与包裹创建获得正确 ID（SAT 发现）
+- [x] 修复付款页面将查询参数误纳入订单号、导致新建订单显示不存在的问题（SAT 发现）
+- [x] 创建并使用仅开发环境的临时 QA 登录会话，完成 Admin 与 Shipping Staff 前端验收；完成后移除（SAT 前提）
+- [x] 使用提供的测试管理员凭据验证后台登录入口；若入口不支持账号密码，改用仅开发环境 QA 会话（SAT 前提）
+- [x] 修复后台订单详情未提供已上传付款凭证的预览与审核通过／驳回操作，导致商城付款无法进入包货流程（SAT 发现）
+- [x] 限制订单创建及付款审核等敏感后台接口仅限 Admin，防止 Shipping Staff 通过前端外接口越权（SAT 发现）
+- [x] 修复客户订单查询页未显示已发货 Tracking／包裹信息，确保客户可查看单包裹与多包裹物流（SAT 发现）
+- [x] 修复新增／编辑商品价格模拟器未按售价与成本计算利润、错误显示亏损的问题（SAT 发现）
+- [x] 修复商品编辑向导中名称、库存等输入变更未同步到预览／保存数据的问题（SAT 发现）
+- [x] 修复 Dashboard「库存不足／缺货商品」快捷入口跳转至无效 /products-v2 路由的问题（SAT 发现）
+- [x] 核验并清理开发 QA 会话中 ONE_HOUR_MS 导入错误，确保开发服务器控制台无残留错误（SAT 环境）
+- [x] 补齐客户管理前端的客户建立／编辑、历史订单与客户备注操作入口，当前详情仅只读无法完成验收流程（SAT 发现）
+- [x] 修复客户管理新增客户提交后无成功反馈且客户未出现在列表的问题（SAT 发现）
+- [x] 修复后台手动建单中商品选择后仍显示“请选择”、单价为 0 而无法创建订单的问题（SAT 发现）
+- [x] 补齐订单管理前端的订单修改、保留订单与合并订单入口；当前订单详情仅有收款与取消，无法完成所需验收流程（SAT 发现；保留订单与合并已通过真实前端回归）
+- [x] 修复 /orders/:id 完整订单详情对已存在订单显示“订单不存在”的查询参数／接口不匹配问题（SAT 发现）
+- [x] 修复 App 动态路由 component 回调未从 props.params 读取参数的问题，避免订单、付款与商品预览页面传入 NaN／空参数（SAT 发现）
+- [x] 修复创建保留订单后仍停留“确认汇款”而非“保留订单”，导致“释放保留 → 待包货”按钮永不出现的问题（SAT 发现；真实前端回归通过）
+- [x] 修复商城结账前端未发现／展示可自动合并的保留订单，也未传递 `mergeIntoOrderId`，导致既有保留订单自动合并能力无法通过真实前端使用（SAT-015；真实商城结账回归通过）
+- [x] 修复商城结账“查找可合并的保留订单”返回 MySQL 原始 `[rows, fields]` 包装，导致前端显示空订单号／金额且不能传递真实订单 ID 的问题（SAT-015；真实商城结账回归通过）
+- [x] 修复商城合并保留订单后直接改写订单状态、未生成 `保留订单 → 付款审核中` 审计记录且未关闭已消耗保留记录的问题（SAT-016；真实商城结账回归通过）
+- [x] 修复商城公开结账可提交任意 `mergeIntoOrderId`、未校验目标属于当前电话客户且为活动保留订单的越权合并风险（SAT-017；跨客户请求已被拒绝）
+- [x] 修复商城公开合并接口在目标不合法时抛出通用异常并返回 500／开发堆栈的问题，改为明确的业务拒绝错误（SAT-017；现返回 HTTP 400 业务错误）
+- [x] 修复全局 tRPC 错误格式化缺失，避免公开接口在开发预览中返回服务器堆栈和源码路径（SAT-018；浏览器响应已验证不含 stack／服务器路径）
+- [x] 清理 `membership.test.ts` 中重复的 `getCustomerById` mock 键，消除 Vitest/Vite 编译警告（测试质量；完整测试通过）
+- [x] 修复包货详情在订单已发货后仍显示发货操作，且 `fullShipping`／`partialShipping` 后端未校验可发货状态、可能重复创建包裹的问题（SAT-019；前端与直接接口回归通过）
+- [x] 修复部分发货未验证所选 `itemIds` 属于目标订单、且未排除已装入包裹商品的跨订单／重复包裹数据完整性风险（SAT-019；路由回归通过）
+- [x] 修复部分发货成功后前端仍展示并允许勾选已发商品，改为仅显示待发商品以与后端重复包裹保护一致（SAT-019；真实前端双包裹回归通过）
+- [x] 修复订单已部分发货时仍可切换“完整发货”，导致剩余商品未关联到新包裹却直接完成订单的包裹明细完整性问题（SAT-019；真实前端回归通过）
+- [x] 修复 Shipping Staff 会话仍显示商品、订单、报表、设置等全部后台导航，改为仅展示包货工作台与订单查询等获授权页面（SAT-020；真实前端导航与深链回归通过）
+- [x] 修复所有后台管理接口仅校验登录而不校验管理员角色，导致 Shipping Staff 可直接调用商品、订单、客户、报表与设置接口的系统性越权风险；仅包货白名单允许非管理员访问（SAT-020；接口与单元回归通过）
+- [x] 修复 Facebook Webhook POST 端点未校验 `X-Hub-Signature-256`，导致任意请求可伪造 Messenger／评论事件的严重安全缺陷（SAT-021；接口拒绝与单元回归通过）
+- [x] 修复 Facebook 直播捉单未按 `commentId` 去重，Webhook 重试／重复投递可能为同一留言重复建单和重复回复的问题（SAT-021；数据库唯一约束与代码幂等检查已就位）
+- [x] 修复商城付款页选择 Public Bank Transfer 后未同步更新订单的付款方式，导致订单仍显示 Cash 而付款凭证实际对应银行转账的问题（SAT-022；数据库验证 paymentMethodId=3, paymentMethodName='Public Bank Transfer'）
+- [x] 修复公开 `mall.uploadReceipt` 仅校验订单号、未验证联系电话或客户归属即可覆盖任意订单付款凭证并改写状态的越权风险（SAT-022；接口拒绝与单元回归通过）
+- [x] 限制公开付款凭证接口仅接受项目存储路径，避免攻击者写入任意外链或 `javascript:` URL 并在后台付款凭证链接中触发风险（SAT-022；接口拒绝与单元回归通过）
+- [x] 修复商城付款凭证上传直接更新订单状态而未生成 `pending → receipt_uploaded` 状态审计记录的问题（SAT-022；数据库验证 order_status_logs 已写入）
+- [x] 修复付款凭证已上传后前端仍显示上传控件且公开接口允许在 `receipt_uploaded` 状态重复覆盖凭证的问题，防止已提交证据被篡改（SAT-022；前端隐藏控件与接口拒绝回归通过）
+- [x] 修复付款凭证非法路径校验将 Zod 原始 JSON 错误直接返回顾客的问题，改为统一且可理解的业务拒绝提示（SAT-022；接口回归验证友好错误）
+- [x] 排查并修复商城公开首页在已有上架商品时仍显示“0 件商品”的不稳定回归问题，确保顾客可持续浏览与下单（SAT-023；已添加加载骨架屏避免初始空状态闪烁）

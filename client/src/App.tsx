@@ -43,8 +43,8 @@ import CustomerOrderTracking from "@/pages/CustomerOrderTracking";
 function PublicRoutes() {
   return (
     <Switch>
-      <Route path={"/m/:token"} component={(params: any) => <MemberLinkPreview token={params.token} />} />
-      <Route path={"/product/:id"} component={(params: any) => <ProductPreview productId={parseInt(params.id)} />} />
+      <Route path={"/m/:token"} component={({ params }: any) => <MemberLinkPreview token={params.token} />} />
+      <Route path={"/product/:id"} component={({ params }: any) => <ProductPreview productId={parseInt(params.id)} />} />
       {/* Mall public routes */}
       <Route path={"/mall"} component={MallHome} />
       <Route path={"/mall/product/:id"} component={(params: any) => <MallProductDetail />} />
@@ -84,8 +84,8 @@ function DashboardRoutes() {
       <Route path={"/mall-settings"} component={MallSettings} />
       <Route path={"/packing"} component={Packing} />
       <Route path={"/packing/:id"} component={PackingDetail} />
-      <Route path={"/orders/:id"} component={(params: any) => <OrderDetail orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
-      <Route path={"/pay/:id"} component={(params: any) => <CustomerPayment orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
+      <Route path={"/orders/:id"} component={({ params }: any) => <OrderDetail orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
+      <Route path={"/pay/:id"} component={({ params }: any) => <CustomerPayment orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -100,15 +100,15 @@ function App() {
           <Toaster />
           {/* Public routes bypass DashboardLayout (no auth gate) */}
           <Switch>
-            <Route path={"/m/:token"} nest component={(params: any) => <MemberLinkPreview token={params.token} />} />
-            <Route path={"/product/:id"} nest component={(params: any) => <ProductPreview productId={parseInt(params.id)} />} />
-            <Route path={"/mall"} nest component={MallHome} />
-            <Route path={"/mall/product/:id"} nest component={MallProductDetail} />
-            <Route path={"/mall/cart"} nest component={MallCart} />
-            <Route path={"/mall/checkout"} nest component={MallCheckout} />
-            <Route path={"/mall/order-query"} nest component={MallOrderQuery} />
-            <Route path={"/mall/payment/:orderNumber"} nest component={MallPayment} />
-            <Route path={"/order-tracking"} nest component={CustomerOrderTracking} />
+            <Route path={"/m/:token"} component={({ params }: any) => <MemberLinkPreview token={params.token} />} />
+            <Route path={"/product/:id"} component={({ params }: any) => <ProductPreview productId={parseInt(params.id)} />} />
+            <Route path={"/mall/payment/:orderNumber"} component={MallPayment} />
+            <Route path={"/mall/order-query"} component={MallOrderQuery} />
+            <Route path={"/mall/checkout"} component={MallCheckout} />
+            <Route path={"/mall/cart"} component={MallCart} />
+            <Route path={"/mall/product/:id"} component={MallProductDetail} />
+            <Route path={"/mall"} component={MallHome} />
+            <Route path={"/order-tracking"} component={CustomerOrderTracking} />
             <Route>
               <DashboardLayout>
                 <DashboardRoutes />

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ChevronLeft, Search, Package, Truck, CheckCircle, Clock, XCircle } from "lucide-react";
+import { ChevronLeft, Search, Package, Truck, CheckCircle, Clock, XCircle, ExternalLink } from "lucide-react";
 
 const STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = {
   pending: { label: "挂单", color: "bg-yellow-100 text-yellow-800", icon: Clock },
@@ -26,8 +26,8 @@ export default function MallOrderQuery() {
   const [contactNumber, setContactNumber] = useState("");
   const [searched, setSearched] = useState(false);
 
-  const { data: order, isFetching } = trpc.mall.queryOrder.useQuery(
-    { orderNumber, contactNumber },
+  const { data: order, isFetching } = trpc.orderTracking.query.useQuery(
+    { orderNumber, contactNumber: contactNumber || undefined },
     { enabled: searched && !!orderNumber && !!contactNumber }
   );
 
@@ -84,9 +84,6 @@ export default function MallOrderQuery() {
                 <div><span className="text-muted-foreground">下单时间:</span> {new Date(order.createdAt).toLocaleString("zh-CN")}</div>
                 <div><span className="text-muted-foreground">总金额:</span> <span className="font-semibold text-[#2d6a4f]">RM {order.totalAmount}</span></div>
                 <div><span className="text-muted-foreground">已付:</span> RM {order.paidAmount || "0.00"}</div>
-                {order.trackingNumber && (
-                  <div><span className="text-muted-foreground">追踪号:</span> {order.trackingNumber}</div>
-                )}
                 <div><span className="text-muted-foreground">配送:</span> {order.shippingMethod}</div>
               </div>
 
@@ -112,6 +109,33 @@ export default function MallOrderQuery() {
                   ))}
                 </TableBody>
               </Table>
+
+              {order.packages && order.packages.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 font-medium text-sm">
+                    <Truck className="h-4 w-4 text-primary" />物流信息
+                  </div>
+                  {order.packages.map((pkg: any) => (
+                    <div key={pkg.id} className="rounded-lg border bg-muted/25 p-3 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-medium">包裹 {pkg.packageNumber} · {pkg.courier}</span>
+                        <Badge variant={pkg.status === "shipped" ? "default" : "secondary"}>{pkg.status === "shipped" ? "已发货" : pkg.status}</Badge>
+                      </div>
+                      {pkg.trackingNumber && (
+                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-mono text-xs text-muted-foreground">Tracking: {pkg.trackingNumber}</span>
+                          <a href={`https://www.trackingmore.com/track/${pkg.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                            查询物流 <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      )}
+                      {pkg.items?.length > 0 && (
+                        <p className="mt-2 text-xs text-muted-foreground">包含：{pkg.items.map((item: any) => `${item.productName} ×${item.quantity}`).join("、")}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {order.physicalStatus === "pending" && (
                 <Link href={`/mall/payment/${order.orderNumber}?phone=${encodeURIComponent(contactNumber)}`}>

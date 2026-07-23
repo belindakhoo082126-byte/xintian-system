@@ -47,8 +47,8 @@ export default function Dashboard() {
   ];
 
   const row3 = [
-    { title: "库存不足", value: stats.row3.lowStock, icon: Warehouse, color: "text-orange-500", link: "/products-v2" },
-    { title: "缺货商品", value: stats.row3.outOfStock, icon: XCircle, color: "text-red-500", link: "/products-v2" },
+    { title: "库存不足", value: stats.row3.lowStock, icon: Warehouse, color: "text-orange-500", link: "/products" },
+    { title: "缺货商品", value: stats.row3.outOfStock, icon: XCircle, color: "text-red-500", link: "/products" },
   ];
 
   const row4 = [

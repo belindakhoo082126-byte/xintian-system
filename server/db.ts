@@ -36,6 +36,15 @@ export async function getDb() {
   return _db;
 }
 
+/**
+ * Normalizes mysql2/Drizzle raw execute results. mysql2 returns `[rows, fields]`,
+ * while some callers may already provide a plain row array.
+ */
+export function unwrapMySqlRows<T = Record<string, unknown>>(result: unknown): T[] {
+  if (!Array.isArray(result)) return [];
+  return Array.isArray(result[0]) ? (result[0] as T[]) : (result as T[]);
+}
+
 // ============================================================================
 // User helpers (existing)
 // ============================================================================
@@ -181,6 +190,7 @@ export async function findOrCreateCustomer(data: {
   name?: string;
   phoneNumber?: string;
   email?: string;
+  address?: string;
   shopLinkIdentifier?: string;
 }) {
   const db = await getDb();
@@ -213,18 +223,23 @@ export async function findOrCreateCustomer(data: {
     }
   }
 
-  // Create new
+  // Create new. The deployed customers table requires a durable customerId.
+  const customerId = `C${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
   const result = await db.insert(customers).values({
+    customerId,
+    displayName: data.name || data.facebookName || customerId,
+    customerSource: "admin",
     facebookId: data.facebookId || null,
     facebookName: data.facebookName || null,
     messengerId: data.messengerId || null,
     name: data.name || null,
     phoneNumber: data.phoneNumber || null,
     email: data.email || null,
+    address: data.address || null,
     shopLinkIdentifier: data.shopLinkIdentifier || null,
   });
   const inserted = await db.select().from(customers)
-    .where(eq(customers.id, (result as any).insertId)).limit(1);
+    .where(eq(customers.id, (result as any)[0].insertId)).limit(1);
   return inserted[0];
 }
 
@@ -232,6 +247,26 @@ export async function updateCustomer(id: number, data: Partial<typeof customers.
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(customers).set(data).where(eq(customers.id, id));
+}
+
+export async function getCustomerOrders(customerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const result = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    orderType: orders.orderType,
+    totalAmount: orders.totalAmount,
+    paidAmount: orders.paidAmount,
+    physicalStatus: orders.physicalStatus,
+    membershipStatus: orders.membershipStatus,
+    shippingMethod: orders.shippingMethod,
+    trackingNumber: orders.trackingNumber,
+    createdAt: orders.createdAt,
+  }).from(orders)
+    .where(eq(orders.customerId, customerId))
+    .orderBy(desc(orders.createdAt));
+  return result;
 }
 
 export async function findPotentialDuplicateCustomers(customerId: number) {
@@ -397,7 +432,7 @@ export async function createOrderWithSplit(data: {
     paymentMethodName: (data.paymentMethodName as any) || null,
   });
 
-  const orderId = (orderResult as any).insertId;
+  const orderId = (orderResult as any)[0].insertId;
 
   // Insert order items
   for (const item of data.items) {
@@ -839,7 +874,7 @@ export async function createPurchaseOrder(data: {
     orderedAt: new Date(),
   });
 
-  const poId = (poResult as any).insertId;
+  const poId = (poResult as any)[0].insertId;
 
   for (const item of data.items) {
     await db.insert(purchaseOrderItems).values({
@@ -2492,15 +2527,15 @@ export async function getActiveHoldOrdersByCustomer(customerId: number) {
   const db = await getDb();
   if (!db) return [];
   // Join with orders to filter by customerId
-  const rows = await db.execute(sql`
+  const rows = unwrapMySqlRows<any>(await db.execute(sql`
     SELECT h.*, o.orderNumber, o.customerId, o.totalAmount, o.paidAmount
     FROM hold_order_infos h
     LEFT JOIN orders o ON h.orderId = o.id
     WHERE o.customerId = ${customerId} AND h.isActive = 1
     AND o.physicalStatus = 'hold_order'
     ORDER BY h.holdCreatedAt DESC
-  `);
-  return rows as any[];
+  `));
+  return rows;
 }
 
 export async function createHoldOrderInfo(data: any) {
@@ -2598,7 +2633,7 @@ export async function transitionOrderStatus(orderId: number, toStatus: string, c
 export async function findMergeableHoldOrder(customerId: number) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.execute(sql`
+  const rows = unwrapMySqlRows<any>(await db.execute(sql`
     SELECT h.*, o.orderNumber, o.totalAmount, o.paidAmount, o.physicalSubtotal, o.shippingFee, o.discountAmount
     FROM hold_order_infos h
     LEFT JOIN orders o ON h.orderId = o.id
@@ -2608,8 +2643,27 @@ export async function findMergeableHoldOrder(customerId: number) {
     AND o.physicalStatus = 'hold_order'
     ORDER BY h.holdCreatedAt DESC
     LIMIT 1
-  `);
-  return (rows as any[])[0] ?? null;
+  `));
+  return rows[0] ?? null;
+}
+
+export async function getMergeableHoldOrderById(customerId: number, orderId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = unwrapMySqlRows<any>(await db.execute(sql`
+    SELECT h.*, o.orderNumber, o.customerId, o.totalAmount, o.paidAmount
+    FROM hold_order_infos h
+    INNER JOIN orders o ON h.orderId = o.id
+    WHERE h.orderId = ${orderId}
+      AND o.customerId = ${customerId}
+      AND h.isActive = 1
+      AND h.allowAutoMerge = 1
+      AND o.physicalStatus = 'hold_order'
+    LIMIT 1
+  `));
+
+  return rows[0] ?? null;
 }
 
 export async function mergeOrderItemsIntoOrder(targetOrderId: number, items: any[]) {
@@ -2997,8 +3051,13 @@ export async function mallCheckout(data: {
 
   const totalAmount = subtotal + shippingFee;
 
-  // If merging into existing hold order
+  // If merging into an existing hold order, only allow the current customer's active, mergeable hold.
   if (data.mergeIntoOrderId) {
+    const mergeTarget = await getMergeableHoldOrderById(customer.id, data.mergeIntoOrderId);
+    if (!mergeTarget) {
+      throw new Error("Selected hold order is no longer available for this customer");
+    }
+
     // Add items to existing order
     for (const item of data.items) {
       await db.insert(orderItems).values({
@@ -3035,8 +3094,16 @@ export async function mallCheckout(data: {
       shippingFee: newShippingFee.toFixed(2),
       totalAmount: newTotal.toFixed(2),
       totalWeight: newWeight.toFixed(2),
-      physicalStatus: paidAmount > 0 && paidAmount < newTotal ? "partial_payment" : "receipt_uploaded",
     }).where(eq(orders.id, data.mergeIntoOrderId));
+
+    const nextStatus = paidAmount > 0 && paidAmount < newTotal ? "partial_payment" : "receipt_uploaded";
+    await transitionOrderStatus(
+      data.mergeIntoOrderId,
+      nextStatus,
+      "Mall checkout",
+      "Hold order merged; awaiting payment review",
+    );
+    await releaseHoldOrder(data.mergeIntoOrderId, "Mall checkout");
 
     return { orderId: data.mergeIntoOrderId, orderNumber: existingOrder?.orderNumber, merged: true, totalAmount: newTotal.toFixed(2) };
   }
@@ -3060,7 +3127,7 @@ export async function mallCheckout(data: {
     paymentMethodName: (data.paymentMethodName as any) || null,
   });
 
-  const orderId = (orderResult as any).insertId;
+  const orderId = (orderResult as any)[0].insertId;
 
   for (const item of data.items) {
     await db.insert(orderItems).values({
@@ -3408,7 +3475,7 @@ export async function createPackage(data: {
     shippedAt: new Date(),
   });
   
-  const packageId = (result as any).insertId;
+  const packageId = (result as any)[0].insertId;
   
   // If item IDs provided (partial shipping), link them
   if (data.itemIds && data.itemIds.length > 0) {
@@ -3440,12 +3507,31 @@ export async function fullShipping(orderId: number, packageList: Array<{
 }>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  const orderRows = await db.select({
+    id: orders.id,
+    physicalStatus: orders.physicalStatus,
+  }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  const order = orderRows[0];
+  if (!order) throw new Error("PACKING_ORDER_NOT_FOUND");
+  if (order.physicalStatus !== "packing") {
+    throw new Error("PACKING_ORDER_NOT_READY_FOR_FULL_SHIPMENT");
+  }
+  if (packageList.length === 0) throw new Error("PACKING_PACKAGE_REQUIRED");
   
-  // Create all packages
-  for (const pkg of packageList) {
+  // Get all order items for linking to packages
+  const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const allItemIds = allItems.map((item) => item.id);
+  
+  // Create all packages and link all items to the first (or only) package
+  for (let i = 0; i < packageList.length; i++) {
+    const pkg = packageList[i];
+    // Link all items to the first package; subsequent packages get no items (multi-box scenario)
+    const itemIds = i === 0 ? allItemIds : undefined;
     await createPackage({
       orderId,
       ...pkg,
+      itemIds,
     });
   }
   
@@ -3470,6 +3556,35 @@ export async function partialShipping(orderId: number, itemIds: number[], packag
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  const orderRows = await db.select({
+    id: orders.id,
+    physicalStatus: orders.physicalStatus,
+  }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  const order = orderRows[0];
+  if (!order) throw new Error("PACKING_ORDER_NOT_FOUND");
+  if (order.physicalStatus !== "packing" && order.physicalStatus !== "partial_shipped") {
+    throw new Error("PACKING_ORDER_NOT_READY_FOR_PARTIAL_SHIPMENT");
+  }
+  if (itemIds.length === 0) throw new Error("PACKING_ITEM_REQUIRED");
+
+  const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const orderItemIds = new Set(allItems.map((item) => item.id));
+  if (itemIds.some((itemId) => !orderItemIds.has(itemId))) {
+    throw new Error("PACKING_ITEM_NOT_IN_ORDER");
+  }
+
+  const existingPackages = await db.select().from(packages).where(eq(packages.orderId, orderId));
+  const alreadyPackedItemIds = new Set<number>();
+  for (const pkg of existingPackages) {
+    const pkgItems = await db.select().from(packageItems).where(eq(packageItems.packageId, pkg.id));
+    for (const pi of pkgItems) {
+      alreadyPackedItemIds.add(pi.orderItemId);
+    }
+  }
+  if (itemIds.some((itemId) => alreadyPackedItemIds.has(itemId))) {
+    throw new Error("PACKING_ITEM_ALREADY_SHIPPED");
+  }
   
   // Create package with selected items
   await createPackage({
@@ -3479,7 +3594,6 @@ export async function partialShipping(orderId: number, itemIds: number[], packag
   });
   
   // Check if all items are now shipped
-  const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
   const allPackages = await db.select().from(packages).where(eq(packages.orderId, orderId));
   
   // Get all shipped item IDs
@@ -3709,6 +3823,27 @@ export async function createOrderFromLiveCapture(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // Idempotency guard: Facebook may retry webhook delivery. If we already
+  // processed this comment, return the existing order instead of creating a
+  // duplicate.
+  if (data.commentId) {
+    const existing = await db.select({ orderId: liveOrderCaptures.orderId })
+      .from(liveOrderCaptures)
+      .where(eq(liveOrderCaptures.commentId, data.commentId))
+      .limit(1);
+    if (existing.length > 0 && existing[0].orderId) {
+      const existingOrder = await db.select().from(orders).where(eq(orders.id, existing[0].orderId)).limit(1);
+      if (existingOrder.length > 0) {
+        return {
+          orderNumber: existingOrder[0].orderNumber,
+          totalAmount: existingOrder[0].totalAmount,
+          orderId: existingOrder[0].id,
+          duplicate: true,
+        };
+      }
+    }
+  }
   
   // Find or create customer
   const customer = await findOrCreateCustomer({
@@ -3742,7 +3877,7 @@ export async function createOrderFromLiveCapture(data: {
     commentDate: new Date(),
   });
   
-  const orderId = (orderResult as any).insertId;
+  const orderId = (orderResult as any)[0].insertId;
   
   // Create order items
   for (const p of data.matchedProducts) {

@@ -14,10 +14,12 @@ import { Search, Eye, Truck, Plus, Trash2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 
 const PHYSICAL_STATUS = {
-  pending: { label: "挂单", variant: "outline" },
-  receipt_uploaded: { label: "已上传单据", variant: "secondary" },
-  payment_confirmed: { label: "已确认汇款", variant: "default" },
-  packing: { label: "配货中", variant: "default" },
+  pending: { label: "待付款", variant: "outline" },
+  receipt_uploaded: { label: "待审核付款凭证", variant: "secondary" },
+  partial_payment: { label: "部分付款", variant: "secondary" },
+  hold_order: { label: "保留订单", variant: "outline" },
+  packing: { label: "待包货", variant: "default" },
+  partial_shipped: { label: "部分发货", variant: "secondary" },
   shipped: { label: "已发货", variant: "default" },
   completed: { label: "已完成", variant: "default" },
   cancelled: { label: "已取消", variant: "destructive" },
@@ -95,39 +97,48 @@ export default function Orders() {
   });
 
   function addManualItem() {
-    setManualItems([...manualItems, { productId: undefined, productName: "", productType: "physical", quantity: 1, unitPrice: "0", subtotal: "0" }]);
+    setManualItems((currentItems) => [
+      ...currentItems,
+      { productId: undefined, productName: "", productType: "physical", quantity: 1, unitPrice: "0", subtotal: "0" },
+    ]);
   }
 
   function removeManualItem(idx: number) {
-    setManualItems(manualItems.filter((_, i) => i !== idx));
+    setManualItems((currentItems) => currentItems.filter((_, i) => i !== idx));
   }
 
   function updateManualItem(idx: number, field: keyof ManualOrderItem, value: any) {
-    const newItems = [...manualItems];
-    newItems[idx] = { ...newItems[idx], [field]: value };
-    if (field === "quantity" || field === "unitPrice") {
-      const qty = parseFloat(String(newItems[idx].quantity)) || 0;
-      const price = parseFloat(String(newItems[idx].unitPrice)) || 0;
-      newItems[idx].subtotal = (qty * price).toFixed(2);
-    }
-    setManualItems(newItems);
+    setManualItems((currentItems) => currentItems.map((item, i) => {
+      if (i !== idx) return item;
+      const updatedItem = { ...item, [field]: value };
+      if (field === "quantity" || field === "unitPrice") {
+        const qty = parseFloat(String(updatedItem.quantity)) || 0;
+        const price = parseFloat(String(updatedItem.unitPrice)) || 0;
+        updatedItem.subtotal = (qty * price).toFixed(2);
+      }
+      return updatedItem;
+    }));
   }
 
   function handleManualItemProductSelect(idx: number, productId: string) {
     if (productId === "none") return;
     const product = products?.find((p: any) => p.id === parseInt(productId));
-    if (product) {
-      updateManualItem(idx, "productId", product.id);
-      updateManualItem(idx, "productName", product.name);
-      updateManualItem(idx, "productType", product.type);
-      updateManualItem(idx, "unitPrice", product.regularPrice || "0");
-      // Recalculate subtotal
-      const qty = manualItems[idx].quantity;
-      const price = parseFloat(product.regularPrice || "0") || 0;
-      const newItems = [...manualItems];
-      newItems[idx] = { ...newItems[idx], subtotal: (qty * price).toFixed(2) };
-      setManualItems(newItems);
-    }
+    if (!product) return;
+
+    setManualItems((currentItems) => currentItems.map((item, i) => {
+      if (i !== idx) return item;
+      const unitPrice = product.sellingPrice || product.regularPrice || "0";
+      const quantity = parseFloat(String(item.quantity)) || 0;
+      const price = parseFloat(unitPrice) || 0;
+      return {
+        ...item,
+        productId: product.id,
+        productName: product.name,
+        productType: product.type,
+        unitPrice,
+        subtotal: (quantity * price).toFixed(2),
+      };
+    }));
   }
 
   function handleCreateOrder() {
@@ -303,26 +314,35 @@ export default function Orders() {
                     <p className="font-mono text-sm">{detailOrder.trackingNumber}</p>
                   </div>
                 )}
+                {detailOrder.receiptUrl && (
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground mb-2">付款凭证</p>
+                    <a href={detailOrder.receiptUrl} target="_blank" rel="noreferrer" className="inline-block rounded-lg border bg-muted/30 p-1 transition-opacity hover:opacity-80">
+                      <img src={detailOrder.receiptUrl} alt="付款凭证" className="h-32 w-48 rounded object-cover" />
+                    </a>
+                    <a href={detailOrder.receiptUrl} target="_blank" rel="noreferrer" className="ml-3 text-sm text-primary underline underline-offset-4">查看原图</a>
+                  </div>
+                )}
               </div>
 
               {/* Status actions */}
               <div className="flex flex-wrap gap-2 pt-4 border-t">
-                {detailOrder.physicalStatus === "pending" && (
-                  <Button size="sm" variant="outline"
-                    onClick={() => {
-                      updateStatusMutation.mutate({ id: detailOrder.id, physicalStatus: "payment_confirmed" });
-                      setDetailOpen(false);
-                    }}>
-                    确认汇款
-                  </Button>
-                )}
-                {detailOrder.physicalStatus === "payment_confirmed" && (
-                  <Button size="sm" variant="outline"
+                {(detailOrder.physicalStatus === "pending" || detailOrder.physicalStatus === "receipt_uploaded") && (
+                  <Button size="sm"
                     onClick={() => {
                       updateStatusMutation.mutate({ id: detailOrder.id, physicalStatus: "packing" });
                       setDetailOpen(false);
                     }}>
-                    开始配货
+                    确认收款并转交包货
+                  </Button>
+                )}
+                {detailOrder.physicalStatus === "receipt_uploaded" && (
+                  <Button size="sm" variant="outline"
+                    onClick={() => {
+                      updateStatusMutation.mutate({ id: detailOrder.id, physicalStatus: "pending" });
+                      setDetailOpen(false);
+                    }}>
+                    驳回付款凭证
                   </Button>
                 )}
                 {detailOrder.physicalStatus === "packing" && (

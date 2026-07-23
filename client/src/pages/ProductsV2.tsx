@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -122,6 +122,7 @@ export default function ProductsV2() {
   const [showMemberLinkDialog, setShowMemberLinkDialog] = useState(false);
   const [currentProductId, setCurrentProductId] = useState<number | null>(null);
   const [simulatorPrice, setSimulatorPrice] = useState("");
+  const hydratedEditingIdRef = useRef<number | null>(null);
   const utils = trpc.useUtils();
 
   // List query with pagination
@@ -146,9 +147,10 @@ export default function ProductsV2() {
     { enabled: !!editingId && dialogOpen }
   );
 
-  // Populate form when detail loads
+  // Populate an edit form once per dialog session. Without the guard, a query
+  // cache update can overwrite in-progress operator edits with stale detail data.
   useEffect(() => {
-    if (detailQuery.data && editingId) {
+    if (detailQuery.data && editingId && hydratedEditingIdRef.current !== editingId) {
       const p = detailQuery.data;
       setForm({
         name: p.name || "",
@@ -184,6 +186,7 @@ export default function ProductsV2() {
         dimensions: p.dimensions || {},
       });
       setVariants(p.variants || []);
+      hydratedEditingIdRef.current = editingId;
     }
   }, [detailQuery.data, editingId]);
 
@@ -295,6 +298,7 @@ export default function ProductsV2() {
   );
 
   function resetForm() {
+    hydratedEditingIdRef.current = null;
     setForm(EMPTY_FORM);
     setVariants([]);
     setStep(0);
@@ -309,6 +313,7 @@ export default function ProductsV2() {
   }
 
   function openEdit(product: any) {
+    hydratedEditingIdRef.current = null;
     setEditingId(product.id);
     setCurrentProductId(product.id);
     setStep(0);
@@ -386,18 +391,22 @@ export default function ProductsV2() {
   const keywordAvailable = !checkKeywordQuery.data || checkKeywordQuery.data.available;
   const variantKeywordAvailable = !checkVariantKeywordQuery.data || checkVariantKeywordQuery.data.available;
 
-  // Price simulator calculations
+  // Price simulator calculations. If no ad-hoc test price is entered,
+  // use the product selling price so the default result is meaningful.
+  const simulatorTestPrice = useMemo(
+    () => parseFloat(simulatorPrice || form.sellingPrice) || 0,
+    [simulatorPrice, form.sellingPrice],
+  );
+
   const simulatorProfit = useMemo(() => {
-    const testPrice = parseFloat(simulatorPrice) || 0;
     const cost = parseFloat(form.estimatedCost) || 0;
-    return testPrice - cost;
-  }, [simulatorPrice, form.estimatedCost]);
+    return simulatorTestPrice - cost;
+  }, [simulatorTestPrice, form.estimatedCost]);
 
   const simulatorMargin = useMemo(() => {
-    const testPrice = parseFloat(simulatorPrice) || 0;
-    if (testPrice <= 0) return 0;
-    return (simulatorProfit / testPrice) * 100;
-  }, [simulatorProfit, simulatorPrice]);
+    if (simulatorTestPrice <= 0) return 0;
+    return (simulatorProfit / simulatorTestPrice) * 100;
+  }, [simulatorProfit, simulatorTestPrice]);
 
   const profitLevel = useMemo(() => {
     if (simulatorProfit <= 0) return { label: "亏损", color: "text-red-600", icon: TrendingDown };

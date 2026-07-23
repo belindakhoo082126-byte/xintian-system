@@ -5,6 +5,13 @@ import type { TrpcContext } from "./context";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
+  errorFormatter({ shape }) {
+    const { stack: _stack, ...safeData } = shape.data;
+    return {
+      ...shape,
+      data: safeData,
+    };
+  },
 });
 
 export const router = t.router;
@@ -26,6 +33,11 @@ const requireUser = t.middleware(async opts => {
 });
 
 export const protectedProcedure = t.procedure.use(requireUser);
+
+// Shipping Staff is deliberately restricted to the packing router. Keep this
+// procedure separate from generic authentication so route-level permissions
+// remain auditable as additional staff roles are introduced.
+export const shippingProcedure = protectedProcedure;
 
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {

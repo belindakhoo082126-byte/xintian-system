@@ -31,6 +31,15 @@ router.get("/webhook", (req: Request, res: Response) => {
  * - Live video comments
  */
 router.post("/webhook", (req: Request, res: Response) => {
+  const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+  const signature = req.get("X-Hub-Signature-256");
+
+  if (!rawBody || !verifyXHubSignature(rawBody, signature)) {
+    console.warn("[Facebook] Rejected webhook with an invalid signature");
+    res.sendStatus(403);
+    return;
+  }
+
   const body = req.body;
 
   // Verify this is from Facebook Page subscription
@@ -67,7 +76,7 @@ router.post("/webhook", (req: Request, res: Response) => {
  * Verify X-Hub-Signature-256 header for security.
  * This ensures the webhook request is genuinely from Facebook.
  */
-export function verifyXHubSignature(rawBody: string, signature: string | undefined): boolean {
+export function verifyXHubSignature(rawBody: Buffer | string, signature: string | undefined): boolean {
   if (!signature || !process.env.FB_APP_SECRET) return false;
 
   const expectedSignature = "sha256=" + crypto
@@ -75,14 +84,11 @@ export function verifyXHubSignature(rawBody: string, signature: string | undefin
     .update(rawBody)
     .digest("hex");
 
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    );
-  } catch {
-    return false;
-  }
+  const receivedSignature = Buffer.from(signature);
+  const expectedSignatureBuffer = Buffer.from(expectedSignature);
+  if (receivedSignature.length !== expectedSignatureBuffer.length) return false;
+
+  return crypto.timingSafeEqual(receivedSignature, expectedSignatureBuffer);
 }
 
 export default router;

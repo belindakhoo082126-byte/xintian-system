@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, json } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, json, uniqueIndex } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -391,10 +391,24 @@ export const customers = mysqlTable("customers", {
   pointsBalance: int("pointsBalance").default(0),
   isBlacklisted: boolean("isBlacklisted").default(false),
   blacklistReason: text("blacklistReason"),
+  /** Internal customer profile remark; never exposed by public storefront APIs. */
+  notes: text("notes"),
   mergedIntoCustomerId: int("mergedIntoCustomerId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastOrderAt: timestamp("lastOrderAt"),
+  // Existing XLCS customer profile fields
+  customerId: varchar("customerId", { length: 20 }).notNull(),
+  displayName: varchar("displayName", { length: 255 }),
+  whatsappPhone: varchar("whatsappPhone", { length: 20 }),
+  avatarUrl: varchar("avatarUrl", { length: 500 }),
+  overrideAvatarUrl: varchar("overrideAvatarUrl", { length: 500 }),
+  customerSource: mysqlEnum("customerSource", ["facebook_live", "facebook_messenger", "whatsapp", "store", "admin"]).notNull().default("admin"),
+  lastInteractionAt: timestamp("lastInteractionAt"),
+  blacklistAt: timestamp("blacklistAt"),
+  blacklistBy: int("blacklistBy"),
+  unblacklistAt: timestamp("unblacklistAt"),
+  unblacklistBy: int("unblacklistBy"),
 });
 
 export type Customer = typeof customers.$inferSelect;
@@ -1078,7 +1092,10 @@ export const liveOrderCaptures = mysqlTable("live_order_captures", {
   // Timestamps
   commentDate: timestamp("commentDate"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => ({
+  // Prevents duplicate order creation when Facebook retries webhook delivery.
+  commentIdUnique: uniqueIndex("uq_comment_id").on(table.commentId),
+}));
 
 export type LiveOrderCapture = typeof liveOrderCaptures.$inferSelect;
 export type InsertLiveOrderCapture = typeof liveOrderCaptures.$inferInsert;

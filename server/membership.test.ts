@@ -39,7 +39,6 @@ vi.mock("./db", () => ({
   getOrders: vi.fn(() => Promise.resolve([])),
   getOrderById: vi.fn(() => Promise.resolve(undefined)),
   getOrderItems: vi.fn(() => Promise.resolve([])),
-  getCustomerById: vi.fn(() => Promise.resolve(undefined)),
   createOrderWithSplit: vi.fn(() => Promise.resolve({ orderId: 1, orderNumber: "XT001", totalAmount: "65.00" })),
   updateOrderStatus: vi.fn(() => Promise.resolve()),
 
@@ -178,15 +177,14 @@ describe("products router", () => {
     expect(dbMock.getProducts).toHaveBeenCalledWith({ type: "membership" });
   });
 
-  it("create succeeds for any logged-in user", async () => {
-    vi.mocked(dbMock.createProduct).mockResolvedValue({ insertId: 1 } as any);
-
+  it("blocks Shipping Staff from creating products", async () => {
     const { ctx } = createAuthContext({ role: "user" });
     const caller = appRouter.createCaller(ctx);
-    const result = await caller.products.create({ name: "Test", type: "physical" });
 
-    expect(result).toBeDefined();
-    expect(dbMock.createProduct).toHaveBeenCalled();
+    await expect(caller.products.create({ name: "Test", type: "physical" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(dbMock.createProduct).not.toHaveBeenCalled();
   });
 
   it("create succeeds with admin role", async () => {
@@ -543,15 +541,14 @@ describe("flows router", () => {
     expect(result).toEqual(mockTemplates);
   });
 
-  it("create succeeds for any logged-in user", async () => {
-    vi.mocked(dbMock.createFlowTemplate).mockResolvedValue({ insertId: 1 } as any);
-
+  it("blocks Shipping Staff from creating flow templates", async () => {
     const { ctx } = createAuthContext({ role: "user" });
     const caller = appRouter.createCaller(ctx);
-    const result = await caller.flows.create({ name: "Test", messageContent: "Hello" });
 
-    expect(result).toBeDefined();
-    expect(dbMock.createFlowTemplate).toHaveBeenCalled();
+    await expect(caller.flows.create({ name: "Test", messageContent: "Hello" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(dbMock.createFlowTemplate).not.toHaveBeenCalled();
   });
 
   it("create succeeds with admin", async () => {

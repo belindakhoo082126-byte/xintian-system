@@ -62,8 +62,8 @@ export default function PackingDetail() {
     onError: (err) => toast.error(`发货失败: ${err.message}`),
   });
 
-  const handleShip = () => {
-    if (shippingMode === "full") {
+  const handleShip = (mode: "full" | "partial") => {
+    if (mode === "full") {
       if (packages.length === 0) {
         toast.error("请至少添加一个包裹");
         return;
@@ -143,6 +143,14 @@ export default function PackingDetail() {
   const specialLabel = d.shippingMethod === "lalamove" ? "LALAMOVE" :
     d.shippingMethod === "east_malaysia_shopee" ? "东马 SHOPEE" :
     d.shippingMethod === "east_malaysia_poslaju" ? "东马 POSLAJU" : "";
+  const canShip = d.physicalStatus === "packing" || d.physicalStatus === "partial_shipped";
+  const activeShippingMode = d.physicalStatus === "partial_shipped" ? "partial" : shippingMode;
+  const shippedItemIds = new Set(
+    ((existingPackages || []) as any[]).flatMap((pkg) =>
+      ((pkg.items || []) as any[]).map((item) => Number(item.orderItemId))
+    )
+  );
+  const shippableItems = (d.items as any[]).filter((item) => !shippedItemIds.has(Number(item.id)));
 
   return (
     <div className="space-y-6">
@@ -266,17 +274,20 @@ export default function PackingDetail() {
       <Card className="print-hide">
         <CardHeader><CardTitle className="text-base">发货</CardTitle></CardHeader>
         <CardContent className="space-y-4">
+          {canShip ? <>
           {/* Shipping Mode Toggle */}
           <div className="flex gap-2">
+            {d.physicalStatus === "packing" && (
+              <Button
+                variant={activeShippingMode === "full" ? "default" : "outline"}
+                onClick={() => setShippingMode("full")}
+                size="sm"
+              >
+                <Truck className="h-4 w-4 mr-1" />完整发货
+              </Button>
+            )}
             <Button
-              variant={shippingMode === "full" ? "default" : "outline"}
-              onClick={() => setShippingMode("full")}
-              size="sm"
-            >
-              <Truck className="h-4 w-4 mr-1" />完整发货
-            </Button>
-            <Button
-              variant={shippingMode === "partial" ? "default" : "outline"}
+              variant={activeShippingMode === "partial" ? "default" : "outline"}
               onClick={() => setShippingMode("partial")}
               size="sm"
             >
@@ -285,10 +296,10 @@ export default function PackingDetail() {
           </div>
 
           {/* Partial: Item Selection */}
-          {shippingMode === "partial" && (
+          {activeShippingMode === "partial" && (
             <div className="border rounded-lg p-3 space-y-2">
               <div className="text-sm font-medium">请选择本次发出的商品</div>
-              {(d.items as any[]).map((item) => (
+              {shippableItems.length > 0 ? shippableItems.map((item) => (
                 <label key={item.id} className="flex items-center gap-3 cursor-pointer">
                   <Checkbox
                     checked={selectedItems.includes(item.id)}
@@ -296,7 +307,9 @@ export default function PackingDetail() {
                   />
                   <span className="text-sm">{item.productName} {item.variationName && `- ${item.variationName}`} ×{item.quantity}</span>
                 </label>
-              ))}
+              )) : (
+                <p className="text-sm text-muted-foreground">所有商品均已装入包裹，无待发商品。</p>
+              )}
             </div>
           )}
 
@@ -359,13 +372,16 @@ export default function PackingDetail() {
           </div>
 
           <Button
-            onClick={handleShip}
-            disabled={fullShipMutation.isPending || partialShipMutation.isPending}
+            onClick={() => handleShip(activeShippingMode)}
+            disabled={fullShipMutation.isPending || partialShipMutation.isPending || (activeShippingMode === "partial" && shippableItems.length === 0)}
             className="w-full"
           >
             <Ship className="h-4 w-4 mr-2" />
-            {shippingMode === "full" ? "确认完整发货" : "确认部分发货"}
+            {activeShippingMode === "full" ? "确认完整发货" : "确认部分发货"}
           </Button>
+          </> : <div className="rounded-lg border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground">
+            此订单当前状态为“{d.physicalStatus === "shipped" ? "已发货" : d.physicalStatus === "completed" ? "已完成" : "已取消"}”，不可再次创建包裹或发货。
+          </div>}
         </CardContent>
       </Card>
 

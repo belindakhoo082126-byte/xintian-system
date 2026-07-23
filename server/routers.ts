@@ -1,14 +1,33 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
+import { publicProcedure, adminProcedure, shippingProcedure, router } from "./_core/trpc";
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import { eq } from "drizzle-orm";
 import { variants } from "../drizzle/schema";
 import { sendTelegramJoinFlow, sendMembershipFlow, getUserProfile, sendTextMessage } from "./messenger";
 import * as parceldaily from "./parceldaily";
 import * as shippingProvider from "./shippingProvider";
+
+const PACKING_SHIPPING_ERROR_MESSAGES: Record<string, string> = {
+  PACKING_ORDER_NOT_FOUND: "订单不存在或已被删除",
+  PACKING_ORDER_NOT_READY_FOR_FULL_SHIPMENT: "订单当前状态不可完整发货",
+  PACKING_ORDER_NOT_READY_FOR_PARTIAL_SHIPMENT: "订单当前状态不可部分发货",
+  PACKING_PACKAGE_REQUIRED: "请至少添加一个包裹",
+  PACKING_ITEM_REQUIRED: "请至少选择一个待发商品",
+  PACKING_ITEM_NOT_IN_ORDER: "所选商品不属于此订单",
+  PACKING_ITEM_ALREADY_SHIPPED: "所选商品已在其他包裹中发出",
+};
+
+function rethrowPackingShippingError(error: unknown): never {
+  const message = error instanceof Error ? PACKING_SHIPPING_ERROR_MESSAGES[error.message] : undefined;
+  if (message) {
+    throw new TRPCError({ code: "BAD_REQUEST", message });
+  }
+  throw error;
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -26,7 +45,7 @@ export const appRouter = router({
   // Products
   // ===========================================================================
   products: router({
-    list: protectedProcedure
+    list: adminProcedure
       .input(z.object({
         type: z.enum(["physical", "membership", "gift"]).optional(),
         search: z.string().optional(),
@@ -36,7 +55,7 @@ export const appRouter = router({
         return await db.getProducts(input || {});
       }),
 
-    getById: protectedProcedure
+    getById: adminProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const product = await db.getProductById(input.id);
@@ -44,7 +63,7 @@ export const appRouter = router({
         return product;
       }),
 
-    create: protectedProcedure
+    create: adminProcedure
       .input(z.object({
         name: z.string().min(1),
         type: z.enum(["physical", "membership", "gift"]),
@@ -75,7 +94,7 @@ export const appRouter = router({
         return await db.createProduct(input as any);
       }),
 
-    update: protectedProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -109,7 +128,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    delete: protectedProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteProduct(input.id);
@@ -121,13 +140,13 @@ export const appRouter = router({
   // Product Categories (Legacy - kept for backward compatibility)
   // ===========================================================================
   productCategoriesLegacy: router({
-    list: protectedProcedure
+    list: adminProcedure
       .input(z.object({ activeOnly: z.boolean().optional() }).optional())
       .query(async ({ input }) => {
         return await db.getProductCategories(input?.activeOnly);
       }),
 
-    create: protectedProcedure
+    create: adminProcedure
       .input(z.object({
         name: z.string().min(1),
         parentId: z.number().optional(),
@@ -137,7 +156,7 @@ export const appRouter = router({
         return await db.createProductCategory(input as any);
       }),
 
-    update: protectedProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -151,7 +170,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    delete: protectedProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteProductCategory(input.id);
@@ -163,7 +182,7 @@ export const appRouter = router({
   // Phase 1: Categories (商品分类 - 新版)
   // ===========================================================================
   categories: router({
-    list: protectedProcedure
+    list: adminProcedure
       .input(z.object({ activeOnly: z.boolean().optional(), storeOnly: z.boolean().optional() }).optional())
       .query(async ({ input }) => {
         if (input?.storeOnly) {
@@ -175,7 +194,7 @@ export const appRouter = router({
         return await db.getAllCategories();
       }),
 
-    getById: protectedProcedure
+    getById: adminProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const category = await db.getCategoryById(input.id);
@@ -184,7 +203,7 @@ export const appRouter = router({
         return { ...category, productCount };
       }),
 
-    create: protectedProcedure
+    create: adminProcedure
       .input(z.object({
         nameZh: z.string().min(1),
         nameEn: z.string().min(1),
@@ -199,7 +218,7 @@ export const appRouter = router({
         return await db.createCategory(input);
       }),
 
-    update: protectedProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         nameZh: z.string().optional(),
@@ -218,13 +237,13 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    delete: protectedProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         return await db.deleteCategory(input.id);
       }),
 
-    reorder: protectedProcedure
+    reorder: adminProcedure
       .input(z.object({ items: z.array(z.object({ id: z.number(), sortOrder: z.number() })) }))
       .mutation(async ({ input }) => {
         await db.reorderCategories(input.items);
@@ -236,11 +255,11 @@ export const appRouter = router({
   // Phase 1: Units (销售单位)
   // ===========================================================================
   units: router({
-    list: protectedProcedure.query(async () => {
+    list: adminProcedure.query(async () => {
       return await db.getAllUnits();
     }),
 
-    create: protectedProcedure
+    create: adminProcedure
       .input(z.object({
         nameZh: z.string().min(1),
         nameEn: z.string().min(1),
@@ -257,7 +276,7 @@ export const appRouter = router({
   // ===========================================================================
   productsV2: router({
     // --- Admin API ---
-    list: protectedProcedure
+    list: adminProcedure
       .input(z.object({
         search: z.string().optional(),
         categoryId: z.number().optional(),
@@ -273,7 +292,7 @@ export const appRouter = router({
         return await db.getProductsEnhanced(input || {});
       }),
 
-    getById: protectedProcedure
+    getById: adminProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const product = await db.getProductByIdEnhanced(input.id);
@@ -281,7 +300,7 @@ export const appRouter = router({
         return product;
       }),
 
-    create: protectedProcedure
+    create: adminProcedure
       .input(z.object({
         name: z.string().min(1),
         type: z.enum(['physical', 'membership', 'gift']),
@@ -328,7 +347,7 @@ export const appRouter = router({
         return await db.createProductEnhanced(input);
       }),
 
-    update: protectedProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -379,20 +398,20 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    setStatus: protectedProcedure
+    setStatus: adminProcedure
       .input(z.object({ id: z.number(), status: z.enum(['draft', 'active', 'inactive', 'out_of_stock']) }))
       .mutation(async ({ input }) => {
         await db.updateProductEnhanced(input.id, { status: input.status });
         return { success: true };
       }),
 
-    delete: protectedProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         return await db.deleteProductEnhanced(input.id);
       }),
 
-    duplicate: protectedProcedure
+    duplicate: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         const product = await db.getProductByIdEnhanced(input.id);
@@ -435,13 +454,13 @@ export const appRouter = router({
         return { id: result.id, sku: result.sku };
       }),
 
-    checkKeyword: protectedProcedure
+    checkKeyword: adminProcedure
       .input(z.object({ keyword: z.string().min(1), excludeProductId: z.number().optional() }))
       .query(async ({ input }) => {
         return await db.checkKeywordConflict(input.keyword, input.excludeProductId);
       }),
 
-    checkVariantKeyword: protectedProcedure
+    checkVariantKeyword: adminProcedure
       .input(z.object({ productId: z.number(), keyword: z.string().min(1), excludeVariantId: z.number().optional() }))
       .query(async ({ input }) => {
         return await db.checkVariantKeywordConflict(input.productId, input.keyword, input.excludeVariantId);
@@ -489,7 +508,7 @@ export const appRouter = router({
   // Phase 1: Variants (商品规格)
   // ===========================================================================
   variants: router({
-    create: protectedProcedure
+    create: adminProcedure
       .input(z.object({
         productId: z.number(),
         name: z.string().min(1),
@@ -517,7 +536,7 @@ export const appRouter = router({
         return await db.createVariant(input);
       }),
 
-    update: protectedProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -555,7 +574,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    delete: protectedProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteVariant(input.id);
@@ -567,19 +586,19 @@ export const appRouter = router({
   // Phase 1: Member Links (安全会员购买链接)
   // ===========================================================================
   memberLinks: router({
-    generate: protectedProcedure
+    generate: adminProcedure
       .input(z.object({ productId: z.number() }))
       .mutation(async ({ input }) => {
         return await db.generateMemberLink(input.productId);
       }),
 
-    list: protectedProcedure
+    list: adminProcedure
       .input(z.object({ productId: z.number() }))
       .query(async ({ input }) => {
         return await db.getMemberLinksByProductId(input.productId);
       }),
 
-    deactivate: protectedProcedure
+    deactivate: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deactivateMemberLink(input.id);
@@ -591,7 +610,7 @@ export const appRouter = router({
   // Phase 1: Product Images (商品图片管理)
   // ===========================================================================
   productImages: router({
-    add: protectedProcedure
+    add: adminProcedure
       .input(z.object({
         productId: z.number(),
         url: z.string().min(1),
@@ -604,14 +623,14 @@ export const appRouter = router({
         return await db.addProductImage(input);
       }),
 
-    delete: protectedProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteProductImage(input.id);
         return { success: true };
       }),
 
-    updateOrder: protectedProcedure
+    updateOrder: adminProcedure
       .input(z.object({ id: z.number(), sortOrder: z.number(), isMain: z.boolean().optional() }))
       .mutation(async ({ input }) => {
         await db.updateProductImageOrder(input.id, input.sortOrder, input.isMain);
@@ -623,7 +642,7 @@ export const appRouter = router({
   // Phase 1: Product Videos (商品影片管理)
   // ===========================================================================
   productVideos: router({
-    add: protectedProcedure
+    add: adminProcedure
       .input(z.object({
         productId: z.number(),
         url: z.string().min(1),
@@ -638,7 +657,7 @@ export const appRouter = router({
         return await db.addProductVideo(input);
       }),
 
-    delete: protectedProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteProductVideo(input.id);
@@ -650,7 +669,7 @@ export const appRouter = router({
   // Phase 1: Product Attributes (商品属性管理)
   // ===========================================================================
   productAttributes: router({
-    add: protectedProcedure
+    add: adminProcedure
       .input(z.object({
         productId: z.number(),
         attributeName: z.string().min(1),
@@ -662,7 +681,7 @@ export const appRouter = router({
         return await db.addProductAttribute(input);
       }),
 
-    delete: protectedProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteProductAttribute(input.id);
@@ -674,13 +693,13 @@ export const appRouter = router({
   // Suppliers (进货供应商)
   // ===========================================================================
   suppliers: router({
-    list: protectedProcedure
+    list: adminProcedure
       .input(z.object({ activeOnly: z.boolean().optional() }).optional())
       .query(async ({ input }) => {
         return await db.getSuppliers(input?.activeOnly);
       }),
 
-    getById: protectedProcedure
+    getById: adminProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const supplier = await db.getSupplierById(input.id);
@@ -688,7 +707,7 @@ export const appRouter = router({
         return supplier;
       }),
 
-    create: protectedProcedure
+    create: adminProcedure
       .input(z.object({
         name: z.string().min(1),
         contactPerson: z.string().optional(),
@@ -702,7 +721,7 @@ export const appRouter = router({
         return await db.createSupplier(input as any);
       }),
 
-    update: protectedProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -720,7 +739,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    delete: protectedProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteSupplier(input.id);
@@ -732,7 +751,7 @@ export const appRouter = router({
   // Purchase Orders (进货单)
   // ===========================================================================
   purchaseOrders: router({
-    list: protectedProcedure
+    list: adminProcedure
       .input(z.object({
         supplierId: z.number().optional(),
         status: z.string().optional(),
@@ -741,7 +760,7 @@ export const appRouter = router({
         return await db.getPurchaseOrders(input || {});
       }),
 
-    getById: protectedProcedure
+    getById: adminProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const po = await db.getPurchaseOrderById(input.id);
@@ -750,7 +769,7 @@ export const appRouter = router({
         return { ...po, items };
       }),
 
-    create: protectedProcedure
+    create: adminProcedure
       .input(z.object({
         supplierId: z.number(),
         notes: z.string().optional(),
@@ -765,7 +784,7 @@ export const appRouter = router({
         return await db.createPurchaseOrder(input);
       }),
 
-    receive: protectedProcedure
+    receive: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.receivePurchaseOrder(input.id);
@@ -778,7 +797,7 @@ export const appRouter = router({
   // ===========================================================================
   reports: router({
     // Legacy: monthly profit report
-    monthlyProfit: protectedProcedure
+    monthlyProfit: adminProcedure
       .input(z.object({
         year: z.number(),
         month: z.number().min(1).max(12),
@@ -787,7 +806,7 @@ export const appRouter = router({
         return await db.getMonthlyProfitReport(input.year, input.month);
       }),
     // Business overview: 12 data cards
-    overview: protectedProcedure
+    overview: adminProcedure
       .input(z.object({
         preset: z.string(),
         customStart: z.string().optional(),
@@ -798,7 +817,7 @@ export const appRouter = router({
         return await db.getBusinessOverview(dateRange);
       }),
     // TOP10: Best selling by quantity
-    topByQuantity: protectedProcedure
+    topByQuantity: adminProcedure
       .input(z.object({
         preset: z.string(),
         customStart: z.string().optional(),
@@ -809,7 +828,7 @@ export const appRouter = router({
         return await db.getTopProductsByQuantity(dateRange);
       }),
     // TOP10: Best selling by revenue
-    topByRevenue: protectedProcedure
+    topByRevenue: adminProcedure
       .input(z.object({
         preset: z.string(),
         customStart: z.string().optional(),
@@ -820,7 +839,7 @@ export const appRouter = router({
         return await db.getTopProductsByRevenue(dateRange);
       }),
     // TOP10: Most profitable products
-    topByProfit: protectedProcedure
+    topByProfit: adminProcedure
       .input(z.object({
         preset: z.string(),
         customStart: z.string().optional(),
@@ -831,7 +850,7 @@ export const appRouter = router({
         return await db.getTopProductsByProfit(dateRange);
       }),
     // TOP10: Top customers by paid amount
-    topCustomers: protectedProcedure
+    topCustomers: adminProcedure
       .input(z.object({
         preset: z.string(),
         customStart: z.string().optional(),
@@ -842,7 +861,7 @@ export const appRouter = router({
         return await db.getTopCustomersBySpending(dateRange);
       }),
     // Sales & Payment sub-report
-    salesPayment: protectedProcedure
+    salesPayment: adminProcedure
       .input(z.object({
         preset: z.string(),
         customStart: z.string().optional(),
@@ -853,7 +872,7 @@ export const appRouter = router({
         return await db.getSalesPaymentReport(dateRange);
       }),
     // Product Sales sub-report
-    productSales: protectedProcedure
+    productSales: adminProcedure
       .input(z.object({
         preset: z.string(),
         customStart: z.string().optional(),
@@ -864,7 +883,7 @@ export const appRouter = router({
         return await db.getProductSalesReport(dateRange);
       }),
     // Customer Spending sub-report
-    customerSpending: protectedProcedure
+    customerSpending: adminProcedure
       .input(z.object({
         preset: z.string(),
         customStart: z.string().optional(),
@@ -875,7 +894,7 @@ export const appRouter = router({
         return await db.getCustomerSpendingReport(dateRange);
       }),
     // Purchase & Inventory sub-report
-    purchaseInventory: protectedProcedure
+    purchaseInventory: adminProcedure
       .input(z.object({
         preset: z.string(),
         customStart: z.string().optional(),
@@ -886,7 +905,7 @@ export const appRouter = router({
         return await db.getPurchaseInventoryReport(dateRange);
       }),
     // Refund records
-    refunds: protectedProcedure
+    refunds: adminProcedure
       .input(z.object({
         preset: z.string(),
         customStart: z.string().optional(),
@@ -902,7 +921,7 @@ export const appRouter = router({
   // Orders
   // ===========================================================================
   orders: router({
-    list: protectedProcedure
+    list: adminProcedure
       .input(z.object({
         physicalStatus: z.string().optional(),
         membershipStatus: z.string().optional(),
@@ -913,7 +932,7 @@ export const appRouter = router({
         return await db.getOrders(input || {});
       }),
 
-    getById: protectedProcedure
+    getById: adminProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const order = await db.getOrderById(input.id);
@@ -922,7 +941,7 @@ export const appRouter = router({
         return { ...order, items };
       }),
 
-    create: protectedProcedure
+    create: adminProcedure
       .input(z.object({
         customerId: z.number(),
         facebookName: z.string().optional(),
@@ -947,7 +966,7 @@ export const appRouter = router({
         return await db.createOrderWithSplit(input);
       }),
 
-    updateStatus: protectedProcedure
+    updateStatus: adminProcedure
       .input(z.object({
         id: z.number(),
         physicalStatus: z.string().optional(),
@@ -969,7 +988,7 @@ export const appRouter = router({
   // Membership Fee Reviews
   // ===========================================================================
   membership: router({
-    listReviews: protectedProcedure
+    listReviews: adminProcedure
       .input(z.object({
         status: z.string().optional(),
         flowStatus: z.string().optional(),
@@ -978,7 +997,7 @@ export const appRouter = router({
         return await db.getMembershipReviews(input || {});
       }),
 
-    getReviewById: protectedProcedure
+    getReviewById: adminProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const review = await db.getMembershipReviewById(input.id);
@@ -986,13 +1005,13 @@ export const appRouter = router({
         return review;
       }),
 
-    getReviewByOrderId: protectedProcedure
+    getReviewByOrderId: adminProcedure
       .input(z.object({ orderId: z.number() }))
       .query(async ({ input }) => {
         return await db.getMembershipReviewByOrderId(input.orderId);
       }),
 
-    createReview: protectedProcedure
+    createReview: adminProcedure
       .input(z.object({
         orderId: z.number(),
         receiptFileUrl: z.string(),
@@ -1008,7 +1027,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    approveFee: protectedProcedure
+    approveFee: adminProcedure
       .input(z.object({
         reviewId: z.number(),
         notes: z.string().optional(),
@@ -1143,7 +1162,7 @@ export const appRouter = router({
         }
       }),
 
-    rejectFee: protectedProcedure
+    rejectFee: adminProcedure
       .input(z.object({
         reviewId: z.number(),
         notes: z.string().optional(),
@@ -1162,7 +1181,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    resendFlow: protectedProcedure
+    resendFlow: adminProcedure
       .input(z.object({
         reviewId: z.number(),
       }))
@@ -1233,7 +1252,7 @@ export const appRouter = router({
         }
       }),
 
-    markLinkClicked: protectedProcedure
+    markLinkClicked: adminProcedure
       .input(z.object({ reviewId: z.number() }))
       .mutation(async ({ input }) => {
         await db.markTelegramLinkClicked(input.reviewId);
@@ -1247,7 +1266,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    markNeedsFollowUp: protectedProcedure
+    markNeedsFollowUp: adminProcedure
       .input(z.object({
         reviewId: z.number(),
         notes: z.string().optional(),
@@ -1263,7 +1282,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    cancelMembershipOrder: protectedProcedure
+    cancelMembershipOrder: adminProcedure
       .input(z.object({
         reviewId: z.number(),
       }))
@@ -1277,7 +1296,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    getFlowLogs: protectedProcedure
+    getFlowLogs: adminProcedure
       .input(z.object({ reviewId: z.number() }))
       .query(async ({ input }) => {
         return await db.getFlowSendLogsByReviewId(input.reviewId);
@@ -1288,13 +1307,13 @@ export const appRouter = router({
   // Flow Templates
   // ===========================================================================
   flows: router({
-    list: protectedProcedure
+    list: adminProcedure
       .input(z.object({ activeOnly: z.boolean().optional() }).optional())
       .query(async ({ input }) => {
         return await db.getFlowTemplates(input?.activeOnly);
       }),
 
-    getById: protectedProcedure
+    getById: adminProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const template = await db.getFlowTemplateById(input.id);
@@ -1303,7 +1322,7 @@ export const appRouter = router({
         return { ...template, steps };
       }),
 
-    create: protectedProcedure
+    create: adminProcedure
       .input(z.object({
         name: z.string().min(1),
         description: z.string().optional(),
@@ -1324,7 +1343,7 @@ export const appRouter = router({
         return await db.createFlowTemplate(input as any);
       }),
 
-    update: protectedProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -1348,7 +1367,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    delete: protectedProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteFlowTemplate(input.id);
@@ -1356,13 +1375,13 @@ export const appRouter = router({
       }),
 
     // Flow Steps
-    listSteps: protectedProcedure
+    listSteps: adminProcedure
       .input(z.object({ templateId: z.number() }))
       .query(async ({ input }) => {
         return await db.getFlowStepsByTemplateId(input.templateId);
       }),
 
-    createStep: protectedProcedure
+    createStep: adminProcedure
       .input(z.object({
         flowTemplateId: z.number(),
         stepOrder: z.number(),
@@ -1380,7 +1399,7 @@ export const appRouter = router({
         return await db.createFlowStep(input as any);
       }),
 
-    updateStep: protectedProcedure
+    updateStep: adminProcedure
       .input(z.object({
         id: z.number(),
         stepOrder: z.number().optional(),
@@ -1400,7 +1419,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    deleteStep: protectedProcedure
+    deleteStep: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteFlowStep(input.id);
@@ -1412,13 +1431,13 @@ export const appRouter = router({
   // Customers
   // ===========================================================================
   customers: router({
-    list: protectedProcedure
+    list: adminProcedure
       .input(z.object({ search: z.string().optional() }).optional())
       .query(async ({ input }) => {
         return await db.getCustomers(input?.search);
       }),
 
-    getById: protectedProcedure
+    getById: adminProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const customer = await db.getCustomerById(input.id);
@@ -1426,7 +1445,7 @@ export const appRouter = router({
         return customer;
       }),
 
-    findOrCreate: protectedProcedure
+    findOrCreate: adminProcedure
       .input(z.object({
         facebookId: z.string().optional(),
         facebookName: z.string().optional(),
@@ -1434,13 +1453,14 @@ export const appRouter = router({
         name: z.string().optional(),
         phoneNumber: z.string().optional(),
         email: z.string().optional(),
+        address: z.string().optional(),
         shopLinkIdentifier: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         return await db.findOrCreateCustomer(input);
       }),
 
-    update: protectedProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -1453,6 +1473,7 @@ export const appRouter = router({
         country: z.string().optional(),
         isBlacklisted: z.boolean().optional(),
         blacklistReason: z.string().optional(),
+        notes: z.string().optional(),
         membershipLevel: z.enum(["regular", "member", "vip"]).optional(),
         pointsBalance: z.number().optional(),
       }))
@@ -1462,13 +1483,19 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    findDuplicates: protectedProcedure
+    getOrders: adminProcedure
+      .input(z.object({ customerId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCustomerOrders(input.customerId);
+      }),
+
+    findDuplicates: adminProcedure
       .input(z.object({ customerId: z.number() }))
       .query(async ({ input }) => {
         return await db.findPotentialDuplicateCustomers(input.customerId);
       }),
 
-    merge: protectedProcedure
+    merge: adminProcedure
       .input(z.object({
         sourceId: z.number(),
         targetId: z.number(),
@@ -1478,7 +1505,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    getMergeSuggestions: protectedProcedure
+    getMergeSuggestions: adminProcedure
       .input(z.object({ status: z.string().optional() }).optional())
       .query(async ({ input }) => {
         return await db.getMergeSuggestions(input?.status);
@@ -1490,7 +1517,7 @@ export const appRouter = router({
   // ===========================================================================
   messenger: router({
     // Test sending a message to a PSID
-    testSend: protectedProcedure
+    testSend: adminProcedure
       .input(z.object({
         psid: z.string(),
         message: z.string().optional(),
@@ -1508,14 +1535,14 @@ export const appRouter = router({
       }),
 
     // Get user profile by PSID
-    getProfile: protectedProcedure
+    getProfile: adminProcedure
       .input(z.object({ psid: z.string() }))
       .query(async ({ input }) => {
         return await getUserProfile(input.psid);
       }),
 
     // Send custom message to a customer
-    sendCustomMessage: protectedProcedure
+    sendCustomMessage: adminProcedure
       .input(z.object({
         customerId: z.number(),
         message: z.string(),
@@ -1552,7 +1579,7 @@ export const appRouter = router({
       }),
 
     // Get Facebook connection status
-    status: protectedProcedure.query(async () => {
+    status: adminProcedure.query(async () => {
       return {
         pageId: process.env.FB_PAGE_ID || "",
         appId: process.env.FB_APP_ID || "",
@@ -1570,7 +1597,7 @@ export const appRouter = router({
   // ===========================================================================
   settings: router({
     // Company profile & system settings
-    get: protectedProcedure.query(async () => {
+    get: adminProcedure.query(async () => {
       return await db.getSystemSettings();
     }),
     update: adminProcedure.input(z.object({
@@ -1612,7 +1639,7 @@ export const appRouter = router({
   // Shipping Rules (运费规则)
   // ===========================================================================
   shippingRules: router({
-    list: protectedProcedure.query(async () => {
+    list: adminProcedure.query(async () => {
       return await db.getShippingRules();
     }),
     update: adminProcedure.input(z.object({
@@ -1654,7 +1681,7 @@ export const appRouter = router({
   // Shipping Providers (物流供应商)
   // ===========================================================================
   shippingProviders: router({
-    list: protectedProcedure.query(async () => {
+    list: adminProcedure.query(async () => {
       const providers = await db.getShippingProviders();
       // Don't expose credentials to frontend
       return providers.map(p => ({
@@ -1720,7 +1747,7 @@ export const appRouter = router({
       }
     }),
     // Check postcode
-    checkPostcode: protectedProcedure.input(z.object({
+    checkPostcode: adminProcedure.input(z.object({
       postcode: z.string(),
     })).query(async ({ input }) => {
       try {
@@ -1731,7 +1758,7 @@ export const appRouter = router({
       }
     }),
     // Get shipping quote
-    getQuote: protectedProcedure.input(z.object({
+    getQuote: adminProcedure.input(z.object({
       fromPostcode: z.string(),
       toPostcode: z.string(),
       weightKg: z.number(),
@@ -1749,7 +1776,7 @@ export const appRouter = router({
       }
     }),
     // Create shipment for an order
-    createShipment: protectedProcedure.input(z.object({
+    createShipment: adminProcedure.input(z.object({
       orderId: z.number(),
       courier: z.string(),
       weightKg: z.number(),
@@ -1818,7 +1845,7 @@ export const appRouter = router({
       }
     }),
     // Checkout shipment (pay and get tracking number)
-    checkoutShipment: protectedProcedure.input(z.object({
+    checkoutShipment: adminProcedure.input(z.object({
       shipmentId: z.number(),
     })).mutation(async ({ input }) => {
       try {
@@ -1853,7 +1880,7 @@ export const appRouter = router({
       }
     }),
     // Get consignment note URL
-    getConsignmentNote: protectedProcedure.input(z.object({
+    getConsignmentNote: adminProcedure.input(z.object({
       shipmentId: z.number(),
     })).query(async ({ input }) => {
       try {
@@ -1873,7 +1900,7 @@ export const appRouter = router({
   // Payment Methods (付款方式设定)
   // ===========================================================================
   paymentMethods: router({
-    list: protectedProcedure.query(async () => {
+    list: adminProcedure.query(async () => {
       return await db.getPaymentMethods(true);
     }),
     
@@ -1881,7 +1908,7 @@ export const appRouter = router({
       return await db.getPaymentMethods(false);
     }),
     
-    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    getById: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
       return await db.getPaymentMethodById(input.id);
     }),
     
@@ -1927,7 +1954,7 @@ export const appRouter = router({
   // Order Status Workflow (订单状态流转)
   // ===========================================================================
   orderWorkflow: router({
-    getStatusLogs: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+    getStatusLogs: adminProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
       return await db.getOrderStatusLogs(input.orderId);
     }),
     
@@ -1957,11 +1984,11 @@ export const appRouter = router({
   // Hold Orders (保留订单)
   // ===========================================================================
   holdOrders: router({
-    getInfo: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+    getInfo: adminProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
       return await db.getHoldOrderInfo(input.orderId);
     }),
     
-    getActiveByCustomer: protectedProcedure.input(z.object({ customerId: z.number() })).query(async ({ input }) => {
+    getActiveByCustomer: adminProcedure.input(z.object({ customerId: z.number() })).query(async ({ input }) => {
       return await db.getActiveHoldOrdersByCustomer(input.customerId);
     }),
     
@@ -1973,7 +2000,7 @@ export const appRouter = router({
       holdRemark: z.string().optional(),
     })).mutation(async ({ input, ctx }) => {
       const holdBy = ctx.user?.name || ctx.user?.openId || "admin";
-      return await db.createHoldOrderInfo({
+      const holdOrder = await db.createHoldOrderInfo({
         orderId: input.orderId,
         holdType: input.holdType,
         scheduledShippingDate: input.scheduledShippingDate ? new Date(input.scheduledShippingDate) : null,
@@ -1981,6 +2008,8 @@ export const appRouter = router({
         holdRemark: input.holdRemark || null,
         holdBy,
       });
+      await db.transitionOrderStatus(input.orderId, "hold_order", holdBy, "Hold order created");
+      return holdOrder;
     }),
     
     release: adminProcedure.input(z.object({
@@ -1993,7 +2022,7 @@ export const appRouter = router({
       return { success: true };
     }),
     
-    findMergeable: protectedProcedure.input(z.object({ customerId: z.number() })).query(async ({ input }) => {
+    findMergeable: adminProcedure.input(z.object({ customerId: z.number() })).query(async ({ input }) => {
       return await db.findMergeableHoldOrder(input.customerId);
     }),
   }),
@@ -2002,7 +2031,7 @@ export const appRouter = router({
   // Notification Logs (通知记录)
   // ===========================================================================
   notifications: router({
-    list: protectedProcedure.input(z.object({ orderId: z.number().optional() })).query(async ({ input }) => {
+    list: adminProcedure.input(z.object({ orderId: z.number().optional() })).query(async ({ input }) => {
       return await db.getNotificationLogs(input.orderId);
     }),
     
@@ -2285,7 +2314,17 @@ export const appRouter = router({
       paymentMethodName: z.string().optional(),
       mergeIntoOrderId: z.number().optional(),
     })).mutation(async ({ input }) => {
-      return await db.mallCheckout(input);
+      try {
+        return await db.mallCheckout(input);
+      } catch (error) {
+        if (error instanceof Error && error.message === "Selected hold order is no longer available for this customer") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "该保留订单不可合并或不属于当前客户",
+          });
+        }
+        throw error;
+      }
     }),
 
     // Smart Paste (public)
@@ -2322,18 +2361,44 @@ export const appRouter = router({
 
     // Upload payment receipt (public - guest)
     uploadReceipt: publicProcedure.input(z.object({
-      orderNumber: z.string(),
-      receiptUrl: z.string(),
+      orderNumber: z.string().min(1).max(50),
+      contactNumber: z.string().min(1).max(50),
+      receiptUrl: z.string().min(1).max(500),
+      paymentMethodId: z.number().int().positive(),
     })).mutation(async ({ input }) => {
+      if (!/^\/manus-storage\/uploads\/[A-Za-z0-9._/-]+$/.test(input.receiptUrl)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "付款凭证必须来自系统上传服务" });
+      }
+
       const dbConn = await db.getDb();
-      if (!dbConn) throw new Error("Database not available");
-      const { orders: ordTable } = await import("../drizzle/schema");
+      if (!dbConn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂时不可用" });
+      const { orders: ordTable, customers: custTable } = await import("../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       const result = await dbConn.select().from(ordTable).where(eq(ordTable.orderNumber, input.orderNumber)).limit(1);
-      if (result.length === 0) throw new Error("Order not found");
+      if (result.length === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "订单不存在或联系电话不匹配" });
+      }
+
+      const customerResult = await dbConn.select().from(custTable).where(eq(custTable.id, result[0].customerId)).limit(1);
+      if (customerResult.length === 0 || customerResult[0].phoneNumber !== input.contactNumber) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "订单不存在或联系电话不匹配" });
+      }
+
+      const paymentMethod = await db.getPaymentMethodById(input.paymentMethodId);
+      if (!paymentMethod?.isEnabled) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "请选择有效的付款方式" });
+      }
+
+      const permittedStatuses = ["pending", "partial_payment"];
+      if (!permittedStatuses.includes(result[0].physicalStatus || "")) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "当前订单状态不允许上传付款凭证" });
+      }
+
+      await db.transitionOrderStatus(result[0].id, "receipt_uploaded", "商城顾客", "顾客已上传付款凭证");
       await db.updateOrderStatus(result[0].id, {
-        physicalStatus: "receipt_uploaded",
         receiptUrl: input.receiptUrl,
+        paymentMethodId: paymentMethod.id,
+        paymentMethodName: paymentMethod.name,
       });
       return { success: true };
     }),
@@ -2359,26 +2424,26 @@ export const appRouter = router({
   // ===========================================================================
   packing: router({
     // Get orders by packing status
-    list: protectedProcedure.input(z.object({
+    list: shippingProcedure.input(z.object({
       status: z.enum(["packing", "shipped", "partial_shipped", "completed"]),
     })).query(async ({ input }) => {
       return await db.getPackingOrders(input.status);
     }),
     
     // Get packing detail
-    detail: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+    detail: shippingProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
       return await db.getPackingDetail(input.orderId);
     }),
     
     // Get A5 packing slip data
-    slipData: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+    slipData: shippingProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
       return await db.getPackingSlipData(input.orderId);
     }),
   }),
   
   shipping: router({
     // Full shipping - all items in one or more packages
-    fullShip: protectedProcedure.input(z.object({
+    fullShip: shippingProcedure.input(z.object({
       orderId: z.number(),
       packages: z.array(z.object({
         courier: z.string(),
@@ -2390,11 +2455,15 @@ export const appRouter = router({
         shippingCost: z.string().optional(),
       })),
     })).mutation(async ({ input }) => {
-      return await db.fullShipping(input.orderId, input.packages);
+      try {
+        return await db.fullShipping(input.orderId, input.packages);
+      } catch (error) {
+        return rethrowPackingShippingError(error);
+      }
     }),
     
     // Partial shipping - selected items only
-    partialShip: protectedProcedure.input(z.object({
+    partialShip: shippingProcedure.input(z.object({
       orderId: z.number(),
       itemIds: z.array(z.number()),
       packageData: z.object({
@@ -2407,16 +2476,20 @@ export const appRouter = router({
         shippingCost: z.string().optional(),
       }),
     })).mutation(async ({ input }) => {
-      return await db.partialShipping(input.orderId, input.itemIds, input.packageData);
+      try {
+        return await db.partialShipping(input.orderId, input.itemIds, input.packageData);
+      } catch (error) {
+        return rethrowPackingShippingError(error);
+      }
     }),
     
     // Get packages for an order
-    packages: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+    packages: shippingProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
       return await db.getOrderPackages(input.orderId);
     }),
     
     // Create ParcelDaily shipment (auto)
-    createParcelDaily: protectedProcedure.input(z.object({
+    createParcelDaily: shippingProcedure.input(z.object({
       orderId: z.number(),
       weight: z.number(),
       courier: z.string().optional(),
@@ -2473,14 +2546,14 @@ export const appRouter = router({
   // Live Order Capture (直播捉单)
   liveCapture: router({
     // Parse comment keywords (admin tool for testing)
-    parse: protectedProcedure.input(z.object({ comment: z.string() })).query(async ({ input }) => {
+    parse: adminProcedure.input(z.object({ comment: z.string() })).query(async ({ input }) => {
       const keywords = db.parseCommentKeywords(input.comment);
       const { matched, unmatched } = await db.matchKeywordsToProducts(keywords);
       return { keywords, matched, unmatched };
     }),
     
     // Create order from live capture
-    createOrder: protectedProcedure.input(z.object({
+    createOrder: adminProcedure.input(z.object({
       commenterName: z.string(),
       commenterPsid: z.string().optional(),
       commentMessage: z.string(),
@@ -2501,7 +2574,7 @@ export const appRouter = router({
     }),
     
     // List captures (admin)
-    list: protectedProcedure.input(z.object({ limit: z.number().optional() })).query(async ({ input }) => {
+    list: adminProcedure.input(z.object({ limit: z.number().optional() })).query(async ({ input }) => {
       return await db.getLiveOrderCaptures(input.limit || 50);
     }),
   }),
@@ -2510,7 +2583,7 @@ export const appRouter = router({
   // V1.1: Dashboard V11 (仪表板 V1.1)
   // ===========================================================================
   dashboardV11: router({
-    stats: protectedProcedure.query(async () => {
+    stats: adminProcedure.query(async () => {
       return await db.getDashboardV11Stats();
     }),
   }),
@@ -2519,10 +2592,10 @@ export const appRouter = router({
   // V1.1: Order Remarks (订单备注 - 3种类型)
   // ===========================================================================
   orderRemarks: router({
-    list: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+    list: adminProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
       return await db.getOrderRemarks(input.orderId);
     }),
-    create: protectedProcedure.input(z.object({
+    create: adminProcedure.input(z.object({
       orderId: z.number(),
       type: z.enum(["live", "customer", "internal"]),
       content: z.string().min(1),
@@ -2536,7 +2609,7 @@ export const appRouter = router({
       });
       return { success: true };
     }),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    delete: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await db.deleteOrderRemark(input.id);
       return { success: true };
     }),
@@ -2546,10 +2619,10 @@ export const appRouter = router({
   // V1.1: Order Item Repots (换盆功能)
   // ===========================================================================
   repots: router({
-    list: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+    list: adminProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
       return await db.getOrderItemRepots(input.orderId);
     }),
-    create: protectedProcedure.input(z.object({
+    create: adminProcedure.input(z.object({
       orderItemId: z.number(),
       orderId: z.number(),
       productId: z.number(),
@@ -2561,11 +2634,11 @@ export const appRouter = router({
       await db.createOrderItemRepot(input);
       return { success: true };
     }),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    delete: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await db.deleteOrderItemRepot(input.id);
       return { success: true };
     }),
-    potProducts: protectedProcedure.query(async () => {
+    potProducts: adminProcedure.query(async () => {
       return await db.getPotProducts();
     }),
   }),
@@ -2574,7 +2647,7 @@ export const appRouter = router({
   // V1.1: Scheduled Shipping (预约发货)
   // ===========================================================================
   scheduledShipping: router({
-    setDate: protectedProcedure.input(z.object({
+    setDate: adminProcedure.input(z.object({
       orderId: z.number(),
       date: z.string().nullable(),
     })).mutation(async ({ input }) => {
@@ -2582,10 +2655,10 @@ export const appRouter = router({
       await db.setScheduledShippingDate(input.orderId, date);
       return { success: true };
     }),
-    today: protectedProcedure.query(async () => {
+    today: adminProcedure.query(async () => {
       return await db.getTodayScheduledShipping();
     }),
-    list: protectedProcedure.input(z.object({
+    list: adminProcedure.input(z.object({
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
     }).optional()).query(async ({ input }) => {
@@ -2600,7 +2673,7 @@ export const appRouter = router({
   // Dashboard (original)
   // ===========================================================================
   dashboard: router({
-    stats: protectedProcedure.query(async () => {
+    stats: adminProcedure.query(async () => {
       return await db.getDashboardStats();
     }),
   }),

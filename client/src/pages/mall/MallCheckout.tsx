@@ -209,11 +209,11 @@ export default function MallCheckout() {
             {mergeableOrders.length > 0 && (
               <div className="mt-3 space-y-2">
                 {mergeableOrders.map((o: any) => (
-                  <label key={o.id} className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent">
+                  <label key={o.orderId} className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent">
                     <input
                       type="radio"
-                      checked={mergeIntoOrderId === o.id}
-                      onChange={() => setMergeIntoOrderId(o.id)}
+                      checked={mergeIntoOrderId === o.orderId}
+                      onChange={() => setMergeIntoOrderId(o.orderId)}
                     />
                     <div className="flex-1">
                       <p className="text-sm font-medium">{o.orderNumber}</p>

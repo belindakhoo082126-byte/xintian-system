@@ -19,7 +19,7 @@ export default function MallHome() {
   const { data: notices } = trpc.mall.notices.useQuery();
   const { data: quickContacts } = trpc.mall.quickContacts.useQuery();
   const { data: categories } = trpc.mall.categories.useQuery();
-  const { data: products } = trpc.mall.products.useQuery({ categoryId, search: searchQuery || undefined });
+  const { data: products, isLoading: isProductsLoading } = trpc.mall.products.useQuery({ categoryId, search: searchQuery || undefined });
 
   const cart = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("mall_cart") || "[]"); } catch { return []; }
@@ -109,10 +109,19 @@ export default function MallHome() {
           <h2 className="text-xl font-semibold text-[#1b4332]">
             {searchQuery ? `搜索: "${searchQuery}"` : categoryId ? "分类商品" : "全部商品"}
           </h2>
-          <span className="text-sm text-muted-foreground">{products?.length || 0} 件商品</span>
+          <span className="text-sm text-muted-foreground">{isProductsLoading ? "商品加载中…" : `${products?.length ?? 0} 件商品`}</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-          {products?.map((p: any) => (
+          {isProductsLoading && Array.from({ length: 4 }).map((_, index) => (
+            <Card key={`product-skeleton-${index}`} className="overflow-hidden" aria-label="商品加载中">
+              <div className="aspect-square animate-pulse bg-gray-100" />
+              <CardContent className="space-y-2 p-3">
+                <div className="h-4 w-3/4 animate-pulse rounded bg-gray-100" />
+                <div className="h-5 w-1/2 animate-pulse rounded bg-gray-100" />
+              </CardContent>
+            </Card>
+          ))}
+          {!isProductsLoading && products?.map((p: any) => (
             <Link key={p.id} href={`/mall/product/${p.id}`}>
               <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group">
                 <div className="aspect-square overflow-hidden bg-gray-100">
@@ -136,7 +145,7 @@ export default function MallHome() {
             </Link>
           ))}
         </div>
-        {products?.length === 0 && (
+        {!isProductsLoading && products?.length === 0 && (
           <div className="text-center py-20 text-muted-foreground">
             <Package className="h-16 w-16 mx-auto mb-4 opacity-30" />
             <p>暂无商品</p>

@@ -57,6 +57,8 @@ const menuItems = [
   { icon: Search, label: "订单查询", path: "/order-tracking" },
 ];
 
+const SHIPPING_STAFF_MENU_PATHS = new Set(["/packing", "/order-tracking"]);
+
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
 const MIN_WIDTH = 200;
@@ -137,7 +139,11 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find(item => item.path === location);
+  const isShippingStaff = user?.role !== "admin";
+  const visibleMenuItems = isShippingStaff
+    ? menuItems.filter((item) => SHIPPING_STAFF_MENU_PATHS.has(item.path))
+    : menuItems;
+  const activeMenuItem = visibleMenuItems.find((item) => item.path === location);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -145,6 +151,12 @@ function DashboardLayoutContent({
       setIsResizing(false);
     }
   }, [isCollapsed]);
+
+  useEffect(() => {
+    if (isShippingStaff && !SHIPPING_STAFF_MENU_PATHS.has(location)) {
+      setLocation("/packing");
+    }
+  }, [isShippingStaff, location, setLocation]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -208,7 +220,7 @@ function DashboardLayoutContent({
 
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-1">
-              {menuItems.map(item => {
+              {visibleMenuItems.map(item => {
                 const isActive = location === item.path;
                 return (
                   <SidebarMenuItem key={item.path}>

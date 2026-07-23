@@ -4,6 +4,10 @@ import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
+import { getSessionCookieOptions } from "./cookies";
+import { COOKIE_NAME } from "@shared/const";
+
+const QA_SESSION_MS = 60 * 60 * 1000;
 import { registerStorageProxy } from "./storageProxy";
 import { storagePut } from "../storage";
 import { appRouter } from "../routers";
@@ -36,11 +40,49 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
+  // Configure body parser with larger size limit for file uploads. Preserve the
+  // exact Facebook webhook payload before JSON parsing so its HMAC can be checked.
+  app.use(express.json({
+    limit: "50mb",
+    verify: (req, _res, buffer) => {
+      if (req.url?.startsWith("/api/facebook/webhook")) {
+        (req as typeof req & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+      }
+    },
+  }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+
+  // SAT-only: development QA sessions, never registered in production.
+  if (process.env.NODE_ENV === "development") {
+    app.get("/__qa/login/:role", async (req, res) => {
+      const role = req.params.role === "admin" ? "admin" : "user";
+      const openId = `qa-sat-${role}`;
+      const name = role === "admin" ? "SAT Admin" : "SAT Shipping Staff";
+      try {
+        await db.upsertUser({
+          openId,
+          name,
+          loginMethod: "qa-sat",
+          role,
+          lastSignedIn: new Date(),
+        });
+        const sessionToken = await sdk.createSessionToken(openId, {
+          name,
+          expiresInMs: QA_SESSION_MS,
+        });
+        res.cookie(COOKIE_NAME, sessionToken, {
+          ...getSessionCookieOptions(req),
+          maxAge: QA_SESSION_MS,
+        });
+        res.redirect(302, "/");
+      } catch (error) {
+        console.error("[SAT] Failed to create QA session", error);
+        res.status(500).json({ error: "Unable to create development QA session" });
+      }
+    });
+  }
   // File upload endpoint (for payment receipts, product images, etc.)
   app.post("/api/upload", async (req, res) => {
     try {
