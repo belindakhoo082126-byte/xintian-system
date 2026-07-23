@@ -199,15 +199,20 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Recent Remarks (备注记录) */}
-      {recentRemarks.length > 0 && (
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2">
-            <MessageSquare className="h-5 w-5 text-primary" />
-            <CardTitle className="text-base">最近备注记录</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {recentRemarks.map((r: any) => {
+      {/* Recent Remarks (备注记录) — always show frame */}
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          <MessageSquare className="h-5 w-5 text-primary" />
+          <CardTitle className="text-base">最近备注记录</CardTitle>
+          {recentRemarks.length > 0 && (
+            <Badge variant="secondary" className="ml-auto">{recentRemarks.length}</Badge>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {recentRemarks.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">暂无备注记录</p>
+          ) : (
+            recentRemarks.map((r: any) => {
               const typeInfo = REMARK_TYPE_LABELS[r.type] || { label: r.type, color: "bg-gray-100 text-gray-700" };
               return (
                 <Link key={r.id} href={`/orders/${r.orderId}`}>
@@ -226,21 +231,23 @@ export default function Dashboard() {
                   </div>
                 </Link>
               );
-            })}
-          </CardContent>
-        </Card>
-      )}
+            })
+          )}
+        </CardContent>
+      </Card>
 
-      {/* AI Agent Pending Notifications (待人工通知) */}
-      {pendingNotifications.length > 0 && (
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2">
-            <Bot className="h-5 w-5 text-orange-500" />
-            <CardTitle className="text-base">AI Agent 待人工通知</CardTitle>
-            <Badge variant="secondary" className="ml-auto">{pendingNotifications.length}</Badge>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {pendingNotifications.map((n: any) => (
+      {/* AI Agent Pending Notifications (待人工通知) — always show frame */}
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          <Bot className="h-5 w-5 text-orange-500" />
+          <CardTitle className="text-base">AI Agent 待人工通知</CardTitle>
+          <Badge variant="secondary" className="ml-auto">{pendingNotifications.length}</Badge>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {pendingNotifications.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">暂无待人工通知记录</p>
+          ) : (
+            pendingNotifications.map((n: any) => (
               <Link key={n.id} href={n.orderId ? `/orders/${n.orderId}` : "/orders"}>
                 <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
                   <div className="flex-1 min-w-0">
@@ -257,10 +264,10 @@ export default function Dashboard() {
                   <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
                 </div>
               </Link>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+            ))
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

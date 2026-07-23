@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, adminProcedure, shippingProcedure, router } from "./_core/trpc";
+import { publicProcedure, adminProcedure, protectedProcedure, shippingProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -41,6 +41,13 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+    updateLanguage: protectedProcedure
+      .input(z.object({ language: z.enum(["zh", "en"]) }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED" });
+        await db.updateUserLanguage(ctx.user.openId, input.language);
+        return { success: true } as const;
+      }),
   }),
 
   // ===========================================================================

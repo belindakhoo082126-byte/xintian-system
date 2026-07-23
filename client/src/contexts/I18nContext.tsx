@@ -100,14 +100,64 @@ const I18nContext = createContext<I18nContextType>({
 });
 
 export function I18nProvider({ children }: { children: ReactNode }) {
+  // Start with localStorage for instant first paint, then sync with server
   const [lang, setLangState] = useState<Lang>(() => {
     const saved = localStorage.getItem("xintian-lang");
     return (saved === "en" || saved === "zh") ? saved : "zh";
   });
+  const [serverLang, setServerLang] = useState<Lang | null>(null);
+
+  // Listen for auth state changes to sync language from server
+  useEffect(() => {
+    const checkServerLang = () => {
+      try {
+        const cookie = document.cookie;
+        // If user is logged in, fetch their preferred language from the server
+        // We use a lightweight fetch to avoid circular dependency with trpc
+        fetch("/api/trpc/auth.me", {
+          headers: { "Content-Type": "application/json" },
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            const user = data?.result?.data;
+            if (user?.preferredLanguage) {
+              const serverPref = user.preferredLanguage as Lang;
+              setServerLang(serverPref);
+              // Only override if server has a preference (not default) or if different from local
+              if (serverPref !== lang) {
+                setLangState(serverPref);
+                localStorage.setItem("xintian-lang", serverPref);
+              }
+            }
+          })
+          .catch(() => {
+            // Not logged in or error — keep localStorage value
+          });
+      } catch {
+        // Keep localStorage value
+      }
+    };
+    checkServerLang();
+    // Re-check on window focus (multi-device sync)
+    window.addEventListener("focus", checkServerLang);
+    return () => window.removeEventListener("focus", checkServerLang);
+  }, []);
 
   const setLang = (newLang: Lang) => {
     setLangState(newLang);
     localStorage.setItem("xintian-lang", newLang);
+    // Persist to server so each user has their own language preference
+    try {
+      fetch("/api/trpc/auth.updateLanguage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language: newLang }),
+      }).catch(() => {
+        // Non-critical: language is saved locally even if server call fails
+      });
+    } catch {
+      // Non-critical
+    }
   };
 
   const t = (key: string): string => {

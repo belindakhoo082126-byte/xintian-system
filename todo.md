@@ -477,3 +477,12 @@
 - [x] 审查商城的商品浏览、购物车、结账与订单查询关键路径
 - [x] 记录可复现问题并按业务影响确定修复优先级
 - [x] 修复确认的高优先级问题，补充自动化测试并完成发布验证
+
+## Dashboard 空状态 + 语言用户级别存储
+
+- [x] Dashboard 备注记录区和 AI Agent 待通知区即使为空也显示框架（含空状态提示）
+- [x] users 表添加 preferredLanguage 字段
+- [x] I18nContext 改为从用户数据库读取语言偏好（而非 localStorage）
+- [x] auth.me 路由返回 preferredLanguage 字段
+- [x] 新增 auth.updateLanguage 路由用于保存语言偏好
+- [x] DashboardLayout 语言切换按钮调用后端保存

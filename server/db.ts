@@ -4306,3 +4306,14 @@ export async function getPotProducts() {
     .where(and(eq(products.isPot, true), eq(products.status, 'active')))
     .orderBy(asc(products.name));
 }
+
+// ============================================================================
+// User Language Preference (用户语言偏好)
+// ============================================================================
+export async function updateUserLanguage(openId: string, language: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users)
+    .set({ preferredLanguage: language as 'zh' | 'en' })
+    .where(eq(users.openId, openId));
+}
