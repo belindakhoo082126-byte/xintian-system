@@ -12,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Search, Eye, Truck, Plus, Trash2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { useSearch } from "wouter";
 
 const PHYSICAL_STATUS = {
   pending: { label: "待付款", variant: "outline" },
@@ -35,8 +36,12 @@ interface ManualOrderItem {
 }
 
 export default function Orders() {
+  const searchParams = useSearch();
+  const urlStatus = new URLSearchParams(searchParams).get("status");
+  const urlToday = new URLSearchParams(searchParams).get("today");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(urlStatus || "all");
+  const [todayOnly, setTodayOnly] = useState(urlToday === "1");
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailOrder, setDetailOrder] = useState<any>(null);
   const [shipForm, setShipForm] = useState({ courierCompany: "", trackingNumber: "" });
@@ -53,6 +58,7 @@ export default function Orders() {
   const { data: orders, isLoading } = trpc.orders.list.useQuery({
     search: search || undefined,
     physicalStatus: statusFilter !== "all" ? statusFilter : undefined,
+    todayOnly: todayOnly || undefined,
   });
 
   const updateStatusMutation = trpc.orders.updateStatus.useMutation({

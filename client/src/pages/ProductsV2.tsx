@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -107,9 +108,12 @@ const EMPTY_VARIANT: VariantForm = {
 };
 
 export default function ProductsV2() {
+  const searchParams = useSearch();
+  const urlStock = new URLSearchParams(searchParams).get("stock");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [stockFilter, setStockFilter] = useState<string>(urlStock || "all");
   const [page, setPage] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -130,6 +134,7 @@ export default function ProductsV2() {
     search: search || undefined,
     type: typeFilter !== "all" ? (typeFilter as any) : undefined,
     status: statusFilter !== "all" ? (statusFilter as any) : undefined,
+    stockFilter: stockFilter !== "all" ? (stockFilter as "low" | "out") : undefined,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   });

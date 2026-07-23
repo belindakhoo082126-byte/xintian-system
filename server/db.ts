@@ -328,6 +328,7 @@ export async function getOrders(filters?: {
   membershipStatus?: string;
   orderType?: string;
   search?: string;
+  todayOnly?: boolean;
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -336,6 +337,11 @@ export async function getOrders(filters?: {
   if (filters?.physicalStatus) conditions.push(eq(orders.physicalStatus, filters.physicalStatus as any));
   if (filters?.membershipStatus) conditions.push(eq(orders.membershipStatus, filters.membershipStatus as any));
   if (filters?.orderType) conditions.push(eq(orders.orderType, filters.orderType as any));
+  if (filters?.todayOnly) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    conditions.push(gte(orders.createdAt, today));
+  }
   if (filters?.search) {
     conditions.push(or(
       like(orders.orderNumber, `%${filters.search}%`),
@@ -1184,6 +1190,7 @@ export async function getProductsEnhanced(params: {
   visibility?: string;
   type?: string;
   isFeatured?: boolean;
+  stockFilter?: string;
   limit?: number;
   offset?: number;
 }) {
@@ -1210,6 +1217,15 @@ export async function getProductsEnhanced(params: {
   }
   if (params.isFeatured !== undefined) {
     conditions.push(eq(products.isFeatured, params.isFeatured));
+  }
+  if (params.stockFilter === 'low') {
+    conditions.push(eq(products.type, 'physical'));
+    conditions.push(lte(products.stockQuantity, 10));
+    conditions.push(gt(products.stockQuantity, 0));
+  }
+  if (params.stockFilter === 'out') {
+    conditions.push(eq(products.type, 'physical'));
+    conditions.push(eq(products.stockQuantity, 0));
   }
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   const limit = params.limit ?? 20;
@@ -4006,7 +4022,55 @@ export async function getDashboardV11Stats() {
       holdExpiring: Number(holdExpiring[0]?.count || 0),
       pendingPayment: Number(pendingPayment[0]?.count || 0),
     },
+    // Recent remarks (latest 10 across all orders)
+    recentRemarks: await getRecentRemarkSummaries(10),
+    // AI Agent pending notifications (status = 'pending')
+    pendingNotifications: await getPendingNotifications(10),
   };
+}
+
+// Helper: get recent remark summaries (live + customer + internal)
+async function getRecentRemarkSummaries(limit: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({
+    id: orderRemarks.id,
+    orderId: orderRemarks.orderId,
+    type: orderRemarks.type,
+    content: orderRemarks.content,
+    createdBy: orderRemarks.createdBy,
+    createdAt: orderRemarks.createdAt,
+    orderNumber: orders.orderNumber,
+    facebookName: orders.facebookName,
+  }).from(orderRemarks)
+    .leftJoin(orders, eq(orderRemarks.orderId, orders.id))
+    .orderBy(desc(orderRemarks.createdAt))
+    .limit(limit);
+  return rows;
+}
+
+// Helper: get pending notifications (AI Agent awaiting manual action)
+async function getPendingNotifications(limit: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({
+    id: notificationLogs.id,
+    orderId: notificationLogs.orderId,
+    customerId: notificationLogs.customerId,
+    type: notificationLogs.type,
+    channel: notificationLogs.channel,
+    message: notificationLogs.message,
+    status: notificationLogs.status,
+    errorMessage: notificationLogs.errorMessage,
+    createdAt: notificationLogs.createdAt,
+    orderNumber: orders.orderNumber,
+    facebookName: orders.facebookName,
+  }).from(notificationLogs)
+    .leftJoin(orders, eq(notificationLogs.orderId, orders.id))
+    .where(eq(notificationLogs.status, 'pending'))
+    .orderBy(desc(notificationLogs.createdAt))
+    .limit(limit);
+  return rows;
 }
 
 // Helper: gt

@@ -287,6 +287,7 @@ export const appRouter = router({
         visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
         type: z.enum(['physical', 'membership', 'gift']).optional(),
         isFeatured: z.boolean().optional(),
+        stockFilter: z.enum(['low', 'out']).optional(),
         limit: z.number().optional(),
         offset: z.number().optional(),
       }).optional())
@@ -929,6 +930,7 @@ export const appRouter = router({
         membershipStatus: z.string().optional(),
         orderType: z.string().optional(),
         search: z.string().optional(),
+        todayOnly: z.boolean().optional(),
       }).optional())
       .query(async ({ input }) => {
         return await db.getOrders(input || {});

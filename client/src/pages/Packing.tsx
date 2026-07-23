@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,9 @@ const STATUS_TABS = [
 ] as const;
 
 export default function Packing() {
-  const [activeTab, setActiveTab] = useState<string>("packing");
+  const searchParams = useSearch();
+  const urlTab = new URLSearchParams(searchParams).get("tab");
+  const [activeTab, setActiveTab] = useState<string>(urlTab || "packing");
 
   const isScheduledTab = activeTab === "scheduled";
   const [dateFrom, setDateFrom] = useState<string>("");

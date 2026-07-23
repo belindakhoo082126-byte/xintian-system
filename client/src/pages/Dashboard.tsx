@@ -1,11 +1,19 @@
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Clock, Package, Truck, DollarSign, TrendingUp,
   ShoppingCart, Warehouse, Calendar, Bell,
   ShoppingBag, CheckCircle, XCircle, Ban,
+  MessageSquare, Bot, ArrowRight,
 } from "lucide-react";
 import { Link } from "wouter";
+
+const REMARK_TYPE_LABELS: Record<string, { label: string; color: string }> = {
+  live: { label: "直播备注", color: "bg-blue-100 text-blue-700" },
+  customer: { label: "客户备注", color: "bg-green-100 text-green-700" },
+  internal: { label: "内部备注", color: "bg-gray-100 text-gray-700" },
+};
 
 export default function Dashboard() {
   const { data: stats, isLoading } = trpc.dashboardV11.stats.useQuery();
@@ -22,45 +30,52 @@ export default function Dashboard() {
 
   const alerts: { label: string; count: number; link: string; color: string }[] = [];
   if (stats.alerts.pendingPayment > 0) {
-    alerts.push({ label: "待审核付款", count: stats.alerts.pendingPayment, link: "/orders", color: "bg-orange-500" });
+    alerts.push({ label: "待审核付款", count: stats.alerts.pendingPayment, link: "/orders?status=receipt_uploaded", color: "bg-orange-500" });
   }
   if (stats.alerts.repotOrders > 0) {
     alerts.push({ label: "换盆安排", count: stats.alerts.repotOrders, link: "/packing", color: "bg-blue-500" });
   }
   if (stats.alerts.scheduledToday > 0) {
-    alerts.push({ label: "今日预约发货", count: stats.alerts.scheduledToday, link: "/packing", color: "bg-purple-500" });
+    alerts.push({ label: "今日预约发货", count: stats.alerts.scheduledToday, link: "/packing?tab=scheduled", color: "bg-purple-500" });
   }
   if (stats.alerts.holdExpiring > 0) {
-    alerts.push({ label: "保留订单", count: stats.alerts.holdExpiring, link: "/orders", color: "bg-yellow-500" });
+    alerts.push({ label: "保留订单", count: stats.alerts.holdExpiring, link: "/orders?status=hold_order", color: "bg-yellow-500" });
   }
 
+  // Row 1: Today's tasks — links with status filter
   const row1 = [
-    { title: "待审核付款", value: stats.row1.pendingPayment, icon: Clock, color: "text-orange-500", link: "/orders" },
-    { title: "待出货", value: stats.row1.pendingShipment, icon: Package, color: "text-blue-500", link: "/packing" },
-    { title: "部分发货", value: stats.row1.partialShipped, icon: Truck, color: "text-cyan-500", link: "/packing" },
+    { title: "待审核付款", value: stats.row1.pendingPayment, icon: Clock, color: "text-orange-500", link: "/orders?status=receipt_uploaded" },
+    { title: "待出货", value: stats.row1.pendingShipment, icon: Package, color: "text-blue-500", link: "/packing?tab=packing" },
+    { title: "部分发货", value: stats.row1.partialShipped, icon: Truck, color: "text-cyan-500", link: "/packing?tab=partial_shipped" },
   ];
 
+  // Row 2: Orders — links with status filter; "本月已汇款" not clickable
   const row2 = [
-    { title: "未汇款订单", value: stats.row2.unpaidOrders, icon: ShoppingCart, color: "text-red-500", link: "/orders" },
-    { title: "本月已汇款", value: stats.row2.paidThisMonth, icon: CheckCircle, color: "text-green-500", link: "/orders" },
-    { title: "保留订单", value: stats.row2.holdOrders, icon: Ban, color: "text-yellow-500", link: "/orders" },
+    { title: "未汇款订单", value: stats.row2.unpaidOrders, icon: ShoppingCart, color: "text-red-500", link: "/orders?status=pending" },
+    { title: "本月已汇款", value: stats.row2.paidThisMonth, icon: CheckCircle, color: "text-green-500", link: null as string | null },
+    { title: "保留订单", value: stats.row2.holdOrders, icon: Ban, color: "text-yellow-500", link: "/orders?status=hold_order" },
   ];
 
+  // Row 3: Inventory — links with stock filter
   const row3 = [
-    { title: "库存不足", value: stats.row3.lowStock, icon: Warehouse, color: "text-orange-500", link: "/products" },
-    { title: "缺货商品", value: stats.row3.outOfStock, icon: XCircle, color: "text-red-500", link: "/products" },
+    { title: "库存不足", value: stats.row3.lowStock, icon: Warehouse, color: "text-orange-500", link: "/products?stock=low" },
+    { title: "缺货商品", value: stats.row3.outOfStock, icon: XCircle, color: "text-red-500", link: "/products?stock=out" },
   ];
 
+  // Row 4: Business stats — today orders links to filtered orders
   const row4 = [
-    { title: "今日订单", value: stats.row4.todayOrders, icon: ShoppingBag, color: "text-blue-500", link: "/orders" },
-    { title: "今日已发货", value: stats.row4.todayShipped, icon: Truck, color: "text-green-500", link: "/packing" },
-    { title: "今日销售额", value: `RM ${Number(stats.row4.todaySales).toFixed(2)}`, icon: DollarSign, color: "text-green-600", link: "/business-report" },
-    { title: "本月销售额", value: `RM ${Number(stats.row4.monthSales).toFixed(2)}`, icon: TrendingUp, color: "text-primary", link: "/business-report" },
+    { title: "今日订单", value: stats.row4.todayOrders, icon: ShoppingBag, color: "text-blue-500", link: "/orders?today=1" },
+    { title: "今日已发货", value: stats.row4.todayShipped, icon: Truck, color: "text-green-500", link: "/packing?tab=shipped" },
+    { title: "今日销售额", value: `RM ${Number(stats.row4.todaySales).toFixed(2)}`, icon: DollarSign, color: "text-green-600", link: "/profit-report" },
+    { title: "本月销售额", value: `RM ${Number(stats.row4.monthSales).toFixed(2)}`, icon: TrendingUp, color: "text-primary", link: "/profit-report" },
   ];
 
   const row5 = [
-    { title: "今日预约发货", value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "/packing" },
+    { title: "今日预约发货", value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "/packing?tab=scheduled" },
   ];
+
+  const recentRemarks = (stats as any).recentRemarks || [];
+  const pendingNotifications = (stats as any).pendingNotifications || [];
 
   return (
     <div className="space-y-6">
@@ -106,9 +121,21 @@ export default function Dashboard() {
 
       {/* Row 2: Orders */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {row2.map((card, i) => (
-          <Link key={i} href={card.link}>
-            <Card className="hover:shadow-md transition-shadow cursor-pointer">
+        {row2.map((card, i) =>
+          card.link ? (
+            <Link key={i} href={card.link}>
+              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
+                  <card.icon className={`h-5 w-5 ${card.color}`} />
+                </CardHeader>
+                <CardContent>
+                  <div className={`text-3xl font-bold ${card.color}`}>{card.value}</div>
+                </CardContent>
+              </Card>
+            </Link>
+          ) : (
+            <Card key={i}>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
                 <card.icon className={`h-5 w-5 ${card.color}`} />
@@ -117,8 +144,8 @@ export default function Dashboard() {
                 <div className={`text-3xl font-bold ${card.color}`}>{card.value}</div>
               </CardContent>
             </Card>
-          </Link>
-        ))}
+          ),
+        )}
       </div>
 
       {/* Row 3: Inventory */}
@@ -171,6 +198,69 @@ export default function Dashboard() {
           </Link>
         ))}
       </div>
+
+      {/* Recent Remarks (备注记录) */}
+      {recentRemarks.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-primary" />
+            <CardTitle className="text-base">最近备注记录</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {recentRemarks.map((r: any) => {
+              const typeInfo = REMARK_TYPE_LABELS[r.type] || { label: r.type, color: "bg-gray-100 text-gray-700" };
+              return (
+                <Link key={r.id} href={`/orders/${r.orderId}`}>
+                  <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+                    <Badge className={`shrink-0 ${typeInfo.color}`} variant="secondary">
+                      {typeInfo.label}
+                    </Badge>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate">{r.content}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {r.orderNumber || `#${r.orderId}`} {r.facebookName ? `· ${r.facebookName}` : ""}
+                        {r.createdBy ? ` · ${r.createdBy}` : ""}
+                        {r.createdAt ? ` · ${new Date(r.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* AI Agent Pending Notifications (待人工通知) */}
+      {pendingNotifications.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <Bot className="h-5 w-5 text-orange-500" />
+            <CardTitle className="text-base">AI Agent 待人工通知</CardTitle>
+            <Badge variant="secondary" className="ml-auto">{pendingNotifications.length}</Badge>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {pendingNotifications.map((n: any) => (
+              <Link key={n.id} href={n.orderId ? `/orders/${n.orderId}` : "/orders"}>
+                <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate">
+                      <Badge variant="outline" className="mr-2">{n.type}</Badge>
+                      {n.message || "(无消息内容)"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {n.orderNumber || `#${n.orderId || ""}`} {n.facebookName ? `· ${n.facebookName}` : ""}
+                      {n.createdAt ? ` · ${new Date(n.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
+                      {n.errorMessage ? ` · 错误: ${n.errorMessage}` : ""}
+                    </p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
+                </div>
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
