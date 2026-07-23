@@ -148,23 +148,6 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Row 3: Inventory */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {row3.map((card, i) => (
-          <Link key={i} href={card.link}>
-            <Card className="hover:shadow-md transition-shadow cursor-pointer">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
-                <card.icon className={`h-5 w-5 ${card.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-3xl font-bold ${card.color}`}>{card.value}</div>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </div>
-
       {/* Row 4: Business Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {row4.map((card, i) => (
@@ -268,6 +251,23 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Row 3: Inventory — moved to bottom */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {row3.map((card, i) => (
+          <Link key={i} href={card.link}>
+            <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
+                <card.icon className={`h-5 w-5 ${card.color}`} />
+              </CardHeader>
+              <CardContent>
+                <div className={`text-3xl font-bold ${card.color}`}>{card.value}</div>
+              </CardContent>
+            </Card>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
