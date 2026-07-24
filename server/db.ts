@@ -4136,7 +4136,25 @@ export async function getDashboardV11Stats() {
     recentRemarks: await getRecentRemarkSummaries(10),
     // AI Agent pending notifications (status = 'pending')
     pendingNotifications: await getPendingNotifications(10),
+    // V2.0: Import Pre-order stats
+    importPreorderStats: await getImportPreorderStatsSafe(),
   };
+}
+
+// Helper: get import pre-order stats safely (always returns a structure)
+async function getImportPreorderStatsSafe() {
+  try {
+    const stats = await getImportPreorderStats();
+    if (!stats) return { totalPaidAmount: "0.00", totalUnpaidAmount: "0.00", specialOrdersCount: 0, activeBatchesCount: 0 };
+    return {
+      totalPaidAmount: (stats as any).paidSales || "0.00",
+      totalUnpaidAmount: String((stats as any).unpaidCount || 0),
+      specialOrdersCount: (stats as any).specialOrders || 0,
+      activeBatchesCount: (stats as any).activeBatches || 0,
+    };
+  } catch {
+    return { totalPaidAmount: "0.00", totalUnpaidAmount: "0.00", specialOrdersCount: 0, activeBatchesCount: 0 };
+  }
 }
 
 // Helper: get recent remark summaries (live + customer + internal)
