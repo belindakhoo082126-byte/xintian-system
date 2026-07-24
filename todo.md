@@ -625,3 +625,11 @@
 ### 权限
 - [x] 所有包货人员可操作实际重量/AWB/补运费/退款/公司承担
 - [x] 全部操作记录帐号、时间、修改内容
+
+### Bug Fix: 商品创建失败 & 移除参考成本
+- [x] 修复 productsV2.create/update 路由 Zod schema 缺少 V2 新字段（isSpecial, allowPresale, allowStandaloneShipping, standaloneShippingMethod, standaloneShippingFee, specialPrice, lightDesc, waterDesc, fertilizerDesc, pruningDesc, isPot, potCapacity, syncToMall, mallSortOrder, productImages）
+- [x] 修复 createProductEnhanced 缺少 V2 新字段的写入
+- [x] 修复 updateProductEnhanced 缺少 V2 新字段的更新
+- [x] 移除前端「参考成本」(estimatedCost) 字段，成本改为 currentCost 自动计算
+- [x] 验证商品可正常创建和编辑（TypeScript 零错误，119 项测试通过）
+- [x] 编译测试并保存检查点

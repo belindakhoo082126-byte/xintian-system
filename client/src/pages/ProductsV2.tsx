@@ -62,7 +62,6 @@ type ProductForm = {
   sellingPrice: string;
   compareAtPrice: string;
   memberPrice: string;
-  estimatedCost: string;
   currentCost: string;
   weightKg: string;
   stockQuantity: number;
@@ -92,7 +91,7 @@ const EMPTY_FORM: ProductForm = {
   name: "", type: "physical", productMode: "simple", categoryId: undefined, unitId: undefined,
   keyword: "", status: "draft", visibility: "public", priceVisibility: "show",
   shortDescZh: "", shortDescEn: "", fullDescZh: "", fullDescEn: "", careZh: "", careEn: "",
-  sellingPrice: "", compareAtPrice: "", memberPrice: "", estimatedCost: "", currentCost: "",
+  sellingPrice: "", compareAtPrice: "", memberPrice: "", currentCost: "",
   weightKg: "", stockQuantity: 0, isFeatured: false, featuredSortOrder: 0,
   membershipIntro: "", telegramFlowLink: "", allowStandalonePurchase: true, allowMixedCheckout: true,
   notes: "", coverImageUrl: "", dimensions: {},
@@ -118,16 +117,14 @@ type VariantForm = {
   sellingPrice: string;
   compareAtPrice: string;
   memberPrice: string;
-  estimatedCost: string;
-  status: "active" | "inactive" | "hidden";
+    status: "active" | "inactive" | "hidden";
   sortOrder: number;
   imageUrl: string;
   stockQuantity: number;
 };
-
 const EMPTY_VARIANT: VariantForm = {
   name: "", keyword: "", sellingPrice: "", compareAtPrice: "", memberPrice: "",
-  estimatedCost: "", status: "active", sortOrder: 0, imageUrl: "", stockQuantity: 0,
+  status: "active", sortOrder: 0, imageUrl: "", stockQuantity: 0,
 };
 
 export default function ProductsV2() {
@@ -204,7 +201,6 @@ export default function ProductsV2() {
         sellingPrice: p.sellingPrice || "",
         compareAtPrice: p.compareAtPrice || "",
         memberPrice: p.memberPrice || "",
-        estimatedCost: p.estimatedCost || "",
         currentCost: p.currentCost || "",
         weightKg: p.weightKg || "",
         stockQuantity: p.stockQuantity || 0,
@@ -399,7 +395,7 @@ export default function ProductsV2() {
       sellingPrice: v.sellingPrice || "",
       compareAtPrice: v.compareAtPrice || "",
       memberPrice: v.memberPrice || "",
-      estimatedCost: v.estimatedCost || "",
+
       status: v.status || "active",
       sortOrder: v.sortOrder || 0,
       imageUrl: v.imageUrl || "",
@@ -443,9 +439,9 @@ export default function ProductsV2() {
   );
 
   const simulatorProfit = useMemo(() => {
-    const cost = parseFloat(form.estimatedCost) || 0;
+    const cost = parseFloat(form.currentCost) || 0;
     return simulatorTestPrice - cost;
-  }, [simulatorTestPrice, form.estimatedCost]);
+  }, [simulatorTestPrice, form.currentCost]);
 
   const simulatorMargin = useMemo(() => {
     if (simulatorTestPrice <= 0) return 0;
@@ -958,23 +954,15 @@ export default function ProductsV2() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>{translate("参考成本 (RM)", "Estimated Cost (RM)")}</Label>
-                        <Input type="number" placeholder="0.00" value={form.estimatedCost}
-                          onChange={(e) => setForm({ ...form, estimatedCost: e.target.value })} disabled={isMembership} />
-                        <p className="text-xs text-muted-foreground mt-1">{translate("预估成本，用于利润计算", "Estimated cost used for profit calculations")}</p>
-                      </div>
-                      <div>
-                        <Label>{translate("当前成本 (RM)", "Current Cost (RM)")}</Label>
-                        <Input type="number" placeholder="0.00" value={form.currentCost}
-                          readOnly disabled={isMembership} className="bg-muted/50 cursor-not-allowed" />
-                        <p className="text-xs text-muted-foreground mt-1">{translate("由进货管理自动更新（FIFO），此处仅供参考", "Auto-updated from purchase orders (FIFO), read-only reference")}</p>
-                      </div>
+                    <div>
+                      <Label>{translate("当前成本 (RM)", "Current Cost (RM)")}</Label>
+                      <Input type="number" placeholder="0.00" value={form.currentCost}
+                        readOnly disabled={isMembership} className="bg-muted/50 cursor-not-allowed" />
+                      <p className="text-xs text-muted-foreground mt-1">{translate("由进货管理自动更新（FIFO），此处仅供参考", "Auto-updated from purchase orders (FIFO), read-only reference")}</p>
                     </div>
 
                     {/* Price Simulator */}
-                    {!isGift && !isMembership && form.estimatedCost && (
+                    {!isGift && !isMembership && form.currentCost && (
                       <div className="p-4 rounded-lg border bg-muted/30 space-y-3">
                         <div className="flex items-center gap-2">
                           <TrendingUp className="h-4 w-4 text-primary" />
@@ -1258,8 +1246,8 @@ export default function ProductsV2() {
                           <div>{translate("可见性", "Visibility")}: {form.visibility === "public" ? translate("公开", "Public") : form.visibility === "link_only" ? translate("仅链接", "Link Only") : translate("隐藏", "Hidden")}</div>
                           <div>{translate("推荐", "Featured")}: {form.isFeatured ? translate("是", "Yes") : translate("否", "No")}</div>
                           {!isMembership && <div>{translate("库存", "Stock")}: {form.stockQuantity}</div>}
-                          {!isMembership && form.estimatedCost && (
-                            <div>{translate("预计利润", "Estimated Profit")}: <span className={parseFloat(form.sellingPrice) - parseFloat(form.estimatedCost) >= 0 ? "text-green-600" : "text-red-600"}>RM {(parseFloat(form.sellingPrice) - parseFloat(form.estimatedCost)).toFixed(2)}</span></div>
+                          {!isMembership && form.currentCost && (
+                            <div>{translate("预计利润", "Estimated Profit")}: <span className={parseFloat(form.sellingPrice) - parseFloat(form.currentCost) >= 0 ? "text-green-600" : "text-red-600"}>RM {(parseFloat(form.sellingPrice) - parseFloat(form.currentCost)).toFixed(2)}</span></div>
                           )}
                         </div>
                         {isVariant && variants.length > 0 && (
@@ -1360,12 +1348,7 @@ export default function ProductsV2() {
                   onChange={(e) => setVariantForm({ ...variantForm, memberPrice: e.target.value })} />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>{translate("参考成本 (RM)", "Estimated Cost (RM)")}</Label>
-                <Input type="number" placeholder={translate("继承商品", "Inherit Product")} value={variantForm.estimatedCost}
-                  onChange={(e) => setVariantForm({ ...variantForm, estimatedCost: e.target.value })} />
-              </div>
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>{translate("库存", "Stock")}</Label>
                 <Input type="number" value={variantForm.stockQuantity}

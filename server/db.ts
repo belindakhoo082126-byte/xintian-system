@@ -1301,8 +1301,8 @@ export async function createProductEnhanced(data: {
   sellingPrice?: string;
   compareAtPrice?: string;
   memberPrice?: string;
-  estimatedCost?: string;
   currentCost?: string;
+  specialPrice?: string;
   dimensions?: any;
   weightKg?: string;
   stockQuantity?: number;
@@ -1321,10 +1321,17 @@ export async function createProductEnhanced(data: {
   isSpecial?: boolean;
   allowPresale?: boolean;
   allowStandaloneShipping?: boolean;
+  standaloneShippingMethod?: string;
+  standaloneShippingFee?: string;
   lightDesc?: string;
   waterDesc?: string;
   fertilizerDesc?: string;
   pruningDesc?: string;
+  syncToMall?: boolean;
+  mallSortOrder?: number;
+  isPot?: boolean;
+  potCapacity?: string;
+  productImages?: string[];
 }) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
@@ -1350,7 +1357,7 @@ export async function createProductEnhanced(data: {
     sellingPrice: data.sellingPrice,
     compareAtPrice: data.compareAtPrice,
     memberPrice: data.memberPrice,
-    estimatedCost: data.estimatedCost,
+    specialPrice: data.specialPrice,
     currentCost: data.currentCost,
     dimensions: data.dimensions,
     weightKg: data.weightKg,
@@ -1369,12 +1376,33 @@ export async function createProductEnhanced(data: {
     isSpecial: data.isSpecial ?? false,
     allowPresale: data.allowPresale ?? false,
     allowStandaloneShipping: data.allowStandaloneShipping ?? false,
+    standaloneShippingMethod: (data.standaloneShippingMethod as any) || 'fixed_fee',
+    standaloneShippingFee: data.standaloneShippingFee,
     lightDesc: data.lightDesc,
     waterDesc: data.waterDesc,
     fertilizerDesc: data.fertilizerDesc,
     pruningDesc: data.pruningDesc,
+    syncToMall: data.syncToMall ?? false,
+    mallSortOrder: data.mallSortOrder ?? 0,
+    isPot: data.isPot ?? false,
+    potCapacity: data.potCapacity,
   });
-  return { id: result[0].insertId, sku };
+  const productId = result[0].insertId;
+  // Save product images to product_images table
+  if (data.productImages && data.productImages.length > 0) {
+    for (let i = 0; i < data.productImages.length; i++) {
+      const url = data.productImages[i];
+      const fileKey = url.replace(/^.*\/manus-storage\//, '');
+      await db.insert(productImages).values({
+        productId,
+        url,
+        fileKey,
+        sortOrder: i,
+        isMain: i === 0,
+      });
+    }
+  }
+  return { id: productId, sku };
 }
 
 export async function updateProductEnhanced(id: number, data: Partial<{
@@ -1396,8 +1424,8 @@ export async function updateProductEnhanced(id: number, data: Partial<{
   sellingPrice: string;
   compareAtPrice: string;
   memberPrice: string;
-  estimatedCost: string;
   currentCost: string;
+  specialPrice: string;
   dimensions: any;
   weightKg: string;
   stockQuantity: number;
@@ -1416,18 +1444,41 @@ export async function updateProductEnhanced(id: number, data: Partial<{
   isSpecial: boolean;
   allowPresale: boolean;
   allowStandaloneShipping: boolean;
+  standaloneShippingMethod: string;
+  standaloneShippingFee: string;
   lightDesc: string;
   waterDesc: string;
   fertilizerDesc: string;
   pruningDesc: string;
+  syncToMall: boolean;
+  mallSortOrder: number;
+  isPot: boolean;
+  potCapacity: string;
+  productImages: string[];
 }>) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
-  const updateData: any = { ...data };
+  const { productImages: imageUrls, ...updateData } = data;
   if (data.keyword) {
     updateData.keyword = data.keyword.toUpperCase().replace(/\s+/g, '');
   }
-  await db.update(products).set(updateData).where(eq(products.id, id));
+  await db.update(products).set(updateData as any).where(eq(products.id, id));
+  // Sync product images if provided
+  if (imageUrls) {
+    // Delete existing images and re-insert
+    await db.delete(productImages).where(eq(productImages.productId, id));
+    for (let i = 0; i < imageUrls.length; i++) {
+      const url = imageUrls[i];
+      const fileKey = url.replace(/^.*\/manus-storage\//, '');
+      await db.insert(productImages).values({
+        productId: id,
+        url,
+        fileKey,
+        sortOrder: i,
+        isMain: i === 0,
+      });
+    }
+  }
 }
 
 export async function deleteProductEnhanced(id: number) {
