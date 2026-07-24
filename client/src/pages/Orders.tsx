@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,15 +16,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { useSearch } from "wouter";
 
 const PHYSICAL_STATUS = {
-  pending: { label: "待付款", variant: "outline" },
-  receipt_uploaded: { label: "待审核付款凭证", variant: "secondary" },
-  partial_payment: { label: "部分付款", variant: "secondary" },
-  hold_order: { label: "保留订单", variant: "outline" },
-  packing: { label: "待包货", variant: "default" },
-  partial_shipped: { label: "部分发货", variant: "secondary" },
-  shipped: { label: "已发货", variant: "default" },
-  completed: { label: "已完成", variant: "default" },
-  cancelled: { label: "已取消", variant: "destructive" },
+  pending: { label: "待付款", enLabel: "Pending Payment", variant: "outline" },
+  receipt_uploaded: { label: "待审核付款凭证", enLabel: "Pending Payment Verification", variant: "secondary" },
+  partial_payment: { label: "部分付款", enLabel: "Partial Payment", variant: "secondary" },
+  hold_order: { label: "保留订单", enLabel: "Hold Order", variant: "outline" },
+  packing: { label: "待包货", enLabel: "Pending Packing", variant: "default" },
+  partial_shipped: { label: "部分发货", enLabel: "Partial Shipped", variant: "secondary" },
+  shipped: { label: "已发货", enLabel: "Shipped", variant: "default" },
+  completed: { label: "已完成", enLabel: "Completed", variant: "default" },
+  cancelled: { label: "已取消", enLabel: "Cancelled", variant: "destructive" },
 } as const;
 
 interface ManualOrderItem {
@@ -36,6 +37,7 @@ interface ManualOrderItem {
 }
 
 export default function Orders() {
+  const { translate, lang } = useI18n();
   const searchParams = useSearch();
   const urlStatus = new URLSearchParams(searchParams).get("status");
   const urlToday = new URLSearchParams(searchParams).get("today");
@@ -64,9 +66,9 @@ export default function Orders() {
   const updateStatusMutation = trpc.orders.updateStatus.useMutation({
     onSuccess: () => {
       utils.orders.invalidate();
-      toast.success("订单状态已更新");
+      toast.success(translate("订单状态已更新", "Order status updated"));
     },
-    onError: (e) => toast.error(`操作失败: ${e.message}`),
+    onError: (e) => toast.error(translate("操作失败: {message}", "Operation failed: {message}", { message: e.message })),
   });
 
   const findCustomerMutation = trpc.customers.findOrCreate.useMutation({
@@ -88,18 +90,18 @@ export default function Orders() {
         shippingMethod: customerForm.shippingMethod || undefined,
       });
     },
-    onError: (e) => toast.error(`客户创建失败: ${e.message}`),
+    onError: (e) => toast.error(translate("客户创建失败: {message}", "Customer creation failed: {message}", { message: e.message })),
   });
 
   const createOrderMutation = trpc.orders.create.useMutation({
     onSuccess: (r: any) => {
       utils.orders.invalidate();
-      toast.success(`订单创建成功: ${r.orderNumber}`);
+      toast.success(translate("订单创建成功: {orderNumber}", "Order created successfully: {orderNumber}", { orderNumber: r.orderNumber }));
       setCreateOpen(false);
       setManualItems([]);
       setCustomerForm({ facebookName: "", facebookId: "", messengerId: "", name: "", phoneNumber: "", address: "", shippingMethod: "west_malaysia" });
     },
-    onError: (e) => toast.error(`订单创建失败: ${e.message}`),
+    onError: (e) => toast.error(translate("订单创建失败: {message}", "Order creation failed: {message}", { message: e.message })),
   });
 
   function addManualItem() {
@@ -149,11 +151,11 @@ export default function Orders() {
 
   function handleCreateOrder() {
     if (manualItems.length === 0 || manualItems.every(i => i.productId === undefined)) {
-      toast.error("请至少添加一个商品");
+      toast.error(translate("请至少添加一个商品", "Please add at least one product"));
       return;
     }
     if (!customerForm.name.trim() && !customerForm.facebookName.trim()) {
-      toast.error("请输入客户名称或 Facebook 名称");
+      toast.error(translate("请输入客户名称或 Facebook 名称", "Please enter customer name or Facebook name"));
       return;
     }
     findCustomerMutation.mutate({
@@ -173,7 +175,7 @@ export default function Orders() {
   function handleShip() {
     if (!detailOrder) return;
     if (!shipForm.courierCompany || !shipForm.trackingNumber) {
-      toast.error("请填写快递公司和追踪号码");
+      toast.error(translate("请填写快递公司和追踪号码", "Please fill in courier company and tracking number"));
       return;
     }
     updateStatusMutation.mutate({
@@ -190,11 +192,11 @@ export default function Orders() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">订单管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">实体商品订单处理</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{translate("订单管理", "Order Management")}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{translate("实体商品订单处理", "Physical product order processing")}</p>
         </div>
         <Button onClick={() => { setManualItems([]); setCreateOpen(true); }}>
-          <Plus className="h-4 w-4 mr-2" />手动建单
+          <Plus className="h-4 w-4 mr-2" />{translate("手动建单", "Create Manual Order")}
         </Button>
       </div>
 
@@ -202,7 +204,7 @@ export default function Orders() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="搜索订单号或客户名..."
+            placeholder={translate("搜索订单号或客户名...", "Search order number or customer name...")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10"
@@ -210,12 +212,12 @@ export default function Orders() {
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="订单状态" />
+            <SelectValue placeholder={translate("订单状态", "Order Status")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部状态</SelectItem>
+            <SelectItem value="all">{translate("全部状态", "All Statuses")}</SelectItem>
             {Object.entries(PHYSICAL_STATUS).map(([k, v]) => (
-              <SelectItem key={k} value={k}>{v.label}</SelectItem>
+              <SelectItem key={k} value={k}>{translate(v.label, v.enLabel)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -226,28 +228,28 @@ export default function Orders() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>订单号</TableHead>
-                <TableHead>客户</TableHead>
-                <TableHead>类型</TableHead>
-                <TableHead>实体金额</TableHead>
-                <TableHead>运费</TableHead>
-                <TableHead>总金额</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                <TableHead>{translate("订单号", "Order No.")}</TableHead>
+                <TableHead>{translate("客户", "Customer")}</TableHead>
+                <TableHead>{translate("类型", "Type")}</TableHead>
+                <TableHead>{translate("实体金额", "Physical Amount")}</TableHead>
+                <TableHead>{translate("运费", "Shipping Fee")}</TableHead>
+                <TableHead>{translate("总金额", "Total Amount")}</TableHead>
+                <TableHead>{translate("状态", "Status")}</TableHead>
+                <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">加载中...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
               ) : orders?.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">暂无订单</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{translate("暂无订单", "No orders yet")}</TableCell></TableRow>
               ) : orders?.map(o => (
                 <TableRow key={o.id}>
                   <TableCell className="font-mono text-sm">{o.orderNumber}</TableCell>
                   <TableCell>{o.facebookName || "-"}</TableCell>
                   <TableCell>
                     <Badge variant="outline">
-                      {o.orderType === "mixed" ? "混合" : o.orderType === "membership" ? "会员" : "实体"}
+                      {o.orderType === "mixed" ? translate("混合", "Mixed") : o.orderType === "membership" ? translate("会员", "Membership") : translate("实体", "Physical")}
                     </Badge>
                   </TableCell>
                   <TableCell>RM {o.physicalSubtotal}</TableCell>
@@ -255,7 +257,7 @@ export default function Orders() {
                   <TableCell className="font-semibold">RM {o.totalAmount}</TableCell>
                   <TableCell>
                     <Badge variant={PHYSICAL_STATUS[o.physicalStatus as keyof typeof PHYSICAL_STATUS]?.variant || "outline"}>
-                      {PHYSICAL_STATUS[o.physicalStatus as keyof typeof PHYSICAL_STATUS]?.label || o.physicalStatus}
+                      {translate(PHYSICAL_STATUS[o.physicalStatus as keyof typeof PHYSICAL_STATUS]?.label || o.physicalStatus, PHYSICAL_STATUS[o.physicalStatus as keyof typeof PHYSICAL_STATUS]?.enLabel || o.physicalStatus)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
@@ -273,60 +275,60 @@ export default function Orders() {
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>订单详情 - {detailOrder?.orderNumber}</DialogTitle>
+            <DialogTitle>{translate("订单详情", "Order Details")} - {detailOrder?.orderNumber}</DialogTitle>
           </DialogHeader>
           {detailOrder && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="text-muted-foreground">客户名称</p>
+                  <p className="text-muted-foreground">{translate("客户名称", "Customer Name")}</p>
                   <p className="font-medium">{detailOrder.facebookName || "-"}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">订单类型</p>
+                  <p className="text-muted-foreground">{translate("订单类型", "Order Type")}</p>
                   <p className="font-medium">{detailOrder.orderType}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">实体商品金额</p>
+                  <p className="text-muted-foreground">{translate("实体商品金额", "Physical Product Amount")}</p>
                   <p className="font-medium">RM {detailOrder.physicalSubtotal}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">会员费金额</p>
+                  <p className="text-muted-foreground">{translate("会员费金额", "Membership Fee Amount")}</p>
                   <p className="font-medium">RM {detailOrder.membershipSubtotal}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">运费</p>
+                  <p className="text-muted-foreground">{translate("运费", "Shipping Fee")}</p>
                   <p className="font-medium">RM {detailOrder.shippingFee}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">订单总金额</p>
+                  <p className="text-muted-foreground">{translate("订单总金额", "Total Order Amount")}</p>
                   <p className="font-bold text-lg">RM {detailOrder.totalAmount}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">实体订单状态</p>
+                  <p className="text-muted-foreground">{translate("实体订单状态", "Physical Order Status")}</p>
                   <Badge variant={PHYSICAL_STATUS[detailOrder.physicalStatus as keyof typeof PHYSICAL_STATUS]?.variant || "outline"}>
-                    {PHYSICAL_STATUS[detailOrder.physicalStatus as keyof typeof PHYSICAL_STATUS]?.label}
+                    {translate(PHYSICAL_STATUS[detailOrder.physicalStatus as keyof typeof PHYSICAL_STATUS]?.label || detailOrder.physicalStatus, PHYSICAL_STATUS[detailOrder.physicalStatus as keyof typeof PHYSICAL_STATUS]?.enLabel || detailOrder.physicalStatus)}
                   </Badge>
                 </div>
                 {detailOrder.courierCompany && (
                   <div>
-                    <p className="text-muted-foreground">快递公司</p>
+                    <p className="text-muted-foreground">{translate("快递公司", "Courier Company")}</p>
                     <p className="font-medium">{detailOrder.courierCompany}</p>
                   </div>
                 )}
                 {detailOrder.trackingNumber && (
                   <div>
-                    <p className="text-muted-foreground">追踪号码</p>
+                    <p className="text-muted-foreground">{translate("追踪号码", "Tracking Number")}</p>
                     <p className="font-mono text-sm">{detailOrder.trackingNumber}</p>
                   </div>
                 )}
                 {detailOrder.receiptUrl && (
                   <div className="col-span-2">
-                    <p className="text-muted-foreground mb-2">付款凭证</p>
+                    <p className="text-muted-foreground mb-2">{translate("付款凭证", "Payment Receipt")}</p>
                     <a href={detailOrder.receiptUrl} target="_blank" rel="noreferrer" className="inline-block rounded-lg border bg-muted/30 p-1 transition-opacity hover:opacity-80">
-                      <img src={detailOrder.receiptUrl} alt="付款凭证" className="h-32 w-48 rounded object-cover" />
+                      <img src={detailOrder.receiptUrl} alt={translate("付款凭证", "Payment Receipt")} className="h-32 w-48 rounded object-cover" />
                     </a>
-                    <a href={detailOrder.receiptUrl} target="_blank" rel="noreferrer" className="ml-3 text-sm text-primary underline underline-offset-4">查看原图</a>
+                    <a href={detailOrder.receiptUrl} target="_blank" rel="noreferrer" className="ml-3 text-sm text-primary underline underline-offset-4">{translate("查看原图", "View Original")}</a>
                   </div>
                 )}
               </div>
@@ -339,7 +341,7 @@ export default function Orders() {
                       updateStatusMutation.mutate({ id: detailOrder.id, physicalStatus: "packing" });
                       setDetailOpen(false);
                     }}>
-                    确认收款并转交包货
+                    {translate("确认收款并转交包货", "Confirm Payment & Transfer to Packing")}
                   </Button>
                 )}
                 {detailOrder.physicalStatus === "receipt_uploaded" && (
@@ -348,20 +350,20 @@ export default function Orders() {
                       updateStatusMutation.mutate({ id: detailOrder.id, physicalStatus: "pending" });
                       setDetailOpen(false);
                     }}>
-                    驳回付款凭证
+                    {translate("驳回付款凭证", "Reject Payment Receipt")}
                   </Button>
                 )}
                 {detailOrder.physicalStatus === "packing" && (
                   <div className="w-full space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <Label>快递公司</Label>
+                        <Label>{translate("快递公司", "Courier Company")}</Label>
                         <Input value={shipForm.courierCompany}
                           onChange={(e) => setShipForm({ ...shipForm, courierCompany: e.target.value })}
                           placeholder="J&T, Poslaju..." />
                       </div>
                       <div>
-                        <Label>追踪号码</Label>
+                        <Label>{translate("追踪号码", "Tracking Number")}</Label>
                         <Input value={shipForm.trackingNumber}
                           onChange={(e) => setShipForm({ ...shipForm, trackingNumber: e.target.value })}
                           placeholder="Tracking number" />
@@ -369,7 +371,7 @@ export default function Orders() {
                     </div>
                     <Button size="sm" onClick={handleShip}>
                       <Truck className="h-4 w-4 mr-2" />
-                      确认发货
+                      {translate("确认发货", "Confirm Shipment")}
                     </Button>
                   </div>
                 )}
@@ -379,18 +381,18 @@ export default function Orders() {
                       updateStatusMutation.mutate({ id: detailOrder.id, physicalStatus: "completed" });
                       setDetailOpen(false);
                     }}>
-                    标记完成
+                    {translate("标记完成", "Mark as Completed")}
                   </Button>
                 )}
                 {detailOrder.physicalStatus !== "completed" && detailOrder.physicalStatus !== "cancelled" && (
                   <Button size="sm" variant="destructive"
                     onClick={() => {
-                      if (confirm("确定取消此订单？")) {
+                      if (confirm(translate("确定取消此订单？", "Are you sure you want to cancel this order?"))) {
                         updateStatusMutation.mutate({ id: detailOrder.id, physicalStatus: "cancelled" });
                         setDetailOpen(false);
                       }
                     }}>
-                    取消订单
+                    {translate("取消订单", "Cancel Order")}
                   </Button>
                 )}
               </div>
@@ -403,49 +405,49 @@ export default function Orders() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>手动建立订单</DialogTitle>
+            <DialogTitle>{translate("手动建立订单", "Create Manual Order")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {/* Customer info */}
             <div className="space-y-3 p-4 border rounded-lg">
-              <h3 className="font-medium text-sm">客户信息</h3>
+              <h3 className="font-medium text-sm">{translate("客户信息", "Customer Information")}</h3>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs">客户姓名</Label>
-                  <Input value={customerForm.name} onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })} placeholder="收件人姓名" />
+                  <Label className="text-xs">{translate("客户姓名", "Customer Name")}</Label>
+                  <Input value={customerForm.name} onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })} placeholder={translate("收件人姓名", "Recipient Name")} />
                 </div>
                 <div>
-                  <Label className="text-xs">电话号码</Label>
+                  <Label className="text-xs">{translate("电话号码", "Phone Number")}</Label>
                   <Input value={customerForm.phoneNumber} onChange={(e) => setCustomerForm({ ...customerForm, phoneNumber: e.target.value })} placeholder="012-3456789" />
                 </div>
                 <div>
-                  <Label className="text-xs">Facebook 名称</Label>
+                  <Label className="text-xs">{translate("Facebook 名称", "Facebook Name")}</Label>
                   <Input value={customerForm.facebookName} onChange={(e) => setCustomerForm({ ...customerForm, facebookName: e.target.value })} />
                 </div>
                 <div>
-                  <Label className="text-xs">Facebook ID</Label>
+                  <Label className="text-xs">{translate("Facebook ID", "Facebook ID")}</Label>
                   <Input value={customerForm.facebookId} onChange={(e) => setCustomerForm({ ...customerForm, facebookId: e.target.value })} />
                 </div>
                 <div>
-                  <Label className="text-xs">Messenger ID</Label>
+                  <Label className="text-xs">{translate("Messenger ID", "Messenger ID")}</Label>
                   <Input value={customerForm.messengerId} onChange={(e) => setCustomerForm({ ...customerForm, messengerId: e.target.value })} />
                 </div>
                 <div>
-                  <Label className="text-xs">运送方式</Label>
+                  <Label className="text-xs">{translate("运送方式", "Shipping Method")}</Label>
                   <Select value={customerForm.shippingMethod} onValueChange={(v) => setCustomerForm({ ...customerForm, shippingMethod: v })}>
-                    <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-8"><SelectValue placeholder={translate("选择运送方式", "Select Shipping Method")} /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="west_malaysia">西马</SelectItem>
-                      <SelectItem value="east_malaysia_shopee">东马 Shopee</SelectItem>
-                      <SelectItem value="east_malaysia_poslaju">东马 Poslaju</SelectItem>
-                      <SelectItem value="self_pickup">自取</SelectItem>
-                      <SelectItem value="lalamove">Lalamove</SelectItem>
+                      <SelectItem value="west_malaysia">{translate("西马", "West Malaysia")}</SelectItem>
+                      <SelectItem value="east_malaysia_shopee">{translate("东马 Shopee", "East Malaysia Shopee")}</SelectItem>
+                      <SelectItem value="east_malaysia_poslaju">{translate("东马 Poslaju", "East Malaysia Poslaju")}</SelectItem>
+                      <SelectItem value="self_pickup">{translate("自取", "Self Pickup")}</SelectItem>
+                      <SelectItem value="lalamove">{translate("Lalamove", "Lalamove")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <div>
-                <Label className="text-xs">收件地址</Label>
+                <Label className="text-xs">{translate("收件地址", "Shipping Address")}</Label>
                 <Textarea value={customerForm.address} onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })} rows={2} />
               </div>
             </div>
@@ -453,22 +455,22 @@ export default function Orders() {
             {/* Order items */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>订单商品</Label>
+                <Label>{translate("订单商品", "Order Items")}</Label>
                 <Button variant="outline" size="sm" onClick={addManualItem}>
-                  <Plus className="h-3 w-3 mr-1" />添加商品
+                  <Plus className="h-3 w-3 mr-1" />{translate("添加商品", "Add Product")}
                 </Button>
               </div>
               {manualItems.map((item, idx) => (
                 <div key={idx} className="grid grid-cols-12 gap-2 items-end p-2 border rounded-lg">
                   <div className="col-span-4">
-                    <Label className="text-xs">商品</Label>
+                    <Label className="text-xs">{translate("商品", "Product")}</Label>
                     <Select
                       value={item.productId?.toString() || "none"}
                       onValueChange={(v) => handleManualItemProductSelect(idx, v)}
                     >
-                      <SelectTrigger className="h-8"><SelectValue placeholder="选择商品" /></SelectTrigger>
+                      <SelectTrigger className="h-8"><SelectValue placeholder={translate("选择商品", "Select Product")} /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">请选择...</SelectItem>
+                        <SelectItem value="none">{translate("请选择...", "Please select...")}</SelectItem>
                         {products?.map((p: any) => (
                           <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
                         ))}
@@ -476,15 +478,15 @@ export default function Orders() {
                     </Select>
                   </div>
                   <div className="col-span-2">
-                    <Label className="text-xs">数量</Label>
+                    <Label className="text-xs">{translate("数量", "Quantity")}</Label>
                     <Input type="number" className="h-8" value={item.quantity} onChange={(e) => updateManualItem(idx, "quantity", parseInt(e.target.value) || 0)} />
                   </div>
                   <div className="col-span-2">
-                    <Label className="text-xs">单价</Label>
+                    <Label className="text-xs">{translate("单价", "Unit Price")}</Label>
                     <Input type="number" className="h-8" value={item.unitPrice} onChange={(e) => updateManualItem(idx, "unitPrice", e.target.value)} />
                   </div>
                   <div className="col-span-3">
-                    <Label className="text-xs">小计</Label>
+                    <Label className="text-xs">{translate("小计", "Subtotal")}</Label>
                     <Input className="h-8" value={`RM ${item.subtotal}`} disabled />
                   </div>
                   <div className="col-span-1">
@@ -495,14 +497,14 @@ export default function Orders() {
                 </div>
               ))}
               {manualItems.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">点击「添加商品」开始建立订单</p>
+                <p className="text-sm text-muted-foreground text-center py-4">{translate("点击「添加商品」开始建立订单", "Click 'Add Product' to start creating an order")}</p>
               )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>{translate("取消", "Cancel")}</Button>
             <Button onClick={handleCreateOrder} disabled={findCustomerMutation.isPending || createOrderMutation.isPending}>
-              创建订单
+              {translate("创建订单", "Create Order")}
             </Button>
           </DialogFooter>
         </DialogContent>

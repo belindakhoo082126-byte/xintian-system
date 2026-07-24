@@ -465,10 +465,10 @@
 
 ## 自定义域名发布：www.xintian.com.my
 
-- [ ] 确认 Manus 自定义域名连接入口与项目授权状态
-- [ ] 发起 www.xintian.com.my 域名连接并取得平台生成的 DNS 验证记录
-- [ ] 指导并验证 Exabytes DNS 配置
-- [ ] 验证 SSL/HTTPS、正式域名访问及必要重定向
+- [x] 确认 Manus 自定义域名连接入口与项目授权状态
+- [x] 发起 www.xintian.com.my 域名连接并取得平台生成的 DNS 验证记录
+- [x] 指导并验证 Exabytes DNS 配置
+- [x] 验证 SSL/HTTPS、正式域名访问及必要重定向
 
 ## XLCS 系统巡检与修复
 
@@ -494,3 +494,18 @@
 - [x] DashboardLayout.tsx 添加 resolveLabel 函数处理混合 label 类型
 - [x] TypeScript 编译零错误
 - [x] 96 个测试全部通过
+
+## 全页面中英文切换修复
+
+- [x] 商品管理（Products）页面的标题、筛选、表格、表单、操作与提示接入中英文切换
+- [x] 分类管理（Categories）页面的标题、表单、操作与提示接入中英文切换
+- [x] 订单管理（Orders）与订单详情页面的标题、筛选、状态、表格、操作与提示接入中英文切换
+- [x] 会员订单（Membership Orders）页面的标题、筛选、表格、操作与提示接入中英文切换
+- [x] 客户管理（Customers）页面的标题、筛选、表格、档案、操作与提示接入中英文切换
+- [x] Flow 编辑器（Flow Editor）页面的标题、步骤、表单、操作与提示接入中英文切换
+- [x] 供应商管理（Suppliers）与进货管理（Purchase Orders）页面接入中英文切换
+- [x] 经营报告（Business Report）与销售收款、商品销售、客户消费、进货库存子报表接入中英文切换
+- [x] Facebook 设置（Facebook Settings）与商城设置（Mall Settings）页面接入中英文切换
+- [x] 包货工作台（Packing）与订单查询（Order Tracking）页面接入中英文切换
+- [x] 补齐可维护的中英文翻译词典、共用状态文本与回退机制
+- [x] 完成 TypeScript、Vitest 与主要页面中英文切换验证

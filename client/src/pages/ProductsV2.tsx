@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { useI18n } from "@/contexts/I18nContext";
 import { useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,10 +15,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Upload } from "lucide-react";
 
-const PRODUCT_TYPES = [
-  { value: "physical", label: "实体商品" },
-  { value: "membership", label: "会员商品" },
-  { value: "gift", label: "赠品" },
+const RAW_PRODUCT_TYPES = [
+  { value: "physical", zh: "实体商品", en: "Physical Product" },
+  { value: "membership", zh: "会员商品", en: "Membership Product" },
+  { value: "gift", zh: "赠品", en: "Gift Product" },
 ];
 
 const TYPE_BADGES: Record<string, string> = {
@@ -26,11 +27,11 @@ const TYPE_BADGES: Record<string, string> = {
   gift: "bg-orange-100 text-orange-700",
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: "草稿",
-  active: "上架",
-  inactive: "下架",
-  out_of_stock: "缺货",
+const RAW_STATUS_LABELS: Record<string, { zh: string; en: string }> = {
+  draft: { zh: "草稿", en: "Draft" },
+  active: { zh: "上架", en: "Active" },
+  inactive: { zh: "下架", en: "Inactive" },
+  out_of_stock: { zh: "缺货", en: "Out of Stock" },
 };
 
 const STATUS_BADGES: Record<string, string> = {
@@ -86,7 +87,14 @@ const EMPTY_FORM: ProductForm = {
   notes: "", coverImageUrl: "", dimensions: {},
 };
 
-const STEPS = ["基本资料", "图片与描述", "价格与成本", "规格设置", "显示与推荐", "预览确认"];
+const RAW_STEPS = [
+  { zh: "基本资料", en: "Basic Info" },
+  { zh: "图片与描述", en: "Images & Description" },
+  { zh: "价格与成本", en: "Price & Cost" },
+  { zh: "规格设置", en: "Variant Settings" },
+  { zh: "显示与推荐", en: "Display & Recommendation" },
+  { zh: "预览确认", en: "Preview & Confirm" },
+];
 
 type VariantForm = {
   id?: number;
@@ -108,6 +116,11 @@ const EMPTY_VARIANT: VariantForm = {
 };
 
 export default function ProductsV2() {
+  const { translate, lang } = useI18n();
+  const getProductTypeLabel = (type: string) => {
+    const entry = RAW_PRODUCT_TYPES.find((item) => item.value === type);
+    return translate(entry?.zh ?? type, entry?.en ?? type);
+  };
   const searchParams = useSearch();
   const urlStock = new URLSearchParams(searchParams).get("stock");
   const [search, setSearch] = useState("");
@@ -198,41 +211,41 @@ export default function ProductsV2() {
   const createMutation = trpc.productsV2.create.useMutation({
     onSuccess: (data) => {
       utils.productsV2.invalidate();
-      toast.success(`商品创建成功，SKU: ${data.sku}`);
+      toast.success(translate(`商品创建成功，SKU: {sku}`, `Product created successfully, SKU: {sku}`, { sku: data.sku }));
       setDialogOpen(false);
       resetForm();
     },
-    onError: (e) => toast.error(`创建失败: ${e.message}`),
+    onError: (e) => toast.error(translate(`创建失败: {message}`, `Creation failed: {message}`, { message: e.message })),
   });
 
   const updateMutation = trpc.productsV2.update.useMutation({
     onSuccess: () => {
       utils.productsV2.invalidate();
-      toast.success("商品更新成功");
+      toast.success(translate("商品更新成功", "Product updated successfully"));
       setDialogOpen(false);
       resetForm();
     },
-    onError: (e) => toast.error(`更新失败: ${e.message}`),
+    onError: (e) => toast.error(translate(`更新失败: {message}`, `Update failed: {message}`, { message: e.message })),
   });
 
   const deleteMutation = trpc.productsV2.delete.useMutation({
     onSuccess: (data) => {
       if (data.success) {
         utils.productsV2.invalidate();
-        toast.success("商品已删除");
+        toast.success(translate("商品已删除", "Product deleted"));
       } else {
-        toast.error(data.reason || "删除失败");
+        toast.error(data.reason || translate("删除失败", "Deletion failed"));
       }
     },
-    onError: (e) => toast.error(`删除失败: ${e.message}`),
+    onError: (e) => toast.error(translate(`删除失败: {message}`, `Deletion failed: {message}`, { message: e.message })),
   });
 
   const duplicateMutation = trpc.productsV2.duplicate.useMutation({
     onSuccess: (data) => {
       utils.productsV2.invalidate();
-      toast.success(`商品已复制，新 SKU: ${data.sku}`);
+      toast.success(translate(`商品已复制，新 SKU: {sku}`, `Product duplicated, new SKU: {sku}`, { sku: data.sku }));
     },
-    onError: (e) => toast.error(`复制失败: ${e.message}`),
+    onError: (e) => toast.error(translate(`复制失败: {message}`, `Duplication failed: {message}`, { message: e.message })),
   });
 
   const checkKeywordQuery = trpc.productsV2.checkKeyword.useQuery({
@@ -245,32 +258,32 @@ export default function ProductsV2() {
     onSuccess: () => {
       utils.productsV2.invalidate();
       if (editingId) utils.productsV2.getById.invalidate({ id: editingId });
-      toast.success("规格添加成功");
+      toast.success(translate("规格添加成功", "Variant added successfully"));
       setVariantDialogOpen(false);
       setVariantForm(EMPTY_VARIANT);
     },
-    onError: (e) => toast.error(`添加失败: ${e.message}`),
+    onError: (e) => toast.error(translate(`添加失败: {message}`, `Addition failed: {message}`, { message: e.message })),
   });
 
   const updateVariantMutation = trpc.variants.update.useMutation({
     onSuccess: () => {
       utils.productsV2.invalidate();
       if (editingId) utils.productsV2.getById.invalidate({ id: editingId });
-      toast.success("规格更新成功");
+      toast.success(translate("规格更新成功", "Variant updated successfully"));
       setVariantDialogOpen(false);
       setVariantForm(EMPTY_VARIANT);
       setEditingVariantId(null);
     },
-    onError: (e) => toast.error(`更新失败: ${e.message}`),
+    onError: (e) => toast.error(translate(`更新失败: {message}`, `Update failed: {message}`, { message: e.message })),
   });
 
   const deleteVariantMutation = trpc.variants.delete.useMutation({
     onSuccess: () => {
       utils.productsV2.invalidate();
       if (editingId) utils.productsV2.getById.invalidate({ id: editingId });
-      toast.success("规格已删除");
+      toast.success(translate("规格已删除", "Variant deleted"));
     },
-    onError: (e) => toast.error(`删除失败: ${e.message}`),
+    onError: (e) => toast.error(translate(`删除失败: {message}`, `Deletion failed: {message}`, { message: e.message })),
   });
 
   const checkVariantKeywordQuery = trpc.productsV2.checkVariantKeyword.useQuery({
@@ -283,16 +296,16 @@ export default function ProductsV2() {
   const generateMemberLinkMutation = trpc.memberLinks.generate.useMutation({
     onSuccess: (data) => {
       utils.memberLinks.invalidate();
-      toast.success(`会员链接已生成: ${data.url}`);
+      toast.success(translate(`会员链接已生成: {url}`, `Member link generated: {url}`, { url: data.url }));
       if (currentProductId) utils.memberLinks.list.invalidate({ productId: currentProductId });
     },
-    onError: (e) => toast.error(`生成失败: ${e.message}`),
+    onError: (e) => toast.error(translate(`生成失败: {message}`, `Generation failed: {message}`, { message: e.message })),
   });
 
   const deactivateMemberLinkMutation = trpc.memberLinks.deactivate.useMutation({
     onSuccess: () => {
       utils.memberLinks.invalidate();
-      toast.success("链接已停用");
+      toast.success(translate("链接已停用", "Link deactivated"));
       if (currentProductId) utils.memberLinks.list.invalidate({ productId: currentProductId });
     },
   });
@@ -328,12 +341,12 @@ export default function ProductsV2() {
 
   function handleSubmit() {
     if (!form.name.trim()) {
-      toast.error("请输入商品名称");
+      toast.error(translate("请输入商品名称", "Please enter product name"));
       setStep(0);
       return;
     }
     if (!form.keyword.trim()) {
-      toast.error("请输入商品关键词");
+      toast.error(translate("请输入商品关键词", "Please enter product keyword"));
       setStep(0);
       return;
     }
@@ -371,15 +384,15 @@ export default function ProductsV2() {
 
   function handleVariantSubmit() {
     if (!variantForm.name.trim()) {
-      toast.error("请输入规格名称");
+      toast.error(translate("请输入规格名称", "Please enter variant name"));
       return;
     }
     if (!variantForm.keyword.trim()) {
-      toast.error("请输入规格关键词");
+      toast.error(translate("请输入规格关键词", "Please enter variant keyword"));
       return;
     }
     if (!editingId) {
-      toast.error("请先保存商品再添加规格");
+      toast.error(translate("请先保存商品再添加规格", "Please save the product before adding variants"));
       return;
     }
     if (editingVariantId) {
@@ -414,21 +427,21 @@ export default function ProductsV2() {
   }, [simulatorProfit, simulatorTestPrice]);
 
   const profitLevel = useMemo(() => {
-    if (simulatorProfit <= 0) return { label: "亏损", color: "text-red-600", icon: TrendingDown };
-    if (simulatorMargin < 20) return { label: "低利润", color: "text-orange-600", icon: AlertCircle };
-    return { label: "正常", color: "text-green-600", icon: TrendingUp };
+    if (simulatorProfit <= 0) return { label: translate("亏损", "Loss"), color: "text-red-600", icon: TrendingDown };
+    if (simulatorMargin < 20) return { label: translate("低利润", "Low Profit"), color: "text-orange-600", icon: AlertCircle };
+    return { label: translate("正常", "Normal"), color: "text-green-600", icon: TrendingUp };
   }, [simulatorProfit, simulatorMargin]);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">商品管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">Phase 1 商品核心管理 — Simple/Variant、关键词、三层价格隔离</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{translate("商品管理", "Product Management")}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{translate("Phase 1 商品核心管理 — Simple/Variant、关键词、三层价格隔离", "Phase 1 Product Core Management — Simple/Variant, Keywords, Three-tier Price Isolation")}</p>
         </div>
         <Button onClick={openCreate}>
           <Plus className="h-4 w-4 mr-2" />
-          新增商品
+          {translate("新增商品", "Add Product")}
         </Button>
       </div>
 
@@ -437,7 +450,7 @@ export default function ProductsV2() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="搜索商品名称..."
+            placeholder={translate("搜索商品名称...", "Search product name...")}
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             className="pl-10"
@@ -445,25 +458,25 @@ export default function ProductsV2() {
         </div>
         <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(0); }}>
           <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="商品类型" />
+            <SelectValue placeholder={translate("商品类型", "Product Type")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部类型</SelectItem>
-            {PRODUCT_TYPES.map(t => (
-              <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+            <SelectItem value="all">{translate("全部类型", "All Types")}</SelectItem>
+            {RAW_PRODUCT_TYPES.map(t => (
+              <SelectItem key={t.value} value={t.value}>{translate(t.zh, t.en)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0); }}>
           <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="商品状态" />
+            <SelectValue placeholder={translate("商品状态", "Product Status")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部状态</SelectItem>
-            <SelectItem value="draft">草稿</SelectItem>
-            <SelectItem value="active">上架</SelectItem>
-            <SelectItem value="inactive">下架</SelectItem>
-            <SelectItem value="out_of_stock">缺货</SelectItem>
+            <SelectItem value="all">{translate("全部状态", "All Statuses")}</SelectItem>
+            <SelectItem value="draft">{translate("草稿", "Draft")}</SelectItem>
+            <SelectItem value="active">{translate("上架", "Active")}</SelectItem>
+            <SelectItem value="inactive">{translate("下架", "Inactive")}</SelectItem>
+            <SelectItem value="out_of_stock">{translate("缺货", "Out of Stock")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -474,22 +487,22 @@ export default function ProductsV2() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>商品名称</TableHead>
-                <TableHead>类型</TableHead>
-                <TableHead>模式</TableHead>
-                <TableHead>分类</TableHead>
-                <TableHead>关键词</TableHead>
-                <TableHead>售价</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>推荐</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                <TableHead>{translate("商品名称", "Product Name")}</TableHead>
+                <TableHead>{translate("类型", "Type")}</TableHead>
+                <TableHead>{translate("模式", "Mode")}</TableHead>
+                <TableHead>{translate("分类", "Category")}</TableHead>
+                <TableHead>{translate("关键词", "Keyword")}</TableHead>
+                <TableHead>{translate("售价", "Selling Price")}</TableHead>
+                <TableHead>{translate("状态", "Status")}</TableHead>
+                <TableHead>{translate("推荐", "Featured")}</TableHead>
+                <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">加载中...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
               ) : products.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">暂无商品</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
               ) : products.map(p => (
                 <TableRow key={p.id}>
                   <TableCell className="font-medium">
@@ -500,35 +513,35 @@ export default function ProductsV2() {
                   </TableCell>
                   <TableCell>
                     <Badge className={TYPE_BADGES[p.type]} variant="secondary">
-                      {PRODUCT_TYPES.find(t => t.value === p.type)?.label}
+                      {getProductTypeLabel(p.type)}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">{p.productMode === "variant" ? "多规格" : "单规格"}</Badge>
+                    <Badge variant="outline">{p.productMode === "variant" ? translate("多规格", "Variant") : translate("单规格", "Simple")}</Badge>
                   </TableCell>
                   <TableCell>
-                    {categories?.find(c => c.id === p.categoryId)?.nameZh || "—"}
+                    {categories?.find(c => c.id === p.categoryId)?.[lang === "zh" ? "nameZh" : "nameEn"] || translate("—", "—")}
                   </TableCell>
                   <TableCell>
                     <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{p.keyword}</code>
                   </TableCell>
                   <TableCell>
-                    {p.type === "gift" ? "免费" : `RM ${p.sellingPrice || "0"}`}
+                    {p.type === "gift" ? translate("免费", "Free") : `RM ${p.sellingPrice || "0"}`}
                   </TableCell>
                   <TableCell>
                     <Badge className={STATUS_BADGES[p.status]} variant="secondary">
-                      {STATUS_LABELS[p.status] || p.status}
+                      {translate(RAW_STATUS_LABELS[p.status]?.zh, RAW_STATUS_LABELS[p.status]?.en) || p.status}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {p.isFeatured && <Badge variant="default">推荐</Badge>}
+                    {p.isFeatured && <Badge variant="default">{translate("推荐", "Featured")}</Badge>}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(p)} title="编辑">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(p)} title={translate("编辑", "Edit")}>
                         <Edit2 className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => duplicateMutation.mutate({ id: p.id })} title="复制">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => duplicateMutation.mutate({ id: p.id })} title={translate("复制", "Duplicate")}>
                         <Copy className="h-4 w-4" />
                       </Button>
                       {p.type === "membership" && (
@@ -537,7 +550,7 @@ export default function ProductsV2() {
                           size="icon"
                           className="h-8 w-8"
                           onClick={() => { setCurrentProductId(p.id); setShowMemberLinkDialog(true); }}
-                          title="会员链接"
+                          title={translate("会员链接", "Member Link")}
                         >
                           <LinkIcon className="h-4 w-4" />
                         </Button>
@@ -547,11 +560,11 @@ export default function ProductsV2() {
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => {
-                          if (confirm(`确定删除「${p.name}」吗？`)) {
+                          if (confirm(translate(`确定删除「{name}」吗？`, `Are you sure you want to delete "{name}"?`, { name: p.name }))) {
                             deleteMutation.mutate({ id: p.id });
                           }
                         }}
-                        title="删除"
+                        title={translate("删除", "Delete")}
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
@@ -568,15 +581,15 @@ export default function ProductsV2() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            共 {totalCount} 件商品，第 {page + 1} / {totalPages} 页
+            {translate(`共 {totalCount} 件商品，第 {page} / {totalPages} 页`, `{totalCount} items in total, page {page} / {totalPages}`, { totalCount: totalCount, page: page + 1, totalPages: totalPages })}
           </p>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0}>
               <ChevronLeft className="h-4 w-4" />
-              上一页
+              {translate("上一页", "Previous Page")}
             </Button>
             <Button variant="outline" size="sm" onClick={() => setPage(Math.min(totalPages - 1, page + 1))} disabled={page >= totalPages - 1}>
-              下一页
+              {translate("下一页", "Next Page")}
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -587,12 +600,12 @@ export default function ProductsV2() {
       <Dialog open={dialogOpen} onOpenChange={(v) => { setDialogOpen(v); if (!v) resetForm(); }}>
         <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingId ? "编辑商品" : "新增商品"}</DialogTitle>
+            <DialogTitle>{editingId ? translate("编辑商品", "Edit Product") : translate("新增商品", "Add Product")}</DialogTitle>
           </DialogHeader>
 
           {/* Step Indicator */}
           <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-2">
-            {STEPS.map((s, i) => (
+            {RAW_STEPS.map((s, i) => (
               <div key={i} className="flex items-center gap-1 shrink-0">
                 <div
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
@@ -603,16 +616,16 @@ export default function ProductsV2() {
                   <span className="flex items-center justify-center w-5 h-5 rounded-full text-xs font-medium">
                     {i < step ? <Check className="h-3 w-3" /> : i + 1}
                   </span>
-                  {s}
+                  {translate(s.zh, s.en)}
                 </div>
-                {i < STEPS.length - 1 && <div className="w-2 h-px bg-border" />}
+                {i < RAW_STEPS.length - 1 && <div className="w-2 h-px bg-border" />}
               </div>
             ))}
           </div>
 
           {/* Loading state for edit */}
           {editingId && detailQuery.isLoading ? (
-            <div className="text-center py-12 text-muted-foreground">加载商品详情中...</div>
+            <div className="text-center py-12 text-muted-foreground">{translate("加载商品详情中...", "Loading product details...")}</div>
           ) : (
             <>
               {/* Step Content */}
@@ -622,16 +635,16 @@ export default function ProductsV2() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label>商品名称 *</Label>
-                        <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="商品名称" />
+                        <Label>{translate("商品名称", "Product Name")} *</Label>
+                        <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={translate("商品名称", "Product Name")} />
                       </div>
                       <div>
-                        <Label>商品类型 *</Label>
+                        <Label>{translate("商品类型", "Product Type")} *</Label>
                         <Select value={form.type} onValueChange={(v: any) => setForm({ ...form, type: v })}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {PRODUCT_TYPES.map(t => (
-                              <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                            {RAW_PRODUCT_TYPES.map(t => (
+                              <SelectItem key={t.value} value={t.value}>{translate(t.zh, t.en)}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -640,24 +653,24 @@ export default function ProductsV2() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label>商品模式 *</Label>
+                        <Label>{translate("商品模式", "Product Mode")} *</Label>
                         <Select value={form.productMode} onValueChange={(v: any) => setForm({ ...form, productMode: v })}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="simple">单规格 (Simple)</SelectItem>
-                            <SelectItem value="variant">多规格 (Variant)</SelectItem>
+                            <SelectItem value="simple">{translate("单规格 (Simple)", "Simple (Simple)")}</SelectItem>
+                            <SelectItem value="variant">{translate("多规格 (Variant)", "Variant (Variant)")}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div>
-                        <Label>商品分类</Label>
+                        <Label>{translate("商品分类", "Product Category")}</Label>
                         <Select
                           value={form.categoryId?.toString() || "none"}
                           onValueChange={(v) => setForm({ ...form, categoryId: v === "none" ? undefined : parseInt(v) })}
                         >
-                          <SelectTrigger><SelectValue placeholder="选择分类" /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder={translate("选择分类", "Select Category")} /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="none">无分类</SelectItem>
+                            <SelectItem value="none">{translate("无分类", "No Category")}</SelectItem>
                             {categories?.map(c => (
                               <SelectItem key={c.id} value={c.id.toString()}>{c.nameZh}</SelectItem>
                             ))}
@@ -668,14 +681,14 @@ export default function ProductsV2() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label>销售单位</Label>
+                        <Label>{translate("销售单位", "Sales Unit")}</Label>
                         <Select
                           value={form.unitId?.toString() || "none"}
                           onValueChange={(v) => setForm({ ...form, unitId: v === "none" ? undefined : parseInt(v) })}
                         >
-                          <SelectTrigger><SelectValue placeholder="选择单位" /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder={translate("选择单位", "Select Unit")} /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="none">默认</SelectItem>
+                            <SelectItem value="none">{translate("无单位", "No Unit")}</SelectItem>
                             {units?.map(u => (
                               <SelectItem key={u.id} value={u.id.toString()}>{u.nameZh}</SelectItem>
                             ))}
@@ -683,12 +696,12 @@ export default function ProductsV2() {
                         </Select>
                       </div>
                       <div>
-                        <Label>关键词 *</Label>
+                        <Label>{translate("关键词", "Keyword")} *</Label>
                         <div className="relative">
                           <Input
                             value={form.keyword}
                             onChange={(e) => setForm({ ...form, keyword: e.target.value.toUpperCase().replace(/\s+/g, '') })}
-                            placeholder="自动大写去空格"
+                            placeholder={translate("自动大写去空格", "Auto uppercase and remove spaces")}
                           />
                           {form.keyword && (
                             <div className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -701,18 +714,18 @@ export default function ProductsV2() {
                           )}
                         </div>
                         {form.keyword && !keywordAvailable && (
-                          <p className="text-xs text-red-500 mt-1">关键词已被使用</p>
+                          <p className="text-xs text-red-500 mt-1">{translate("关键词已被使用", "Keyword already in use")}</p>
                         )}
                       </div>
                     </div>
 
                     <div>
-                      <Label>简短描述（中文）</Label>
-                      <Textarea value={form.shortDescZh} onChange={(e) => setForm({ ...form, shortDescZh: e.target.value })} rows={2} placeholder="一句话描述" />
+                      <Label>{translate("简短描述（中文）", "Short Description (Chinese)")}</Label>
+                      <Textarea value={form.shortDescZh} onChange={(e) => setForm({ ...form, shortDescZh: e.target.value })} rows={2} placeholder={translate("一句话描述", "One-sentence description")} />
                     </div>
                     <div>
-                      <Label>简短描述（英文）</Label>
-                      <Textarea value={form.shortDescEn} onChange={(e) => setForm({ ...form, shortDescEn: e.target.value })} rows={2} placeholder="Short description" />
+                      <Label>{translate("简短描述（英文）", "Short Description (English)")}</Label>
+                      <Textarea value={form.shortDescEn} onChange={(e) => setForm({ ...form, shortDescEn: e.target.value })} rows={2} placeholder={translate("Short description", "Short description")} />
                     </div>
                   </div>
                 )}
@@ -721,12 +734,12 @@ export default function ProductsV2() {
                 {step === 1 && (
                   <div className="space-y-4">
                     <div>
-                      <Label>封面图片</Label>
+                      <Label>{translate("封面图片", "Cover Image")}</Label>
                       <div className="flex items-center gap-3">
-                        <Input value={form.coverImageUrl} onChange={(e) => setForm({ ...form, coverImageUrl: e.target.value })} placeholder="https://... 或点击上传" />
+                        <Input value={form.coverImageUrl} onChange={(e) => setForm({ ...form, coverImageUrl: e.target.value })} placeholder={translate("https://... 或点击上传", "https://... or click to upload")} />
                         <label className="cursor-pointer">
                           <Button variant="outline" asChild>
-                            <span><Upload className="h-4 w-4 mr-1" />上传</span>
+                            <span><Upload className="h-4 w-4 mr-1" />{translate("上传", "Upload")}</span>
                           </Button>
                           <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                             const file = e.target.files?.[0];
@@ -743,42 +756,42 @@ export default function ProductsV2() {
                                 if (res.ok) {
                                   const data = await res.json();
                                   setForm({ ...form, coverImageUrl: data.url });
-                                  toast.success("图片已上传");
+                                  toast.success(translate("图片已上传", "Image uploaded"));
                                 } else {
-                                  toast.error("上传失败");
+                                  toast.error(translate("上传失败", "Upload failed"));
                                 }
-                              } catch { toast.error("上传失败，请重试"); }
+                              } catch { toast.error(translate("上传失败，请重试", "Upload failed, please try again")); }
                             };
                             reader.readAsDataURL(file);
                           }} />
                         </label>
                       </div>
                       {form.coverImageUrl && (
-                        <img src={form.coverImageUrl} alt="封面预览" className="mt-2 h-32 w-32 rounded-lg object-cover border" />
+                        <img src={form.coverImageUrl} alt={translate("封面预览", "Cover Preview")} className="mt-2 h-32 w-32 rounded-lg object-cover border" />
                       )}
                     </div>
                     <div>
-                      <Label>详细描述（中文）</Label>
-                      <Textarea value={form.fullDescZh} onChange={(e) => setForm({ ...form, fullDescZh: e.target.value })} rows={4} placeholder="详细商品描述" />
+                      <Label>{translate("详细描述（中文）", "Detailed Description (Chinese)")}</Label>
+                      <Textarea value={form.fullDescZh} onChange={(e) => setForm({ ...form, fullDescZh: e.target.value })} rows={4} placeholder={translate("详细商品描述", "Detailed product description")} />
                     </div>
                     <div>
-                      <Label>详细描述（英文）</Label>
+                      <Label>{translate("详细描述（英文）", "Detailed Description (English)")}</Label>
                       <Textarea value={form.fullDescEn} onChange={(e) => setForm({ ...form, fullDescEn: e.target.value })} rows={4} placeholder="Full description" />
                     </div>
                     {isPhysical && (
                       <>
                         <div>
-                          <Label>养护说明（中文）</Label>
-                          <Textarea value={form.careZh} onChange={(e) => setForm({ ...form, careZh: e.target.value })} rows={3} placeholder="光照、浇水、施肥等" />
+                          <Label>{translate("养护说明（中文）", "Care Instructions (Chinese)")}</Label>
+                          <Textarea value={form.careZh} onChange={(e) => setForm({ ...form, careZh: e.target.value })} rows={3} placeholder={translate("光照、浇水、施肥等", "Light, watering, fertilising, etc.")} />
                         </div>
                         <div>
-                          <Label>养护说明（英文）</Label>
+                          <Label>{translate("养护说明（英文）", "Care Instructions (English)")}</Label>
                           <Textarea value={form.careEn} onChange={(e) => setForm({ ...form, careEn: e.target.value })} rows={3} placeholder="Light, watering, fertilizing" />
                         </div>
                       </>
                     )}
                     <p className="text-xs text-muted-foreground">
-                      提示：图片和影片的批量上传功能将在后续版本中支持。当前可通过 URL 设置封面图。
+                      {translate("提示：图片和影片的批量上传功能将在后续版本中支持。当前可通过 URL 设置封面图。", "Note: Bulk image and video uploads will be supported in a later version. You can currently set a cover image using its URL.")}
                     </p>
                   </div>
                 )}
@@ -788,17 +801,17 @@ export default function ProductsV2() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-4">
                       <div>
-                        <Label>售价 (RM) {!isGift && "*"}</Label>
+                        <Label>{translate("售价 (RM)", "Selling Price (RM)")} {!isGift && "*"}</Label>
                         <Input type="number" placeholder="0.00" value={isGift ? "0" : form.sellingPrice}
                           onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })} disabled={isGift} />
                       </div>
                       <div>
-                        <Label>划线价 (RM)</Label>
+                        <Label>{translate("划线价 (RM)", "Compare At Price (RM)")}</Label>
                         <Input type="number" placeholder="0.00" value={form.compareAtPrice}
                           onChange={(e) => setForm({ ...form, compareAtPrice: e.target.value })} disabled={isGift} />
                       </div>
                       <div>
-                        <Label>会员价 (RM)</Label>
+                        <Label>{translate("会员价 (RM)", "Member Price (RM)")}</Label>
                         <Input type="number" placeholder="0.00" value={form.memberPrice}
                           onChange={(e) => setForm({ ...form, memberPrice: e.target.value })} disabled={isGift} />
                       </div>
@@ -806,16 +819,16 @@ export default function ProductsV2() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label>参考成本 (RM)</Label>
+                        <Label>{translate("参考成本 (RM)", "Estimated Cost (RM)")}</Label>
                         <Input type="number" placeholder="0.00" value={form.estimatedCost}
                           onChange={(e) => setForm({ ...form, estimatedCost: e.target.value })} disabled={isMembership} />
-                        <p className="text-xs text-muted-foreground mt-1">预估成本，用于利润计算</p>
+                        <p className="text-xs text-muted-foreground mt-1">{translate("预估成本，用于利润计算", "Estimated cost used for profit calculations")}</p>
                       </div>
                       <div>
-                        <Label>当前成本 (RM)</Label>
+                        <Label>{translate("当前成本 (RM)", "Current Cost (RM)")}</Label>
                         <Input type="number" placeholder="0.00" value={form.currentCost}
                           onChange={(e) => setForm({ ...form, currentCost: e.target.value })} disabled={isMembership} />
-                        <p className="text-xs text-muted-foreground mt-1">FIFO 当前成本，进货时自动更新</p>
+                        <p className="text-xs text-muted-foreground mt-1">{translate("FIFO 当前成本，进货时自动更新", "FIFO current cost, updated automatically when goods are purchased")}</p>
                       </div>
                     </div>
 
@@ -824,23 +837,23 @@ export default function ProductsV2() {
                       <div className="p-4 rounded-lg border bg-muted/30 space-y-3">
                         <div className="flex items-center gap-2">
                           <TrendingUp className="h-4 w-4 text-primary" />
-                          <h4 className="font-medium text-sm">价格模拟器</h4>
+                          <h4 className="font-medium text-sm">{translate("价格模拟器", "Price Simulator")}</h4>
                         </div>
                         <div className="grid grid-cols-3 gap-4">
                           <div>
-                            <Label>测试售价 (RM)</Label>
+                            <Label>{translate("测试售价 (RM)", "Test Selling Price (RM)")}</Label>
                             <Input type="number" placeholder={form.sellingPrice || "0.00"} value={simulatorPrice}
                               onChange={(e) => setSimulatorPrice(e.target.value)} />
                           </div>
                           <div>
-                            <Label>预计利润</Label>
+                            <Label>{translate("预计利润", "Estimated Profit")}</Label>
                             <div className={`flex items-center gap-1.5 text-lg font-bold ${profitLevel.color}`}>
                               <profitLevel.icon className="h-4 w-4" />
                               RM {simulatorProfit.toFixed(2)}
                             </div>
                           </div>
                           <div>
-                            <Label>利润率</Label>
+                            <Label>{translate("利润率", "Profit Margin")}</Label>
                             <div className={`text-lg font-bold ${profitLevel.color}`}>
                               {simulatorMargin.toFixed(1)}%
                             </div>
@@ -851,10 +864,10 @@ export default function ProductsV2() {
                             {profitLevel.label}
                           </Badge>
                           {simulatorMargin < 20 && simulatorProfit > 0 && (
-                            <span className="text-xs text-orange-600">利润率低于 20%，建议调整售价或成本</span>
+                            <span className="text-xs text-orange-600">{translate("利润率低于 20%，建议调整售价或成本", "Profit margin is below 20%; consider adjusting the selling price or cost")}</span>
                           )}
                           {simulatorProfit <= 0 && simulatorPrice && (
-                            <span className="text-xs text-red-600">当前售价低于成本，处于亏损状态</span>
+                            <span className="text-xs text-red-600">{translate("当前售价低于成本，处于亏损状态", "The current selling price is below cost, resulting in a loss")}</span>
                           )}
                         </div>
                       </div>
@@ -862,13 +875,13 @@ export default function ProductsV2() {
 
                     {/* Price Visibility */}
                     <div>
-                      <Label>价格显示设置</Label>
+                      <Label>{translate("价格显示设置", "Price Display Settings")}</Label>
                       <Select value={form.priceVisibility} onValueChange={(v: any) => setForm({ ...form, priceVisibility: v })}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="show">公开显示价格</SelectItem>
-                          <SelectItem value="hide">隐藏价格（询价）</SelectItem>
-                          <SelectItem value="member_link">仅会员链接可见</SelectItem>
+                          <SelectItem value="show">{translate("公开显示价格", "Show Price Publicly")}</SelectItem>
+                          <SelectItem value="hide">{translate("隐藏价格（询价）", "Hide Price (Enquiry Required)")}</SelectItem>
+                          <SelectItem value="member_link">{translate("仅会员链接可见", "Visible via Member Link Only")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -878,34 +891,34 @@ export default function ProductsV2() {
                       <>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <Label>重量 (kg)</Label>
+                            <Label>{translate("重量 (kg)", "Weight (kg)")}</Label>
                             <Input type="number" placeholder="0.00" value={form.weightKg}
                               onChange={(e) => setForm({ ...form, weightKg: e.target.value })} />
                           </div>
                           <div>
-                            <Label>库存数量</Label>
+                            <Label>{translate("库存数量", "Stock Quantity")}</Label>
                             <Input type="number" value={form.stockQuantity}
                               onChange={(e) => setForm({ ...form, stockQuantity: parseInt(e.target.value) || 0 })} />
                           </div>
                         </div>
                         <div className="grid grid-cols-4 gap-3">
                           <div>
-                            <Label>口径 (cm)</Label>
+                            <Label>{translate("口径 (cm)", "Diameter (cm)")}</Label>
                             <Input type="number" placeholder="0" value={form.dimensions.diameter || ""}
                               onChange={(e) => setForm({ ...form, dimensions: { ...form.dimensions, diameter: e.target.value } })} />
                           </div>
                           <div>
-                            <Label>高度 (cm)</Label>
+                            <Label>{translate("高度 (cm)", "Height (cm)")}</Label>
                             <Input type="number" placeholder="0" value={form.dimensions.height || ""}
                               onChange={(e) => setForm({ ...form, dimensions: { ...form.dimensions, height: e.target.value } })} />
                           </div>
                           <div>
-                            <Label>长度 (cm)</Label>
+                            <Label>{translate("长度 (cm)", "Length (cm)")}</Label>
                             <Input type="number" placeholder="0" value={form.dimensions.length || ""}
                               onChange={(e) => setForm({ ...form, dimensions: { ...form.dimensions, length: e.target.value } })} />
                           </div>
                           <div>
-                            <Label>宽度 (cm)</Label>
+                            <Label>{translate("宽度 (cm)", "Width (cm)")}</Label>
                             <Input type="number" placeholder="0" value={form.dimensions.width || ""}
                               onChange={(e) => setForm({ ...form, dimensions: { ...form.dimensions, width: e.target.value } })} />
                           </div>
@@ -916,35 +929,35 @@ export default function ProductsV2() {
                     {/* Membership-specific */}
                     {isMembership && (
                       <div className="space-y-4 p-4 border rounded-lg bg-purple-50/50 dark:bg-purple-950/20">
-                        <h3 className="font-medium text-sm">会员商品专属设置</h3>
-                        <p className="text-xs text-muted-foreground">会员商品不计算重量、运费，不进入配货流程，无库存限制</p>
+                        <h3 className="font-medium text-sm">{translate("会员商品专属设置", "Membership Product Exclusive Settings")}</h3>
+                        <p className="text-xs text-muted-foreground">{translate("会员商品不计算重量、运费，不进入配货流程，无库存限制", "Membership products do not calculate weight or shipping, do not enter the distribution process, and have no inventory restrictions")}</p>
                         <div>
-                          <Label>会员收费金额</Label>
+                          <Label>{translate("会员收费金额", "Membership Fee Amount")}</Label>
                           <Input type="number" placeholder="0.00" value={form.sellingPrice}
                             onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })} />
                         </div>
                         <div>
-                          <Label>会员介绍</Label>
-                          <Textarea value={form.membershipIntro} onChange={(e) => setForm({ ...form, membershipIntro: e.target.value })} rows={3} placeholder="详细描述会员权益和福利..." />
+                          <Label>{translate("会员介绍", "Membership Introduction")}</Label>
+                          <Textarea value={form.membershipIntro} onChange={(e) => setForm({ ...form, membershipIntro: e.target.value })} rows={3} placeholder={translate("详细描述会员权益和福利...", "Describe membership rights and benefits in detail...")} />
                         </div>
                         <div>
-                          <Label>Telegram 会员流程链接</Label>
+                          <Label>{translate("Telegram 会员流程链接", "Telegram Membership Flow Link")}</Label>
                           <Input placeholder="https://t.me/..." value={form.telegramFlowLink}
                             onChange={(e) => setForm({ ...form, telegramFlowLink: e.target.value })} />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="flex items-center justify-between rounded-lg border p-3">
                             <div>
-                              <Label>允许单独购买</Label>
-                              <p className="text-xs text-muted-foreground">客户可只购买会员商品</p>
+                              <Label>{translate("允许单独购买", "Allow Standalone Purchase")}</Label>
+                              <p className="text-xs text-muted-foreground">{translate("客户可只购买会员商品", "Customers can purchase membership products only")}</p>
                             </div>
                             <Switch checked={form.allowStandalonePurchase}
                               onCheckedChange={(v) => setForm({ ...form, allowStandalonePurchase: v })} />
                           </div>
                           <div className="flex items-center justify-between rounded-lg border p-3">
                             <div>
-                              <Label>允许混合结账</Label>
-                              <p className="text-xs text-muted-foreground">可与普通商品一起结账</p>
+                              <Label>{translate("允许混合结账", "Allow Mixed Checkout")}</Label>
+                              <p className="text-xs text-muted-foreground">{translate("可与普通商品一起结账", "Can be checked out with regular products")}</p>
                             </div>
                             <Switch checked={form.allowMixedCheckout}
                               onCheckedChange={(v) => setForm({ ...form, allowMixedCheckout: v })} />
@@ -955,8 +968,8 @@ export default function ProductsV2() {
 
                     {isGift && (
                       <div className="p-4 border rounded-lg bg-orange-50/50 dark:bg-orange-950/20">
-                        <h3 className="font-medium text-sm">赠品设置</h3>
-                        <p className="text-xs text-muted-foreground mt-1">赠品有库存限制，需计算运费，但不收取商品费用（价格为0）。赠品会与实体商品一起计算运费和免邮门槛。</p>
+                        <h3 className="font-medium text-sm">{translate("赠品设置", "Gift Product Settings")}</h3>
+                        <p className="text-xs text-muted-foreground mt-1">{translate("赠品有库存限制，需计算运费，但不收取商品费用（价格为0）。赠品会与实体商品一起计算运费和免邮门槛。", "Gift products have inventory limits, require shipping calculation, but do not charge product fees (price is 0). Gift products will be calculated with physical products for shipping and free shipping thresholds.")}</p>
                       </div>
                     )}
                   </div>
@@ -967,44 +980,44 @@ export default function ProductsV2() {
                   <div className="space-y-4">
                     {!isVariant ? (
                       <div className="text-center py-12 text-muted-foreground">
-                        <p>此商品为单规格模式，无需设置规格。</p>
-                        <p className="text-xs mt-2">如需多规格，请在「基本资料」步骤中切换为 Variant 模式</p>
+                        <p>{translate("此商品为单规格模式，无需设置规格。", "This product is in simple mode, no variants needed.")}</p>
+                        <p className="text-xs mt-2">{translate("如需多规格，请在「基本资料」步骤中切换为 Variant 模式", "To enable variants, please switch to Variant mode in the 'Basic Info' step.")}</p>
                       </div>
                     ) : (
                       <>
                         <div className="flex items-center justify-between">
-                          <h3 className="font-medium">规格列表</h3>
+                          <h3 className="font-medium">{translate("规格列表", "Variant List")}</h3>
                           <Button size="sm" onClick={openAddVariant} disabled={!editingId}>
                             <Plus className="h-4 w-4 mr-1" />
-                            添加规格
+                            {translate("添加规格", "Add Variant")}
                           </Button>
                         </div>
                         {!editingId && (
                           <p className="text-xs text-orange-600 bg-orange-50 dark:bg-orange-950/20 p-2 rounded">
-                            请先保存商品后再添加规格
+                            {translate("请先保存商品后再添加规格", "Please save the product before adding variants")}
                           </p>
                         )}
-                        <p className="text-xs text-muted-foreground">规格关键词 = 商品关键词 + 规格关键词（自动组合）</p>
+                        <p className="text-xs text-muted-foreground">{translate("规格关键词 = 商品关键词 + 规格关键词（自动组合）", "Variant Keyword = Product Keyword + Variant Keyword (auto-combined)")}</p>
                         {variants.length === 0 ? (
-                          <p className="text-center text-muted-foreground py-8">暂无规格</p>
+                          <p className="text-center text-muted-foreground py-8">{translate("暂无规格", "No variants yet")}</p>
                         ) : (
                           <div className="space-y-2">
                             {variants.map((v, i) => (
                               <div key={v.id || i} className="flex items-center gap-3 p-3 border rounded-lg">
                                 <div className="flex-1">
-                                  <span className="font-medium text-sm">{v.name}</span>
+                                  <span className="font-medium text-sm">{lang === "zh" ? v.nameZh || v.name : v.nameEn || v.name}</span>
                                   <div className="flex items-center gap-2 mt-1">
                                     <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{v.keyword}</code>
                                     <span className="text-xs text-muted-foreground">SKU: {v.sku}</span>
                                   </div>
                                 </div>
                                 <span className="text-sm">RM {v.sellingPrice || "—"}</span>
-                                <Badge variant="outline">{v.status === "active" ? "启用" : v.status === "inactive" ? "停用" : "隐藏"}</Badge>
+                                <Badge variant="outline">{v.status === "active" ? translate("启用", "Active") : v.status === "inactive" ? translate("停用", "Inactive") : translate("隐藏", "Hidden")}</Badge>
                                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditVariant(v)}>
                                   <Edit2 className="h-4 w-4" />
                                 </Button>
                                 <Button variant="ghost" size="icon" className="h-8 w-8"
-                                  onClick={() => { if (confirm(`确定删除规格「${v.name}」？`)) deleteVariantMutation.mutate({ id: v.id }); }}>
+                                  onClick={() => { if (confirm(translate("确定删除规格「{name}」？", "Are you sure you want to delete variant \"{name}\"", { name: lang === "zh" ? v.nameZh || v.name : v.nameEn || v.name }))) deleteVariantMutation.mutate({ id: v.id }); }}>
                                   <Trash2 className="h-4 w-4 text-destructive" />
                                 </Button>
                               </div>
@@ -1021,25 +1034,25 @@ export default function ProductsV2() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label>商品状态</Label>
+                        <Label>{translate("商品状态", "Product Status")}</Label>
                         <Select value={form.status} onValueChange={(v: any) => setForm({ ...form, status: v })}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="draft">草稿</SelectItem>
-                            <SelectItem value="active">上架</SelectItem>
-                            <SelectItem value="inactive">下架</SelectItem>
-                            <SelectItem value="out_of_stock">缺货</SelectItem>
+                            <SelectItem value="draft">{translate("草稿", "Draft")}</SelectItem>
+                            <SelectItem value="active">{translate("上架", "Active")}</SelectItem>
+                            <SelectItem value="inactive">{translate("下架", "Inactive")}</SelectItem>
+                            <SelectItem value="out_of_stock">{translate("缺货", "Out of Stock")}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div>
-                        <Label>可见性</Label>
+                        <Label>{translate("可见性", "Visibility")}</Label>
                         <Select value={form.visibility} onValueChange={(v: any) => setForm({ ...form, visibility: v })}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="public">公开</SelectItem>
-                            <SelectItem value="link_only">仅链接可见</SelectItem>
-                            <SelectItem value="hidden">隐藏</SelectItem>
+                            <SelectItem value="public">{translate("公开", "Public")}</SelectItem>
+                            <SelectItem value="link_only">{translate("仅链接可见", "Link Only")}</SelectItem>
+                            <SelectItem value="hidden">{translate("隐藏", "Hidden")}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -1047,25 +1060,25 @@ export default function ProductsV2() {
 
                     <div className="flex items-center justify-between rounded-lg border p-3">
                       <div>
-                        <Label>推荐商品</Label>
-                        <p className="text-xs text-muted-foreground">在商城首页推荐此商品</p>
+                        <Label>{translate("推荐商品", "Featured Product")}</Label>
+                        <p className="text-xs text-muted-foreground">{translate("在商城首页推荐此商品", "Feature this product on the homepage")}</p>
                       </div>
                       <Switch checked={form.isFeatured} onCheckedChange={(v) => setForm({ ...form, isFeatured: v })} />
                     </div>
 
                     {form.isFeatured && (
                       <div>
-                        <Label>推荐排序权重</Label>
+                        <Label>{translate("推荐排序权重", "Featured Sort Weight")}</Label>
                         <Input type="number" value={form.featuredSortOrder}
                           onChange={(e) => setForm({ ...form, featuredSortOrder: parseInt(e.target.value) || 0 })} />
-                        <p className="text-xs text-muted-foreground mt-1">数字越小排序越靠前</p>
+                        <p className="text-xs text-muted-foreground mt-1">{translate("数字越小排序越靠前", "Smaller number means higher priority")}</p>
                       </div>
                     )}
 
                     <div>
-                      <Label>内部备注</Label>
+                      <Label>{translate("内部备注", "Internal Notes")}</Label>
                       <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3}
-                        placeholder="仅后台可见的备注信息" />
+                        placeholder={translate("仅后台可见的备注信息", "Notes visible only to backend users")} />
                     </div>
                   </div>
                 )}
@@ -1075,7 +1088,7 @@ export default function ProductsV2() {
                   <div className="space-y-4">
                     <Card>
                       <CardHeader>
-                        <CardTitle className="text-base">商品预览</CardTitle>
+                        <CardTitle className="text-base">{translate("商品预览", "Product Preview")}</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-3">
                         <div className="flex items-start gap-4">
@@ -1084,13 +1097,13 @@ export default function ProductsV2() {
                           )}
                           <div className="flex-1 space-y-1">
                             <div className="flex items-center gap-2">
-                              <h3 className="font-semibold text-lg">{form.name || "未命名商品"}</h3>
+                              <h3 className="font-semibold text-lg">{form.name || translate("未命名商品", "Unnamed Product")}</h3>
                               <Badge className={TYPE_BADGES[form.type]} variant="secondary">
-                                {PRODUCT_TYPES.find(t => t.value === form.type)?.label}
+                                {getProductTypeLabel(form.type)}
                               </Badge>
-                              <Badge variant="outline">{form.productMode === "variant" ? "多规格" : "单规格"}</Badge>
+                              <Badge variant="outline">{form.productMode === "variant" ? translate("多规格", "Variant") : translate("单规格", "Simple")}</Badge>
                             </div>
-                            <p className="text-sm text-muted-foreground">{form.shortDescZh || "无描述"}</p>
+                            <p className="text-sm text-muted-foreground">{form.shortDescZh || translate("无描述", "No description")}</p>
                             <div className="flex items-center gap-3 text-sm">
                               <span className="font-medium">RM {form.sellingPrice || "0"}</span>
                               {form.compareAtPrice && <span className="line-through text-muted-foreground">RM {form.compareAtPrice}</span>}
@@ -1099,24 +1112,24 @@ export default function ProductsV2() {
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-sm pt-2 border-t">
-                          <div>分类: {categories?.find(c => c.id === form.categoryId)?.nameZh || "无"}</div>
-                          <div>状态: {STATUS_LABELS[form.status]}</div>
-                          <div>可见性: {form.visibility === "public" ? "公开" : form.visibility === "link_only" ? "仅链接" : "隐藏"}</div>
-                          <div>推荐: {form.isFeatured ? "是" : "否"}</div>
-                          {!isMembership && <div>库存: {form.stockQuantity}</div>}
+                          <div>{translate("分类", "Category")}: {categories?.find(c => c.id === form.categoryId)?.[lang === "zh" ? "nameZh" : "nameEn"] || translate("无", "None")}</div>
+                          <div>{translate("状态", "Status")}: {translate(RAW_STATUS_LABELS[form.status]?.zh, RAW_STATUS_LABELS[form.status]?.en)}</div>
+                          <div>{translate("可见性", "Visibility")}: {form.visibility === "public" ? translate("公开", "Public") : form.visibility === "link_only" ? translate("仅链接", "Link Only") : translate("隐藏", "Hidden")}</div>
+                          <div>{translate("推荐", "Featured")}: {form.isFeatured ? translate("是", "Yes") : translate("否", "No")}</div>
+                          {!isMembership && <div>{translate("库存", "Stock")}: {form.stockQuantity}</div>}
                           {!isMembership && form.estimatedCost && (
-                            <div>预计利润: <span className={parseFloat(form.sellingPrice) - parseFloat(form.estimatedCost) >= 0 ? "text-green-600" : "text-red-600"}>RM {(parseFloat(form.sellingPrice) - parseFloat(form.estimatedCost)).toFixed(2)}</span></div>
+                            <div>{translate("预计利润", "Estimated Profit")}: <span className={parseFloat(form.sellingPrice) - parseFloat(form.estimatedCost) >= 0 ? "text-green-600" : "text-red-600"}>RM {(parseFloat(form.sellingPrice) - parseFloat(form.estimatedCost)).toFixed(2)}</span></div>
                           )}
                         </div>
                         {isVariant && variants.length > 0 && (
                           <div className="pt-2 border-t">
-                            <p className="text-sm font-medium mb-2">规格 ({variants.length})</p>
+                            <p className="text-sm font-medium mb-2">{translate("规格", "Variants")} ({variants.length})</p>
                             <div className="space-y-1">
                               {variants.map((v, i) => (
                                 <div key={i} className="flex items-center gap-2 text-sm">
-                                  <span>{v.name}</span>
+                                  <span>{lang === "zh" ? v.nameZh || v.name : v.nameEn || v.name}</span>
                                   <code className="text-xs bg-muted px-1 py-0.5 rounded">{v.keyword}</code>
-                                  <span className="text-muted-foreground">RM {v.sellingPrice || "—"}</span>
+                                  <span className="text-muted-foreground">RM {v.sellingPrice || translate("—", "—")}</span>
                                 </div>
                               ))}
                             </div>
@@ -1127,8 +1140,8 @@ export default function ProductsV2() {
 
                     {isMembership && (
                       <div className="p-3 rounded-lg bg-purple-50/50 dark:bg-purple-950/20 border text-sm">
-                        <p className="font-medium">会员商品提示</p>
-                        <p className="text-xs text-muted-foreground mt-1">保存后可生成会员专属购买链接，通过 Messenger 发送给客户</p>
+                        <p className="font-medium">{translate("会员商品提示", "Membership Product Tip")}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{translate("保存后可生成会员专属购买链接，通过 Messenger 发送给客户", "After saving, you can generate exclusive member purchase links and send them to customers via Messenger")}</p>
                       </div>
                     )}
                   </div>
@@ -1138,15 +1151,15 @@ export default function ProductsV2() {
               {/* Navigation Buttons */}
               <div className="flex items-center justify-between pt-4 border-t">
                 <Button variant="outline" onClick={() => step > 0 ? setStep(step - 1) : setDialogOpen(false)}>
-                  {step === 0 ? "取消" : "上一步"}
+                  {step === 0 ? translate("取消", "Cancel") : translate("上一步", "Previous Step")}
                 </Button>
-                {step < STEPS.length - 1 ? (
+                {step < RAW_STEPS.length - 1 ? (
                   <Button onClick={() => setStep(step + 1)} disabled={step === 0 && (!form.name.trim() || !form.keyword.trim() || !keywordAvailable)}>
-                    下一步
+                    {translate("下一步", "Next Step")}
                   </Button>
                 ) : (
                   <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
-                    {editingId ? "保存" : "创建商品"}
+                    {editingId ? translate("保存", "Save") : translate("创建商品", "Create Product")}
                   </Button>
                 )}
               </div>
@@ -1159,21 +1172,21 @@ export default function ProductsV2() {
       <Dialog open={variantDialogOpen} onOpenChange={setVariantDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingVariantId ? "编辑规格" : "新增规格"}</DialogTitle>
+            <DialogTitle>{editingVariantId ? translate("编辑规格", "Edit Variant") : translate("新增规格", "Add Variant")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>规格名称 *</Label>
-                <Input value={variantForm.name} onChange={(e) => setVariantForm({ ...variantForm, name: e.target.value })} placeholder="如：红色大盆" />
+                <Label>{translate("规格名称", "Variant Name")} *</Label>
+                <Input value={variantForm.name} onChange={(e) => setVariantForm({ ...variantForm, name: e.target.value })} placeholder={translate("如：红色大盆", "e.g., Red Large Pot")} />
               </div>
               <div>
-                <Label>规格关键词 *</Label>
+                <Label>{translate("规格关键词", "Variant Keyword")} *</Label>
                 <div className="relative">
                   <Input
                     value={variantForm.keyword}
                     onChange={(e) => setVariantForm({ ...variantForm, keyword: e.target.value.toUpperCase().replace(/\s+/g, '') })}
-                    placeholder="自动大写去空格"
+                    placeholder={translate("自动大写去空格", "Auto uppercase and remove spaces")}
                   />
                   {variantForm.keyword && (
                     <div className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -1182,58 +1195,58 @@ export default function ProductsV2() {
                   )}
                 </div>
                 {variantForm.keyword && !variantKeywordAvailable && (
-                  <p className="text-xs text-red-500 mt-1">关键词已被使用</p>
+                  <p className="text-xs text-red-500 mt-1">{translate("关键词已被使用", "Keyword already in use")}</p>
                 )}
                 {variantForm.keyword && (
-                  <p className="text-xs text-muted-foreground mt-1">组合关键词: {form.keyword}{variantForm.keyword}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{translate("组合关键词", "Combined Keyword")}: {form.keyword}{variantForm.keyword}</p>
                 )}
               </div>
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label>售价 (RM)</Label>
-                <Input type="number" placeholder="继承商品" value={variantForm.sellingPrice}
+                <Label>{translate("售价 (RM)", "Selling Price (RM)")}</Label>
+                <Input type="number" placeholder={translate("继承商品", "Inherit Product")} value={variantForm.sellingPrice}
                   onChange={(e) => setVariantForm({ ...variantForm, sellingPrice: e.target.value })} />
               </div>
               <div>
-                <Label>划线价 (RM)</Label>
-                <Input type="number" placeholder="继承商品" value={variantForm.compareAtPrice}
+                <Label>{translate("划线价 (RM)", "Compare At Price (RM)")}</Label>
+                <Input type="number" placeholder={translate("继承商品", "Inherit Product")} value={variantForm.compareAtPrice}
                   onChange={(e) => setVariantForm({ ...variantForm, compareAtPrice: e.target.value })} />
               </div>
               <div>
-                <Label>会员价 (RM)</Label>
-                <Input type="number" placeholder="继承商品" value={variantForm.memberPrice}
+                <Label>{translate("会员价 (RM)", "Member Price (RM)")}</Label>
+                <Input type="number" placeholder={translate("继承商品", "Inherit Product")} value={variantForm.memberPrice}
                   onChange={(e) => setVariantForm({ ...variantForm, memberPrice: e.target.value })} />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label>参考成本 (RM)</Label>
-                <Input type="number" placeholder="继承商品" value={variantForm.estimatedCost}
+                <Label>{translate("参考成本 (RM)", "Estimated Cost (RM)")}</Label>
+                <Input type="number" placeholder={translate("继承商品", "Inherit Product")} value={variantForm.estimatedCost}
                   onChange={(e) => setVariantForm({ ...variantForm, estimatedCost: e.target.value })} />
               </div>
               <div>
-                <Label>库存</Label>
+                <Label>{translate("库存", "Stock")}</Label>
                 <Input type="number" value={variantForm.stockQuantity}
                   onChange={(e) => setVariantForm({ ...variantForm, stockQuantity: parseInt(e.target.value) || 0 })} />
               </div>
               <div>
-                <Label>状态</Label>
+                <Label>{translate("状态", "Status")}</Label>
                 <Select value={variantForm.status} onValueChange={(v: any) => setVariantForm({ ...variantForm, status: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="active">启用</SelectItem>
-                    <SelectItem value="inactive">停用</SelectItem>
-                    <SelectItem value="hidden">隐藏</SelectItem>
+                    <SelectItem value="active">{translate("启用", "Active")}</SelectItem>
+                    <SelectItem value="inactive">{translate("停用", "Inactive")}</SelectItem>
+                    <SelectItem value="hidden">{translate("隐藏", "Hidden")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setVariantDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setVariantDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
             <Button onClick={handleVariantSubmit} disabled={createVariantMutation.isPending || updateVariantMutation.isPending}>
-              {editingVariantId ? "保存" : "添加"}
+              {editingVariantId ? translate("保存", "Save") : translate("添加", "Add")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1243,7 +1256,7 @@ export default function ProductsV2() {
       <Dialog open={showMemberLinkDialog} onOpenChange={setShowMemberLinkDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>会员购买链接管理</DialogTitle>
+            <DialogTitle>{translate("会员购买链接管理", "Member Purchase Link Management")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <Button
@@ -1252,24 +1265,24 @@ export default function ProductsV2() {
               className="w-full"
             >
               <Plus className="h-4 w-4 mr-2" />
-              生成新链接（旧链接将自动停用）
+              {translate("生成新链接（旧链接将自动停用）", "Generate New Link (old links will be automatically deactivated)")}
             </Button>
 
             <div className="space-y-2">
               {memberLinksQuery.isLoading ? (
-                <p className="text-center text-muted-foreground py-4">加载中...</p>
+                <p className="text-center text-muted-foreground py-4">{translate("加载中...", "Loading...")}</p>
               ) : memberLinksQuery.data?.length === 0 ? (
-                <p className="text-center text-muted-foreground py-4">暂无链接</p>
+                <p className="text-center text-muted-foreground py-4">{translate("暂无链接", "No links yet")}</p>
               ) : memberLinksQuery.data?.map(link => (
                 <div key={link.id} className="flex items-center gap-3 p-3 border rounded-lg">
                   <div className="flex-1 min-w-0">
                     <code className="text-xs bg-muted px-1.5 py-0.5 rounded break-all">/m/{link.token}</code>
                     <p className="text-xs text-muted-foreground mt-1">
-                      创建于 {new Date(link.createdAt).toLocaleString()}
+                      创建于 {translate("创建于", "Created on")} {new Date(link.createdAt).toLocaleString()}
                     </p>
                   </div>
                   <Badge variant={link.isActive ? "default" : "outline"}>
-                    {link.isActive ? "活跃" : "已停用"}
+                    {link.isActive ? translate("活跃", "Active") : translate("已停用", "Deactivated")}
                   </Badge>
                   {link.isActive && (
                     <Button

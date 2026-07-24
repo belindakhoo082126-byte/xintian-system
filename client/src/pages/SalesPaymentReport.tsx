@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,13 +12,13 @@ import { ArrowLeft, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { Link } from "wouter";
 
 const PRESETS = [
-  { value: "today", label: "今天" },
-  { value: "yesterday", label: "昨天" },
-  { value: "this_week", label: "本周" },
-  { value: "this_month", label: "本月" },
-  { value: "last_month", label: "上个月" },
-  { value: "this_year", label: "今年" },
-  { value: "custom", label: "自定义" },
+  { value: "today", zh: "今天", en: "Today" },
+  { value: "yesterday", zh: "昨天", en: "Yesterday" },
+  { value: "this_week", zh: "本周", en: "This Week" },
+  { value: "this_month", zh: "本月", en: "This Month" },
+  { value: "last_month", zh: "上个月", en: "Last Month" },
+  { value: "this_year", zh: "今年", en: "This Year" },
+  { value: "custom", zh: "自定义", en: "Custom" },
 ];
 
 function formatRM(n: number | undefined | null): string {
@@ -31,16 +32,17 @@ function formatDateTime(ts: number | string | undefined): string {
   return d.toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  pending: { label: "待处理", variant: "secondary" },
-  confirmed: { label: "已确认", variant: "default" },
-  shipping: { label: "配送中", variant: "default" },
-  shipped: { label: "已发货", variant: "default" },
-  completed: { label: "已完成", variant: "default" },
-  cancelled: { label: "已取消", variant: "destructive" },
+const STATUS_MAP: Record<string, { zh: string; en: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  pending: { zh: "待处理", en: "Pending", variant: "secondary" },
+  confirmed: { zh: "已确认", en: "Confirmed", variant: "default" },
+  shipping: { zh: "配送中", en: "Shipping", variant: "default" },
+  shipped: { zh: "已发货", en: "Shipped", variant: "default" },
+  completed: { zh: "已完成", en: "Completed", variant: "default" },
+  cancelled: { zh: "已取消", en: "Cancelled", variant: "destructive" },
 };
 
 export default function SalesPaymentReport() {
+  const { lang, translate } = useI18n();
   const [preset, setPreset] = useState("this_month");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -75,15 +77,15 @@ export default function SalesPaymentReport() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">销售与收款报告</h1>
-          <p className="text-sm text-muted-foreground mt-1">订单付款明细一览</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{translate("销售与收款报告", "Sales & Payment Report")}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{translate("订单付款明细一览", "Overview of order payment details")}</p>
         </div>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
         {PRESETS.map((p) => (
           <Button key={p.value} size="sm" variant={preset === p.value ? "default" : "outline"} onClick={() => setPreset(p.value)}>
-            {p.label}
+            {translate(p.zh, p.en)}
           </Button>
         ))}
       </div>
@@ -93,11 +95,11 @@ export default function SalesPaymentReport() {
           <CardContent className="pt-6">
             <div className="flex items-end gap-4 flex-wrap">
               <div className="space-y-2">
-                <Label>开始日期</Label>
+                <Label>{translate("开始日期", "Start Date")}</Label>
                 <Input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>结束日期</Label>
+                <Label>{translate("结束日期", "End Date")}</Label>
                 <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
               </div>
             </div>
@@ -113,7 +115,7 @@ export default function SalesPaymentReport() {
                 <DollarSign className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">商品销售额</p>
+                <p className="text-xs text-muted-foreground">{translate("商品销售额", "Product Sales")}</p>
                 <p className="text-lg font-bold text-blue-600">{formatRM(summary.total)}</p>
               </div>
             </div>
@@ -126,7 +128,7 @@ export default function SalesPaymentReport() {
                 <TrendingUp className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">已收款</p>
+                <p className="text-xs text-muted-foreground">{translate("已收款", "Amount Received")}</p>
                 <p className="text-lg font-bold text-green-600">{formatRM(summary.paid)}</p>
               </div>
             </div>
@@ -139,7 +141,7 @@ export default function SalesPaymentReport() {
                 <TrendingDown className="h-5 w-5 text-orange-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">未收款</p>
+                <p className="text-xs text-muted-foreground">{translate("未收款", "Amount Due")}</p>
                 <p className="text-lg font-bold text-orange-600">{formatRM(summary.unpaid)}</p>
               </div>
             </div>
@@ -152,7 +154,7 @@ export default function SalesPaymentReport() {
                 <DollarSign className="h-5 w-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">订单数</p>
+                <p className="text-xs text-muted-foreground">{translate("订单数", "Number of Orders")}</p>
                 <p className="text-lg font-bold text-purple-600">{summary.orders}</p>
               </div>
             </div>
@@ -162,7 +164,7 @@ export default function SalesPaymentReport() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">订单付款明细</CardTitle>
+          <CardTitle className="text-base">{translate("订单付款明细", "Order Payment Details")}</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -171,23 +173,23 @@ export default function SalesPaymentReport() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>订单号</TableHead>
-                  <TableHead>客户</TableHead>
-                  <TableHead className="text-right">商品金额</TableHead>
-                  <TableHead className="text-right">运费</TableHead>
-                  <TableHead className="text-right">总额</TableHead>
-                  <TableHead className="text-right">已付</TableHead>
-                  <TableHead className="text-right">欠款</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>付款方式</TableHead>
-                  <TableHead>下单时间</TableHead>
+                  <TableHead>{translate("订单号", "Order No.")}</TableHead>
+                  <TableHead>{translate("客户", "Customer")}</TableHead>
+                  <TableHead className="text-right">{translate("商品金额", "Product Amount")}</TableHead>
+                  <TableHead className="text-right">{translate("运费", "Shipping Fee")}</TableHead>
+                  <TableHead className="text-right">{translate("总额", "Total Amount")}</TableHead>
+                  <TableHead className="text-right">{translate("已付", "Paid")}</TableHead>
+                  <TableHead className="text-right">{translate("欠款", "Balance Due")}</TableHead>
+                  <TableHead>{translate("状态", "Status")}</TableHead>
+                  <TableHead>{translate("付款方式", "Payment Method")}</TableHead>
+                  <TableHead>{translate("下单时间", "Order Time")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {orders.map((o) => (
                   <TableRow key={o.id}>
                     <TableCell className="font-mono text-sm">{o.orderNumber}</TableCell>
-                    <TableCell className="font-medium">{o.customerName || "-"}</TableCell>
+                    <TableCell className="font-medium">{o.customerName || translate("-", "-")}</TableCell>
                     <TableCell className="text-right">{formatRM(o.productSubtotal)}</TableCell>
                     <TableCell className="text-right">{formatRM(o.shippingFee)}</TableCell>
                     <TableCell className="text-right font-semibold">{formatRM(o.totalAmount)}</TableCell>
@@ -195,17 +197,17 @@ export default function SalesPaymentReport() {
                     <TableCell className={`text-right ${o.balance > 0 ? "text-orange-600" : ""}`}>{formatRM(o.balance)}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_MAP[o.status]?.variant || "secondary"}>
-                        {STATUS_MAP[o.status]?.label || o.status}
+                        {translate(STATUS_MAP[o.status]?.zh || o.status, STATUS_MAP[o.status]?.en || o.status)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{o.paymentMethod || "-"}</TableCell>
+                    <TableCell className="text-muted-foreground">{o.paymentMethod || translate("-", "-")}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">{formatDateTime(o.createdAt)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           ) : (
-            <p className="text-center text-muted-foreground py-8">暂无数据</p>
+            <p className="text-center text-muted-foreground py-8">{translate("暂无数据", "No data available")}</p>
           )}
         </CardContent>
       </Card>

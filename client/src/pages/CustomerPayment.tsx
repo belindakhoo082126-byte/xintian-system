@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,8 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
   const [qrZoomOpen, setQrZoomOpen] = useState(false);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string>("");
-  const utils = trpc.useUtils();
+    const utils = trpc.useUtils();
+  const { translate, lang } = useI18n();
 
   const { data: order, isLoading } = trpc.orders.getById.useQuery({ id: orderId });
   const { data: paymentMethods } = trpc.paymentMethods.listEnabled.useQuery();
@@ -27,22 +29,22 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
   const uploadReceiptMutation = trpc.orders.updateStatus.useMutation({
     onSuccess: () => {
       utils.orders.invalidate();
-      toast.success("付款凭证已上传，等待商家确认");
+      toast.success(translate("付款凭证已上传，等待商家确认", "Payment proof uploaded, waiting for merchant confirmation"));
       setReceiptFile(null);
       setReceiptPreview("");
     },
-    onError: (e) => toast.error(`上传失败: ${e.message}`),
+    onError: (e) => toast.error(`${translate("上传失败:", "Upload failed:")} ${e.message}`),
   });
 
   if (isLoading) {
-    return <div className="flex items-center justify-center py-20 text-muted-foreground">加载中...</div>;
+    return <div className="flex items-center justify-center py-20 text-muted-foreground">{translate("加载中...", "Loading...")}</div>;
   }
 
   if (!order) {
     return (
       <div className="space-y-4">
-        <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />返回</Button>
-        <p className="text-center text-muted-foreground py-20">订单不存在</p>
+        <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />{translate("返回", "Back")}</Button>
+        <p className="text-center text-muted-foreground py-20">{translate("订单不存在", "Order not found")}</p>
       </div>
     );
   }
@@ -53,7 +55,7 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
 
   async function handleUploadReceipt() {
     if (!receiptFile) {
-      toast.error("请选择付款凭证图片");
+      toast.error(translate("请选择付款凭证图片", "Please select payment proof image"));
       return;
     }
     // Convert file to base64 data URL for JSON API
@@ -74,10 +76,10 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
             receiptUrl: data.url,
           });
         } else {
-          toast.error("上传失败");
+          toast.error(translate("上传失败", "Upload failed"));
         }
       } catch {
-        toast.error("上传失败，请重试");
+        toast.error(translate("上传失败，请重试", "Upload failed, please try again"));
       }
     };
     reader.readAsDataURL(receiptFile);
@@ -85,7 +87,7 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
 
   function copyToClipboard(text: string, label: string) {
     navigator.clipboard.writeText(text);
-    toast.success(`${label} 已复制`);
+    toast.success(translate(`${label} 已复制`, `${label} Copied`));
   }
 
   function downloadQr(url: string, name: string) {
@@ -108,11 +110,11 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
     <div className="space-y-6 max-w-3xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />返回</Button>
+        <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />{translate("返回", "Back")}</Button>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">付款</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{translate("付款", "Payment")}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            订单号: <span className="font-mono">{order.orderNumber}</span>
+            {translate("订单号:", "Order No.:")} <span className="font-mono">{order.orderNumber}</span>
           </p>
         </div>
       </div>
@@ -122,13 +124,13 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">需付款金额</p>
+              <p className="text-sm text-muted-foreground">{translate("需付款金额", "Amount to Pay")}</p>
               <p className="text-3xl font-bold text-primary">RM {remaining.toFixed(2)}</p>
             </div>
             <div className="text-right text-sm">
-              <p className="text-muted-foreground">订单总额: RM {totalAmount.toFixed(2)}</p>
+              <p className="text-muted-foreground">{translate("订单总额:", "Total Amount:")} RM {totalAmount.toFixed(2)}</p>
               {paidAmount > 0 && (
-                <p className="text-green-600">已付: RM {paidAmount.toFixed(2)}</p>
+                <p className="text-green-600">{translate("已付:", "Paid:")} RM {paidAmount.toFixed(2)}</p>
               )}
             </div>
           </div>
@@ -137,7 +139,7 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
 
       {/* Payment Method Selection */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">选择付款方式</h2>
+        <h2 className="text-lg font-semibold mb-3">{translate("选择付款方式", "Select Payment Method")}</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {paymentMethods?.map((method: any) => {
             const Icon = TYPE_ICONS[method.type] || Package;
@@ -153,11 +155,11 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
                     <Icon className="h-5 w-5" />
                   </div>
                   <div className="flex-1">
-                    <p className="font-medium">{method.name}</p>
+                    <p className="font-medium">{lang === "zh" ? method.name : method.name_en || method.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {method.type === "qr_code" ? "扫码付款" :
-                       method.type === "bank_transfer" ? "银行转账" :
-                       method.type === "cash" ? "现金付款" : "其他方式"}
+                      {method.type === "qr_code" ? translate("扫码付款", "Scan to Pay") :
+                       method.type === "bank_transfer" ? translate("银行转账", "Bank Transfer") :
+                       method.type === "cash" ? translate("现金付款", "Cash Payment") : translate("其他方式", "Other Method")}
                     </p>
                   </div>
                   {isSelected && <CheckCircle className="h-5 w-5 text-primary" />}
@@ -172,7 +174,7 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
       {selectedMethod && (
         <Card>
           <CardHeader>
-            <CardTitle>{selectedMethod.name} - 付款详情</CardTitle>
+            <CardTitle>{lang === "zh" ? selectedMethod.name : selectedMethod.name_en || selectedMethod.name} - {translate("付款详情", "Payment Details")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* QR Code Display */}
@@ -181,7 +183,7 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
                 <div className="relative group">
                   <img
                     src={selectedMethod.qrImageUrl}
-                    alt={`${selectedMethod.name} QR Code`}
+                    alt={`${lang === "zh" ? selectedMethod.name : selectedMethod.name_en || selectedMethod.name} ${translate("QR Code", "QR Code")}`}
                     className="w-64 h-64 rounded-lg border-2 border-primary/20"
                   />
                   <Button
@@ -195,10 +197,10 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => setQrZoomOpen(true)}>
-                    <ZoomIn className="h-4 w-4 mr-2" />放大 QR Code
+                    <ZoomIn className="h-4 w-4 mr-2" />{translate("放大 QR Code", "Zoom QR Code")}
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => downloadQr(selectedMethod.qrImageUrl, selectedMethod.name)}>
-                    <Download className="h-4 w-4 mr-2" />下载 QR Code
+                    <Download className="h-4 w-4 mr-2" />{translate("下载 QR Code", "Download QR Code")}
                   </Button>
                 </div>
               </div>
@@ -209,16 +211,16 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
               <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
                 {selectedMethod.bankName && (
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">银行名称</span>
+                    <span className="text-sm text-muted-foreground">{translate("银行名称", "Bank Name")}</span>
                     <span className="font-medium">{selectedMethod.bankName}</span>
                   </div>
                 )}
                 {selectedMethod.accountHolder && (
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">账户持有人</span>
+                    <span className="text-sm text-muted-foreground">{translate("账户持有人", "Account Holder")}</span>
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{selectedMethod.accountHolder}</span>
-                      <Button variant="ghost" size="sm" onClick={() => copyToClipboard(selectedMethod.accountHolder, "账户持有人")}>
+                      <Button variant="ghost" size="sm" onClick={() => copyToClipboard(selectedMethod.accountHolder, translate("账户持有人", "Account Holder"))}>
                         <Copy className="h-3 w-3" />
                       </Button>
                     </div>
@@ -226,10 +228,10 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
                 )}
                 {selectedMethod.accountNumber && (
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">银行账号</span>
+                    <span className="text-sm text-muted-foreground">{translate("银行账号", "Account Number")}</span>
                     <div className="flex items-center gap-2">
                       <span className="font-mono font-bold text-lg">{selectedMethod.accountNumber}</span>
-                      <Button variant="ghost" size="sm" onClick={() => copyToClipboard(selectedMethod.accountNumber, "银行账号")}>
+                      <Button variant="ghost" size="sm" onClick={() => copyToClipboard(selectedMethod.accountNumber, translate("银行账号", "Account Number"))}>
                         <Copy className="h-3 w-3" />
                       </Button>
                     </div>
@@ -242,26 +244,26 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
             {selectedMethod.paymentInstruction && (
               <div className="p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
                 <p className="text-sm">
-                  <strong>付款说明:</strong> {selectedMethod.paymentInstruction}
+                  <strong>{translate("付款说明:", "Payment Instructions:")}</strong> {selectedMethod.paymentInstruction}
                 </p>
               </div>
             )}
 
             {/* Upload Payment Proof */}
             <div className="space-y-3 pt-4 border-t">
-              <h3 className="font-medium">上传付款凭证</h3>
+              <h3 className="font-medium">{translate("上传付款凭证", "Upload Payment Proof")}</h3>
               <p className="text-sm text-muted-foreground">
-                请在付款后截图或保留收据，并上传以便商家核对。
+                {translate("请在付款后截图或保留收据，并上传以便商家核对。", "Please screenshot or keep the receipt after payment and upload it for merchant verification.")}
               </p>
               <div className="flex items-center gap-4">
                 <label className="cursor-pointer">
                   <Button variant="outline" asChild>
-                    <span><Upload className="h-4 w-4 mr-2" />选择图片</span>
+                    <span><Upload className="h-4 w-4 mr-2" />{translate("选择图片", "Select Image")}</span>
                   </Button>
                   <input type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
                 </label>
                 {receiptPreview && (
-                  <img src={receiptPreview} alt="Receipt Preview" className="h-20 w-20 rounded border object-cover" />
+                  <img src={receiptPreview} alt={translate("收据预览", "Receipt Preview")} className="h-20 w-20 rounded border object-cover" />
                 )}
               </div>
               {receiptFile && (
@@ -271,7 +273,7 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
                   className="w-full"
                 >
                   <CheckCircle className="h-4 w-4 mr-2" />
-                  {uploadReceiptMutation.isPending ? "上传中..." : "确认上传凭证"}
+                  {uploadReceiptMutation.isPending ? translate("上传中...", "Uploading...") : translate("确认上传凭证", "Confirm Upload Proof")}
                 </Button>
               )}
             </div>
@@ -283,13 +285,13 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
       <Dialog open={qrZoomOpen} onOpenChange={setQrZoomOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{selectedMethod?.name} QR Code</DialogTitle>
+            <DialogTitle>{lang === "zh" ? selectedMethod?.name : selectedMethod?.name_en || selectedMethod?.name} {translate("QR Code", "QR Code")}</DialogTitle>
           </DialogHeader>
           {selectedMethod?.qrImageUrl && (
             <div className="flex flex-col items-center gap-3">
-              <img src={selectedMethod.qrImageUrl} alt="QR Code" className="max-w-full rounded-lg" />
+              <img src={selectedMethod.qrImageUrl} alt={translate("QR Code", "QR Code")} className="max-w-full rounded-lg" />
               <Button variant="outline" size="sm" onClick={() => downloadQr(selectedMethod.qrImageUrl, selectedMethod.name)}>
-                <Download className="h-4 w-4 mr-2" />下载 QR Code
+                <Download className="h-4 w-4 mr-2" />{translate("下载 QR Code", "Download QR Code")}
               </Button>
             </div>
           )}
@@ -298,7 +300,7 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
 
       {/* Footer notice */}
       <div className="text-center text-sm text-muted-foreground py-4 border-t">
-        请在汇款后，截图或保留收据并发送给我们，以便核对。谢谢！
+        {translate("请在汇款后，截图或保留收据并发送给我们，以便核对。谢谢！", "Please screenshot or keep the receipt after payment and send it to us for verification. Thank you!")}
       </div>
     </div>
   );

@@ -1,6 +1,20 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
 export type Lang = "zh" | "en";
+export type TranslationParams = Record<string, string | number | boolean | null | undefined>;
+
+/**
+ * Replaces named placeholders such as {count} without changing a missing value.
+ * Keeping this helper independent makes it safe to use for dynamic business labels,
+ * toasts, and confirmation messages throughout the admin system.
+ */
+export function interpolateTranslation(template: string, params?: TranslationParams): string {
+  if (!params) return template;
+  return template.replace(/\{([\w.-]+)\}/g, (match, key: string) => {
+    const value = params[key];
+    return value === undefined || value === null ? match : String(value);
+  });
+}
 
 const translations: Record<string, Record<Lang, string>> = {
   // Dashboard
@@ -90,13 +104,16 @@ const translations: Record<string, Record<Lang, string>> = {
 interface I18nContextType {
   lang: Lang;
   setLang: (lang: Lang) => void;
-  t: (key: string) => string;
+  t: (key: string, params?: TranslationParams) => string;
+  /** Use for page-local text while the shared dictionary is being expanded. */
+  translate: (zh: string, en: string, params?: TranslationParams) => string;
 }
 
 const I18nContext = createContext<I18nContextType>({
   lang: "zh",
   setLang: () => {},
   t: (key: string) => key,
+  translate: (zh: string) => zh,
 });
 
 export function I18nProvider({ children }: { children: ReactNode }) {
@@ -160,14 +177,17 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const t = (key: string): string => {
+  const t = (key: string, params?: TranslationParams): string => {
     const entry = translations[key];
-    if (!entry) return key;
-    return entry[lang] || entry.zh || key;
+    const value = entry?.[lang] || entry?.zh || key;
+    return interpolateTranslation(value, params);
   };
 
+  const translate = (zh: string, en: string, params?: TranslationParams): string =>
+    interpolateTranslation(lang === "zh" ? zh : en, params);
+
   return (
-    <I18nContext.Provider value={{ lang, setLang, t }}>
+    <I18nContext.Provider value={{ lang, setLang, t, translate }}>
       {children}
     </I18nContext.Provider>
   );

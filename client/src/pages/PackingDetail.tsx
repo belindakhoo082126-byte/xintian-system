@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "@/contexts/I18nContext";
 import { Link, useParams } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,11 +15,20 @@ import { toast } from "sonner";
 import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare, RefreshCw } from "lucide-react";
 
 const COURIERS = [
-  "Parcel Daily", "Parcel King", "PosLaju", "JNT", "Ninja Van", "DHL", "Lalamove", "Shopee Xpress", "Other"
+  { zh: "Parcel Daily", en: "Parcel Daily" },
+  { zh: "Parcel King", en: "Parcel King" },
+  { zh: "PosLaju", en: "PosLaju" },
+  { zh: "JNT", en: "JNT" },
+  { zh: "Ninja Van", en: "Ninja Van" },
+  { zh: "DHL", en: "DHL" },
+  { zh: "Lalamove", en: "Lalamove" },
+  { zh: "Shopee Xpress", en: "Shopee Xpress" },
+  { zh: "其他", en: "Other" },
 ];
 
 export default function PackingDetail() {
   const { id } = useParams<{ id: string }>();
+  const { translate, lang } = useI18n();
   const orderId = parseInt(id);
   const utils = trpc.useUtils();
 
@@ -44,63 +54,67 @@ export default function PackingDetail() {
 
   const createParcelKingMutation = trpc.shipping.createParcelKing.useMutation({
     onSuccess: (data: any) => {
-      toast.success(`Parcel King 运单已创建！追踪号: ${data.trackingNumber}${data.testMode ? " (Test)" : ""}`);
+            toast.success(translate(
+        "Parcel King 运单已创建！追踪号: {trackingNumber}{testSuffix}",
+        "Parcel King waybill created. Tracking No: {trackingNumber}{testSuffix}",
+        { trackingNumber: data.trackingNumber, testSuffix: data.testMode ? " (Test)" : "" },
+      ));
       utils.packing.list.invalidate();
       utils.packing.detail.invalidate({ orderId });
       utils.shipping.packages.invalidate({ orderId });
       setPackages([{ courier: "Parcel Daily", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
       setSelectedItems([]);
     },
-    onError: (err) => toast.error(`Parcel King 发货失败: ${err.message}`),
+    onError: (err) => toast.error(translate(`Parcel King 发货失败: ${err.message}`, `Parcel King Shipping Failed: ${err.message}`)),
   });
 
   const redownloadLabelMutation = trpc.shipping.redownloadLabel.useMutation({
     onSuccess: (data: any) => {
       if (data.success && data.url) {
         window.open(data.url, "_blank");
-        toast.success("标签已打开");
+              toast.success(translate("标签已打开", "Label opened"));
       } else {
-        toast.error("下载标签失败: " + (data.error || "未知错误"));
+              toast.error(translate("下载标签失败: ", "Failed to download label: ") + (data.error || translate("未知错误", "Unknown error")));
       }
     },
-    onError: (err: any) => toast.error("下载标签失败: " + err.message),
+    onError: (err: any) => toast.error(translate("下载标签失败: ", "Failed to download label: ") + err.message),
   });
 
   const resyncTrackingMutation = trpc.shipping.resyncTracking.useMutation({
     onSuccess: (data: any) => {
       if (data.success) {
-        toast.success(`追踪已同步！最新状态: ${data.newStatus}`);
+              toast.success(translate(`追踪已同步！最新状态: ${data.newStatus}`, `Tracking synced! Latest status: ${data.newStatus}`));
         utils.shipping.packages.invalidate({ orderId });
       } else {
-        toast.error("同步失败: " + (data.error || "未知错误"));
+              toast.error(translate("同步失败: ", "Sync failed: ") + (data.error || translate("未知错误", "Unknown error")));
       }
     },
-    onError: (err) => toast.error("同步失败: " + err.message),
+    onError: (err) => toast.error(translate("同步失败: ", "Sync failed: ") + err.message),
   });
 
   const fullShipMutation = trpc.shipping.fullShip.useMutation({
     onSuccess: () => {
-      toast.success("发货成功！订单状态已更新为已发货");
+            toast.success(translate("发货成功！订单状态已更新为已发货", "Shipment successful! Order status updated to shipped"));
       utils.packing.list.invalidate();
       utils.packing.detail.invalidate({ orderId });
       utils.shipping.packages.invalidate({ orderId });
     },
-    onError: (err) => toast.error(`发货失败: ${err.message}`),
+    onError: (err) => toast.error(translate(`发货失败: ${err.message}`, `Shipment failed: ${err.message}`)),
   });
 
   const partialShipMutation = trpc.shipping.partialShip.useMutation({
     onSuccess: (data: any) => {
       if (data.allShipped) {
-        toast.success("部分发货成功！所有商品已全部发出，订单状态更新为已发货");
+                toast.success(translate("部分发货成功！所有商品已全部发出，订单状态更新为已发货", "Partial shipment successful! All items have been sent, order status updated to shipped"));
       } else {
-        toast.success("部分发货成功！订单状态更新为部分发货");
+                toast.success(translate("部分发货成功！订单状态更新为部分发货", "Partial shipment successful! Order status updated to partial shipped"));
       }
       utils.packing.list.invalidate();
       utils.packing.detail.invalidate({ orderId });
       utils.shipping.packages.invalidate({ orderId });
       setSelectedItems([]);
     },
-    onError: (err) => toast.error(`发货失败: ${err.message}`),
+    onError: (err) => toast.error(translate(`发货失败: ${err.message}`, `Shipment failed: ${err.message}`)),
   });
 
   const handleShip = (mode: "full" | "partial") => {
@@ -109,11 +123,11 @@ export default function PackingDetail() {
     if (hasParcelKing) {
       const pkPkg = packages.find((p) => p.shippingType === "parcelking")!;
       if (!pkPkg.serviceId) {
-        toast.error("请选择 Parcel King 服务");
+                toast.error(translate("请选择 Parcel King 服务", "Please select Parcel King service"));
         return;
       }
       if (!pkPkg.weight || parseFloat(pkPkg.weight) <= 0) {
-        toast.error("请输入包裹重量");
+                toast.error(translate("请输入包裹重量", "Please enter package weight"));
         return;
       }
       createParcelKingMutation.mutate({
@@ -128,12 +142,12 @@ export default function PackingDetail() {
 
     if (mode === "full") {
       if (packages.length === 0) {
-        toast.error("请至少添加一个包裹");
+                toast.error(translate("请至少添加一个包裹", "Please add at least one package"));
         return;
       }
       const hasEmptyTracking = packages.some((p) => !p.trackingNumber && p.shippingType === "manual");
       if (hasEmptyTracking) {
-        toast.error("手动物流必须填写 Tracking Number");
+                toast.error(translate("手动物流必须填写 Tracking Number", "Manual logistics must have a Tracking Number"));
         return;
       }
       fullShipMutation.mutate({
@@ -147,16 +161,16 @@ export default function PackingDetail() {
       });
     } else {
       if (selectedItems.length === 0) {
-        toast.error("请选择本次发出的商品");
+                toast.error(translate("请选择本次发出的商品", "Please select items for this shipment"));
         return;
       }
       if (packages.length === 0) {
-        toast.error("请至少添加一个包裹");
+                toast.error(translate("请至少添加一个包裹", "Please add at least one package"));
         return;
       }
       const pkg = packages[0];
       if (!pkg.trackingNumber && pkg.shippingType === "manual") {
-        toast.error("手动物流必须填写 Tracking Number");
+                toast.error(translate("手动物流必须填写 Tracking Number", "Manual logistics must have a Tracking Number"));
         return;
       }
       partialShipMutation.mutate({
@@ -195,17 +209,17 @@ export default function PackingDetail() {
   };
 
   if (isLoading) {
-    return <div className="text-center py-12 text-muted-foreground">加载中...</div>;
+        return <div className="text-center py-12 text-muted-foreground">{translate("加载中...", "Loading...")}</div>;
   }
 
   if (!detail) {
-    return <div className="text-center py-12 text-muted-foreground">订单不存在</div>;
+        return <div className="text-center py-12 text-muted-foreground">{translate("订单不存在", "Order not found")}</div>;
   }
 
   const d = detail as any;
   const specialLabel = d.shippingMethod === "lalamove" ? "LALAMOVE" :
-    d.shippingMethod === "east_malaysia_shopee" ? "东马 SHOPEE" :
-    d.shippingMethod === "east_malaysia_poslaju" ? "东马 POSLAJU" : "";
+    d.shippingMethod === "east_malaysia_shopee" ? translate("东马 SHOPEE", "East Malaysia SHOPEE") :
+    d.shippingMethod === "east_malaysia_poslaju" ? translate("东马 POSLAJU", "East Malaysia POSLAJU") : "";
   const canShip = d.physicalStatus === "packing" || d.physicalStatus === "partial_shipped";
   const activeShippingMode = d.physicalStatus === "partial_shipped" ? "partial" : shippingMode;
   const shippedItemIds = new Set(
@@ -221,7 +235,7 @@ export default function PackingDetail() {
       <div className="flex items-center justify-between print-hide">
         <div className="flex items-center gap-4">
           <Link href="/packing">
-            <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
+            <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" />{translate("返回", "Back")}</Button>
           </Link>
           <div>
             <h1 className="text-2xl font-bold">{d.orderNumber}</h1>
@@ -229,13 +243,13 @@ export default function PackingDetail() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handlePrint}><Printer className="h-4 w-4 mr-1" />A5 包货单</Button>
+          <Button variant="outline" onClick={handlePrint}><Printer className="h-4 w-4 mr-1" />{translate("A5 包货单", "A5 Packing Slip")}</Button>
         </div>
       </div>
 
       {/* Customer Info */}
       <Card className="print-hide">
-        <CardHeader><CardTitle className="text-base">客户信息</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">{translate("客户信息", "Customer Information")}</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           <div className="flex items-center gap-2 text-sm"><User className="h-4 w-4 text-muted-foreground" />{d.customerName}</div>
           <div className="flex items-center gap-2 text-sm"><Phone className="h-4 w-4 text-muted-foreground" />{d.customerPhone}</div>
@@ -245,7 +259,7 @@ export default function PackingDetail() {
 
       {/* Product Items - Color display for packing */}
       <Card className="print-hide">
-        <CardHeader><CardTitle className="text-base">商品列表（彩色照片）</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">{translate("商品列表（彩色照片）", "Product List (Color Photos)")}</CardTitle></CardHeader>
         <CardContent>
           <div className="grid gap-4">
             {(d.items as any[]).map((item) => (
@@ -255,16 +269,16 @@ export default function PackingDetail() {
                   {item.coverImageUrl ? (
                     <img src={item.coverImageUrl} alt={item.productName} className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">无图</div>
+                    <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">{translate("无图", "No Image")}</div>
                   )}
                 </div>
                 {/* Product Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm">{item.productName}</div>
-                  {item.variationName && <div className="text-sm text-muted-foreground">{item.variationName}</div>}
-                  {item.productSku && <div className="text-xs text-muted-foreground">SKU: {item.productSku}</div>}
-                  {item.keyword && <div className="text-xs text-muted-foreground">Keyword: {item.keyword}</div>}
-                </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm">{item.productName}</div>
+                    {item.variationName && <div className="text-sm text-muted-foreground">{item.variationName}</div>}
+                    {item.productSku && <div className="text-xs text-muted-foreground">{translate("SKU:", "SKU:")} {item.productSku}</div>}
+                    {item.keyword && <div className="text-xs text-muted-foreground">{translate("关键词:", "Keyword:")} {item.keyword}</div>}
+                  </div>
                 {/* Large Quantity */}
                 <div className="flex flex-col items-center justify-center">
                   <div className={`text-3xl font-bold ${item.quantity > 1 ? "border-4 border-primary rounded-lg px-3 py-1" : ""}`}>
@@ -280,16 +294,16 @@ export default function PackingDetail() {
       {/* Existing Packages */}
       {existingPackages && (existingPackages as any[]).length > 0 && (
         <Card className="print-hide">
-          <CardHeader><CardTitle className="text-base">已有包裹</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">{translate("已有包裹", "Existing Packages")}</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             {(existingPackages as any[]).map((pkg: any) => (
               <div key={pkg.id} className="flex items-center justify-between border rounded-lg p-3">
                 <div className="flex items-center gap-3">
                   <Package className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <div className="font-medium text-sm">包裹 {pkg.packageNumber} - {pkg.courier}</div>
-                    <div className="text-xs text-muted-foreground">Tracking: {pkg.trackingNumber || "未填写"}</div>
-                    {pkg.weight && <div className="text-xs text-muted-foreground">重量: {pkg.weight} kg</div>}
+                    <div className="font-medium text-sm">{translate("包裹", "Package")} {pkg.packageNumber} - {pkg.courier}</div>
+                    <div className="text-xs text-muted-foreground">{translate("追踪号:", "Tracking:")} {pkg.trackingNumber || translate("未填写", "Not filled")}</div>
+                    {pkg.weight && <div className="text-xs text-muted-foreground">{translate("重量", "Weight")}: {pkg.weight} kg</div>}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -302,350 +316,337 @@ export default function PackingDetail() {
                         onClick={() => redownloadLabelMutation.mutate({ trackingNo: pkg.trackingNumber })}
                         disabled={redownloadLabelMutation.isPending}
                       >
-                        <Package className="h-3 w-3 mr-1" />下载标签
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => resyncTrackingMutation.mutate({ trackingNo: pkg.trackingNumber, packageId: pkg.id })}
-                        disabled={resyncTrackingMutation.isPending}
-                      >
-                        <RefreshCw className="h-3 w-3 mr-1" />同步追踪
+                        <Printer className="h-4 w-4 mr-1" />{translate("下载标签", "Download Label")}
                       </Button>
                     </>
                   )}
-                  <Badge variant={pkg.status === "shipped" ? "default" : "secondary"}>{pkg.status}</Badge>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* V1.1: Remarks Display (Live + Customer only, not Internal) */}
-      {remarks && (remarks as any[]).filter((r: any) => r.type === "live" || r.type === "customer").length > 0 && (
-        <Card className="print-hide">
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><MessageSquare className="h-4 w-4" />备注</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {(remarks as any[]).filter((r: any) => r.type === "live" || r.type === "customer").map((r: any) => (
-              <div key={r.id} className="flex items-start gap-2 p-2 border rounded-lg">
-                <Badge variant="outline" className={r.type === "live" ? "text-blue-600" : "text-green-600"}>
-                  {r.type === "live" ? "直播" : "客户"}
-                </Badge>
-                <p className="text-sm">{r.content}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* V1.1: Repot Display */}
-      {repots && (repots as any[]).length > 0 && (
-        <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/20">
-          <CardHeader><CardTitle className="text-base flex items-center gap-2 text-blue-700"><Sprout className="h-4 w-4" />换盆安排</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {(repots as any[]).map((r: any) => (
-              <div key={r.id} className="flex items-center gap-3 p-2 border border-blue-200 rounded-lg">
-                <Sprout className="h-5 w-5 text-blue-500" />
-                <div>
-                  <p className="text-sm font-medium">{r.productName} → {r.potProductName}</p>
-                  <p className="text-xs text-muted-foreground">数量: {r.quantity}</p>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Shipping Section */}
-      <Card className="print-hide">
-        <CardHeader><CardTitle className="text-base">发货</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          {canShip ? <>
-          {/* Shipping Mode Toggle */}
-          <div className="flex gap-2">
-            {d.physicalStatus === "packing" && (
-              <Button
-                variant={activeShippingMode === "full" ? "default" : "outline"}
-                onClick={() => setShippingMode("full")}
-                size="sm"
-              >
-                <Truck className="h-4 w-4 mr-1" />完整发货
-              </Button>
-            )}
-            <Button
-              variant={activeShippingMode === "partial" ? "default" : "outline"}
-              onClick={() => setShippingMode("partial")}
-              size="sm"
-            >
-              <Package className="h-4 w-4 mr-1" />部分发货
-            </Button>
-          </div>
-
-          {/* Partial: Item Selection */}
-          {activeShippingMode === "partial" && (
-            <div className="border rounded-lg p-3 space-y-2">
-              <div className="text-sm font-medium">请选择本次发出的商品</div>
-              {shippableItems.length > 0 ? shippableItems.map((item) => (
-                <label key={item.id} className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={selectedItems.includes(item.id)}
-                    onCheckedChange={() => toggleItem(item.id)}
-                  />
-                  <span className="text-sm">{item.productName} {item.variationName && `- ${item.variationName}`} ×{item.quantity}</span>
-                </label>
-              )) : (
-                <p className="text-sm text-muted-foreground">所有商品均已装入包裹，无待发商品。</p>
-              )}
-            </div>
-          )}
-
-          {/* Package List */}
-          <div className="space-y-3">
-            {packages.map((pkg, index) => (
-              <div key={index} className="border rounded-lg p-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">包裹 {index + 1}</span>
-                  {packages.length > 1 && (
-                    <Button variant="ghost" size="sm" onClick={() => removePackage(index)}>
-                      <X className="h-4 w-4" />
+                  {/* Resync tracking button for Parcel King packages */}
+                  {pkg.providerOrderId && pkg.trackingNumber && pkg.shippingType === "parcelking" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => resyncTrackingMutation.mutate({ trackingNo: pkg.trackingNumber, packageId: pkg.id })}
+                      disabled={resyncTrackingMutation.isPending}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1" />{translate("同步追踪", "Sync Tracking")}
                     </Button>
                   )}
+                  {pkg.status && (
+                    <Badge
+                      className={`text-xs ${pkg.status === "shipped" ? "bg-green-500" : pkg.status === "pending" ? "bg-yellow-500" : "bg-gray-500"}`}
+                    >
+                      {pkg.status === "shipped" ? translate("已发货", "Shipped") : pkg.status === "pending" ? translate("待处理", "Pending") : translate("未知", "Unknown")}
+                    </Badge>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs">Courier</Label>
-                    <Select value={pkg.courier} onValueChange={(v) => updatePackage(index, "courier", v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {COURIERS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs">物流类型</Label>
-                    <Select value={pkg.shippingType} onValueChange={(v) => updatePackage(index, "shippingType", v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="manual">手动填写 Tracking</SelectItem>
-                        <SelectItem value="auto">自动获取 (ParcelDaily)</SelectItem>
-                        <SelectItem value="parcelking">Parcel King 自动发货</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {pkg.shippingType === "parcelking" ? (
-                    <div className="col-span-2 space-y-3">
-                      <div>
-                        <Label className="text-xs">Parcel King 服务</Label>
-                        <Select value={pkg.serviceId} onValueChange={(v) => updatePackage(index, "serviceId", v)}>
-                          <SelectTrigger><SelectValue placeholder="选择服务" /></SelectTrigger>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Shipping Actions */}
+      <Card className="print-hide">
+        <CardHeader>
+          <CardTitle className="text-base">{translate("发货操作", "Shipping Actions")}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {canShip ? <>
+            <div className="flex items-center space-x-4">
+              <Label htmlFor="shipping-mode" className="text-right">{translate("发货模式", "Shipping Mode")}:</Label>
+              <Select
+                value={activeShippingMode}
+                onValueChange={(value: "full" | "partial") => setShippingMode(value)}
+                disabled={d.physicalStatus === "partial_shipped"}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder={translate("选择发货模式", "Select shipping mode")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="full">{translate("完整发货", "Full Shipment")}</SelectItem>
+                  <SelectItem value="partial">{translate("部分发货", "Partial Shipment")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {activeShippingMode === "partial" && (
+              <div className="space-y-2">
+                <h3 className="font-semibold text-sm">{translate("选择本次发货的商品", "Select items for this shipment")}:</h3>
+                <div className="grid gap-2">
+                  {shippableItems.length === 0 ? (
+                    <div className="text-muted-foreground text-sm">{translate("所有商品均已发货或无待发货商品", "All items have been shipped or no items to ship")}</div>
+                  ) : (
+                    shippableItems.map((item: any) => (
+                      <div key={item.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`item-${item.id}`}
+                          checked={selectedItems.includes(item.id)}
+                          onCheckedChange={() => toggleItem(item.id)}
+                        />
+                        <label
+                          htmlFor={`item-${item.id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          {item.productName} {item.variationName && `(${item.variationName})`} x {item.quantity}
+                        </label>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            <Separator />
+
+            <h3 className="font-semibold text-sm">{translate("包裹信息", "Package Information")}:</h3>
+            <div className="space-y-3">
+              {packages.map((pkg, index) => (
+                <div key={index} className="flex items-end gap-2 border p-3 rounded-md relative">
+                  <div className="grid grid-cols-2 gap-2 flex-grow">
+                    <div className="space-y-1">
+                      <Label htmlFor={`courier-${index}`}>{translate("快递公司", "Courier")}</Label>
+                      <Select
+                        value={pkg.courier}
+                        onValueChange={(value) => updatePackage(index, "courier", value)}
+                      >
+                        <SelectTrigger id={`courier-${index}`}>
+                          <SelectValue placeholder={translate("选择快递公司", "Select courier")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {COURIERS.map((c) => (
+                            <SelectItem key={c.en} value={c.zh}>{lang === "zh" ? c.zh : c.en}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor={`shipping-type-${index}`}>{translate("发货类型", "Shipping Type")}</Label>
+                      <Select
+                        value={pkg.shippingType}
+                        onValueChange={(value: "auto" | "manual" | "parcelking") => updatePackage(index, "shippingType", value)}
+                      >
+                        <SelectTrigger id={`shipping-type-${index}`}>
+                          <SelectValue placeholder={translate("选择发货类型", "Select shipping type")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="manual">{translate("手动发货", "Manual")}</SelectItem>
+                          <SelectItem value="auto">{translate("自动发货 (API)", "Auto (API)")}</SelectItem>
+                          <SelectItem value="parcelking">{translate("Parcel King", "Parcel King")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {pkg.shippingType === "manual" && (
+                      <div className="space-y-1 col-span-2">
+                        <Label htmlFor={`tracking-number-${index}`}>{translate("追踪号", "Tracking Number")}</Label>
+                        <Input
+                          id={`tracking-number-${index}`}
+                          value={pkg.trackingNumber}
+                          onChange={(e) => updatePackage(index, "trackingNumber", e.target.value)}
+                          placeholder={translate("输入追踪号", "Enter tracking number")}
+                        />
+                      </div>
+                    )}
+                    {pkg.shippingType === "parcelking" && (
+                      <div className="space-y-1">
+                        <Label htmlFor={`parcelking-service-${index}`}>{translate("Parcel King 服务", "Parcel King Service")}</Label>
+                        <Select
+                          value={pkg.serviceId}
+                          onValueChange={(value) => updatePackage(index, "serviceId", value)}
+                        >
+                          <SelectTrigger id={`parcelking-service-${index}`}>
+                            <SelectValue placeholder={translate("选择服务", "Select service")} />
+                          </SelectTrigger>
                           <SelectContent>
-                            {(parcelKingServicesQuery.data as any)?.success && (parcelKingServicesQuery.data as any).services?.map((svc: any) => (
-                              <SelectItem key={svc.service_id} value={String(svc.service_id)}>
-                                {svc.service_name} {svc.estimated_days ? `(~${svc.estimated_days})` : ""}
-                              </SelectItem>
+                            {(parcelKingServicesQuery.data as any)?.success && (parcelKingServicesQuery.data as any).services?.map((service: any) => (
+                              <SelectItem key={service.id} value={String(service.id)}>{service.name}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <Label className="text-xs">重量 (kg)</Label>
-                          <Input
-                            value={pkg.weight}
-                            onChange={(e) => updatePackage(index, "weight", e.target.value)}
-                            placeholder="1"
-                            type="number"
-                          />
-                        </div>
-                        <div className="flex items-end">
-                          <p className="text-xs text-muted-foreground">追踪号将在提交后自动获取</p>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div>
-                        <Label className="text-xs">Tracking Number</Label>
+                    )}
+                    {(pkg.shippingType === "manual" || pkg.shippingType === "parcelking") && (
+                      <div className="space-y-1">
+                        <Label htmlFor={`weight-${index}`}>{translate("重量 (kg)", "Weight (kg)")}</Label>
                         <Input
-                          value={pkg.trackingNumber}
-                          onChange={(e) => updatePackage(index, "trackingNumber", e.target.value)}
-                          placeholder="输入追踪号"
-                          disabled={pkg.shippingType === "auto"}
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs">重量 (kg)</Label>
-                        <Input
+                          id={`weight-${index}`}
+                          type="number"
                           value={pkg.weight}
                           onChange={(e) => updatePackage(index, "weight", e.target.value)}
-                          placeholder="1"
-                          type="number"
+                          placeholder={translate("输入重量", "Enter weight")}
                         />
                       </div>
-                    </>
+                    )}
+                  </div>
+                  {packages.length > 1 && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removePackage(index)}
+                      className="absolute top-2 right-2"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   )}
                 </div>
-              </div>
-            ))}
-            <Button variant="outline" size="sm" onClick={addPackage}>
-              <Plus className="h-4 w-4 mr-1" />新增包裹
-            </Button>
-          </div>
-
-          <Button
-            onClick={() => handleShip(activeShippingMode)}
-            disabled={fullShipMutation.isPending || partialShipMutation.isPending || createParcelKingMutation.isPending || (activeShippingMode === "partial" && shippableItems.length === 0)}
-            className="w-full"
-          >
-            <Ship className="h-4 w-4 mr-2" />
-            {activeShippingMode === "full" ? "确认完整发货" : "确认部分发货"}
-          </Button>
-          </> : <div className="rounded-lg border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground">
-            此订单当前状态为“{d.physicalStatus === "shipped" ? "已发货" : d.physicalStatus === "completed" ? "已完成" : "已取消"}”，不可再次创建包裹或发货。
-          </div>}
-        </CardContent>
-      </Card>
-
-      {/* A5 Packing Slip - Print Only */}
-      {slipData && (
-        <div className="print-only hidden">
-          <A5PackingSlip data={slipData as any} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// A5 Packing Slip Component (print only)
-function A5PackingSlip({ data }: { data: any }) {
-  return (
-    <div className="a5-slip" style={{ width: "148mm", padding: "10mm", fontFamily: "sans-serif", fontSize: "12px", color: "#000" }}>
-      {/* Header - Special Label */}
-      {data.specialLabel && (
-        <div style={{ textAlign: "center", fontSize: "28px", fontWeight: "bold", marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
-          {data.specialLabel}
-        </div>
-      )}
-
-      {/* Customer Info */}
-      <div style={{ marginBottom: "8px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>订单编号: <strong>{data.orderNumber}</strong></span>
-        </div>
-        <div>客户姓名: <strong>{data.customerName}</strong></div>
-        <div>电话号码: <strong>{data.customerPhone}</strong></div>
-        {data.paymentConfirmedAt && (
-          <div>汇款日期: {new Date(data.paymentConfirmedAt).toLocaleDateString()}</div>
-        )}
-        <div>地址: {data.shippingAddress}</div>
-      </div>
-
-      <div style={{ borderTop: "1px solid #000", margin: "4px 0" }} />
-
-      {/* Items */}
-      <div style={{ marginBottom: "8px" }}>
-        {data.items.map((item: any, i: number) => (
-          <div key={i} style={{ marginBottom: "6px", paddingBottom: "4px", borderBottom: "1px dashed #ccc" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <span style={{ fontSize: "16px" }}>☐</span>
-              <span><strong>{item.productName}</strong></span>
-              {item.variationName && <span style={{ fontSize: "11px" }}>({item.variationName})</span>}
+              ))}
+              <Button variant="outline" size="sm" onClick={addPackage}>
+                <Plus className="h-4 w-4 mr-1" />{translate("新增包裹", "Add Package")}
+              </Button>
             </div>
-            <div style={{ marginLeft: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "11px" }}>{item.productSku || ""}</span>
-              <span style={{
-                fontSize: "24px",
-                fontWeight: "bold",
-                border: item.quantity > 1 ? "3px solid #000" : "none",
-                padding: item.quantity > 1 ? "2px 8px" : "0",
-                borderRadius: "4px",
-              }}>
-                【 ×{item.quantity} 】
-              </span>
-            </div>
-          </div>
-        ))}
 
-        {/* Gift Items */}
-        {data.giftItems && data.giftItems.length > 0 && (
-          <>
-            <div style={{ borderTop: "1px solid #000", margin: "4px 0" }} />
-            {data.giftItems.map((gift: any, i: number) => (
-              <div key={i} style={{ marginBottom: "4px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                  <span style={{ fontSize: "16px" }}>☐</span>
-                  <span><strong>赠品</strong> {gift.productName}</span>
-                </div>
-                <div style={{ marginLeft: "20px", display: "flex", justifyContent: "flex-end" }}>
-                  <span style={{ fontSize: "20px", fontWeight: "bold", border: "2px solid #000", padding: "1px 6px", borderRadius: "3px" }}>
-                    【 ×{gift.quantity} 】
-                  </span>
-                </div>
-              </div>
-            ))}
-          </>
+              <Button
+                onClick={() => handleShip(activeShippingMode)}
+                disabled={fullShipMutation.isPending || partialShipMutation.isPending || createParcelKingMutation.isPending}
+                className="w-full"
+              >
+                <Ship className="h-4 w-4 mr-2" />
+                {activeShippingMode === "full" ? translate("确认完整发货", "Confirm Full Shipment") : translate("确认部分发货", "Confirm Partial Shipment")}
+              </Button>
+            </> : <div className="rounded-lg border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground">
+              {translate("此订单当前状态为", "This order's current status is")} “{d.physicalStatus === "shipped" ? translate("已发货", "Shipped") : d.physicalStatus === "completed" ? translate("已完成", "Completed") : translate("已取消", "Cancelled")}”，{translate("不可再次创建包裹或发货。", "cannot create packages or ship again.")}
+            </div>}
+          </CardContent>
+        </Card>
+
+        {/* A5 Packing Slip - Print Only */}
+        {slipData && (
+          <div className="print-only hidden">
+            <A5PackingSlip data={slipData as any} translate={translate} lang={lang} />
+          </div>
         )}
       </div>
+    );
+  }
 
-      {/* V1.1: Customer Remarks on A5 Slip */}
-      {data.customerRemarks && data.customerRemarks.length > 0 && (
+  // A5 Packing Slip Component (print only)
+  function A5PackingSlip({ data, translate, lang }: { data: any; translate: (zh: string, en: string, params?: Record<string, string | number>) => string; lang: "zh" | "en" }) {
+    return (
+      <div className="a5-slip" style={{ width: "148mm", padding: "10mm", fontFamily: "sans-serif", fontSize: "12px", color: "#000" }}>
+        {/* Header - Special Label */}
+        {data.specialLabel && (
+          <div style={{ textAlign: "center", fontSize: "28px", fontWeight: "bold", marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
+            {data.specialLabel}
+          </div>
+        )}
+
+        {/* Customer Info */}
         <div style={{ marginBottom: "8px" }}>
-          <div style={{ fontWeight: "bold", fontSize: "11px", marginBottom: "2px" }}>客户备注:</div>
-          {data.customerRemarks.map((r: any, i: number) => (
-            <div key={i} style={{ fontSize: "11px", marginLeft: "8px" }}>• {r.content}</div>
-          ))}
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>{translate("订单编号:", "Order No:")} <strong>{data.orderNumber}</strong></span>
+          </div>
+          <div>{translate("客户姓名:", "Customer Name:")} <strong>{data.customerName}</strong></div>
+          <div>{translate("电话号码:", "Phone No:")} <strong>{data.customerPhone}</strong></div>
+          {data.paymentConfirmedAt && (
+            <div>{translate("汇款日期:", "Payment Date:")} {new Date(data.paymentConfirmedAt).toLocaleDateString()}</div>
+          )}
+          <div>{translate("地址:", "Address:")} {data.shippingAddress}</div>
         </div>
-      )}
 
-      {/* V1.1: Repot on A5 Slip */}
-      {data.repots && data.repots.length > 0 && (
-        <div style={{ marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
-          <div style={{ fontWeight: "bold", fontSize: "12px", marginBottom: "2px" }}>⚠ 换盆安排:</div>
-          {data.repots.map((r: any, i: number) => (
-            <div key={i} style={{ fontSize: "11px", marginLeft: "8px" }}>
-              • {r.productName} → {r.potProductName} (×{r.quantity})
+        <div style={{ borderTop: "1px solid #000", margin: "4px 0" }} />
+
+        {/* Items */}
+        <div style={{ marginBottom: "8px" }}>
+          {data.items.map((item: any, i: number) => (
+            <div key={i} style={{ marginBottom: "6px", paddingBottom: "4px", borderBottom: "1px dashed #ccc" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <span style={{ fontSize: "16px" }}>☐</span>
+                <span><strong>{item.productName}</strong></span>
+                {item.variationName && <span style={{ fontSize: "11px" }}>({item.variationName})</span>}
+              </div>
+              <div style={{ marginLeft: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "11px" }}>{item.productSku || ""}</span>
+                <span style={{
+                  fontSize: "24px",
+                  fontWeight: "bold",
+                  border: item.quantity > 1 ? "3px solid #000" : "none",
+                  padding: item.quantity > 1 ? "2px 8px" : "0",
+                  borderRadius: "4px",
+                }}>
+                  【 ×{item.quantity} 】
+                </span>
+              </div>
             </div>
           ))}
-        </div>
-      )}
 
-      <div style={{ borderTop: "1px solid #000", margin: "4px 0" }} />
+          {/* Gift Items */}
+          {data.giftItems && data.giftItems.length > 0 && (
+            <>
+              <div style={{ borderTop: "1px solid #000", margin: "4px 0" }} />
+              {data.giftItems.map((gift: any, i: number) => (
+                <div key={i} style={{ marginBottom: "4px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <span style={{ fontSize: "16px" }}>☐</span>
+                    <span><strong>{translate("赠品", "Gift")}</strong> {gift.productName}</span>
+                  </div>
+                  <div style={{ marginLeft: "20px", display: "flex", justifyContent: "flex-end" }}>
+                    <span style={{ fontSize: "20px", fontWeight: "bold", border: "2px solid #000", padding: "1px 6px", borderRadius: "3px" }}>
+                      【 ×{gift.quantity} 】
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
 
-      {/* Summary */}
-      <div style={{ fontSize: "11px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>商品种类: {data.summary.itemTypes}</span>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>普通商品:</span><span>RM {data.summary.regularTotal}</span>
-        </div>
-        {parseFloat(data.summary.discountTotal) > 0 && (
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>特价商品: <span style={{ fontSize: "10px" }}>(共{data.summary.discountCount}件)</span></span>
-            <span>RM {data.summary.discountTotal}</span>
+        {/* V1.1: Customer Remarks on A5 Slip */}
+        {data.customerRemarks && data.customerRemarks.length > 0 && (
+          <div style={{ marginBottom: "8px" }}>
+            <div style={{ fontWeight: "bold", fontSize: "11px", marginBottom: "2px" }}>{translate("客户备注:", "Customer Remarks:")}</div>
+            {data.customerRemarks.map((r: any, i: number) => (
+              <div key={i} style={{ fontSize: "11px", marginLeft: "8px" }}>• {r.content}</div>
+            ))}
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>运费:</span><span>RM {data.summary.shippingFee}</span>
-        </div>
-        {parseFloat(data.summary.discountAmount) > 0 && (
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>折扣:</span><span>-RM {data.summary.discountAmount}</span>
+
+        {/* V1.1: Repot on A5 Slip */}
+        {data.repots && data.repots.length > 0 && (
+          <div style={{ marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
+            <div style={{ fontWeight: "bold", fontSize: "12px", marginBottom: "2px" }}>⚠ {translate("换盆安排:", "Repotting Arrangement:")}</div>
+            {data.repots.map((r: any, i: number) => (
+              <div key={i} style={{ fontSize: "11px", marginLeft: "8px" }}>
+                • {r.productName} → {r.potProductName} (×{r.quantity})
+              </div>
+            ))}
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>已付款:</span><span>RM {data.summary.paidAmount}</span>
-        </div>
-        {parseFloat(data.summary.balance) > 0 && (
+
+        <div style={{ borderTop: "1px solid #000", margin: "4px 0" }} />
+
+        {/* Summary */}
+        <div style={{ fontSize: "11px" }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>尚欠:</span><span style={{ fontWeight: "bold" }}>RM {data.summary.balance}</span>
+            <span>{translate("商品种类:", "Item Types:")} {data.summary.itemTypes}</span>
           </div>
-        )}
-        <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #000", marginTop: "2px", paddingTop: "2px" }}>
-          <span><strong>订单总额:</strong></span><span><strong>RM {data.summary.totalAmount}</strong></span>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>{translate("普通商品:", "Regular Items:")}</span><span>RM {data.summary.regularTotal}</span>
+          </div>
+          {parseFloat(data.summary.discountTotal) > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{translate("特价商品:", "Discounted Items:")} <span style={{ fontSize: "10px" }}>({translate("共", "Total")} {data.summary.discountCount}{translate("件", " items")})</span></span>
+              <span>RM {data.summary.discountTotal}</span>
+            </div>
+          )}
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>{translate("运费:", "Shipping Fee:")}</span><span>RM {data.summary.shippingFee}</span>
+          </div>
+          {parseFloat(data.summary.discountAmount) > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{translate("折扣:", "Discount:")}</span><span>-RM {data.summary.discountAmount}</span>
+            </div>
+          )}
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>{translate("已付款:", "Paid:")}</span><span>RM {data.summary.paidAmount}</span>
+          </div>
+          {parseFloat(data.summary.balance) > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{translate("尚欠:", "Balance Due:")}</span><span style={{ fontWeight: "bold" }}>RM {data.summary.balance}</span>
+            </div>
+          )}
+          <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #000", marginTop: "2px", paddingTop: "2px" }}>
+            <span><strong>{translate("订单总额:", "Total Order:")}</strong></span><span><strong>RM {data.summary.totalAmount}</strong></span>
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }

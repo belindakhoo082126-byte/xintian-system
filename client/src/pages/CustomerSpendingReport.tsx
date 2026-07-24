@@ -8,15 +8,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Users, ShoppingBag, DollarSign, TrendingDown } from "lucide-react";
 import { Link } from "wouter";
+import { useI18n } from "@/contexts/I18nContext";
 
-const PRESETS = [
-  { value: "today", label: "今天" },
-  { value: "yesterday", label: "昨天" },
-  { value: "this_week", label: "本周" },
-  { value: "this_month", label: "本月" },
-  { value: "last_month", label: "上个月" },
-  { value: "this_year", label: "今年" },
-  { value: "custom", label: "自定义" },
+const PRESET_LABELS = [
+  { value: "today", zh: "今天", en: "Today" },
+  { value: "yesterday", zh: "昨天", en: "Yesterday" },
+  { value: "this_week", zh: "本周", en: "This Week" },
+  { value: "this_month", zh: "本月", en: "This Month" },
+  { value: "last_month", zh: "上个月", en: "Last Month" },
+  { value: "this_year", zh: "今年", en: "This Year" },
+  { value: "custom", zh: "自定义", en: "Custom" },
 ];
 
 function formatRM(n: number | undefined | null): string {
@@ -31,6 +32,7 @@ function formatDate(ts: number | string | undefined): string {
 }
 
 export default function CustomerSpendingReport() {
+  const { translate } = useI18n();
   const [preset, setPreset] = useState("this_month");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -66,15 +68,15 @@ export default function CustomerSpendingReport() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">客户消费报告</h1>
-          <p className="text-sm text-muted-foreground mt-1">各客户消费金额与付款情况分析</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{translate("客户消费报告", "Customer Spending Report")}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{translate("各客户消费金额与付款情况分析", "Analysis of customer spending and payment status")}</p>
         </div>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
-        {PRESETS.map((p) => (
+        {PRESET_LABELS.map((p) => (
           <Button key={p.value} size="sm" variant={preset === p.value ? "default" : "outline"} onClick={() => setPreset(p.value)}>
-            {p.label}
+            {translate(p.zh, p.en)}
           </Button>
         ))}
       </div>
@@ -84,11 +86,11 @@ export default function CustomerSpendingReport() {
           <CardContent className="pt-6">
             <div className="flex items-end gap-4 flex-wrap">
               <div className="space-y-2">
-                <Label>开始日期</Label>
+                <Label>{translate("开始日期", "Start Date")}</Label>
                 <Input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>结束日期</Label>
+                <Label>{translate("结束日期", "End Date")}</Label>
                 <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
               </div>
             </div>
@@ -104,7 +106,7 @@ export default function CustomerSpendingReport() {
                 <Users className="h-5 w-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">客户数</p>
+                <p className="text-xs text-muted-foreground">{translate("客户数", "Customers")}</p>
                 <p className="text-lg font-bold text-purple-600">{summary.count}</p>
               </div>
             </div>
@@ -117,7 +119,7 @@ export default function CustomerSpendingReport() {
                 <ShoppingBag className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">总订单数</p>
+                <p className="text-xs text-muted-foreground">{translate("总订单数", "Total Orders")}</p>
                 <p className="text-lg font-bold text-blue-600">{summary.orders}</p>
               </div>
             </div>
@@ -130,7 +132,7 @@ export default function CustomerSpendingReport() {
                 <DollarSign className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">总消费金额</p>
+                <p className="text-xs text-muted-foreground">{translate("总消费金额", "Total Spending")}</p>
                 <p className="text-lg font-bold text-green-600">{formatRM(summary.totalAmount)}</p>
               </div>
             </div>
@@ -143,7 +145,7 @@ export default function CustomerSpendingReport() {
                 <DollarSign className="h-5 w-5 text-emerald-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">已付款</p>
+                <p className="text-xs text-muted-foreground">{translate("已付款", "Paid")}</p>
                 <p className="text-lg font-bold text-emerald-600">{formatRM(summary.totalPaid)}</p>
               </div>
             </div>
@@ -156,7 +158,7 @@ export default function CustomerSpendingReport() {
                 <TrendingDown className="h-5 w-5 text-orange-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">未付款</p>
+                <p className="text-xs text-muted-foreground">{translate("未付款", "Unpaid")}</p>
                 <p className="text-lg font-bold text-orange-600">{formatRM(summary.totalUnpaid)}</p>
               </div>
             </div>
@@ -166,7 +168,7 @@ export default function CustomerSpendingReport() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">客户消费明细</CardTitle>
+          <CardTitle className="text-base">{translate("客户消费明细", "Customer Spending Details")}</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -175,20 +177,20 @@ export default function CustomerSpendingReport() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>客户</TableHead>
-                  <TableHead>客户编号</TableHead>
-                  <TableHead>电话</TableHead>
-                  <TableHead className="text-right">订单数</TableHead>
-                  <TableHead className="text-right">总消费</TableHead>
-                  <TableHead className="text-right">已付款</TableHead>
-                  <TableHead className="text-right">未付款</TableHead>
-                  <TableHead>最近下单</TableHead>
+                  <TableHead>{translate("客户", "Customer")}</TableHead>
+                  <TableHead>{translate("客户编号", "Customer ID")}</TableHead>
+                  <TableHead>{translate("电话", "Phone")}</TableHead>
+                  <TableHead className="text-right">{translate("订单数", "Orders")}</TableHead>
+                  <TableHead className="text-right">{translate("总消费", "Total Spending")}</TableHead>
+                  <TableHead className="text-right">{translate("已付款", "Paid")}</TableHead>
+                  <TableHead className="text-right">{translate("未付款", "Unpaid")}</TableHead>
+                  <TableHead>{translate("最近下单", "Last Order")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {customers.map((c, i) => (
                   <TableRow key={i}>
-                    <TableCell className="font-medium">{c.displayName || "未知"}</TableCell>
+                    <TableCell className="font-medium">{c.displayName || translate("未知", "Unknown")}</TableCell>
                     <TableCell className="text-muted-foreground">{c.customerCode || "-"}</TableCell>
                     <TableCell className="text-muted-foreground">{c.phone || c.whatsappPhone || "-"}</TableCell>
                     <TableCell className="text-right">{c.orderCount}</TableCell>
@@ -201,7 +203,7 @@ export default function CustomerSpendingReport() {
               </TableBody>
             </Table>
           ) : (
-            <p className="text-center text-muted-foreground py-8">暂无数据</p>
+            <p className="text-center text-muted-foreground py-8">{translate("暂无数据", "No data available")}</p>
           )}
         </CardContent>
       </Card>

@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,13 +12,13 @@ import { ArrowLeft, ShoppingBag, TrendingDown, TrendingUp, Percent } from "lucid
 import { Link } from "wouter";
 
 const PRESETS = [
-  { value: "today", label: "今天" },
-  { value: "yesterday", label: "昨天" },
-  { value: "this_week", label: "本周" },
-  { value: "this_month", label: "本月" },
-  { value: "last_month", label: "上个月" },
-  { value: "this_year", label: "今年" },
-  { value: "custom", label: "自定义" },
+  { value: "today", zh: "今天", en: "Today" },
+  { value: "yesterday", zh: "昨天", en: "Yesterday" },
+  { value: "this_week", zh: "本周", en: "This Week" },
+  { value: "this_month", zh: "本月", en: "This Month" },
+  { value: "last_month", zh: "上个月", en: "Last Month" },
+  { value: "this_year", zh: "今年", en: "This Year" },
+  { value: "custom", zh: "自定义", en: "Custom" },
 ];
 
 function formatRM(n: number | undefined | null): string {
@@ -26,6 +27,7 @@ function formatRM(n: number | undefined | null): string {
 }
 
 export default function ProductSalesReport() {
+  const { lang, translate } = useI18n();
   const [preset, setPreset] = useState("this_month");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -62,15 +64,15 @@ export default function ProductSalesReport() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">商品销售报告</h1>
-          <p className="text-sm text-muted-foreground mt-1">各商品销量、销售额与毛利润分析</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{translate("商品销售报告", "Product Sales Report")}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{translate("各商品销量、销售额与毛利润分析", "Analysis of product sales volume, sales amount and gross profit")}</p>
         </div>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
         {PRESETS.map((p) => (
           <Button key={p.value} size="sm" variant={preset === p.value ? "default" : "outline"} onClick={() => setPreset(p.value)}>
-            {p.label}
+            {lang === "zh" ? p.zh : p.en}
           </Button>
         ))}
       </div>
@@ -80,11 +82,11 @@ export default function ProductSalesReport() {
           <CardContent className="pt-6">
             <div className="flex items-end gap-4 flex-wrap">
               <div className="space-y-2">
-                <Label>开始日期</Label>
+                <Label>{translate("开始日期", "Start Date")}</Label>
                 <Input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>结束日期</Label>
+                <Label>{translate("结束日期", "End Date")}</Label>
                 <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
               </div>
             </div>
@@ -100,7 +102,7 @@ export default function ProductSalesReport() {
                 <ShoppingBag className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">总销量</p>
+                <p className="text-xs text-muted-foreground">{translate("总销量", "Total Sales Volume")}</p>
                 <p className="text-lg font-bold text-blue-600">{summary.totalQty}</p>
               </div>
             </div>
@@ -113,7 +115,7 @@ export default function ProductSalesReport() {
                 <TrendingUp className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">总销售额</p>
+                <p className="text-xs text-muted-foreground">{translate("总销售额", "Total Sales Amount")}</p>
                 <p className="text-lg font-bold text-green-600">{formatRM(summary.totalSales)}</p>
               </div>
             </div>
@@ -126,7 +128,7 @@ export default function ProductSalesReport() {
                 <TrendingDown className="h-5 w-5 text-red-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">FIFO总成本</p>
+                <p className="text-xs text-muted-foreground">{translate("FIFO总成本", "Total FIFO Cost")}</p>
                 <p className="text-lg font-bold text-red-600">{formatRM(summary.totalCost)}</p>
               </div>
             </div>
@@ -139,7 +141,7 @@ export default function ProductSalesReport() {
                 <TrendingUp className="h-5 w-5 text-emerald-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">总毛利润</p>
+                <p className="text-xs text-muted-foreground">{translate("总毛利润", "Total Gross Profit")}</p>
                 <p className={`text-lg font-bold ${summary.totalProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                   {formatRM(summary.totalProfit)}
                 </p>
@@ -154,7 +156,7 @@ export default function ProductSalesReport() {
                 <Percent className="h-5 w-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">整体毛利率</p>
+                <p className="text-xs text-muted-foreground">{translate("整体毛利率", "Overall Gross Margin")}</p>
                 <p className={`text-lg font-bold ${overallMargin >= 0 ? "text-purple-600" : "text-red-600"}`}>{overallMargin}%</p>
               </div>
             </div>
@@ -164,7 +166,7 @@ export default function ProductSalesReport() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">商品销售明细</CardTitle>
+          <CardTitle className="text-base">{translate("商品销售明细", "Product Sales Details")}</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -173,21 +175,21 @@ export default function ProductSalesReport() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>商品名称</TableHead>
-                  <TableHead>规格</TableHead>
-                  <TableHead className="text-right">销量</TableHead>
-                  <TableHead className="text-right">销售额</TableHead>
-                  <TableHead className="text-right">订单数</TableHead>
-                  <TableHead className="text-right">FIFO成本</TableHead>
-                  <TableHead className="text-right">毛利润</TableHead>
-                  <TableHead className="text-right">毛利率</TableHead>
+                  <TableHead>{translate("商品名称", "Product Name")}</TableHead>
+                  <TableHead>{translate("规格", "Specification")}</TableHead>
+                  <TableHead className="text-right">{translate("销量", "Sales Volume")}</TableHead>
+                  <TableHead className="text-right">{translate("销售额", "Sales Amount")}</TableHead>
+                  <TableHead className="text-right">{translate("订单数", "Orders Count")}</TableHead>
+                  <TableHead className="text-right">{translate("FIFO成本", "FIFO Cost")}</TableHead>
+                  <TableHead className="text-right">{translate("毛利润", "Gross Profit")}</TableHead>
+                  <TableHead className="text-right">{translate("毛利率", "Gross Margin")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {products.map((p, i) => (
                   <TableRow key={i}>
                     <TableCell className="font-medium">{p.productName}</TableCell>
-                    <TableCell className="text-muted-foreground">{p.variantName || "-"}</TableCell>
+                    <TableCell className="text-muted-foreground">{p.variantName || translate("-", "-")}</TableCell>
                     <TableCell className="text-right font-semibold">{p.totalQuantity}</TableCell>
                     <TableCell className="text-right">{formatRM(p.totalSales)}</TableCell>
                     <TableCell className="text-right">{p.orderCount}</TableCell>
@@ -203,7 +205,7 @@ export default function ProductSalesReport() {
               </TableBody>
             </Table>
           ) : (
-            <p className="text-center text-muted-foreground py-8">暂无数据</p>
+            <p className="text-center text-muted-foreground py-8">{translate("暂无数据", "No data available")}</p>
           )}
         </CardContent>
       </Card>

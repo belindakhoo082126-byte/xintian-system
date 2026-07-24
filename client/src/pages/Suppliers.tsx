@@ -10,22 +10,24 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { Truck, Plus, Edit2, Phone, MapPin } from "lucide-react";
+import { useI18n } from "@/contexts/I18nContext";
 
 export default function Suppliers() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const utils = trpc.useUtils();
+  const { lang, translate } = useI18n();
 
   const { data: suppliers, isLoading } = trpc.suppliers.list.useQuery();
 
   const createMutation = trpc.suppliers.create.useMutation({
-    onSuccess: () => { utils.suppliers.invalidate(); toast.success("供应商创建成功"); setDialogOpen(false); resetForm(); },
-    onError: (e) => toast.error(`创建失败: ${e.message}`),
+    onSuccess: () => { utils.suppliers.invalidate(); toast.success(translate("供应商创建成功", "Supplier created successfully")); setDialogOpen(false); resetForm(); },
+    onError: (e) => toast.error(translate("创建失败: {message}", "Failed to create: {message}", { message: e.message })),
   });
 
   const updateMutation = trpc.suppliers.update.useMutation({
-    onSuccess: () => { utils.suppliers.invalidate(); toast.success("供应商更新成功"); setDialogOpen(false); resetForm(); },
-    onError: (e) => toast.error(`更新失败: ${e.message}`),
+    onSuccess: () => { utils.suppliers.invalidate(); toast.success(translate("供应商更新成功", "Supplier updated successfully")); setDialogOpen(false); resetForm(); },
+    onError: (e) => toast.error(translate("更新失败: {message}", "Failed to update: {message}", { message: e.message })),
   });
 
   const [form, setForm] = useState({
@@ -47,7 +49,7 @@ export default function Suppliers() {
   }
 
   function handleSubmit() {
-    if (!form.name.trim()) { toast.error("请输入供应商名称"); return; }
+    if (!form.name.trim()) { toast.error(translate("请输入供应商名称", "Please enter supplier name")); return; }
     if (editingId) { updateMutation.mutate({ id: editingId, ...form }); }
     else { createMutation.mutate(form); }
   }
@@ -56,11 +58,11 @@ export default function Suppliers() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">供应商管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">管理进货供应商，不同厂家不同成本</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{translate("供应商管理", "Supplier Management")}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{translate("管理进货供应商，不同厂家不同成本", "Manage procurement suppliers, different manufacturers, different costs")}</p>
         </div>
         <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
-          <Plus className="h-4 w-4 mr-2" />新增供应商
+          <Plus className="h-4 w-4 mr-2" />{translate("新增供应商", "Add Supplier")}
         </Button>
       </div>
 
@@ -69,25 +71,25 @@ export default function Suppliers() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>供应商名称</TableHead>
-                <TableHead>联系人</TableHead>
-                <TableHead>电话</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                <TableHead>{translate("供应商名称", "Supplier Name")}</TableHead>
+                <TableHead>{translate("联系人", "Contact Person")}</TableHead>
+                <TableHead>{translate("电话", "Phone")}</TableHead>
+                <TableHead>{translate("状态", "Status")}</TableHead>
+                <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">加载中...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
               ) : suppliers?.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">暂无供应商</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">{translate("暂无供应商", "No suppliers yet")}</TableCell></TableRow>
               ) : suppliers?.map(s => (
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell>{s.contactPerson || "—"}</TableCell>
                   <TableCell>{s.phoneNumber || "—"}</TableCell>
                   <TableCell>
-                    <Badge variant={s.isActive ? "default" : "outline"}>{s.isActive ? "活跃" : "停用"}</Badge>
+                    <Badge variant={s.isActive ? "default" : "outline"}>{s.isActive ? translate("活跃", "Active") : translate("停用", "Disabled")}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>
@@ -104,44 +106,44 @@ export default function Suppliers() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingId ? "编辑供应商" : "新增供应商"}</DialogTitle>
+            <DialogTitle>{editingId ? translate("编辑供应商", "Edit Supplier") : translate("新增供应商", "Add Supplier")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>供应商名称 *</Label>
+              <Label>{translate("供应商名称 *", "Supplier Name *")}</Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>联系人</Label>
+                <Label>{translate("联系人", "Contact Person")}</Label>
                 <Input value={form.contactPerson} onChange={(e) => setForm({ ...form, contactPerson: e.target.value })} />
               </div>
               <div>
-                <Label>电话号码</Label>
+                <Label>{translate("电话号码", "Phone Number")}</Label>
                 <Input value={form.phoneNumber} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} />
               </div>
             </div>
             <div>
-              <Label>邮箱</Label>
+              <Label>{translate("邮箱", "Email")}</Label>
               <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </div>
             <div>
-              <Label>地址</Label>
+              <Label>{translate("地址", "Address")}</Label>
               <Textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} rows={2} />
             </div>
             <div>
-              <Label>银行账号</Label>
+              <Label>{translate("银行账号", "Bank Account")}</Label>
               <Input value={form.bankAccount} onChange={(e) => setForm({ ...form, bankAccount: e.target.value })} />
             </div>
             <div>
-              <Label>备注</Label>
+              <Label>{translate("备注", "Notes")}</Label>
               <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
             <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
-              {editingId ? "保存" : "创建"}
+              {editingId ? translate("保存", "Save") : translate("创建", "Create")}
             </Button>
           </DialogFooter>
         </DialogContent>

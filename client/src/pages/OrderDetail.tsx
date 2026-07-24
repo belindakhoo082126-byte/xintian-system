@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,28 +14,36 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { ArrowLeft, Package, Truck, CheckCircle, Clock, AlertCircle, PauseCircle, Bell, History, FileText, MessageSquare, User, Lock, Trash2, Plus, Sprout, Calendar } from "lucide-react";
 
-const STATUS_CONFIG: Record<string, { label: string; variant: any; color: string }> = {
-  pending: { label: "挂单", variant: "outline", color: "text-yellow-600" },
-  receipt_uploaded: { label: "确认汇款", variant: "secondary", color: "text-blue-600" },
-  partial_payment: { label: "部分汇款", variant: "secondary", color: "text-orange-600" },
-  hold_order: { label: "保留订单", variant: "secondary", color: "text-purple-600" },
-  packing: { label: "待包货", variant: "default", color: "text-cyan-600" },
-  shipped: { label: "已发货", variant: "default", color: "text-green-600" },
-  partial_shipped: { label: "部分发货", variant: "secondary", color: "text-teal-600" },
-  completed: { label: "完成订单", variant: "default", color: "text-green-700" },
-  cancelled: { label: "已取消", variant: "destructive", color: "text-red-600" },
+const HOLD_TYPE_LABELS_RAW: Record<string, { zh: string; en: string }> = {
+  wait_next_live: { zh: "等待下次直播", en: "Wait for next live" },
+  scheduled_shipping: { zh: "指定日期发货", en: "Scheduled Shipping" },
+  wait_stock: { zh: "等待缺货商品", en: "Wait for out of stock products" },
+  other: { zh: "其他", en: "Other" },
 };
 
-const SOURCE_LABELS: Record<string, string> = {
-  facebook_live: "Facebook Live",
-  facebook_post: "Facebook Post",
-  facebook_reel: "Facebook Reel",
-  messenger: "Messenger",
-  store: "商城",
-  manual: "手动",
+const STATUS_CONFIG_RAW: Record<string, { zh: string; en: string; variant: any; color: string }> = {
+  pending: { zh: "挂单", en: "Pending", variant: "outline", color: "text-yellow-600" },
+  receipt_uploaded: { zh: "确认汇款", en: "Payment Confirmed", variant: "secondary", color: "text-blue-600" },
+  partial_payment: { zh: "部分汇款", en: "Partial Payment", variant: "secondary", color: "text-orange-600" },
+  hold_order: { zh: "保留订单", en: "Hold Order", variant: "secondary", color: "text-purple-600" },
+  packing: { zh: "待包货", en: "Packing", variant: "default", color: "text-cyan-600" },
+  shipped: { zh: "已发货", en: "Shipped", variant: "default", color: "text-green-600" },
+  partial_shipped: { zh: "部分发货", en: "Partial Shipped", variant: "secondary", color: "text-teal-600" },
+  completed: { zh: "完成订单", en: "Completed", variant: "default", color: "text-green-700" },
+  cancelled: { zh: "已取消", en: "Cancelled", variant: "destructive", color: "text-red-600" },
+};
+
+const SOURCE_LABELS_RAW: Record<string, { zh: string; en: string }> = {
+  facebook_live: { zh: "Facebook 直播", en: "Facebook Live" },
+  facebook_post: { zh: "Facebook 帖子", en: "Facebook Post" },
+  facebook_reel: { zh: "Facebook 短视频", en: "Facebook Reel" },
+  messenger: { zh: "Messenger", en: "Messenger" },
+  store: { zh: "商城", en: "Store" },
+  manual: { zh: "手动", en: "Manual" },
 };
 
 export default function OrderDetail({ orderId, onBack }: { orderId: number; onBack: () => void }) {
+  const { translate, lang } = useI18n();
   const [holdOpen, setHoldOpen] = useState(false);
   const [statusTransitionOpen, setStatusTransitionOpen] = useState(false);
   const [remarkText, setRemarkText] = useState("");
@@ -66,54 +75,54 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
     onSuccess: () => {
       utils.orders.invalidate();
       utils.orderWorkflow.invalidate();
-      toast.success("付款已确认");
+      toast.success(translate("付款已确认", "Payment confirmed"));
     },
-    onError: (e) => toast.error(`操作失败: ${e.message}`),
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
   });
 
   const transitionMutation = trpc.orderWorkflow.transition.useMutation({
     onSuccess: () => {
       utils.orders.invalidate();
       utils.orderWorkflow.invalidate();
-      toast.success("订单状态已更新");
+      toast.success(translate("订单状态已更新", "Order status updated"));
       setStatusTransitionOpen(false);
       setTransitionNotes("");
     },
-    onError: (e) => toast.error(`操作失败: ${e.message}`),
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
   });
 
   const createHoldMutation = trpc.holdOrders.create.useMutation({
     onSuccess: () => {
       utils.holdOrders.invalidate();
       utils.orders.invalidate();
-      toast.success("保留订单已创建");
+      toast.success(translate("保留订单已创建", "Hold order created"));
       setHoldOpen(false);
     },
-    onError: (e) => toast.error(`操作失败: ${e.message}`),
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
   });
 
   const releaseHoldMutation = trpc.holdOrders.release.useMutation({
     onSuccess: () => {
       utils.holdOrders.invalidate();
       utils.orders.invalidate();
-      toast.success("保留订单已释放，状态已更新为待包货");
+      toast.success(translate("保留订单已释放，状态已更新为待包货", "Hold order released, status updated to packing"));
     },
-    onError: (e) => toast.error(`操作失败: ${e.message}`),
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
   });
 
   const createRemarkMutation = trpc.orderRemarks.create.useMutation({
     onSuccess: () => {
       utils.orderRemarks.invalidate();
       setRemarkText("");
-      toast.success("备注已添加");
+      toast.success(translate("备注已添加", "Remark added"));
     },
-    onError: (e) => toast.error(`操作失败: ${e.message}`),
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
   });
 
   const deleteRemarkMutation = trpc.orderRemarks.delete.useMutation({
     onSuccess: () => {
       utils.orderRemarks.invalidate();
-      toast.success("备注已删除");
+      toast.success(translate("备注已删除", "Remark deleted"));
     },
   });
 
@@ -121,41 +130,46 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
     onSuccess: () => {
       utils.repots.invalidate();
       setRepotOpen(false);
-      toast.success("换盆已安排");
+      toast.success(translate("换盆已安排", "Repot arranged"));
       setRepotForm({ orderItemId: 0, productId: 0, productName: "", potProductId: 0, potProductName: "", quantity: 1 });
     },
-    onError: (e) => toast.error(`操作失败: ${e.message}`),
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
   });
 
   const deleteRepotMutation = trpc.repots.delete.useMutation({
     onSuccess: () => {
       utils.repots.invalidate();
-      toast.success("换盆已取消");
+      toast.success(translate("换盆已取消", "Repot cancelled"));
     },
   });
 
   const setScheduledDateMutation = trpc.scheduledShipping.setDate.useMutation({
     onSuccess: () => {
       utils.orders.invalidate();
-      toast.success(scheduledDate ? "预约发货日期已设置" : "预约发货日期已取消");
+      toast.success(scheduledDate ? translate("预约发货日期已设置", "Scheduled shipping date set") : translate("预约发货日期已取消", "Scheduled shipping date cancelled"));
     },
-    onError: (e) => toast.error(`操作失败: ${e.message}`),
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
   });
 
   if (isLoading) {
-    return <div className="flex items-center justify-center py-20 text-muted-foreground">加载中...</div>;
+    return <div className="flex items-center justify-center py-20 text-muted-foreground">{translate("加载中...", "Loading...")}</div>;
   }
 
   if (!order) {
     return (
       <div className="space-y-4">
-        <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />返回</Button>
-        <p className="text-center text-muted-foreground py-20">订单不存在</p>
+        <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />{translate("返回", "Back")}</Button>
+        <p className="text-center text-muted-foreground py-20">{translate("订单不存在", "Order does not exist")}</p>
       </div>
     );
   }
 
-  const statusCfg = STATUS_CONFIG[order?.physicalStatus || "pending"] || STATUS_CONFIG.pending;
+  const statusCfgRaw = STATUS_CONFIG_RAW[order?.physicalStatus || "pending"] || STATUS_CONFIG_RAW.pending;
+  const statusCfg = {
+    label: translate(statusCfgRaw.zh, statusCfgRaw.en),
+    variant: statusCfgRaw.variant,
+    color: statusCfgRaw.color,
+  };
 
   function handleConfirmPayment() {
     const hasHold = !!holdInfo?.isActive;
@@ -174,7 +188,7 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
 
   function handleTransition() {
     if (!targetStatus) {
-      toast.error("请选择目标状态");
+      toast.error(translate("请选择目标状态", "Please select target status"));
       return;
     }
     transitionMutation.mutate({ orderId, toStatus: targetStatus as any, notes: transitionNotes || undefined });
@@ -185,13 +199,13 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />返回</Button>
+          <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />{translate("返回", "Back")}</Button>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              订单详情 <span className="font-mono text-lg text-muted-foreground">#{order.orderNumber}</span>
+              {translate("订单详情", "Order Detail")} <span className="font-mono text-lg text-muted-foreground">#{order.orderNumber}</span>
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {new Date(order.createdAt).toLocaleString("zh-CN")} · {SOURCE_LABELS[order.orderSource] || order.orderSource}
+              {new Date(order.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")} · {translate(SOURCE_LABELS_RAW[order.orderSource]?.zh || order.orderSource, SOURCE_LABELS_RAW[order.orderSource]?.en || order.orderSource)}
               {order.sourceName && ` · ${order.sourceName}`}
             </p>
           </div>
@@ -208,24 +222,24 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
         {order?.physicalStatus === "receipt_uploaded" && (
           <Button onClick={handleConfirmPayment} disabled={confirmPaymentMutation.isPending} className="bg-primary">
             <CheckCircle className="h-4 w-4 mr-2" />
-            确认汇款
+            {translate("确认汇款", "Confirm Payment")}
           </Button>
         )}
         {order?.physicalStatus === "receipt_uploaded" && (
           <Button variant="outline" onClick={() => setHoldOpen(true)}>
             <PauseCircle className="h-4 w-4 mr-2" />
-            保留订单
+            {translate("保留订单", "Hold Order")}
           </Button>
         )}
         {order?.physicalStatus === "hold_order" && holdInfo?.isActive && (
           <Button onClick={() => releaseHoldMutation.mutate({ orderId })} disabled={releaseHoldMutation.isPending}>
             <Package className="h-4 w-4 mr-2" />
-            释放保留 → 待包货
+            {translate("释放保留 → 待包货", "Release Hold → Packing")}
           </Button>
         )}
         <Button variant="outline" onClick={() => setStatusTransitionOpen(true)}>
           <History className="h-4 w-4 mr-2" />
-          手动变更状态
+            {translate("手动变更状态", "Change Status Manually")}
         </Button>
       </div>
 
@@ -237,26 +251,26 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Package className="h-5 w-5" />
-                商品明细 (快照)
+                {translate("商品明细 (快照)", "Order Items (Snapshot)")}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>商品名称</TableHead>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>规格</TableHead>
-                    <TableHead>FB Keyword</TableHead>
-                    <TableHead className="text-right">数量</TableHead>
-                    <TableHead className="text-right">单价</TableHead>
-                    <TableHead className="text-right">折扣</TableHead>
-                    <TableHead className="text-right">小计</TableHead>
+                    <TableHead>{translate("商品名称", "Product Name")}</TableHead>
+                    <TableHead>{translate("SKU", "SKU")}</TableHead>
+                    <TableHead>{translate("规格", "Specification")}</TableHead>
+                    <TableHead>{translate("FB Keyword", "FB Keyword")}</TableHead>
+                    <TableHead className="text-right">{translate("数量", "Quantity")}</TableHead>
+                    <TableHead className="text-right">{translate("单价", "Unit Price")}</TableHead>
+                    <TableHead className="text-right">{translate("折扣", "Discount")}</TableHead>
+                    <TableHead className="text-right">{translate("小计", "Subtotal")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {items?.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">暂无商品</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
                   ) : items?.map((item: any) => (
                     <TableRow key={item.id}>
                       <TableCell className="font-medium">{item.productName}</TableCell>
@@ -286,7 +300,7 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <FileText className="h-5 w-5" />
-                  Facebook 留言资料
+                  {translate("Facebook 留言资料", "Facebook Comment Info")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -294,9 +308,16 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                   <p className="text-sm font-mono whitespace-pre-wrap">{order.originalCustomerComment}</p>
                 </div>
                 {order.commentDate && (
-                  <p className="text-sm text-muted-foreground">
-                    留言时间: {new Date(order.commentDate).toLocaleString("zh-CN")}
-                  </p>
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      {translate("留言时间", "Comment Time")}: {new Date(order.commentDate).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
+                    </p>
+                    {order.commentLink && (
+                      <p className="text-sm text-muted-foreground">
+                        {translate("留言链接", "Comment Link")}: <a href={order.commentLink} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{translate("查看留言", "View Comment")}</a>
+                      </p>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -307,33 +328,34 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <History className="h-5 w-5" />
-                状态变更记录
+                {translate("状态变更记录", "Status Change History")}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>时间</TableHead>
-                    <TableHead>从</TableHead>
-                    <TableHead>到</TableHead>
-                    <TableHead>操作人</TableHead>
-                    <TableHead>备注</TableHead>
+                    <TableHead>{translate("时间", "Time")}</TableHead>
+                    <TableHead>{translate("从", "From")}</TableHead>
+                    <TableHead>{translate("到", "To")}</TableHead>
+                    <TableHead>{translate("操作人", "Operator")}</TableHead>
+                    <TableHead>{translate("备注", "Notes")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {statusLogs?.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">暂无记录</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">{translate("暂无记录", "No records yet")}</TableCell></TableRow>
                   ) : statusLogs?.map((log: any) => (
                     <TableRow key={log.id}>
-                      <TableCell className="text-sm">{new Date(log.createdAt).toLocaleString("zh-CN")}</TableCell>
+                      <TableCell className="text-sm">{new Date(log.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</TableCell>
                       <TableCell>
                         {log.fromStatus ? (
-                          <Badge variant="outline">{STATUS_CONFIG[log.fromStatus]?.label || log.fromStatus}</Badge>
+                          <Badge variant="outline">{translate(STATUS_CONFIG_RAW[log.fromStatus]?.zh || log.fromStatus, STATUS_CONFIG_RAW[log.fromStatus]?.en || log.fromStatus)}</Badge>
+
                         ) : "-"}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="default">{STATUS_CONFIG[log.toStatus]?.label || log.toStatus}</Badge>
+                        <Badge variant="default">{translate(STATUS_CONFIG_RAW[log.toStatus]?.zh || log.toStatus, STATUS_CONFIG_RAW[log.toStatus]?.en || log.toStatus)}</Badge>
                       </TableCell>
                       <TableCell className="text-sm">{log.changedBy || "-"}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{log.notes || "-"}</TableCell>
@@ -349,39 +371,39 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
         <div className="space-y-6">
           {/* Order Summary */}
           <Card>
-            <CardHeader><CardTitle>订单摘要</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{translate("订单摘要", "Order Summary")}</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">商品小计</span>
+                <span className="text-muted-foreground">{translate("商品小计", "Subtotal")}</span>
                 <span>RM {Number(order.physicalSubtotal).toFixed(2)}</span>
               </div>
               {Number(order.discountAmount) > 0 && (
                 <div className="flex justify-between text-orange-600">
-                  <span>折扣</span>
+                  <span>{translate("折扣", "Discount")}</span>
                   <span>-RM {Number(order.discountAmount).toFixed(2)}</span>
                 </div>
               )}
               <div className="flex justify-between">
-                <span className="text-muted-foreground">运费</span>
+                <span className="text-muted-foreground">{translate("运费", "Shipping Fee")}</span>
                 <span>RM {Number(order.shippingFee).toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">总重量</span>
+                <span className="text-muted-foreground">{translate("总重量", "Total Weight")}</span>
                 <span>{Number(order.totalWeight).toFixed(2)} kg</span>
               </div>
               <div className="border-t pt-3 flex justify-between font-bold text-lg">
-                <span>总额</span>
+                <span>{translate("总额", "Total Amount")}</span>
                 <span>RM {Number(order.totalAmount).toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">已付</span>
+                <span className="text-muted-foreground">{translate("已付", "Paid")}</span>
                 <span className={Number(order.paidAmount) > 0 ? "text-green-600 font-medium" : ""}>
                   RM {Number(order.paidAmount).toFixed(2)}
                 </span>
               </div>
               {Number(order.paidAmount) < Number(order.totalAmount) && Number(order.paidAmount) > 0 && (
                 <div className="flex justify-between text-orange-600">
-                  <span>未付</span>
+                  <span>{translate("未付", "Unpaid")}</span>
                   <span>RM {(Number(order.totalAmount) - Number(order.paidAmount)).toFixed(2)}</span>
                 </div>
               )}
@@ -390,24 +412,24 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
 
           {/* Payment Method */}
           <Card>
-            <CardHeader><CardTitle>付款方式</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{translate("付款方式", "Payment Method")}</CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">方式</span>
+                <span className="text-muted-foreground">{translate("方式", "Method")}</span>
                 <span className="font-medium">{order.paymentMethodName || "-"}</span>
               </div>
               {order.receiptUrl && (
                 <div>
                   <a href={order.receiptUrl} target="_blank" rel="noopener noreferrer">
                     <Button variant="outline" size="sm" className="w-full">
-                      <FileText className="h-4 w-4 mr-2" />查看付款凭证
+                      <FileText className="h-4 w-4 mr-2" />{translate("查看付款凭证", "View Payment Proof")}
                     </Button>
                   </a>
                 </div>
               )}
               {order.paymentUploadedAt && (
                 <p className="text-xs text-muted-foreground">
-                  上传时间: {new Date(order.paymentUploadedAt).toLocaleString("zh-CN")}
+                  {translate("上传时间", "Upload Time")}: {new Date(order.paymentUploadedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
                 </p>
               )}
             </CardContent>
@@ -416,33 +438,31 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
           {/* Hold Order Info */}
           {holdInfo?.isActive && (
             <Card className="border-purple-200">
-              <CardHeader><CardTitle className="text-purple-700">保留订单</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-purple-700">{translate("保留订单", "Hold Order")}</CardTitle></CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">类型</span>
+                  <span className="text-muted-foreground">{translate("类型", "Type")}</span>
                   <span className="font-medium">
-                    {holdInfo.holdType === "wait_next_live" ? "等待下次直播" :
-                     holdInfo.holdType === "scheduled_shipping" ? "指定日期发货" :
-                     holdInfo.holdType === "wait_stock" ? "等待缺货商品" : "其他"}
+                    {translate(HOLD_TYPE_LABELS_RAW[holdInfo.holdType]?.zh || holdInfo.holdType, HOLD_TYPE_LABELS_RAW[holdInfo.holdType]?.en || holdInfo.holdType)}
                   </span>
                 </div>
                 {holdInfo.scheduledShippingDate && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">预定发货日</span>
-                    <span>{new Date(holdInfo.scheduledShippingDate).toLocaleDateString("zh-CN")}</span>
+                    <span className="text-muted-foreground">{translate("预定发货日", "Scheduled Shipping Date")}</span>
+                    <span>{new Date(holdInfo.scheduledShippingDate).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US")}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">允许自动合并</span>
+                  <span className="text-muted-foreground">{translate("允许自动合并", "Allow Auto Merge")}</span>
                   <Badge variant={holdInfo.allowAutoMerge ? "default" : "outline"}>
-                    {holdInfo.allowAutoMerge ? "是" : "否"}
+                    {holdInfo.allowAutoMerge ? translate("是", "Yes") : translate("否", "No")}
                   </Badge>
                 </div>
                 {holdInfo.holdRemark && (
                   <p className="text-muted-foreground italic">"{holdInfo.holdRemark}"</p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  保留时间: {new Date(holdInfo.holdCreatedAt).toLocaleString("zh-CN")}
+                  {translate("保留时间", "Hold Time")}: {new Date(holdInfo.holdCreatedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
                 </p>
               </CardContent>
             </Card>
@@ -453,22 +473,22 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Bell className="h-5 w-5" />
-                通知记录
+                {translate("通知记录", "Notification History")}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {notifications?.length === 0 ? (
-                <p className="text-sm text-muted-foreground">暂无通知记录</p>
+                <p className="text-sm text-muted-foreground">{translate("暂无通知记录", "No notification records yet")}</p>
               ) : notifications?.map((n: any) => (
                 <div key={n.id} className="flex items-start gap-2 text-sm p-2 border rounded-lg">
                   <Badge variant={n.status === "sent" ? "default" : n.status === "failed" ? "destructive" : "outline"}>
-                    {n.status === "sent" ? "已发送" : n.status === "failed" ? "失败" : "待发送"}
+                    {n.status === "sent" ? translate("已发送", "Sent") : n.status === "failed" ? translate("失败", "Failed") : translate("待发送", "Pending")}
                   </Badge>
                   <div className="flex-1">
                     <p className="text-xs text-muted-foreground">{n.channel} · {n.type}</p>
                     {n.errorMessage && <p className="text-xs text-destructive">{n.errorMessage}</p>}
                     <p className="text-xs text-muted-foreground mt-1">
-                      {new Date(n.createdAt).toLocaleString("zh-CN")}
+                      {new Date(n.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
                     </p>
                   </div>
                 </div>
@@ -483,7 +503,7 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
-            订单备注 (3种类型)
+                {translate("订单备注 (3种类型)", "Order Remarks (3 Types)")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -492,15 +512,15 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
             <Select value={remarkType} onValueChange={(v) => setRemarkType(v as any)}>
               <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="live">直播备注</SelectItem>
-                <SelectItem value="customer">客户备注</SelectItem>
-                <SelectItem value="internal">内部备注</SelectItem>
+                <SelectItem value="live">{translate("直播备注", "Live Remark")}</SelectItem>
+                <SelectItem value="customer">{translate("客户备注", "Customer Remark")}</SelectItem>
+                <SelectItem value="internal">{translate("内部备注", "Internal Remark")}</SelectItem>
               </SelectContent>
             </Select>
             <Input
               value={remarkText}
               onChange={(e) => setRemarkText(e.target.value)}
-              placeholder="输入备注内容..."
+              placeholder={translate("输入备注内容...", "Enter remark content...")}
               className="flex-1"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && remarkText.trim()) {
@@ -520,7 +540,7 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
           {/* Remarks List */}
           <div className="space-y-2">
             {remarks?.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">暂无备注</p>
+              <p className="text-sm text-muted-foreground text-center py-4">{translate("暂无备注", "No remarks yet")}</p>
             ) : remarks?.map((r: any) => (
               <div key={r.id} className="flex items-start gap-2 p-3 border rounded-lg">
                 {r.type === "live" ? <MessageSquare className="h-4 w-4 text-blue-500 mt-0.5" /> :
@@ -529,9 +549,9 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className={r.type === "live" ? "text-blue-600" : r.type === "customer" ? "text-green-600" : "text-orange-600"}>
-                      {r.type === "live" ? "直播" : r.type === "customer" ? "客户" : "内部"}
+                      {r.type === "live" ? translate("直播", "Live") : r.type === "customer" ? translate("客户", "Customer") : translate("内部", "Internal")}
                     </Badge>
-                    <span className="text-xs text-muted-foreground">{r.createdBy} · {new Date(r.createdAt).toLocaleString("zh-CN")}</span>
+                    <span className="text-xs text-muted-foreground">{r.createdBy} · {new Date(r.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</span>
                   </div>
                   <p className="text-sm mt-1">{r.content}</p>
                 </div>
@@ -549,25 +569,25 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Sprout className="h-5 w-5" />
-            换盆安排
+            {translate("换盆安排", "Repot Arrangement")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <Button size="sm" onClick={() => setRepotOpen(true)} disabled={items.length === 0}>
             <Plus className="h-4 w-4 mr-2" />
-            新增换盆
+            {translate("新增换盆", "Add Repot")}
           </Button>
 
           {/* Repots List */}
           <div className="space-y-2">
             {repots?.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">暂无换盆安排</p>
+              <p className="text-sm text-muted-foreground text-center py-4">{translate("暂无换盆安排", "No repot arrangements yet")}</p>
             ) : repots?.map((r: any) => (
               <div key={r.id} className="flex items-center gap-3 p-3 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
                 <Sprout className="h-5 w-5 text-blue-500" />
                 <div className="flex-1">
                   <p className="text-sm font-medium">{r.productName} → {r.potProductName}</p>
-                  <p className="text-xs text-muted-foreground">数量: {r.quantity}</p>
+                  <p className="text-xs text-muted-foreground">{translate("数量", "Quantity")}: {r.quantity}</p>
                 </div>
                 <Button size="sm" variant="ghost" onClick={() => deleteRepotMutation.mutate({ id: r.id })}>
                   <Trash2 className="h-3 w-3 text-muted-foreground" />
@@ -583,7 +603,7 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calendar className="h-5 w-5" />
-            预约发货
+            {translate("预约发货", "Scheduled Shipping")}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center gap-3">
@@ -598,11 +618,11 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
             onClick={() => setScheduledDateMutation.mutate({ orderId, date: scheduledDate || null })}
             disabled={setScheduledDateMutation.isPending}
           >
-            设置预约
+            {translate("设置预约", "Set Schedule")}
           </Button>
           {order?.scheduledShippingDate && (
             <Button size="sm" variant="outline" onClick={() => { setScheduledDate(""); setScheduledDateMutation.mutate({ orderId, date: null }); }}>
-              取消预约
+              {translate("取消预约", "Cancel Schedule")}
             </Button>
           )}
         </CardContent>
@@ -612,24 +632,24 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
       <Dialog open={holdOpen} onOpenChange={setHoldOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>保留订单</DialogTitle>
+            <DialogTitle>{translate("保留订单", "Hold Order")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>保留类型</Label>
+              <Label>{translate("保留类型", "Hold Type")}</Label>
               <Select value={holdForm.holdType} onValueChange={(v) => setHoldForm((p: any) => ({ ...p, holdType: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="wait_next_live">等待下次直播加单</SelectItem>
-                  <SelectItem value="scheduled_shipping">指定日期发货</SelectItem>
-                  <SelectItem value="wait_stock">等待缺货商品</SelectItem>
-                  <SelectItem value="other">其他</SelectItem>
+                  <SelectItem value="wait_next_live">{translate("等待下次直播加单", "Wait for next live order")}</SelectItem>
+                  <SelectItem value="scheduled_shipping">{translate("指定日期发货", "Scheduled Shipping")}</SelectItem>
+                  <SelectItem value="wait_stock">{translate("等待缺货商品", "Wait for out of stock products")}</SelectItem>
+                  <SelectItem value="other">{translate("其他", "Other")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             {holdForm.holdType === "scheduled_shipping" && (
               <div>
-                <Label>预定发货日期</Label>
+                <Label>{translate("预定发货日期", "Scheduled Shipping Date")}</Label>
                 <Input
                   type="date"
                   value={holdForm.scheduledShippingDate}
@@ -644,21 +664,21 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                 onChange={(e) => setHoldForm((p: any) => ({ ...p, allowAutoMerge: e.target.checked }))}
                 className="rounded"
               />
-              <Label>允许自动合并新订单</Label>
+              <Label>{translate("允许自动合并新订单", "Allow automatic merging of new orders")}</Label>
             </div>
             <div>
-              <Label>保留备注</Label>
+              <Label>{translate("保留备注", "Hold Remark")}</Label>
               <Textarea
                 value={holdForm.holdRemark}
                 onChange={(e) => setHoldForm((p: any) => ({ ...p, holdRemark: e.target.value }))}
-                placeholder="保留原因说明..."
+                placeholder={translate("保留原因说明...", "Reason for hold...")}
                 rows={2}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setHoldOpen(false)}>取消</Button>
-            <Button onClick={handleCreateHold} disabled={createHoldMutation.isPending}>确认保留</Button>
+            <Button variant="outline" onClick={() => setHoldOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={handleCreateHold} disabled={createHoldMutation.isPending}>{translate("确认保留", "Confirm Hold")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -667,18 +687,18 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
       <Dialog open={repotOpen} onOpenChange={setRepotOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>新增换盆</DialogTitle>
+            <DialogTitle>{translate("新增换盆", "Add Repot")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>选择商品</Label>
+              <Label>{translate("选择商品", "Select Product")}</Label>
               <Select value={String(repotForm.orderItemId)} onValueChange={(v) => {
                 const item = items.find((i: any) => i.id === Number(v));
                 if (item) {
                   setRepotForm((p: any) => ({ ...p, orderItemId: Number(v), productId: item.productId, productName: item.productName }));
                 }
               }}>
-                <SelectTrigger><SelectValue placeholder="选择订单商品" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={translate("选择订单商品", "Select order product")} /></SelectTrigger>
                 <SelectContent>
                   {items.map((item: any) => (
                     <SelectItem key={item.id} value={String(item.id)}>
@@ -689,14 +709,14 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
               </Select>
             </div>
             <div>
-              <Label>选择花盆</Label>
+              <Label>{translate("选择花盆", "Select Pot")}</Label>
               <Select value={String(repotForm.potProductId)} onValueChange={(v) => {
                 const pot = potProducts?.find((p: any) => p.id === Number(v));
                 if (pot) {
                   setRepotForm((p: any) => ({ ...p, potProductId: Number(v), potProductName: pot.name }));
                 }
               }}>
-                <SelectTrigger><SelectValue placeholder="选择花盆商品" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={translate("选择花盆商品", "Select pot product")} /></SelectTrigger>
                 <SelectContent>
                   {potProducts?.map((pot: any) => (
                     <SelectItem key={pot.id} value={String(pot.id)}>
@@ -707,7 +727,7 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
               </Select>
             </div>
             <div>
-              <Label>换盆数量</Label>
+              <Label>{translate("换盆数量", "Repot Quantity")}</Label>
               <Input
                 type="number"
                 min={1}
@@ -717,12 +737,12 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRepotOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setRepotOpen(false)}>{translate("取消", "Cancel")}</Button>
             <Button
               onClick={() => createRepotMutation.mutate(repotForm)}
               disabled={!repotForm.orderItemId || !repotForm.potProductId || createRepotMutation.isPending}
             >
-              确认换盆
+              {translate("确认换盆", "Confirm Repot")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -732,37 +752,37 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
       <Dialog open={statusTransitionOpen} onOpenChange={setStatusTransitionOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>手动变更订单状态</DialogTitle>
+            <DialogTitle>{translate("手动变更订单状态", "Manually Change Order Status")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>当前状态</Label>
+              <Label>{translate("当前状态", "Current Status")}</Label>
               <Badge variant={statusCfg.variant} className={statusCfg.color}>{statusCfg.label}</Badge>
             </div>
             <div>
-              <Label>目标状态</Label>
+              <Label>{translate("目标状态", "Target Status")}</Label>
               <Select value={targetStatus} onValueChange={setTargetStatus}>
-                <SelectTrigger><SelectValue placeholder="选择状态" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={translate("选择状态", "Select Status")} /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-                    <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+                  {Object.entries(STATUS_CONFIG_RAW).map(([key, cfg]) => (
+                    <SelectItem key={key} value={key}>{translate(cfg.zh, cfg.en)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>备注</Label>
+              <Label>{translate("备注", "Notes")}</Label>
               <Textarea
                 value={transitionNotes}
                 onChange={(e) => setTransitionNotes(e.target.value)}
-                placeholder="变更原因..."
+                placeholder={translate("变更原因...", "Reason for change...")}
                 rows={2}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStatusTransitionOpen(false)}>取消</Button>
-            <Button onClick={handleTransition} disabled={transitionMutation.isPending}>确认变更</Button>
+            <Button variant="outline" onClick={() => setStatusTransitionOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={handleTransition} disabled={transitionMutation.isPending}>{translate("确认变更", "Confirm Change")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

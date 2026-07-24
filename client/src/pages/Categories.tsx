@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,41 +35,42 @@ export default function Categories() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const utils = trpc.useUtils();
+  const { translate, lang } = useI18n();
 
   const { data: categories, isLoading } = trpc.categories.list.useQuery();
 
   const createMutation = trpc.categories.create.useMutation({
     onSuccess: () => {
       utils.categories.invalidate();
-      toast.success("分类创建成功");
+      toast.success(translate("分类创建成功", "Category created successfully"));
       setDialogOpen(false);
       setForm(EMPTY_FORM);
       setEditingId(null);
     },
-    onError: (e) => toast.error(`创建失败: ${e.message}`),
+    onError: (e) => toast.error(translate(`创建失败: ${e.message}`, `Failed to create: ${e.message}`)),
   });
 
   const updateMutation = trpc.categories.update.useMutation({
     onSuccess: () => {
       utils.categories.invalidate();
-      toast.success("分类更新成功");
+      toast.success(translate("分类更新成功", "Category updated successfully"));
       setDialogOpen(false);
       setForm(EMPTY_FORM);
       setEditingId(null);
     },
-    onError: (e) => toast.error(`更新失败: ${e.message}`),
+    onError: (e) => toast.error(translate(`更新失败: ${e.message}`, `Failed to update: ${e.message}`)),
   });
 
   const deleteMutation = trpc.categories.delete.useMutation({
     onSuccess: (data) => {
       if (data.success) {
         utils.categories.invalidate();
-        toast.success("分类已删除");
+        toast.success(translate("分类已删除", "Category deleted"));
       } else {
-        toast.error(data.reason || "删除失败");
+        toast.error(data.reason || translate("删除失败", "Failed to delete"));
       }
     },
-    onError: (e) => toast.error(`删除失败: ${e.message}`),
+    onError: (e) => toast.error(translate(`删除失败: ${e.message}`, `Failed to delete: ${e.message}`)),
   });
 
   const reorderMutation = trpc.categories.reorder.useMutation({
@@ -95,11 +97,11 @@ export default function Categories() {
 
   function handleSubmit() {
     if (!form.nameZh.trim()) {
-      toast.error("请输入中文名称");
+      toast.error(translate("请输入中文名称", "Please enter Chinese name"));
       return;
     }
     if (!form.nameEn.trim()) {
-      toast.error("请输入英文名称");
+      toast.error(translate("请输入英文名称", "Please enter English name"));
       return;
     }
     if (editingId) {
@@ -124,12 +126,12 @@ export default function Categories() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">分类管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">管理商品分类，支持中英文双语、排序与商城显示控制</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{translate("分类管理", "Category Management")}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{translate("管理商品分类，支持中英文双语、排序与商城显示控制", "Manage product categories, supporting Chinese and English, sorting, and store display control")}</p>
         </div>
         <Button onClick={() => { setForm(EMPTY_FORM); setEditingId(null); setDialogOpen(true); }}>
           <Plus className="h-4 w-4 mr-2" />
-          新增分类
+          {translate("新增分类", "Add Category")}
         </Button>
       </div>
 
@@ -138,20 +140,20 @@ export default function Categories() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-12">排序</TableHead>
-                <TableHead>中文名称</TableHead>
-                <TableHead>英文名称</TableHead>
-                <TableHead>描述</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>商城显示</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                <TableHead className="w-12">{translate("排序", "Sort")}</TableHead>
+                <TableHead>{translate("中文名称", "Chinese Name")}</TableHead>
+                <TableHead>{translate("英文名称", "English Name")}</TableHead>
+                <TableHead>{translate("描述", "Description")}</TableHead>
+                <TableHead>{translate("状态", "Status")}</TableHead>
+                <TableHead>{translate("商城显示", "Show in Store")}</TableHead>
+                <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">加载中...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
               ) : categories?.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">暂无分类</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">{translate("暂无分类", "No categories yet")}</TableCell></TableRow>
               ) : categories?.map((c, index) => (
                 <TableRow key={c.id}>
                   <TableCell>
@@ -164,17 +166,17 @@ export default function Categories() {
                       </Button>
                     </div>
                   </TableCell>
-                  <TableCell className="font-medium">{c.nameZh}</TableCell>
-                  <TableCell>{c.nameEn}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm max-w-xs truncate">{c.descZh || "—"}</TableCell>
+                  <TableCell className="font-medium">{lang === "zh" ? c.nameZh : c.nameEn || c.nameZh}</TableCell>
+                  <TableCell>{lang === "en" ? c.nameEn : c.nameZh || c.nameEn}</TableCell>
+                  <TableCell className="text-muted-foreground text-sm max-w-xs truncate">{lang === "zh" ? (c.descZh || "—") : (c.descEn || "—")}</TableCell>
                   <TableCell>
                     <Badge variant={c.status === "active" ? "default" : "outline"}>
-                      {c.status === "active" ? "启用" : "停用"}
+                      {c.status === "active" ? translate("启用", "Active") : translate("停用", "Inactive")}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <Badge variant={c.showInStore ? "default" : "outline"}>
-                      {c.showInStore ? "显示" : "隐藏"}
+                      {c.showInStore ? translate("显示", "Show") : translate("隐藏", "Hide")}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
@@ -185,7 +187,7 @@ export default function Categories() {
                       variant="ghost"
                       size="icon"
                       onClick={() => {
-                        if (confirm(`确定删除分类「${c.nameZh}」吗？`)) {
+                        if (confirm(translate("确定删除分类「{name}」吗？", "Are you sure you want to delete category \'{name}\'?", { name: lang === "zh" ? c.nameZh : c.nameEn || c.nameZh }))) {
                           deleteMutation.mutate({ id: c.id });
                         }
                       }}
@@ -203,63 +205,63 @@ export default function Categories() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingId ? "编辑分类" : "新增分类"}</DialogTitle>
+            <DialogTitle>{editingId ? translate("编辑分类", "Edit Category") : translate("新增分类", "Add Category")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>中文名称 *</Label>
-                <Input value={form.nameZh} onChange={(e) => setForm({ ...form, nameZh: e.target.value })} placeholder="花类" />
+                <Label>{translate("中文名称", "Chinese Name")} *</Label>
+                <Input value={form.nameZh} onChange={(e) => setForm({ ...form, nameZh: e.target.value })} placeholder={translate("花类", "Flowers")} />
               </div>
               <div>
-                <Label>英文名称 *</Label>
-                <Input value={form.nameEn} onChange={(e) => setForm({ ...form, nameEn: e.target.value })} placeholder="Flowers" />
+                <Label>{translate("英文名称", "English Name")} *</Label>
+                <Input value={form.nameEn} onChange={(e) => setForm({ ...form, nameEn: e.target.value })} placeholder={translate("Flowers", "Flowers")} />
               </div>
             </div>
 
             <div>
-              <Label>中文描述</Label>
-              <Textarea value={form.descZh} onChange={(e) => setForm({ ...form, descZh: e.target.value })} rows={2} placeholder="分类描述（可选）" />
+              <Label>{translate("中文描述", "Chinese Description")}</Label>
+              <Textarea value={form.descZh} onChange={(e) => setForm({ ...form, descZh: e.target.value })} rows={2} placeholder={translate("分类描述（可选）", "Category description (optional)")} />
             </div>
 
             <div>
-              <Label>英文描述</Label>
-              <Textarea value={form.descEn} onChange={(e) => setForm({ ...form, descEn: e.target.value })} rows={2} placeholder="Category description (optional)" />
+              <Label>{translate("英文描述", "English Description")}</Label>
+              <Textarea value={form.descEn} onChange={(e) => setForm({ ...form, descEn: e.target.value })} rows={2} placeholder={translate("Category description (optional)", "Category description (optional)")} />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div>
-                  <Label>商城显示</Label>
-                  <p className="text-xs text-muted-foreground">在客户端商城展示此分类</p>
+                  <Label>{translate("商城显示", "Show in Store")}</Label>
+                  <p className="text-xs text-muted-foreground">{translate("在客户端商城展示此分类", "Display this category in the client store")}</p>
                 </div>
                 <Switch checked={form.showInStore} onCheckedChange={(v) => setForm({ ...form, showInStore: v })} />
               </div>
               <div>
-                <Label>排序权重</Label>
+                <Label>{translate("排序权重", "Sort Weight")}</Label>
                 <Input type="number" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: parseInt(e.target.value) || 0 })} />
               </div>
             </div>
 
             {editingId && (
               <div>
-                <Label>状态</Label>
+                <Label>{translate("状态", "Status")}</Label>
                 <div className="flex items-center gap-2">
                   <Switch
                     checked={form.status === "active"}
                     onCheckedChange={(v) => setForm({ ...form, status: v ? "active" : "inactive" })}
                   />
-                  <span className="text-sm">{form.status === "active" ? "启用" : "停用"}</span>
+                  <span className="text-sm">{form.status === "active" ? translate("启用", "Active") : translate("停用", "Inactive")}</span>
                 </div>
               </div>
             )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
             <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
-              {editingId ? "保存" : "创建"}
+              {editingId ? translate("保存", "Save") : translate("创建", "Create")}
             </Button>
           </DialogFooter>
         </DialogContent>
