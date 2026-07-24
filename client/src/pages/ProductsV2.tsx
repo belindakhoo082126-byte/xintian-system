@@ -1080,8 +1080,8 @@ export default function ProductsV2() {
                           </div>
                           <div>
                             <Label>{translate("库存数量", "Stock Quantity")}</Label>
-                            <Input type="number" value={form.stockQuantity}
-                              onChange={(e) => setForm({ ...form, stockQuantity: parseInt(e.target.value) || 0 })} />
+                            <Input type="number" value={form.stockQuantity} disabled />
+                            <p className="text-xs text-muted-foreground mt-1">{translate("由进货管理自动更新", "Auto-updated by Purchase Management")}</p>
                           </div>
                         </div>
                         <div className="grid grid-cols-4 gap-3">
@@ -1288,8 +1288,17 @@ export default function ProductsV2() {
                             </div>
                             <p className="text-sm text-muted-foreground">{form.shortDescZh || translate("无描述", "No description")}</p>
                             <div className="flex items-center gap-3 text-sm">
-                              <span className="font-medium">RM {form.sellingPrice || "0"}</span>
-                              {form.compareAtPrice && <span className="line-through text-muted-foreground">RM {form.compareAtPrice}</span>}
+                              {form.isSpecial && form.specialPrice && parseFloat(form.specialPrice) > 0 ? (
+                                <>
+                                  <span className="font-medium text-orange-600">RM {form.specialPrice}</span>
+                                  <span className="line-through text-muted-foreground">RM {form.sellingPrice || "0"}</span>
+                                </>
+                              ) : (
+                                <span className="font-medium">RM {form.sellingPrice || "0"}</span>
+                              )}
+                              {form.compareAtPrice && parseFloat(form.compareAtPrice) > 0 && (
+                                <span className="line-through text-muted-foreground">RM {form.compareAtPrice}</span>
+                              )}
                               <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{form.keyword}</code>
                             </div>
                           </div>

@@ -372,6 +372,11 @@ export const purchaseOrderItems = mysqlTable("purchase_order_items", {
   id: int("id").autoincrement().primaryKey(),
   purchaseOrderId: int("purchaseOrderId").notNull(),
   productId: int("productId").notNull(),
+  // V2.1: Variant-level purchase support
+  variantId: int("variantId"),
+  variantName: varchar("variantName", { length: 100 }),
+  variantKeyword: varchar("variantKeyword", { length: 50 }),
+  sellingPrice: decimal("sellingPrice", { precision: 10, scale: 2 }),
   quantity: int("quantity").notNull(),
   unitCost: decimal("unitCost", { precision: 10, scale: 2 }).notNull(),
   subtotal: decimal("subtotal", { precision: 12, scale: 2 }).notNull(),
@@ -1312,6 +1317,7 @@ export const inventoryAdjustments = mysqlTable("inventory_adjustments", {
     "plant_death",      // 植物死亡
     "pest_disease",     // 病虫害
     "human_damage",     // 人为损坏
+    "unhealthy",        // 不健康
     "lost",             // 遗失
     "other",            // 其他
   ]).notNull(),

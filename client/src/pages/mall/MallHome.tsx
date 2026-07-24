@@ -136,12 +136,22 @@ export default function MallHome() {
                 <CardContent className="p-3">
                   <p className="text-sm font-medium line-clamp-2 mb-1">{p.name}</p>
                   <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold text-[#2d6a4f]">RM {p.sellingPrice}</span>
-                    {p.compareAtPrice && parseFloat(p.compareAtPrice) > 0 && (
+                    {p.isSpecial && p.specialPrice && parseFloat(p.specialPrice) > 0 ? (
+                      <>
+                        <span className="text-lg font-bold text-orange-600">RM {p.specialPrice}</span>
+                        <span className="text-xs text-muted-foreground line-through">RM {p.sellingPrice}</span>
+                      </>
+                    ) : (
+                      <span className="text-lg font-bold text-[#2d6a4f]">RM {p.sellingPrice}</span>
+                    )}
+                    {p.compareAtPrice && parseFloat(p.compareAtPrice) > 0 && !p.isSpecial && (
                       <span className="text-xs text-muted-foreground line-through">RM {p.compareAtPrice}</span>
                     )}
                   </div>
-                  {p.isFeatured && <Badge className="mt-1" variant="secondary">推荐</Badge>}
+                  <div className="flex gap-1 mt-1">
+                    {p.isFeatured && <Badge variant="secondary">推荐</Badge>}
+                    {p.isSpecial && <Badge className="bg-orange-100 text-orange-700">特价</Badge>}
+                  </div>
                 </CardContent>
               </Card>
             </Link>

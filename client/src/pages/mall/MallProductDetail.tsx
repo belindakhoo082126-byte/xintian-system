@@ -128,11 +128,15 @@ export default function MallProductDetail() {
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-3xl font-bold text-[#2d6a4f]">RM {unitPrice}</span>
-              {product.isSpecial && product.specialPrice && parseFloat(product.specialPrice) > 0 && (
-                <span className="text-lg text-orange-600 font-medium">{t("特价", "Special")}: RM {product.specialPrice}</span>
+              {product.isSpecial && product.specialPrice && parseFloat(product.specialPrice) > 0 ? (
+                <>
+                  <span className="text-3xl font-bold text-orange-600">RM {product.specialPrice}</span>
+                  <span className="text-lg text-muted-foreground line-through">RM {unitPrice}</span>
+                </>
+              ) : (
+                <span className="text-3xl font-bold text-[#2d6a4f]">RM {unitPrice}</span>
               )}
-              {product.compareAtPrice && parseFloat(product.compareAtPrice) > 0 && (
+              {product.compareAtPrice && parseFloat(product.compareAtPrice) > 0 && !product.isSpecial && (
                 <span className="text-lg text-muted-foreground line-through">RM {product.compareAtPrice}</span>
               )}
             </div>

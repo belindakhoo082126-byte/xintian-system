@@ -839,6 +839,10 @@ export const appRouter = router({
           quantity: z.number().min(1),
           unitCost: z.string(),
           subtotal: z.string(),
+          // V2.1: Variant-level purchase support
+          variantName: z.string().optional(),
+          variantKeyword: z.string().optional(),
+          sellingPrice: z.string().optional(),
         })),
       }))
       .mutation(async ({ input }) => {
@@ -975,6 +979,17 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const dateRange = db.getDateRange(input.preset, input.customStart, input.customEnd);
         return await db.getRefundRecords(dateRange);
+      }),
+    // V2.1: Special price product profit analysis
+    specialPriceProfit: adminProcedure
+      .input(z.object({
+        preset: z.string(),
+        customStart: z.string().optional(),
+        customEnd: z.string().optional(),
+      }))
+      .query(async ({ input }) => {
+        const dateRange = db.getDateRange(input.preset, input.customStart, input.customEnd);
+        return await db.getSpecialPriceProductProfit(dateRange);
       }),
   }),
 
@@ -3314,7 +3329,7 @@ export const appRouter = router({
     // Create a manual stock adjustment
     create: protectedProcedure.input(z.object({
       productId: z.number(),
-      adjustmentType: z.enum(["quality_issue", "plant_death", "pest_disease", "human_damage", "lost", "other"]),
+      adjustmentType: z.enum(["quality_issue", "plant_death", "pest_disease", "human_damage", "unhealthy", "lost", "other"]),
       quantityChange: z.number(),
       unitCost: z.number().optional(),
       totalCost: z.number().optional(),

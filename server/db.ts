@@ -868,6 +868,10 @@ export async function createPurchaseOrder(data: {
     quantity: number;
     unitCost: string;
     subtotal: string;
+    // V2.1: Variant-level purchase support
+    variantName?: string;
+    variantKeyword?: string;
+    sellingPrice?: string;
   }>;
 }) {
   const db = await getDb();
@@ -888,19 +892,66 @@ export async function createPurchaseOrder(data: {
   const poId = (poResult as any)[0].insertId;
 
   for (const item of data.items) {
+    let variantId: number | null = null;
+
+    // V2.1: If variantName is provided, auto-create or find variant
+    if (item.variantName && item.variantKeyword) {
+      const normalizedKeyword = item.variantKeyword.toUpperCase().replace(/\s+/g, '');
+      // Check if variant already exists for this product with same keyword
+      const existingVariant = await db.select().from(variants)
+        .where(and(eq(variants.productId, item.productId), eq(variants.keyword, normalizedKeyword)))
+        .limit(1);
+      
+      if (existingVariant.length > 0) {
+        variantId = existingVariant[0].id;
+        // Update variant selling price and cost if provided
+        const updateData: any = {};
+        if (item.sellingPrice) updateData.sellingPrice = item.sellingPrice;
+        if (item.unitCost) updateData.currentCost = item.unitCost;
+        if (Object.keys(updateData).length > 0) {
+          await db.update(variants).set(updateData).where(eq(variants.id, variantId));
+        }
+      } else {
+        // Auto-create new variant
+        const product = await db.select({ sku: products.sku }).from(products).where(eq(products.id, item.productId)).limit(1);
+        if (product.length > 0) {
+          const variantSku = await generateVariantSku(product[0].sku);
+          const variantResult = await db.insert(variants).values({
+            productId: item.productId,
+            name: item.variantName,
+            keyword: normalizedKeyword,
+            sku: variantSku,
+            sellingPrice: item.sellingPrice || null,
+            currentCost: item.unitCost || null,
+            status: 'active',
+            visibility: 'public',
+            sortOrder: 0,
+            stockQuantity: 0, // Will be updated when PO is received
+          });
+          variantId = (variantResult as any)[0].insertId;
+          // Ensure product is in variant mode
+          await db.update(products).set({ productMode: 'variant' }).where(eq(products.id, item.productId));
+        }
+      }
+    }
+
     await db.insert(purchaseOrderItems).values({
       purchaseOrderId: poId,
       productId: item.productId,
+      variantId: variantId || null,
+      variantName: item.variantName || null,
+      variantKeyword: item.variantKeyword || null,
+      sellingPrice: item.sellingPrice || null,
       quantity: item.quantity,
       unitCost: item.unitCost,
       subtotal: item.subtotal,
     });
 
     // Update product cost immediately (latest purchase cost)
-    // Stock is NOT increased here - only when the PO is received
-    await db.update(products).set({
-      cost: item.unitCost,
-    }).where(eq(products.id, item.productId));
+    // Also sync selling price if provided (V2.1)
+    const productUpdate: any = { cost: item.unitCost, currentCost: item.unitCost };
+    if (item.sellingPrice) productUpdate.sellingPrice = item.sellingPrice;
+    await db.update(products).set(productUpdate).where(eq(products.id, item.productId));
   }
 
   return { poId, poNumber, totalAmount: totalAmount.toFixed(2) };
@@ -919,9 +970,17 @@ export async function receivePurchaseOrder(poId: number) {
   // Increase stock for each item in the PO
   const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, poId));
   for (const item of items) {
+    // Update product-level stock
     await db.update(products).set({
       stockQuantity: sql`${products.stockQuantity} + ${item.quantity}`,
     }).where(eq(products.id, item.productId));
+    
+    // V2.1: Update variant-level stock if variantId is set
+    if (item.variantId) {
+      await db.update(variants).set({
+        stockQuantity: sql`${variants.stockQuantity} + ${item.quantity}`,
+      }).where(eq(variants.id, item.variantId));
+    }
   }
 }
 
@@ -4585,7 +4644,7 @@ export async function getInventoryAdjustments(filters?: { productId?: number; ad
 
 export async function createInventoryAdjustment(data: {
   productId: number;
-  adjustmentType: 'quality_issue' | 'plant_death' | 'pest_disease' | 'human_damage' | 'lost' | 'other';
+  adjustmentType: 'quality_issue' | 'plant_death' | 'pest_disease' | 'human_damage' | 'unhealthy' | 'lost' | 'other';
   quantityChange: number;
   unitCost?: number;
   totalCost?: number;
@@ -4799,13 +4858,16 @@ export async function getLossAnalysisReport(dateRange: { start: Date; end: Date 
  * Calculate shipping fee for normal products based on XLCS rules:
  * - If subtotal >= RM150: first 10kg free, excess at RM3/kg
  * - If subtotal < RM150: first 10kg RM15, excess at RM15 + RM3/kg
+ * V2.1: Special price items (isSpecial) are EXCLUDED from the RM150 free shipping threshold
  */
-export function calculateNormalShippingFee(itemsSubtotal: number, totalWeightKg: number): {
+export function calculateNormalShippingFee(itemsSubtotal: number, totalWeightKg: number, nonSpecialSubtotal?: number): {
   chargeableWeight: number;
   shippingFee: number;
   isFreeShipping: boolean;
 } {
-  const isFreeShipping = itemsSubtotal >= 150;
+  // V2.1: Use nonSpecialSubtotal for free shipping threshold if provided
+  const thresholdSubtotal = nonSpecialSubtotal !== undefined ? nonSpecialSubtotal : itemsSubtotal;
+  const isFreeShipping = thresholdSubtotal >= 150;
   const baseWeight = 10; // 10kg base
   const excessWeight = Math.max(0, totalWeightKg - baseWeight);
   const chargeableWeight = totalWeightKg; // actual weight is chargeable
@@ -5397,5 +5459,114 @@ export async function getImportPreorderProfitAnalysis(filters?: {
     grossProfit: grossProfit.toFixed(2),
     grossMargin: grossMargin.toFixed(1),
     orderCount: paidOrders.length,
+  };
+}
+
+// ============================================================================
+// V2.1: Special Price Product Profit Analysis (特价商品利润分析)
+// ============================================================================
+
+export async function getSpecialPriceProductProfit(dateRange: { start: Date; end: Date }) {
+  const db = await getDb();
+  if (!db) return {
+    totalSpecialRevenue: 0,
+    totalNormalRevenue: 0,
+    totalCost: 0,
+    totalProfit: 0,
+    grossMargin: 0,
+    specialSaleCount: 0,
+    normalSaleCount: 0,
+    details: [],
+  };
+
+  const { start, end } = dateRange;
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+
+  // Get order items for products that are marked as special (isSpecial = true)
+  const [rows] = await db.execute(sql`
+    SELECT 
+      oi.product_id,
+      oi.product_name,
+      oi.quantity,
+      oi.unit_price,
+      oi.subtotal,
+      p.is_special,
+      p.special_price,
+      p.selling_price,
+      p.current_cost,
+      p.cost,
+      o.order_number,
+      o.created_at
+    FROM order_items oi
+    INNER JOIN orders o ON oi.order_id = o.id
+    INNER JOIN products p ON oi.product_id = p.id
+    WHERE o.created_at >= ${startMs} AND o.created_at <= ${endMs}
+      AND o.physical_status != 'cancelled'
+      AND oi.product_type = 'physical'
+      AND p.is_special = 1
+    ORDER BY o.created_at DESC
+  `);
+
+  const items = rows as unknown as any[];
+  let totalSpecialRevenue = 0;
+  let totalNormalRevenue = 0;
+  let totalCost = 0;
+  let specialSaleCount = 0;
+  let normalSaleCount = 0;
+  const details: any[] = [];
+
+  for (const item of items) {
+    const qty = Number(item.quantity) || 0;
+    const unitPrice = Number(item.unit_price) || 0;
+    const subtotal = Number(item.subtotal) || 0;
+    const specialPrice = Number(item.special_price) || 0;
+    const sellingPrice = Number(item.selling_price) || 0;
+    const cost = Number(item.current_cost) || Number(item.cost) || 0;
+
+    // Determine if this sale was at special price or normal price
+    const isSpecialSale = specialPrice > 0 && Math.abs(unitPrice - specialPrice) < 0.01;
+    const itemCost = cost * qty;
+    const itemProfit = subtotal - itemCost;
+
+    if (isSpecialSale) {
+      totalSpecialRevenue += subtotal;
+      specialSaleCount += qty;
+    } else {
+      totalNormalRevenue += subtotal;
+      normalSaleCount += qty;
+    }
+    totalCost += itemCost;
+
+    details.push({
+      productId: item.product_id,
+      productName: item.product_name,
+      orderNumber: item.order_number,
+      quantity: qty,
+      unitPrice: unitPrice.toFixed(2),
+      isSpecialSale,
+      specialPrice: specialPrice.toFixed(2),
+      sellingPrice: sellingPrice.toFixed(2),
+      cost: cost.toFixed(2),
+      subtotal: subtotal.toFixed(2),
+      itemCost: itemCost.toFixed(2),
+      profit: itemProfit.toFixed(2),
+      date: new Date(item.created_at).toLocaleDateString(),
+    });
+  }
+
+  const totalRevenue = totalSpecialRevenue + totalNormalRevenue;
+  const totalProfit = totalRevenue - totalCost;
+  const grossMargin = totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 10000) / 100 : 0;
+
+  return {
+    totalSpecialRevenue: totalSpecialRevenue.toFixed(2),
+    totalNormalRevenue: totalNormalRevenue.toFixed(2),
+    totalCost: totalCost.toFixed(2),
+    totalProfit: totalProfit.toFixed(2),
+    grossMargin,
+    specialSaleCount,
+    normalSaleCount,
+    details,
   };
 }
