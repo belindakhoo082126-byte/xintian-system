@@ -573,11 +573,16 @@ function CollapsibleMenuGroup({
               <SidebarMenuSubItem key={`child-${ci}`}>
                 <SidebarMenuSubButton
                   isActive={childActive}
-                  onClick={() => setLocation(child.path)}
+                  asChild
                   className="h-9 text-sm"
                 >
-                  <child.icon className={`h-3.5 w-3.5 ${childActive ? "text-primary" : ""}`} />
-                  <span>{resolveLabel(child.label)}</span>
+                  <button
+                    onClick={() => setLocation(child.path)}
+                    className="w-full flex items-center gap-2 h-9 text-sm"
+                  >
+                    <child.icon className={`h-3.5 w-3.5 ${childActive ? "text-primary" : ""}`} />
+                    <span>{resolveLabel(child.label)}</span>
+                  </button>
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>
             );
