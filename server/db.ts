@@ -1200,7 +1200,8 @@ export async function getProductsEnhanced(params: {
   if (!db) return { items: [], total: 0 };
   const conditions: any[] = [];
   if (params.search) {
-    conditions.push(like(products.name, `%${params.search}%`));
+    const searchTerm = `%${params.search}%`;
+    conditions.push(or(like(products.name, searchTerm), like(products.keyword, searchTerm)));
   }
   if (params.categoryId) {
     conditions.push(eq(products.categoryId, params.categoryId));
@@ -1293,6 +1294,13 @@ export async function createProductEnhanced(data: {
   images?: string;
   videoUrl?: string;
   description?: string;
+  isSpecial?: boolean;
+  allowPresale?: boolean;
+  allowStandaloneShipping?: boolean;
+  lightDesc?: string;
+  waterDesc?: string;
+  fertilizerDesc?: string;
+  pruningDesc?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
@@ -1334,6 +1342,13 @@ export async function createProductEnhanced(data: {
     images: data.images,
     videoUrl: data.videoUrl,
     description: data.description,
+    isSpecial: data.isSpecial ?? false,
+    allowPresale: data.allowPresale ?? false,
+    allowStandaloneShipping: data.allowStandaloneShipping ?? false,
+    lightDesc: data.lightDesc,
+    waterDesc: data.waterDesc,
+    fertilizerDesc: data.fertilizerDesc,
+    pruningDesc: data.pruningDesc,
   });
   return { id: result[0].insertId, sku };
 }
@@ -1374,6 +1389,13 @@ export async function updateProductEnhanced(id: number, data: Partial<{
   images: string;
   videoUrl: string;
   description: string;
+  isSpecial: boolean;
+  allowPresale: boolean;
+  allowStandaloneShipping: boolean;
+  lightDesc: string;
+  waterDesc: string;
+  fertilizerDesc: string;
+  pruningDesc: string;
 }>) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
@@ -1662,7 +1684,8 @@ export async function getPublicProducts(params: { categoryId?: number; search?: 
     conditions.push(eq(products.categoryId, params.categoryId));
   }
   if (params.search) {
-    conditions.push(like(products.name, `%${params.search}%`));
+    const searchTerm = `%${params.search}%`;
+    conditions.push(or(like(products.name, searchTerm), like(products.keyword, searchTerm)));
   }
   const limit = params.limit ?? 20;
   const offset = params.offset ?? 0;

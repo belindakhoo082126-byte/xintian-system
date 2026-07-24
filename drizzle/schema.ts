@@ -153,6 +153,22 @@ export const products = mysqlTable("products", {
   isPot: boolean("isPot").default(false).notNull(),
   potCapacity: varchar("potCapacity", { length: 100 }),
 
+  // V2: Special price product (特价商品)
+  isSpecial: boolean("isSpecial").default(false).notNull(),
+  // specialPrice already exists above (legacy field, repurposed)
+
+  // V2: Pre-sale support (预售)
+  allowPresale: boolean("allowPresale").default(false).notNull(),
+
+  // V2: Standalone shipping (单颗邮寄)
+  allowStandaloneShipping: boolean("allowStandaloneShipping").default(false).notNull(),
+
+  // V2: Structured care description (结构化养护说明)
+  lightDesc: text("lightDesc"),
+  waterDesc: text("waterDesc"),
+  fertilizerDesc: text("fertilizerDesc"),
+  pruningDesc: text("pruningDesc"),
+
   // Internal notes
   notes: text("notes"),
 

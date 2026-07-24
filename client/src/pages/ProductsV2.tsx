@@ -75,6 +75,15 @@ type ProductForm = {
   notes: string;
   coverImageUrl: string;
   dimensions: { diameter?: string; height?: string; length?: string; width?: string };
+  isSpecial: boolean;
+  specialPrice: string;
+  allowPresale: boolean;
+  allowStandaloneShipping: boolean;
+  lightDesc: string;
+  waterDesc: string;
+  fertilizerDesc: string;
+  pruningDesc: string;
+  productImages: string[];
 };
 
 const EMPTY_FORM: ProductForm = {
@@ -85,6 +94,9 @@ const EMPTY_FORM: ProductForm = {
   weightKg: "", stockQuantity: 0, isFeatured: false, featuredSortOrder: 0,
   membershipIntro: "", telegramFlowLink: "", allowStandalonePurchase: true, allowMixedCheckout: true,
   notes: "", coverImageUrl: "", dimensions: {},
+  isSpecial: false, specialPrice: "", allowPresale: false, allowStandaloneShipping: false,
+  lightDesc: "", waterDesc: "", fertilizerDesc: "", pruningDesc: "",
+  productImages: [],
 };
 
 const RAW_STEPS = [
@@ -202,6 +214,15 @@ export default function ProductsV2() {
         notes: p.notes || "",
         coverImageUrl: p.coverImageUrl || "",
         dimensions: p.dimensions || {},
+        isSpecial: p.isSpecial ?? false,
+        specialPrice: p.specialPrice || "",
+        allowPresale: p.allowPresale ?? false,
+        allowStandaloneShipping: p.allowStandaloneShipping ?? false,
+        lightDesc: p.lightDesc || "",
+        waterDesc: p.waterDesc || "",
+        fertilizerDesc: p.fertilizerDesc || "",
+        pruningDesc: p.pruningDesc || "",
+        productImages: (p.images || []).map((img: any) => img.url || img),
       });
       setVariants(p.variants || []);
       hydratedEditingIdRef.current = editingId;
@@ -437,7 +458,7 @@ export default function ProductsV2() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{translate("商品管理", "Product Management")}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{translate("Phase 1 商品核心管理 — Simple/Variant、关键词、三层价格隔离", "Phase 1 Product Core Management — Simple/Variant, Keywords, Three-tier Price Isolation")}</p>
+          <p className="text-sm text-muted-foreground mt-1">{translate("共 {count} 个商品", "{count} products total", { count: String(totalCount) })}</p>
         </div>
         <Button onClick={openCreate}>
           <Plus className="h-4 w-4 mr-2" />
@@ -494,15 +515,16 @@ export default function ProductsV2() {
                 <TableHead>{translate("关键词", "Keyword")}</TableHead>
                 <TableHead>{translate("售价", "Selling Price")}</TableHead>
                 <TableHead>{translate("状态", "Status")}</TableHead>
+                <TableHead>{translate("库存", "Stock")}</TableHead>
                 <TableHead>{translate("推荐", "Featured")}</TableHead>
                 <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
               ) : products.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
               ) : products.map(p => (
                 <TableRow key={p.id}>
                   <TableCell className="font-medium">
@@ -534,7 +556,15 @@ export default function ProductsV2() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {p.isFeatured && <Badge variant="default">{translate("推荐", "Featured")}</Badge>}
+                    {p.type === "physical" ? (
+                      <span className="text-sm">{p.stockQuantity ?? 0}</span>
+                    ) : translate("—", "—")}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {p.isFeatured && <Badge variant="default">{translate("推荐", "Featured")}</Badge>}
+                      {p.isSpecial && <Badge className="bg-orange-100 text-orange-700">{translate("特价", "Special")}</Badge>}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -607,8 +637,10 @@ export default function ProductsV2() {
           <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-2">
             {RAW_STEPS.map((s, i) => (
               <div key={i} className="flex items-center gap-1 shrink-0">
-                <div
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                <button
+                  type="button"
+                  onClick={() => setStep(i)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer hover:opacity-80 ${
                     i === step ? "bg-primary text-primary-foreground" :
                     i < step ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
                   }`}
@@ -617,7 +649,7 @@ export default function ProductsV2() {
                     {i < step ? <Check className="h-3 w-3" /> : i + 1}
                   </span>
                   {translate(s.zh, s.en)}
-                </div>
+                </button>
                 {i < RAW_STEPS.length - 1 && <div className="w-2 h-px bg-border" />}
               </div>
             ))}
@@ -719,14 +751,40 @@ export default function ProductsV2() {
                       </div>
                     </div>
 
-                    <div>
-                      <Label>{translate("简短描述（中文）", "Short Description (Chinese)")}</Label>
-                      <Textarea value={form.shortDescZh} onChange={(e) => setForm({ ...form, shortDescZh: e.target.value })} rows={2} placeholder={translate("一句话描述", "One-sentence description")} />
-                    </div>
-                    <div>
-                      <Label>{translate("简短描述（英文）", "Short Description (English)")}</Label>
-                      <Textarea value={form.shortDescEn} onChange={(e) => setForm({ ...form, shortDescEn: e.target.value })} rows={2} placeholder={translate("Short description", "Short description")} />
-                    </div>
+                    {/* V2: Special, Presale, Standalone Shipping */}
+                    {isPhysical && (
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="flex items-center justify-between rounded-lg border p-3">
+                          <div>
+                            <Label>{translate("特价商品", "Special Price")}</Label>
+                            <p className="text-xs text-muted-foreground">{translate("商城显示特价标记", "Show special price tag in mall")}</p>
+                          </div>
+                          <Switch checked={form.isSpecial} onCheckedChange={(v) => setForm({ ...form, isSpecial: v })} />
+                        </div>
+                        <div className="flex items-center justify-between rounded-lg border p-3">
+                          <div>
+                            <Label>{translate("允许预售", "Allow Presale")}</Label>
+                            <p className="text-xs text-muted-foreground">{translate("库存不足时可预售", "Allow pre-order when out of stock")}</p>
+                          </div>
+                          <Switch checked={form.allowPresale} onCheckedChange={(v) => setForm({ ...form, allowPresale: v })} />
+                        </div>
+                        <div className="flex items-center justify-between rounded-lg border p-3">
+                          <div>
+                            <Label>{translate("单颗邮寄", "Standalone Shipping")}</Label>
+                            <p className="text-xs text-muted-foreground">{translate("单独包裹计算", "Separate package shipping")}</p>
+                          </div>
+                          <Switch checked={form.allowStandaloneShipping} onCheckedChange={(v) => setForm({ ...form, allowStandaloneShipping: v })} />
+                        </div>
+                      </div>
+                    )}
+
+                    {isPhysical && form.isSpecial && (
+                      <div>
+                        <Label>{translate("特价金额 (RM)", "Special Price (RM)")}</Label>
+                        <Input type="number" placeholder="0.00" value={form.specialPrice}
+                          onChange={(e) => setForm({ ...form, specialPrice: e.target.value })} />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -771,27 +829,34 @@ export default function ProductsV2() {
                       )}
                     </div>
                     <div>
-                      <Label>{translate("详细描述（中文）", "Detailed Description (Chinese)")}</Label>
-                      <Textarea value={form.fullDescZh} onChange={(e) => setForm({ ...form, fullDescZh: e.target.value })} rows={4} placeholder={translate("详细商品描述", "Detailed product description")} />
+                      <Label>{translate("详细描述", "Detailed Description")}</Label>
+                      <Textarea value={form.fullDescZh} onChange={(e) => setForm({ ...form, fullDescZh: e.target.value })} rows={4} placeholder={translate("如不填写商城不会显示", "Leave empty to hide in mall")} />
+                      <p className="text-xs text-muted-foreground mt-1">{translate("只需填写中文，英文版商城将自动翻译（商品名不翻译）", "Write in Chinese; English mall will auto-translate (product name excluded)")}</p>
                     </div>
-                    <div>
-                      <Label>{translate("详细描述（英文）", "Detailed Description (English)")}</Label>
-                      <Textarea value={form.fullDescEn} onChange={(e) => setForm({ ...form, fullDescEn: e.target.value })} rows={4} placeholder="Full description" />
-                    </div>
+
+                    {/* Structured care fields */}
                     {isPhysical && (
-                      <>
+                      <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <Label>{translate("养护说明（中文）", "Care Instructions (Chinese)")}</Label>
-                          <Textarea value={form.careZh} onChange={(e) => setForm({ ...form, careZh: e.target.value })} rows={3} placeholder={translate("光照、浇水、施肥等", "Light, watering, fertilising, etc.")} />
+                          <Label>{translate("光线", "Light")}</Label>
+                          <Input value={form.lightDesc} onChange={(e) => setForm({ ...form, lightDesc: e.target.value })} placeholder={translate("如：半阴、散射光", "e.g. Partial shade, indirect light")} />
                         </div>
                         <div>
-                          <Label>{translate("养护说明（英文）", "Care Instructions (English)")}</Label>
-                          <Textarea value={form.careEn} onChange={(e) => setForm({ ...form, careEn: e.target.value })} rows={3} placeholder="Light, watering, fertilizing" />
+                          <Label>{translate("水分", "Water")}</Label>
+                          <Input value={form.waterDesc} onChange={(e) => setForm({ ...form, waterDesc: e.target.value })} placeholder={translate("如：每2-3天浇一次", "e.g. Water every 2-3 days")} />
                         </div>
-                      </>
+                        <div>
+                          <Label>{translate("施肥", "Fertilizer")}</Label>
+                          <Input value={form.fertilizerDesc} onChange={(e) => setForm({ ...form, fertilizerDesc: e.target.value })} placeholder={translate("如：每月施一次缓释肥", "e.g. Slow-release fertilizer monthly")} />
+                        </div>
+                        <div>
+                          <Label>{translate("修剪", "Pruning")}</Label>
+                          <Input value={form.pruningDesc} onChange={(e) => setForm({ ...form, pruningDesc: e.target.value })} placeholder={translate("如：定期修剪枯叶", "e.g. Trim dead leaves regularly")} />
+                        </div>
+                      </div>
                     )}
                     <p className="text-xs text-muted-foreground">
-                      {translate("提示：图片和影片的批量上传功能将在后续版本中支持。当前可通过 URL 设置封面图。", "Note: Bulk image and video uploads will be supported in a later version. You can currently set a cover image using its URL.")}
+                      {translate("提示：以上字段如不填写，商城不会显示对应区域。", "Note: Fields left empty will not be shown in the mall.")}
                     </p>
                   </div>
                 )}
@@ -827,8 +892,8 @@ export default function ProductsV2() {
                       <div>
                         <Label>{translate("当前成本 (RM)", "Current Cost (RM)")}</Label>
                         <Input type="number" placeholder="0.00" value={form.currentCost}
-                          onChange={(e) => setForm({ ...form, currentCost: e.target.value })} disabled={isMembership} />
-                        <p className="text-xs text-muted-foreground mt-1">{translate("FIFO 当前成本，进货时自动更新", "FIFO current cost, updated automatically when goods are purchased")}</p>
+                          readOnly disabled={isMembership} className="bg-muted/50 cursor-not-allowed" />
+                        <p className="text-xs text-muted-foreground mt-1">{translate("由进货管理自动更新（FIFO），此处仅供参考", "Auto-updated from purchase orders (FIFO), read-only reference")}</p>
                       </div>
                     </div>
 
@@ -1241,6 +1306,42 @@ export default function ProductsV2() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            {/* Variant Image */}
+            <div>
+              <Label>{translate("规格图片", "Variant Image")}</Label>
+              <div className="flex items-center gap-3">
+                <Input value={variantForm.imageUrl} onChange={(e) => setVariantForm({ ...variantForm, imageUrl: e.target.value })} placeholder={translate("https://... 或点击上传", "https://... or click to upload")} />
+                <label className="cursor-pointer">
+                  <Button variant="outline" asChild>
+                    <span><Upload className="h-4 w-4 mr-1" />{translate("上传", "Upload")}</span>
+                  </Button>
+                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = async (ev) => {
+                      const base64 = ev.target?.result as string;
+                      try {
+                        const res = await fetch("/api/upload", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ file: base64, filename: file.name }),
+                        });
+                        if (res.ok) {
+                          const data = await res.json();
+                          setVariantForm({ ...variantForm, imageUrl: data.url });
+                          toast.success(translate("图片已上传", "Image uploaded"));
+                        } else { toast.error(translate("上传失败", "Upload failed")); }
+                      } catch { toast.error(translate("上传失败，请重试", "Upload failed, please try again")); }
+                    };
+                    reader.readAsDataURL(file);
+                  }} />
+                </label>
+              </div>
+              {variantForm.imageUrl && (
+                <img src={variantForm.imageUrl} alt="" className="mt-2 h-20 w-20 rounded-lg object-cover border" />
+              )}
             </div>
           </div>
           <DialogFooter>

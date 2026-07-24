@@ -31,6 +31,29 @@ function rethrowPackingShippingError(error: unknown): never {
   throw error;
 }
 
+/**
+ * Auto-notify customer of order status change.
+ * Priority: Facebook Messenger → WhatsApp (fallback).
+ * Records the notification status in the order.
+ */
+async function autoNotifyCustomer(orderId: number, message: string, psid?: string, whatsapp?: string): Promise<{ platform: string; status: string; error?: string }> {
+  // Try Facebook Messenger first
+  if (psid) {
+    try {
+      await sendTextMessage(psid, message);
+      return { platform: "facebook", status: "sent" };
+    } catch (fbErr) {
+      // Fall through to WhatsApp
+    }
+  }
+  // Try WhatsApp as fallback (placeholder — actual WhatsApp API integration needed)
+  if (whatsapp) {
+    // WhatsApp sending would go here
+    return { platform: "whatsapp", status: "pending", error: "WhatsApp API not yet configured" };
+  }
+  return { platform: "none", status: "failed", error: "No contact method available" };
+}
+
 export const appRouter = router({
   system: systemRouter,
 

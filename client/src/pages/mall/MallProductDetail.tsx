@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ShoppingCart, Minus, Plus, ChevronLeft, Package, Truck, Shield } from "lucide-react";
+import { ShoppingCart, Minus, Plus, ChevronLeft, Package, Truck, Shield, Sun, Droplets, Sparkles, Scissors } from "lucide-react";
+import { useI18n } from "@/contexts/I18nContext";
 
 export default function MallProductDetail() {
   const [location] = useLocation();
@@ -17,6 +18,8 @@ export default function MallProductDetail() {
 
   const { data: settings } = trpc.mall.settings.useQuery();
   const { data: product, isLoading } = trpc.mall.productDetail.useQuery({ id: productId });
+  const { lang, translate } = useI18n();
+  const t = (zh: string, en: string) => translate(zh, en);
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
@@ -26,8 +29,8 @@ export default function MallProductDetail() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4">
         <Package className="h-16 w-16 text-muted-foreground" />
-        <p className="text-muted-foreground">商品不存在</p>
-        <Link href="/mall"><Button>返回商城</Button></Link>
+        <p className="text-muted-foreground">{t("商品不存在", "Product not found")}</p>
+        <Link href="/mall"><Button>{t("返回商城", "Back to Mall")}</Button></Link>
       </div>
     );
   }
@@ -41,7 +44,7 @@ export default function MallProductDetail() {
 
   function addToCart() {
     if (variants.length > 0 && !selectedVariantId) {
-      toast.error("请选择规格");
+      toast.error(t("请选择规格", "Please select a variant"));
       return;
     }
     try {
@@ -62,16 +65,16 @@ export default function MallProductDetail() {
         });
       }
       localStorage.setItem("mall_cart", JSON.stringify(cart));
-      toast.success("已加入购物车");
+      toast.success(t("已加入购物车", "Added to cart"));
       window.dispatchEvent(new Event("cart-updated"));
     } catch (e) {
-      toast.error("加入购物车失败");
+      toast.error(t("加入购物车失败", "Failed to add to cart"));
     }
   }
 
   function buyNow() {
     if (variants.length > 0 && !selectedVariantId) {
-      toast.error("请选择规格");
+      toast.error(t("请选择规格", "Please select a variant"));
       return;
     }
     addToCart();
@@ -86,7 +89,7 @@ export default function MallProductDetail() {
           <Link href="/mall"><Button variant="ghost" size="icon"><ChevronLeft className="h-5 w-5" /></Button></Link>
           <Link href="/mall" className="flex items-center gap-2">
             <span className="text-2xl">🌿</span>
-            <span className="font-bold text-lg text-[#2d6a4f]">{settings?.shopName || "心田"}</span>
+            <span className="font-bold text-lg text-[#2d6a4f]">{settings?.shopName || t("心田", "Xintian")}</span>
           </Link>
           <Link href="/mall/cart" className="ml-auto"><Button variant="ghost"><ShoppingCart className="h-5 w-5" /></Button></Link>
         </div>
@@ -118,11 +121,17 @@ export default function MallProductDetail() {
           <div className="space-y-4">
             <div>
               <h1 className="text-xl font-semibold mb-2">{product.name}</h1>
+              {product.isSpecial && (
+                <Badge className="bg-orange-100 text-orange-700 mb-2">{t("特价", "Special Price")}</Badge>
+              )}
               {product.shortDescZh && <p className="text-sm text-muted-foreground">{product.shortDescZh}</p>}
             </div>
 
             <div className="flex items-center gap-3">
               <span className="text-3xl font-bold text-[#2d6a4f]">RM {unitPrice}</span>
+              {product.isSpecial && product.specialPrice && parseFloat(product.specialPrice) > 0 && (
+                <span className="text-lg text-orange-600 font-medium">{t("特价", "Special")}: RM {product.specialPrice}</span>
+              )}
               {product.compareAtPrice && parseFloat(product.compareAtPrice) > 0 && (
                 <span className="text-lg text-muted-foreground line-through">RM {product.compareAtPrice}</span>
               )}
@@ -131,21 +140,29 @@ export default function MallProductDetail() {
             {/* Variants */}
             {variants.length > 0 && (
               <div>
-                <p className="text-sm font-medium mb-2">选择规格</p>
+                <p className="text-sm font-medium mb-2">{t("选择规格", "Select Variant")}</p>
                 <Select value={selectedVariantId?.toString() || ""} onValueChange={(v) => setSelectedVariantId(parseInt(v))}>
-                  <SelectTrigger><SelectValue placeholder="请选择规格" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("请选择规格", "Please select a variant")} /></SelectTrigger>
                   <SelectContent>
                     {variants.map((v: any) => (
-                      <SelectItem key={v.id} value={v.id.toString()}>{v.name} - RM {v.sellingPrice}</SelectItem>
+                      <SelectItem key={v.id} value={v.id.toString()}>
+                        <div className="flex items-center gap-2">
+                          {v.imageUrl && <img src={v.imageUrl} alt="" className="h-6 w-6 rounded object-cover" />}
+                          {v.name} - RM {v.sellingPrice}
+                        </div>
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedVariant?.imageUrl && (
+                  <img src={selectedVariant.imageUrl} alt={selectedVariant.name} className="mt-2 h-24 w-24 rounded-lg border object-cover" />
+                )}
               </div>
             )}
 
             {/* Quantity */}
             <div>
-              <p className="text-sm font-medium mb-2">数量</p>
+              <p className="text-sm font-medium mb-2">{t("数量", "Quantity")}</p>
               <div className="flex items-center gap-3">
                 <Button variant="outline" size="icon" onClick={() => setQuantity(Math.max(1, quantity - 1))}><Minus className="h-4 w-4" /></Button>
                 <Input className="w-20 text-center" value={quantity} onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))} />
@@ -155,42 +172,82 @@ export default function MallProductDetail() {
 
             {/* Actions */}
             <div className="flex gap-3 pt-2">
-              <Button variant="outline" className="flex-1" onClick={addToCart}><ShoppingCart className="h-4 w-4 mr-2" />加入购物车</Button>
-              <Button className="flex-1 bg-[#2d6a4f] hover:bg-[#40916c]" onClick={buyNow}>立即购买</Button>
+              <Button variant="outline" className="flex-1" onClick={addToCart}><ShoppingCart className="h-4 w-4 mr-2" />{t("加入购物车", "Add to Cart")}</Button>
+              <Button className="flex-1 bg-[#2d6a4f] hover:bg-[#40916c]" onClick={buyNow}>{t("立即购买", "Buy Now")}</Button>
             </div>
 
             {/* Trust badges */}
             <div className="flex gap-4 pt-4 border-t">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Truck className="h-4 w-4" />西马满RM150免邮</div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Shield className="h-4 w-4" />7天保留</div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Truck className="h-4 w-4" />{t("西马满RM150免邮", "Free shipping over RM150 (West Malaysia)")}</div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Shield className="h-4 w-4" />{t("7天保留", "7-day reservation")}</div>
             </div>
           </div>
         </div>
 
         {/* Product Description */}
-        {(product.fullDescZh || product.careZh) && (
+        {(product.fullDescZh || product.lightDesc || product.waterDesc || product.fertilizerDesc || product.pruningDesc) && (
           <Card className="mt-6">
             <CardContent className="p-6 space-y-4">
               {product.fullDescZh && (
                 <div>
-                  <h3 className="font-semibold mb-2">商品介绍</h3>
+                  <h3 className="font-semibold mb-2">{t("详细描述", "Detailed Description")}</h3>
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">{product.fullDescZh}</p>
                 </div>
               )}
-              {product.careZh && (
-                <div>
-                  <h3 className="font-semibold mb-2">养护指南</h3>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{product.careZh}</p>
+              {/* Structured care info */}
+              {(product.lightDesc || product.waterDesc || product.fertilizerDesc || product.pruningDesc) && (
+                <div className="grid grid-cols-2 gap-4">
+                  {product.lightDesc && (
+                    <div className="flex items-start gap-2">
+                      <Sun className="h-5 w-5 text-yellow-500 mt-0.5 shrink-0" />
+                      <div><p className="text-xs font-medium text-muted-foreground">{t("光线", "Light")}</p><p className="text-sm">{product.lightDesc}</p></div>
+                    </div>
+                  )}
+                  {product.waterDesc && (
+                    <div className="flex items-start gap-2">
+                      <Droplets className="h-5 w-5 text-blue-500 mt-0.5 shrink-0" />
+                      <div><p className="text-xs font-medium text-muted-foreground">{t("水分", "Water")}</p><p className="text-sm">{product.waterDesc}</p></div>
+                    </div>
+                  )}
+                  {product.fertilizerDesc && (
+                    <div className="flex items-start gap-2">
+                      <Sparkles className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
+                      <div><p className="text-xs font-medium text-muted-foreground">{t("施肥", "Fertilizer")}</p><p className="text-sm">{product.fertilizerDesc}</p></div>
+                    </div>
+                  )}
+                  {product.pruningDesc && (
+                    <div className="flex items-start gap-2">
+                      <Scissors className="h-5 w-5 text-gray-500 mt-0.5 shrink-0" />
+                      <div><p className="text-xs font-medium text-muted-foreground">{t("修剪", "Pruning")}</p><p className="text-sm">{product.pruningDesc}</p></div>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
           </Card>
         )}
 
+        {/* Dimensions (pot size) */}
+        {(() => {
+          const dims = product.dimensions as any;
+          if (!dims || (!dims.diameter && !dims.height)) return null;
+          return (
+            <Card className="mt-4">
+              <CardContent className="p-4">
+                <h3 className="font-semibold mb-2">{t("尺寸信息", "Dimensions")}</h3>
+                <div className="flex gap-4 text-sm text-muted-foreground">
+                  {dims.diameter && <span>{t("口径", "Diameter")}: {dims.diameter}</span>}
+                  {dims.height && <span>{t("高度", "Height")}: {dims.height}</span>}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
+
         {/* Detail Images */}
         {detailImages.length > 0 && (
           <div className="mt-6 space-y-3">
-            <h3 className="font-semibold">商品详情</h3>
+            <h3 className="font-semibold">{t("商品详情", "Product Details")}</h3>
             {detailImages.map((img: any) => (
               <img key={img.id} src={img.imageUrl} alt="detail" className="w-full rounded-lg" />
             ))}
