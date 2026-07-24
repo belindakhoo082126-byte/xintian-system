@@ -577,7 +577,16 @@ function CollapsibleMenuGroup({
                   className="h-9 text-sm"
                 >
                   <button
-                    onClick={() => setLocation(child.path)}
+                    onClick={() => {
+                      if (child.path.includes('?')) {
+                        // wouter's setLocation may not trigger re-render for same path with different query
+                        // Use history API + popstate event to force navigation
+                        window.history.pushState({}, '', child.path);
+                        window.dispatchEvent(new PopStateEvent('popstate'));
+                      } else {
+                        setLocation(child.path);
+                      }
+                    }}
                     className="w-full flex items-center gap-2 h-9 text-sm"
                   >
                     <child.icon className={`h-3.5 w-3.5 ${childActive ? "text-primary" : ""}`} />
