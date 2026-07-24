@@ -705,3 +705,11 @@
 - [x] 特价商品免邮排除：特价商品不计入 RM150 免邮门槛（calculateNormalShippingFee 支持 nonSpecialSubtotal 参数）
 - [x] 特价商品利润计算：原价销量、特价销量、成本、总利润准确计算（getSpecialPriceProductProfit + reports.specialPriceProfit 路由）
 - [x] 编译测试、修复错误、保存检查点并发布
+
+### V2.2: Dashboard 特别订单待跟进模块
+- [x] 后端：getSpecialOrderFollowUpStats 函数（等待补运费、等待退款、物流异常、超24小时未处理）
+- [x] 后端：getSpecialOrderFollowUpList 函数（母订单编号、子订单/包裹编号、客户姓名、特别情况类型、补收/退款金额、等待时间、最后备注、负责人）
+- [x] 后端：tRPC 路由 orders.followUpStats 和 orders.followUpList
+- [x] 前端：Dashboard 4 张统计卡片（等待补运费、等待退款、物流异常、超24小时未处理）
+- [x] 前端：特别订单待跟进列表（超24小时红色警告、查看订单按钮）
+- [x] 编译测试、保存检查点并发布

@@ -1055,12 +1055,21 @@ export const appRouter = router({
         paymentMethodName: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
-        const { id, ...data } = input;
+                const { id, ...data } = input;
         await db.updateOrderStatus(id, data);
         return { success: true };
       }),
+    // V2.2: Special order follow-up stats
+    followUpStats: adminProcedure.query(async () => {
+      return await db.getSpecialOrderFollowUpStats();
+    }),
+    // V2.2: Special order follow-up list
+    followUpList: adminProcedure.input(z.object({
+      limit: z.number().optional(),
+    })).query(async ({ input }) => {
+      return await db.getSpecialOrderFollowUpList(input.limit);
+    }),
   }),
-
   // ===========================================================================
   // Membership Fee Reviews
   // ===========================================================================
@@ -3544,10 +3553,9 @@ export const appRouter = router({
     subOrders: protectedProcedure.input(z.object({
       parentOrderId: z.number(),
     })).query(async ({ input }) => {
-      return await db.getSubOrders(input.parentOrderId);
+            return await db.getSubOrders(input.parentOrderId);
     }),
   }),
-
   // ===========================================================================
   // V2.0: Live Rooms (直播房间)
   // ===========================================================================

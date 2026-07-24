@@ -6,7 +6,7 @@ import {
   ShoppingCart, Warehouse, Calendar, Bell,
   ShoppingBag, CheckCircle, XCircle, Ban,
   MessageSquare, Bot, ArrowRight, AlertTriangle,
-  Plane,
+  Plane, Eye, Timer,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useI18n } from "@/contexts/I18nContext";
@@ -20,6 +20,8 @@ const REMARK_TYPE_LABELS: Record<string, { zh: string; en: string; color: string
 export default function Dashboard() {
   const { t, lang } = useI18n();
   const { data: stats, isLoading } = trpc.dashboardV11.stats.useQuery();
+  const { data: followUpStats } = trpc.orders.followUpStats.useQuery();
+  const { data: followUpList } = trpc.orders.followUpList.useQuery({ limit: 50 });
 
   if (isLoading) {
     return (
@@ -160,6 +162,106 @@ export default function Dashboard() {
           </Card>
         </Link>
       </div>
+      {/* V2.2: Special Order Follow-up Stats — always show */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Card className="border-orange-200 bg-orange-50 dark:bg-orange-950/20">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{lang === "zh" ? "等待补运费" : "Pending Shipping"}</CardTitle>
+            <DollarSign className="h-5 w-5 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-orange-600">{(followUpStats as any)?.pendingShippingCount ?? 0}</div>
+          </CardContent>
+        </Card>
+        <Card className="border-red-200 bg-red-50 dark:bg-red-950/20">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{lang === "zh" ? "等待退款" : "Pending Refund"}</CardTitle>
+            <DollarSign className="h-5 w-5 text-red-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-red-600">{(followUpStats as any)?.pendingRefundCount ?? 0}</div>
+          </CardContent>
+        </Card>
+        <Card className="border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{lang === "zh" ? "物流异常" : "Logistics Error"}</CardTitle>
+            <Truck className="h-5 w-5 text-yellow-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-yellow-600">{(followUpStats as any)?.logisticsErrorCount ?? 0}</div>
+          </CardContent>
+        </Card>
+        <Card className={`${(followUpStats as any)?.overdueCount > 0 ? 'border-red-400 bg-red-100 dark:bg-red-950/30' : 'border-gray-200 bg-gray-50 dark:bg-gray-950/20'}`}>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{lang === "zh" ? "超24小时未处理" : "Overdue >24h"}</CardTitle>
+            <Timer className="h-5 w-5 text-red-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-red-600">{(followUpStats as any)?.overdueCount ?? 0}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* V2.2: Special Order Follow-up List — always show frame */}
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          <AlertTriangle className="h-5 w-5 text-orange-500" />
+          <CardTitle className="text-base">{lang === "zh" ? "特别订单待跟进" : "Special Order Follow-up"}</CardTitle>
+          {(followUpList as any)?.length > 0 && (
+            <Badge variant="secondary" className="ml-auto">{(followUpList as any).length}</Badge>
+          )}
+        </CardHeader>
+        <CardContent>
+          {(!followUpList || (followUpList as any).length === 0) ? (
+            <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无待跟进特别订单" : "No pending special orders"}</p>
+          ) : (
+            <div className="space-y-2">
+              {(followUpList as any).map((item: any) => (
+                <Link key={item.orderId} href={`/orders/${item.orderId}`}>
+                  <div className={`flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer ${item.isOverdue ? 'border border-red-300 bg-red-50 dark:bg-red-950/20' : 'border border-transparent'}`}>
+                    <div className="flex-1 min-w-0 grid grid-cols-2 sm:grid-cols-4 gap-2 items-center">
+                      <div>
+                        <p className="text-sm font-medium truncate">{item.orderNumber}</p>
+                        {item.subOrders?.length > 0 && (
+                          <p className="text-xs text-muted-foreground">{item.subOrders.map((s: any) => s.subOrderNumber).join(', ')}</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm truncate">{item.customerName}</p>
+                        <p className="text-xs text-muted-foreground">{item.customerPhone || (lang === "zh" ? "无电话" : "No phone")}</p>
+                      </div>
+                      <div>
+                        <Badge className={`shrink-0 ${
+                          item.specialTypeColor === 'orange' ? 'bg-orange-100 text-orange-700' :
+                          item.specialTypeColor === 'red' ? 'bg-red-100 text-red-700' :
+                          item.specialTypeColor === 'yellow' ? 'bg-yellow-100 text-yellow-700' :
+                          item.specialTypeColor === 'blue' ? 'bg-blue-100 text-blue-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`} variant="secondary">
+                          {item.specialTypeLabel}
+                        </Badge>
+                        {Number(item.amount) > 0 && (
+                          <span className="text-xs ml-1 font-medium">RM {item.amount}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs ${item.isOverdue ? 'text-red-600 font-bold' : 'text-muted-foreground'}`}>
+                          {item.isOverdue ? (lang === "zh" ? `超时 ${item.waitHours}h` : `Overdue ${item.waitHours}h`) : `${item.waitHours}h`}
+                        </span>
+                        {item.lastRemark && (
+                          <span className="text-xs text-muted-foreground truncate hidden sm:inline">· {item.lastRemark}</span>
+                        )}
+                        <Eye className="h-4 w-4 text-muted-foreground shrink-0" />
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Row 1: Today's Tasks */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {row1.map((card, i) => (
