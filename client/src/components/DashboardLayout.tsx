@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings, Ship, Warehouse, CreditCard, Store, PackageCheck, Search } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings, Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle, ClipboardList } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -47,6 +47,9 @@ const menuItems = [
   { icon: ShoppingBag, label: { zh: "商品销售", en: "Product Sales" }, path: "/reports/product-sales" },
   { icon: Users, label: { zh: "客户消费", en: "Customer Spending" }, path: "/reports/customer-spending" },
   { icon: Boxes, label: { zh: "进货与库存", en: "Purchase & Inventory" }, path: "/reports/purchase-inventory" },
+  { icon: TrendingUp, label: { zh: "利润分析报告", en: "Profit Analysis" }, path: "/reports/profit-analysis" },
+  { icon: AlertTriangle, label: { zh: "损耗分析报告", en: "Loss Analysis" }, path: "/reports/loss-analysis" },
+  { icon: ClipboardList, label: { zh: "库存日志", en: "Inventory Log" }, path: "/inventory-log" },
   { icon: Facebook, label: "nav.facebookSettings", path: "/facebook-settings" },
   { icon: Ship, label: { zh: "运费规则", en: "Shipping Rules" }, path: "/shipping-rules" },
   { icon: Warehouse, label: "nav.logistics", path: "/logistics" },

@@ -38,6 +38,9 @@ import MallPayment from "@/pages/mall/MallPayment";
 import Packing from "@/pages/Packing";
 import PackingDetail from "@/pages/PackingDetail";
 import CustomerOrderTracking from "@/pages/CustomerOrderTracking";
+import ProfitAnalysisReport from "@/pages/ProfitAnalysisReport";
+import LossAnalysisReport from "@/pages/LossAnalysisReport";
+import InventoryLog from "@/pages/InventoryLog";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -75,7 +78,10 @@ function DashboardRoutes() {
       <Route path={"/reports/sales-payment"} component={SalesPaymentReport} />
       <Route path={"/reports/product-sales"} component={ProductSalesReport} />
       <Route path={"/reports/customer-spending"} component={CustomerSpendingReport} />
-      <Route path={"/reports/purchase-inventory"} component={PurchaseInventoryReport} />
+      <Route path="/reports/purchase-inventory" component={PurchaseInventoryReport} />
+      <Route path="/reports/profit-analysis" component={ProfitAnalysisReport} />
+      <Route path="/reports/loss-analysis" component={LossAnalysisReport} />
+      <Route path="/inventory-log" component={InventoryLog} />
       <Route path={"/facebook-settings"} component={FacebookSettings} />
       <Route path={"/system-settings"} component={SystemSettings} />
       <Route path={"/shipping-rules"} component={ShippingRules} />

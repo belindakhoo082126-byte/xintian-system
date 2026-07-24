@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare, RefreshCw } from "lucide-react";
+import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare, RefreshCw, AlertTriangle } from "lucide-react";
 
 const COURIERS = [
   { zh: "Parcel Daily", en: "Parcel Daily" },
@@ -39,6 +39,13 @@ export default function PackingDetail() {
   const { data: repots } = trpc.repots.list.useQuery({ orderId });
 
   const [shippingMode, setShippingMode] = useState<"full" | "partial">("full");
+  const [exceptionDialogOpen, setExceptionDialogOpen] = useState(false);
+  const [exceptionType, setExceptionType] = useState<"out_of_stock" | "quality_issue" | "overcharged_shipping" | "other">("quality_issue");
+  const [exceptionDesc, setExceptionDesc] = useState("");
+  const [resolutionType, setResolutionType] = useState<"replace" | "wait_restock" | "refund">("replace");
+  const [exceptionItemId, setExceptionItemId] = useState<number | "">("");
+  const [replacementProductId, setReplacementProductId] = useState<number | "">("");
+  const [replacementQty, setReplacementQty] = useState(1);
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
   const [packages, setPackages] = useState<Array<{
     courier: string;
@@ -67,6 +74,30 @@ export default function PackingDetail() {
     },
     onError: (err) => toast.error(translate(`Parcel King 发货失败: ${err.message}`, `Parcel King Shipping Failed: ${err.message}`)),
   });
+
+  const createExceptionMutation = trpc.orderException.create.useMutation({
+    onSuccess: () => {
+      toast.success(translate("异常已记录", "Exception recorded"));
+      setExceptionDialogOpen(false);
+      setExceptionDesc("");
+    },
+    onError: (err) => toast.error(translate("创建异常失败: ", "Failed to create exception: ") + err.message),
+  });
+
+  const resolveExceptionMutation = trpc.orderException.resolve.useMutation({
+    onSuccess: () => {
+      toast.success(translate("异常已处理", "Exception resolved"));
+      setExceptionDialogOpen(false);
+      setExceptionDesc("");
+      setExceptionItemId("");
+      setReplacementProductId("");
+      setReplacementQty(1);
+      utils.packing.detail.invalidate({ orderId });
+    },
+    onError: (err) => toast.error(translate("处理异常失败: ", "Failed to resolve exception: ") + err.message),
+  });
+
+  const { data: exceptions } = trpc.orderException.list.useQuery({ orderId }, { enabled: !!detail });
 
   const redownloadLabelMutation = trpc.shipping.redownloadLabel.useMutation({
     onSuccess: (data: any) => {
@@ -341,6 +372,155 @@ export default function PackingDetail() {
                 </div>
               </div>
             ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Exception Handling - only show for packing/partial_shipped status */}
+      {canShip && (
+        <Card className="print-hide border-orange-200">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-orange-500" />
+              {translate("异常处理", "Exception Handling")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Existing exceptions */}
+            {exceptions && (exceptions as any[]).length > 0 && (
+              <div className="space-y-2">
+                {(exceptions as any[]).map((exc: any) => (
+                  <div key={exc.id} className="flex items-center justify-between border rounded-lg p-3 bg-orange-50 dark:bg-orange-950/20">
+                    <div className="text-sm">
+                      <Badge variant={exc.status === "resolved" ? "secondary" : "destructive"} className="mr-2">
+                        {exc.status === "resolved" ? translate("已处理", "Resolved") : translate("待处理", "Open")}
+                      </Badge>
+                      {exc.exceptionType === "out_of_stock" ? translate("商品缺货", "Out of Stock") :
+                       exc.exceptionType === "quality_issue" ? translate("植物品质异常", "Quality Issue") :
+                       exc.exceptionType === "overcharged_shipping" ? translate("运费多收", "Overcharged Shipping") :
+                       translate("其他异常", "Other")}
+                      {exc.description && <span className="text-muted-foreground ml-2">— {exc.description}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Dialog open={exceptionDialogOpen} onOpenChange={setExceptionDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="border-orange-300 text-orange-600">
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  {translate("新增异常处理", "New Exception")}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>{translate("异常处理", "Exception Handling")}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  {/* Step 1: Exception Type */}
+                  <div className="space-y-2">
+                    <Label>{translate("异常类型", "Exception Type")}</Label>
+                    <Select value={exceptionType} onValueChange={(v: any) => setExceptionType(v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="out_of_stock">{translate("商品缺货", "Out of Stock")}</SelectItem>
+                        <SelectItem value="quality_issue">{translate("植物品质异常", "Quality Issue")}</SelectItem>
+                        <SelectItem value="overcharged_shipping">{translate("运费多收", "Overcharged Shipping")}</SelectItem>
+                        <SelectItem value="other">{translate("其他异常", "Other")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Step 2: Select affected item */}
+                  <div className="space-y-2">
+                    <Label>{translate("涉及商品", "Affected Item")}</Label>
+                    <Select value={String(exceptionItemId)} onValueChange={(v) => setExceptionItemId(Number(v))}>
+                      <SelectTrigger><SelectValue placeholder={translate("选择商品", "Select item")} /></SelectTrigger>
+                      <SelectContent>
+                        {(d.items as any[]).map((item: any) => (
+                          <SelectItem key={item.id} value={String(item.id)}>
+                            {item.productName} {item.variationName && `(${item.variationName})`} ×{item.quantity}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Step 3: Description */}
+                  <div className="space-y-2">
+                    <Label>{translate("异常描述", "Description")}</Label>
+                    <Input
+                      value={exceptionDesc}
+                      onChange={(e) => setExceptionDesc(e.target.value)}
+                      placeholder={translate("描述异常情况...", "Describe the issue...")}
+                    />
+                  </div>
+
+                  {/* Step 4: Resolution (for quality_issue) */}
+                  {exceptionType === "quality_issue" && (
+                    <div className="space-y-2">
+                      <Label>{translate("客户处理方式", "Customer Resolution")}</Label>
+                      <Select value={resolutionType} onValueChange={(v: any) => setResolutionType(v)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="replace">{translate("更换商品", "Replace Product")}</SelectItem>
+                          <SelectItem value="wait_restock">{translate("等待补货", "Wait for Restock")}</SelectItem>
+                          <SelectItem value="refund">{translate("退款", "Refund")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="outline" onClick={() => setExceptionDialogOpen(false)}>
+                      {translate("取消", "Cancel")}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        if (exceptionType === "quality_issue" && resolutionType !== "wait_restock") {
+                          // For replace/refund, create + resolve in one step
+                          createExceptionMutation.mutate({
+                            orderId,
+                            orderItemId: exceptionItemId || undefined,
+                            exceptionType,
+                            description: exceptionDesc,
+                          }, {
+                            onSuccess: (created: any) => {
+                              resolveExceptionMutation.mutate({
+                                exceptionId: created.id,
+                                resolutionType,
+                                orderId,
+                                scrapItems: exceptionItemId ? (d.items as any[])
+                                  .filter((it: any) => it.id === exceptionItemId)
+                                  .map((it: any) => ({
+                                    orderItemId: it.id,
+                                    productId: it.productId,
+                                    productName: it.productName,
+                                    quantity: it.quantity,
+                                    unitCost: Number(it.unitPrice) || 0,
+                                  })) : [],
+                              });
+                            },
+                          });
+                        } else {
+                          createExceptionMutation.mutate({
+                            orderId,
+                            orderItemId: exceptionItemId || undefined,
+                            exceptionType,
+                            description: exceptionDesc,
+                          });
+                        }
+                      }}
+                      disabled={createExceptionMutation.isPending || resolveExceptionMutation.isPending}
+                    >
+                      {translate("确认", "Confirm")}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </CardContent>
         </Card>
       )}

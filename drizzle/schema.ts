@@ -1140,3 +1140,124 @@ export const orderRemarks = mysqlTable("order_remarks", {
 });
 export type OrderRemark = typeof orderRemarks.$inferSelect;
 export type InsertOrderRemark = typeof orderRemarks.$inferInsert;
+
+// ============================================================================
+// V1.2: Order Exceptions (订单异常处理 - 待发货阶段)
+// ============================================================================
+export const orderExceptions = mysqlTable("order_exceptions", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  orderItemId: int("orderItemId"), // specific item if applicable
+  // Exception type
+  exceptionType: mysqlEnum("exceptionType", [
+    "out_of_stock",       // 商品缺货
+    "quality_issue",      // 植物品质异常
+    "overcharged_shipping", // 运费多收
+    "other",              // 其他异常
+  ]).notNull(),
+  // Customer resolution preference (for quality_issue)
+  resolutionType: mysqlEnum("resolutionType", [
+    "replace",    // 更换商品
+    "wait_restock", // 等待补货
+    "refund",     // 退款
+    "pending",    // 待选择
+  ]).default("pending"),
+  // Status of the exception handling
+  status: mysqlEnum("status", [
+    "open",       // 异常已记录，待处理
+    "resolved",   // 已解决（更换/补货/退款完成）
+    "cancelled",  // 已取消
+  ]).default("open").notNull(),
+  // Scrap cost (cost of the discarded plant)
+  scrapCost: decimal("scrapCost", { precision: 10, scale: 2 }).default("0"),
+  // Refund amount (if refund)
+  refundAmount: decimal("refundAmount", { precision: 10, scale: 2 }).default("0"),
+  // Description of the quality issue
+  description: text("description"),
+  // Who created this exception
+  createdBy: varchar("createdBy", { length: 255 }),
+  // Who resolved it
+  resolvedBy: varchar("resolvedBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  resolvedAt: timestamp("resolvedAt"),
+});
+export type OrderException = typeof orderExceptions.$inferSelect;
+export type InsertOrderException = typeof orderExceptions.$inferInsert;
+
+// ============================================================================
+// V1.2: Order Exception Items (异常涉及的商品明细)
+// ============================================================================
+export const orderExceptionItems = mysqlTable("order_exception_items", {
+  id: int("id").autoincrement().primaryKey(),
+  exceptionId: int("exceptionId").notNull(),
+  orderItemId: int("orderItemId").notNull(),
+  productId: int("productId").notNull(),
+  productName: varchar("productName", { length: 255 }).notNull(),
+  quantity: int("quantity").notNull(),
+  // Cost per unit at time of scrap
+  unitCost: decimal("unitCost", { precision: 10, scale: 2 }).default("0"),
+  totalScrapCost: decimal("totalScrapCost", { precision: 10, scale: 2 }).default("0"),
+  // Whether this item was scrapped (品质报废)
+  isScrapped: boolean("isScrapped").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type OrderExceptionItem = typeof orderExceptionItems.$inferSelect;
+export type InsertOrderExceptionItem = typeof orderExceptionItems.$inferInsert;
+
+// ============================================================================
+// V1.2: Order Exception Replacements (更换商品记录)
+// ============================================================================
+export const orderExceptionReplacements = mysqlTable("order_exception_replacements", {
+  id: int("id").autoincrement().primaryKey(),
+  exceptionId: int("exceptionId").notNull(),
+  // Original item being replaced
+  originalOrderItemId: int("originalOrderItemId").notNull(),
+  originalProductId: int("originalProductId").notNull(),
+  originalProductName: varchar("originalProductName", { length: 255 }).notNull(),
+  originalQuantity: int("originalQuantity").notNull(),
+  // New replacement item
+  newProductId: int("newProductId").notNull(),
+  newProductName: varchar("newProductName", { length: 255 }).notNull(),
+  newQuantity: int("newQuantity").notNull(),
+  newUnitPrice: decimal("newUnitPrice", { precision: 10, scale: 2 }).notNull(),
+  newSubtotal: decimal("newSubtotal", { precision: 10, scale: 2 }).notNull(),
+  // New order item created for the replacement
+  newOrderItemId: int("newOrderItemId"),
+  createdBy: varchar("createdBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type OrderExceptionReplacement = typeof orderExceptionReplacements.$inferSelect;
+export type InsertOrderExceptionReplacement = typeof orderExceptionReplacements.$inferInsert;
+
+// ============================================================================
+// V1.2: Inventory Adjustments (库存手动扣减日志)
+// ============================================================================
+export const inventoryAdjustments = mysqlTable("inventory_adjustments", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  // Adjustment type
+  adjustmentType: mysqlEnum("adjustmentType", [
+    "quality_issue",    // 植物品质异常
+    "plant_death",      // 植物死亡
+    "pest_disease",     // 病虫害
+    "human_damage",     // 人为损坏
+    "lost",             // 遗失
+    "other",            // 其他
+  ]).notNull(),
+  // Quantity adjusted (negative for stock reduction)
+  quantityChange: int("quantityChange").notNull(),
+  // Cost impact
+  unitCost: decimal("unitCost", { precision: 10, scale: 2 }).default("0"),
+  totalCost: decimal("totalCost", { precision: 10, scale: 2 }).default("0"),
+  // Related exception (if triggered from order exception)
+  orderExceptionId: int("orderExceptionId"),
+  // Who made the adjustment
+  adjustedBy: varchar("adjustedBy", { length: 255 }),
+  // Reason note
+  reason: text("reason"),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type InventoryAdjustment = typeof inventoryAdjustments.$inferSelect;
+export type InsertInventoryAdjustment = typeof inventoryAdjustments.$inferInsert;

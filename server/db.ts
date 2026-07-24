@@ -19,6 +19,8 @@ import {
   packages, packageItems, liveOrderCaptures,
   // V1.1 imports
   orderItemRepots, orderRemarks,
+  // V1.2 imports
+  orderExceptions, orderExceptionItems, orderExceptionReplacements, inventoryAdjustments,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -4316,4 +4318,349 @@ export async function updateUserLanguage(openId: string, language: string) {
   await db.update(users)
     .set({ preferredLanguage: language as 'zh' | 'en' })
     .where(eq(users.openId, openId));
+}
+
+// ============================================================================
+// V1.2: Order Exception Helpers (订单异常处理)
+// ============================================================================
+
+export async function getOrderExceptions(orderId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.orderId, orderId));
+  return rows;
+}
+
+export async function createOrderException(data: {
+  orderId: number;
+  orderItemId?: number | null;
+  exceptionType: 'out_of_stock' | 'quality_issue' | 'overcharged_shipping' | 'other';
+  description?: string;
+  createdBy?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(orderExceptions).values({
+    orderId: data.orderId,
+    orderItemId: data.orderItemId ?? null,
+    exceptionType: data.exceptionType,
+    description: data.description ?? null,
+    createdBy: data.createdBy ?? null,
+  });
+  const id = (result as any).insertId;
+  const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, Number(id))).limit(1);
+  return rows[0];
+}
+
+export async function resolveOrderException(
+  exceptionId: number,
+  resolutionType: 'replace' | 'wait_restock' | 'refund',
+  resolvedBy: string,
+  scrapCost?: number,
+  refundAmount?: number,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(orderExceptions).set({
+    resolutionType,
+    status: 'resolved',
+    resolvedBy,
+    resolvedAt: new Date(),
+    scrapCost: (scrapCost ?? 0).toString(),
+    refundAmount: (refundAmount ?? 0).toString(),
+  }).where(eq(orderExceptions.id, exceptionId));
+  const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1);
+  return rows[0];
+}
+
+export async function createOrderExceptionItem(data: {
+  exceptionId: number;
+  orderItemId: number;
+  productId: number;
+  productName: string;
+  quantity: number;
+  unitCost?: number;
+  totalScrapCost?: number;
+  isScrapped?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(orderExceptionItems).values({
+    exceptionId: data.exceptionId,
+    orderItemId: data.orderItemId,
+    productId: data.productId,
+    productName: data.productName,
+    quantity: data.quantity,
+    unitCost: (data.unitCost ?? 0).toString(),
+    totalScrapCost: (data.totalScrapCost ?? 0).toString(),
+    isScrapped: data.isScrapped ?? false,
+  });
+  const id = (result as any).insertId;
+  const rows = await db.select().from(orderExceptionItems).where(eq(orderExceptionItems.id, Number(id))).limit(1);
+  return rows[0];
+}
+
+export async function createOrderExceptionReplacement(data: {
+  exceptionId: number;
+  originalOrderItemId: number;
+  originalProductId: number;
+  originalProductName: string;
+  originalQuantity: number;
+  newProductId: number;
+  newProductName: string;
+  newQuantity: number;
+  newUnitPrice: number;
+  newSubtotal: number;
+  newOrderItemId?: number;
+  createdBy?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(orderExceptionReplacements).values({
+    exceptionId: data.exceptionId,
+    originalOrderItemId: data.originalOrderItemId,
+    originalProductId: data.originalProductId,
+    originalProductName: data.originalProductName,
+    originalQuantity: data.originalQuantity,
+    newProductId: data.newProductId,
+    newProductName: data.newProductName,
+    newQuantity: data.newQuantity,
+    newUnitPrice: data.newUnitPrice.toString(),
+    newSubtotal: data.newSubtotal.toString(),
+    newOrderItemId: data.newOrderItemId ?? null,
+    createdBy: data.createdBy ?? null,
+  });
+  const id = (result as any).insertId;
+  const rows = await db.select().from(orderExceptionReplacements).where(eq(orderExceptionReplacements.id, Number(id))).limit(1);
+  return rows[0];
+}
+
+export async function getOrderExceptionReplacements(exceptionId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(orderExceptionReplacements).where(eq(orderExceptionReplacements.exceptionId, exceptionId));
+}
+
+// ============================================================================
+// V1.2: Inventory Adjustment Helpers (库存手动扣减)
+// ============================================================================
+
+export async function getInventoryAdjustments(filters?: { productId?: number; adjustmentType?: string; dateFrom?: Date; dateTo?: Date }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (filters?.productId) conditions.push(eq(inventoryAdjustments.productId, filters.productId));
+  if (filters?.adjustmentType) conditions.push(eq(inventoryAdjustments.adjustmentType, filters.adjustmentType as any));
+  if (conditions.length > 0) {
+    return await db.select().from(inventoryAdjustments).where(and(...conditions));
+  }
+  return await db.select().from(inventoryAdjustments);
+}
+
+export async function createInventoryAdjustment(data: {
+  productId: number;
+  adjustmentType: 'quality_issue' | 'plant_death' | 'pest_disease' | 'human_damage' | 'lost' | 'other';
+  quantityChange: number;
+  unitCost?: number;
+  totalCost?: number;
+  orderExceptionId?: number;
+  adjustedBy?: string;
+  reason?: string;
+  remark?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // 1. Create the adjustment log
+  const result = await db.insert(inventoryAdjustments).values({
+    productId: data.productId,
+    adjustmentType: data.adjustmentType,
+    quantityChange: data.quantityChange,
+    unitCost: (data.unitCost ?? 0).toString(),
+    totalCost: (data.totalCost ?? 0).toString(),
+    orderExceptionId: data.orderExceptionId ?? null,
+    adjustedBy: data.adjustedBy ?? null,
+    reason: data.reason ?? null,
+    remark: data.remark ?? null,
+  });
+  const id = (result as any).insertId;
+
+  // 2. Update product stock
+  const productRows = await db.select().from(products).where(eq(products.id, data.productId)).limit(1);
+  if (productRows[0]) {
+    const currentStock = Number(productRows[0].stockQuantity ?? 0);
+    const newStock = currentStock + data.quantityChange; // quantityChange is negative for reductions
+    await db.update(products).set({ stockQuantity: newStock }).where(eq(products.id, data.productId));
+  }
+
+  const rows = await db.select().from(inventoryAdjustments).where(eq(inventoryAdjustments.id, Number(id))).limit(1);
+  return rows[0];
+}
+
+// ============================================================================
+// V1.2: Profit Analysis Report (利润分析报告)
+// ============================================================================
+
+export async function getProfitAnalysisReport(dateRange: { start: Date; end: Date }) {
+  const db = await getDb();
+  if (!db) return null;
+  const startMs = dateRange.start.getTime();
+  const endMs = dateRange.end.getTime();
+
+  // Sales revenue
+  const [revenueRows] = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(o.physical_subtotal), 0) as sales_revenue,
+      COALESCE(SUM(o.shipping_fee), 0) as shipping_income
+    FROM orders o
+    WHERE o.created_at >= ${startMs} AND o.created_at <= ${endMs}
+      AND o.physical_status != 'cancelled'
+      AND o.order_type != 'membership'
+  `);
+
+  // FIFO cost
+  const [fifoRows] = await db.execute(sql`
+    SELECT COALESCE(SUM(ABS(quantity_change) * unit_cost), 0) as product_cost
+    FROM inventory_ledger
+    WHERE transaction_type = 'sale'
+      AND created_at >= ${startMs} AND created_at <= ${endMs}
+  `);
+
+  // Shipping cost (from shipments)
+  const [shippingCostRows] = await db.execute(sql`
+    SELECT COALESCE(SUM(shipping_cost), 0) as shipping_cost
+    FROM shipments
+    WHERE created_at >= ${startMs} AND created_at <= ${endMs}
+  `);
+
+  // Scrap cost (from order_exceptions)
+  const [scrapRows] = await db.execute(sql`
+    SELECT COALESCE(SUM(scrap_cost), 0) as scrap_cost
+    FROM order_exceptions
+    WHERE status = 'resolved'
+      AND created_at >= ${startMs} AND created_at <= ${endMs}
+  `);
+
+  // Refund loss (from customer_refunds)
+  const [refundRows] = await db.execute(sql`
+    SELECT COALESCE(SUM(amount), 0) as refund_loss
+    FROM customer_refunds
+    WHERE refund_date >= ${startMs} AND refund_date <= ${endMs}
+  `);
+
+  const rev = (revenueRows as unknown as any[])[0] ?? {};
+  const fifo = (fifoRows as unknown as any[])[0] ?? {};
+  const ship = (shippingCostRows as unknown as any[])[0] ?? {};
+  const scrap = (scrapRows as unknown as any[])[0] ?? {};
+  const refund = (refundRows as unknown as any[])[0] ?? {};
+
+  const salesRevenue = Number(rev.sales_revenue) || 0;
+  const shippingIncome = Number(rev.shipping_income) || 0;
+  const productCost = Number(fifo.product_cost) || 0;
+  const shippingCost = Number(ship.shipping_cost) || 0;
+  const shippingDiff = shippingIncome - shippingCost;
+  const scrapLoss = Number(scrap.scrap_cost) || 0;
+  const refundLoss = Number(refund.refund_loss) || 0;
+  const actualGrossProfit = salesRevenue - productCost + shippingDiff - scrapLoss - refundLoss;
+  const grossMargin = salesRevenue > 0 ? (actualGrossProfit / salesRevenue) * 100 : 0;
+
+  return {
+    salesRevenue,
+    productCost,
+    shippingIncome,
+    shippingCost,
+    shippingDiff,
+    scrapLoss,
+    refundLoss,
+    actualGrossProfit,
+    grossMargin: Math.round(grossMargin * 100) / 100,
+  };
+}
+
+// ============================================================================
+// V1.2: Loss Analysis Report (损耗分析报告)
+// ============================================================================
+
+export async function getLossAnalysisReport(dateRange: { start: Date; end: Date }) {
+  const db = await getDb();
+  if (!db) return null;
+  const startMs = dateRange.start.getTime();
+  const endMs = dateRange.end.getTime();
+
+  // Summary by adjustment type
+  const [typeRows] = await db.execute(sql`
+    SELECT
+      adjustment_type,
+      COALESCE(SUM(ABS(quantity_change)), 0) as total_units,
+      COALESCE(SUM(total_cost), 0) as total_cost
+    FROM inventory_adjustments
+    WHERE created_at >= ${startMs} AND created_at <= ${endMs}
+    GROUP BY adjustment_type
+  `);
+
+  // Product loss ranking
+  const [productRows] = await db.execute(sql`
+    SELECT
+      ia.product_id,
+      p.name as product_name,
+      COALESCE(SUM(ABS(ia.quantity_change)), 0) as loss_units,
+      COALESCE(SUM(ia.total_cost), 0) as loss_cost
+    FROM inventory_adjustments ia
+    LEFT JOIN products p ON ia.product_id = p.id
+    WHERE ia.created_at >= ${startMs} AND ia.created_at <= ${endMs}
+    GROUP BY ia.product_id, p.name
+    ORDER BY loss_cost DESC
+    LIMIT 20
+  `);
+
+  // Category loss ranking
+  const [categoryRows] = await db.execute(sql`
+    SELECT
+      c.name_zh as category_name,
+      COALESCE(SUM(ABS(ia.quantity_change)), 0) as loss_units,
+      COALESCE(SUM(ia.total_cost), 0) as loss_cost
+    FROM inventory_adjustments ia
+    LEFT JOIN products p ON ia.product_id = p.id
+    LEFT JOIN categories c ON p.category_id = c.id
+    WHERE ia.created_at >= ${startMs} AND ia.created_at <= ${endMs}
+    GROUP BY c.id, c.name_zh
+    ORDER BY loss_cost DESC
+    LIMIT 20
+  `);
+
+  // Total stock for loss rate calculation
+  const [stockRows] = await db.execute(sql`
+    SELECT COALESCE(SUM(stock_quantity), 0) as total_stock
+    FROM products
+    WHERE type = 'physical' AND status = 'active'
+  `);
+
+  const types = (typeRows as unknown as any[]).map((r: any) => ({
+    adjustmentType: r.adjustment_type,
+    lossUnits: Number(r.total_units) || 0,
+    lossCost: Number(r.total_cost) || 0,
+  }));
+
+  const totalLossUnits = types.reduce((sum, t) => sum + t.lossUnits, 0);
+  const totalLossCost = types.reduce((sum, t) => sum + t.lossCost, 0);
+  const totalStock = Number((stockRows as unknown as any[])[0]?.total_stock) || 0;
+  const lossRate = totalStock > 0 ? (totalLossUnits / totalStock) * 100 : 0;
+
+  return {
+    summary: types,
+    totalLossUnits,
+    totalLossCost,
+    lossRate: Math.round(lossRate * 100) / 100,
+    productRanking: (productRows as unknown as any[]).map((r: any) => ({
+      productId: r.product_id,
+      productName: r.product_name,
+      lossUnits: Number(r.loss_units) || 0,
+      lossCost: Number(r.loss_cost) || 0,
+    })),
+    categoryRanking: (categoryRows as unknown as any[]).map((r: any) => ({
+      categoryName: r.category_name,
+      lossUnits: Number(r.loss_units) || 0,
+      lossCost: Number(r.loss_cost) || 0,
+    })),
+  };
 }

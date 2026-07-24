@@ -3103,7 +3103,7 @@ export const appRouter = router({
     }),
   }),
 
-  // ===========================================================================
+    // ===========================================================================
   // Dashboard (original)
   // ===========================================================================
   dashboard: router({
@@ -3111,6 +3111,207 @@ export const appRouter = router({
       return await db.getDashboardStats();
     }),
   }),
-});
 
+  // ===========================================================================
+  // V1.2: Order Exceptions (订单异常处理)
+  // ===========================================================================
+  orderException: router({
+    // List exceptions for an order
+    list: protectedProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+      return await db.getOrderExceptions(input.orderId);
+    }),
+
+    // Create a new exception
+    create: protectedProcedure.input(z.object({
+      orderId: z.number(),
+      orderItemId: z.number().nullable().optional(),
+      exceptionType: z.enum(["out_of_stock", "quality_issue", "overcharged_shipping", "other"]),
+      description: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const userName = ctx.user?.name || ctx.user?.email || 'Unknown';
+      return await db.createOrderException({
+        orderId: input.orderId,
+        orderItemId: input.orderItemId ?? null,
+        exceptionType: input.exceptionType,
+        description: input.description,
+        createdBy: userName,
+      });
+    }),
+
+    // Resolve an exception with a chosen resolution type
+    resolve: protectedProcedure.input(z.object({
+      exceptionId: z.number(),
+      resolutionType: z.enum(["replace", "wait_restock", "refund"]),
+      scrapCost: z.number().optional(),
+      refundAmount: z.number().optional(),
+      // For replacement: items to add as new order items
+      replacementItems: z.array(z.object({
+        productId: z.number(),
+        productName: z.string(),
+        quantity: z.number(),
+        unitPrice: z.number(),
+        subtotal: z.number(),
+      })).optional(),
+      // Items to scrap (mark as quality scrap)
+      scrapItems: z.array(z.object({
+        orderItemId: z.number(),
+        productId: z.number(),
+        productName: z.string(),
+        quantity: z.number(),
+        unitCost: z.number().optional(),
+      })).optional(),
+      orderId: z.number(),
+    })).mutation(async ({ input, ctx }) => {
+      const userName = ctx.user?.name || ctx.user?.email || 'Unknown';
+
+      // 1. Resolve the exception record
+      const exception = await db.resolveOrderException(
+        input.exceptionId,
+        input.resolutionType,
+        userName,
+        input.scrapCost,
+        input.refundAmount,
+      );
+
+      // 2. Handle scrap items (mark as scrapped, deduct stock, log inventory adjustment)
+      if (input.scrapItems && input.scrapItems.length > 0) {
+        for (const item of input.scrapItems) {
+          // Create exception item record
+          await db.createOrderExceptionItem({
+            exceptionId: input.exceptionId,
+            orderItemId: item.orderItemId,
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            unitCost: item.unitCost ?? 0,
+            totalScrapCost: (item.unitCost ?? 0) * item.quantity,
+            isScrapped: true,
+          });
+
+          // Create inventory adjustment (stock reduction)
+          await db.createInventoryAdjustment({
+            productId: item.productId,
+            adjustmentType: 'quality_issue',
+            quantityChange: -item.quantity,
+            unitCost: item.unitCost ?? 0,
+            totalCost: (item.unitCost ?? 0) * item.quantity,
+            orderExceptionId: input.exceptionId,
+            adjustedBy: userName,
+            reason: '植物品质异常报废',
+          });
+        }
+      }
+
+      // 3. Handle replacement items (add new order items, deduct stock)
+      if (input.replacementItems && input.replacementItems.length > 0) {
+        for (const item of input.replacementItems) {
+          // Add new order item
+          const dbAny = db as any;
+          if (dbAny.addOrderItem) {
+            await dbAny.addOrderItem({
+              orderId: input.orderId,
+              productId: item.productId,
+              productName: item.productName,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              subtotal: item.subtotal,
+            });
+          }
+
+          // Deduct stock for replacement product
+          await db.createInventoryAdjustment({
+            productId: item.productId,
+            adjustmentType: 'other',
+            quantityChange: -item.quantity,
+            adjustedBy: userName,
+            reason: '异常处理更换商品',
+          });
+        }
+
+        // Recalculate order totals
+        await db.recalculateOrderTotals(input.orderId);
+      }
+
+      return { success: true, exception };
+    }),
+
+    // Get replacements for an exception
+    replacements: protectedProcedure.input(z.object({ exceptionId: z.number() })).query(async ({ input }) => {
+      return await db.getOrderExceptionReplacements(input.exceptionId);
+    }),
+  }),
+
+  // ===========================================================================
+  // V1.2: Inventory Adjustments (库存手动扣减)
+  // ===========================================================================
+  inventoryAdjustment: router({
+    // List adjustments
+    list: adminProcedure.input(z.object({
+      productId: z.number().optional(),
+      adjustmentType: z.string().optional(),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+    }).optional()).query(async ({ input }) => {
+      return await db.getInventoryAdjustments({
+        productId: input?.productId,
+        adjustmentType: input?.adjustmentType,
+        dateFrom: input?.dateFrom ? new Date(input.dateFrom) : undefined,
+        dateTo: input?.dateTo ? new Date(input.dateTo) : undefined,
+      });
+    }),
+
+    // Create a manual stock adjustment
+    create: protectedProcedure.input(z.object({
+      productId: z.number(),
+      adjustmentType: z.enum(["quality_issue", "plant_death", "pest_disease", "human_damage", "lost", "other"]),
+      quantityChange: z.number(),
+      unitCost: z.number().optional(),
+      totalCost: z.number().optional(),
+      reason: z.string().optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const userName = ctx.user?.name || ctx.user?.email || 'Unknown';
+      return await db.createInventoryAdjustment({
+        productId: input.productId,
+        adjustmentType: input.adjustmentType,
+        quantityChange: input.quantityChange,
+        unitCost: input.unitCost,
+        totalCost: input.totalCost,
+        adjustedBy: userName,
+        reason: input.reason,
+        remark: input.remark,
+      });
+    }),
+  }),
+
+  // ===========================================================================
+  // V1.2: Profit Analysis Report (利润分析报告)
+  // ===========================================================================
+  profitAnalysis: router({
+    report: adminProcedure.input(z.object({
+      dateFrom: z.string(),
+      dateTo: z.string(),
+    })).query(async ({ input }) => {
+      return await db.getProfitAnalysisReport({
+        start: new Date(input.dateFrom),
+        end: new Date(input.dateTo),
+      });
+    }),
+  }),
+
+  // ===========================================================================
+  // V1.2: Loss Analysis Report (损耗分析报告)
+  // ===========================================================================
+  lossAnalysis: router({
+    report: adminProcedure.input(z.object({
+      dateFrom: z.string(),
+      dateTo: z.string(),
+    })).query(async ({ input }) => {
+      return await db.getLossAnalysisReport({
+        start: new Date(input.dateFrom),
+        end: new Date(input.dateTo),
+      });
+    }),
+  }),
+});
 export type AppRouter = typeof appRouter;
