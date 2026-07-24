@@ -557,7 +557,12 @@ export default function ProductsV2() {
                   </TableCell>
                   <TableCell>
                     {p.type === "physical" ? (
-                      <span className="text-sm">{p.stockQuantity ?? 0}</span>
+                      <div className="text-sm">
+                        <span>{translate("现货", "Stock")}: {p.availableQuantity ?? p.stockQuantity ?? 0}</span>
+                        {(p.pendingQuantity > 0) && (
+                          <span className="text-muted-foreground ml-1">({p.pendingQuantity}{translate("挂单", "pending")})</span>
+                        )}
+                      </div>
                     ) : translate("—", "—")}
                   </TableCell>
                   <TableCell>
@@ -828,6 +833,51 @@ export default function ProductsV2() {
                         <img src={form.coverImageUrl} alt={translate("封面预览", "Cover Preview")} className="mt-2 h-32 w-32 rounded-lg object-cover border" />
                       )}
                     </div>
+
+                    {/* Multiple product images */}
+                    <div>
+                      <Label>{translate("商品照片（多张）", "Product Images (Multiple)")}</Label>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {form.productImages.map((img, idx) => (
+                          <div key={idx} className="relative group">
+                            <img src={img} alt="" className="h-20 w-20 rounded-lg border object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => setForm({ ...form, productImages: form.productImages.filter((_, i) => i !== idx) })}
+                              className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                            >×</button>
+                          </div>
+                        ))}
+                        <label className="cursor-pointer">
+                          <div className="h-20 w-20 rounded-lg border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground hover:border-primary transition-colors">
+                            <Upload className="h-5 w-5" />
+                          </div>
+                          <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = async (ev) => {
+                              const base64 = ev.target?.result as string;
+                              try {
+                                const res = await fetch("/api/upload", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ file: base64, filename: file.name }),
+                                });
+                                if (res.ok) {
+                                  const data = await res.json();
+                                  setForm({ ...form, productImages: [...form.productImages, data.url] });
+                                  toast.success(translate("图片已上传", "Image uploaded"));
+                                } else { toast.error(translate("上传失败", "Upload failed")); }
+                              } catch { toast.error(translate("上传失败，请重试", "Upload failed, please try again")); }
+                            };
+                            reader.readAsDataURL(file);
+                          }} />
+                        </label>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">{translate("可上传多张商品照片，商城将轮播展示", "Upload multiple images; mall will display as a gallery")}</p>
+                    </div>
+
                     <div>
                       <Label>{translate("详细描述", "Detailed Description")}</Label>
                       <Textarea value={form.fullDescZh} onChange={(e) => setForm({ ...form, fullDescZh: e.target.value })} rows={4} placeholder={translate("如不填写商城不会显示", "Leave empty to hide in mall")} />

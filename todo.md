@@ -546,12 +546,12 @@
 
 ### 数据库 Schema
 - [x] products 表新增：isSpecial（特价）、specialPrice（特价价格）、allowPresale（可预售）、allowStandaloneShipping（单颗邮寄）、lightDesc（光线）、waterDesc（水分）、fertilizerDesc（施肥）、pruningDesc（修剪）
-- [ ] 移除 shortDescZh/shortDescEn 拆分，改为单一 shortDesc 字段
+- [x] 移除 shortDescZh/shortDescEn 拆分，改为单一 shortDesc 字段（UI 已移除双语拆分，后端保留字段兼容旧数据）
 
 ### 后端 API
 - [x] 搜索改为同时匹配 name 和 keyword，使用 LIKE 模糊匹配
-- [ ] 库存自动计算：现货数量 = 进货总量 - 挂单数量 - 已发货数量
-- [ ] 商品列表返回挂单数量和可售数量
+- [x] 库存自动计算：现货数量 = 进货总量 - 挂单数量 - 已发货数量
+- [x] 商品列表返回挂单数量和可售数量
 - [x] 结构化描述字段支持（光线/水分/施肥/修剪）
 - [x] 特价商品支持
 - [x] 预售商品支持
@@ -564,11 +564,11 @@
 - [x] currentCost 改为只读显示
 - [x] 基础资料新增：是否可预售、是否特价（含特价价格）、是否单颗邮寄
 - [x] 规格编辑弹窗新增图片上传
-- [ ] 图片步骤支持多张商品照片上传
+- [x] 图片步骤支持多张商品照片上传
 
 ### 商品列表
 - [x] 显示商品总数
-- [ ] 显示现货数量（挂单数量）格式：现货6（4挂单）
+- [x] 显示现货数量（挂单数量）格式：现货6（4挂单）
 - [x] 搜索支持关键词模糊匹配
 - [x] 特价商品标记（商品列表）
 

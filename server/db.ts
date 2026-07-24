@@ -1240,7 +1240,30 @@ export async function getProductsEnhanced(params: {
     .offset(offset);
   const countResult = await db.select({ count: sql`count(*)` }).from(products).where(where);
   const total = Number(countResult[0]?.count) || 0;
-  return { items, total };
+
+  // Calculate pending (on-hold) quantity for each product: sum of order items in pending/checkout status
+  const productIds = items.map((p: any) => p.id);
+  let pendingMap: Record<number, number> = {};
+  if (productIds.length > 0) {
+    const pendingItems = await db.execute(sql`
+      SELECT oi.productId, COALESCE(SUM(oi.quantity), 0) as pendingQty
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.orderId
+      WHERE o.status IN ('pending', 'checkout', 'confirmed')
+      AND oi.productId IN (${sql.join(productIds, sql`, `)})
+      GROUP BY oi.productId
+    `);
+    for (const row of pendingItems as any[]) {
+      pendingMap[row.productId] = Number(row.pendingQty) || 0;
+    }
+  }
+  const itemsWithPending = items.map((p: any) => ({
+    ...p,
+    pendingQuantity: pendingMap[p.id] || 0,
+    availableQuantity: (p.stockQuantity || 0) - (pendingMap[p.id] || 0),
+  }));
+
+  return { items: itemsWithPending, total };
 }
 
 export async function getProductByIdEnhanced(id: number) {
