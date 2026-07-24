@@ -6,7 +6,7 @@ import {
   ShoppingCart, Warehouse, Calendar, Bell,
   ShoppingBag, CheckCircle, XCircle, Ban,
   MessageSquare, Bot, ArrowRight, AlertTriangle,
-  Plane, Eye, Timer,
+  Plane, Eye, Timer, Home,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useI18n } from "@/contexts/I18nContext";
@@ -47,36 +47,43 @@ export default function Dashboard() {
     alerts.push({ label: t("dashboard.holdOrders"), count: stats.alerts.holdExpiring, link: "/orders?status=hold_order", color: "bg-yellow-500" });
   }
 
-  // Row 1: Today's tasks — links with status filter
-  const row1 = [
+  // V2.3 Row 1: Sales (营业额) — 3 cards in one row for comparison
+  const salesRow = [
+    {
+      title: lang === "zh" ? "本地销售额" : "Local Sales",
+      subtitle: lang === "zh" ? "本月" : "This Month",
+      value: `RM ${Number((stats as any).salesBreakdown?.localSalesMonth || 0).toFixed(2)}`,
+      icon: Home,
+      color: "text-green-600",
+      bg: "border-green-200 bg-green-50 dark:bg-green-950/20",
+      link: "/profit-report?nature=normal",
+    },
+    {
+      title: lang === "zh" ? "中国代购销售额" : "Import Pre-order Sales",
+      subtitle: lang === "zh" ? "本月已付款" : "Paid This Month",
+      value: `RM ${Number((stats as any).salesBreakdown?.importSalesMonth || 0).toFixed(2)}`,
+      icon: Plane,
+      color: "text-purple-600",
+      bg: "border-purple-200 bg-purple-50 dark:bg-purple-950/20",
+      link: "/profit-report?nature=import_preorder",
+    },
+    {
+      title: lang === "zh" ? "本月总销售额" : "Total Monthly Sales",
+      subtitle: lang === "zh" ? "本地 + 代购" : "Local + Import",
+      value: `RM ${Number((stats as any).salesBreakdown?.totalMonthSales || 0).toFixed(2)}`,
+      icon: TrendingUp,
+      color: "text-primary",
+      bg: "border-primary/20 bg-primary/5",
+      link: "/profit-report",
+    },
+  ];
+
+  // V2.3 Row 2: Orders (待处理) — 4 cards
+  const ordersRow = [
     { title: t("dashboard.pendingPayment"), value: stats.row1.pendingPayment, icon: Clock, color: "text-orange-500", link: "/orders?status=receipt_uploaded" },
     { title: t("dashboard.pendingShipment"), value: stats.row1.pendingShipment, icon: Package, color: "text-blue-500", link: "/packing?tab=packing" },
-    { title: t("dashboard.partialShipped"), value: stats.row1.partialShipped, icon: Truck, color: "text-cyan-500", link: "/packing?tab=partial_shipped" },
-  ];
-
-  // Row 2: Orders — links with status filter; "本月已汇款" not clickable
-  const row2 = [
-    { title: t("dashboard.unpaidOrders"), value: stats.row2.unpaidOrders, icon: ShoppingCart, color: "text-red-500", link: "/orders?status=pending" },
-    { title: t("dashboard.paidThisMonth"), value: stats.row2.paidThisMonth, icon: CheckCircle, color: "text-green-500", link: null as string | null },
-    { title: t("dashboard.holdOrders"), value: stats.row2.holdOrders, icon: Ban, color: "text-yellow-500", link: "/orders?status=hold_order" },
-  ];
-
-  // Row 3: Inventory — links with stock filter
-  const row3 = [
-    { title: t("dashboard.lowStock"), value: stats.row3.lowStock, icon: Warehouse, color: "text-orange-500", link: "/products?stock=low" },
-    { title: t("dashboard.outOfStock"), value: stats.row3.outOfStock, icon: XCircle, color: "text-red-500", link: "/products?stock=out" },
-  ];
-
-  // Row 4: Business stats — today orders links to filtered orders
-  const row4 = [
-    { title: t("dashboard.todayOrders"), value: stats.row4.todayOrders, icon: ShoppingBag, color: "text-blue-500", link: "/orders?today=1" },
     { title: t("dashboard.todayShipped"), value: stats.row4.todayShipped, icon: Truck, color: "text-green-500", link: "/packing?tab=shipped" },
-    { title: t("dashboard.todaySales"), value: `RM ${Number(stats.row4.todaySales).toFixed(2)}`, icon: DollarSign, color: "text-green-600", link: "/profit-report" },
-    { title: t("dashboard.monthSales"), value: `RM ${Number(stats.row4.monthSales).toFixed(2)}`, icon: TrendingUp, color: "text-primary", link: "/profit-report" },
-  ];
-
-  const row5 = [
-    { title: t("dashboard.scheduledToday"), value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "/packing?tab=scheduled" },
+    { title: t("dashboard.lowStock"), value: stats.row3.lowStock + stats.row3.outOfStock, icon: Warehouse, color: "text-red-500", link: "/products?stock=low" },
   ];
 
   const recentRemarks = (stats as any).recentRemarks || [];
@@ -107,6 +114,49 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* V2.3 Row 1: Sales (营业额) — 3 cards in one row */}
+      <div>
+        <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "营业额（本月）" : "Sales (This Month)"}</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {salesRow.map((card, i) => (
+            <Link key={i} href={card.link}>
+              <Card className={`${card.bg} hover:shadow-md transition-shadow cursor-pointer`}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <div>
+                    <CardTitle className="text-sm font-medium">{card.title}</CardTitle>
+                    <span className="text-xs text-muted-foreground">{card.subtitle}</span>
+                  </div>
+                  <card.icon className={`h-5 w-5 ${card.color}`} />
+                </CardHeader>
+                <CardContent>
+                  <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* V2.3 Row 2: Orders (待处理) — 4 cards */}
+      <div>
+        <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "待处理" : "Pending Tasks"}</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {ordersRow.map((card, i) => (
+            <Link key={i} href={card.link}>
+              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
+                  <card.icon className={`h-5 w-5 ${card.color}`} />
+                </CardHeader>
+                <CardContent>
+                  <div className={`text-3xl font-bold ${card.color}`}>{card.value}</div>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      </div>
+
       {/* Special Orders Alert */}
       {(stats as any).specialOrdersCount > 0 && (
         <Link href="/orders?status=special">
@@ -123,45 +173,6 @@ export default function Dashboard() {
         </Link>
       )}
 
-      {/* Import Pre-order Stats — always show */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Link href="/import-batches">
-          <Card className="border-purple-200 bg-purple-50 dark:bg-purple-950/20 hover:shadow-md transition-shadow cursor-pointer">
-            <CardContent className="flex items-center gap-3 py-4">
-              <Plane className="h-5 w-5 text-purple-500" />
-              <div className="flex-1">
-                <span className="text-sm font-medium">{lang === "zh" ? "中国代购销售额" : "Import Pre-order Sales"}</span>
-                <span className="text-xs text-muted-foreground ml-2">{lang === "zh" ? "已付款" : "Paid"}</span>
-              </div>
-              <span className="text-2xl font-bold text-purple-600">RM {(stats as any).importPreorderStats?.totalPaidAmount || "0.00"}</span>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/import-batches">
-          <Card className="border-purple-200 bg-purple-50 dark:bg-purple-950/20 hover:shadow-md transition-shadow cursor-pointer">
-            <CardContent className="flex items-center gap-3 py-4">
-              <DollarSign className="h-5 w-5 text-purple-500" />
-              <div className="flex-1">
-                <span className="text-sm font-medium">{lang === "zh" ? "中国代购未汇款" : "Import Unpaid"}</span>
-                <span className="text-xs text-muted-foreground ml-2">{lang === "zh" ? "待付款" : "Pending"}</span>
-              </div>
-              <span className="text-2xl font-bold text-purple-600">{(stats as any).importPreorderStats?.totalUnpaidAmount || "0"}</span>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/import-batches">
-          <Card className="border-red-200 bg-red-50 dark:bg-red-950/20 hover:shadow-md transition-shadow cursor-pointer">
-            <CardContent className="flex items-center gap-3 py-4">
-              <AlertTriangle className="h-5 w-5 text-red-500" />
-              <div className="flex-1">
-                <span className="text-sm font-medium">{lang === "zh" ? "代购异常订单" : "Import Special Orders"}</span>
-                <span className="text-xs text-muted-foreground ml-2">{lang === "zh" ? "待处理" : "Pending"}</span>
-              </div>
-              <span className="text-2xl font-bold text-red-600">{(stats as any).importPreorderStats?.specialOrdersCount || 0}</span>
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
       {/* V2.2: Special Order Follow-up Stats — always show */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card className="border-orange-200 bg-orange-50 dark:bg-orange-950/20">
@@ -262,84 +273,52 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Row 1: Today's Tasks */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {row1.map((card, i) => (
-          <Link key={i} href={card.link}>
-            <Card className="hover:shadow-md transition-shadow cursor-pointer">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
-                <card.icon className={`h-5 w-5 ${card.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-3xl font-bold ${card.color}`}>{card.value}</div>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </div>
-
-      {/* Row 2: Orders */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {row2.map((card, i) =>
-          card.link ? (
-            <Link key={i} href={card.link}>
-              <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
-                  <card.icon className={`h-5 w-5 ${card.color}`} />
-                </CardHeader>
-                <CardContent>
-                  <div className={`text-3xl font-bold ${card.color}`}>{card.value}</div>
-                </CardContent>
-              </Card>
-            </Link>
-          ) : (
-            <Card key={i}>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
-                <card.icon className={`h-5 w-5 ${card.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-3xl font-bold ${card.color}`}>{card.value}</div>
-              </CardContent>
-            </Card>
-          ),
-        )}
-      </div>
-
-      {/* Row 4: Business Stats */}
+      {/* Other Stats Row: Today's orders, Partial shipped, Hold orders, Scheduled today */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {row4.map((card, i) => (
-          <Link key={i} href={card.link}>
-            <Card className="hover:shadow-md transition-shadow cursor-pointer">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
-                <card.icon className={`h-5 w-5 ${card.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </div>
-
-      {/* Row 5: Scheduled Shipping */}
-      <div className="grid grid-cols-1 sm:grid-cols-1 gap-4">
-        {row5.map((card, i) => (
-          <Link key={i} href={card.link}>
-            <Card className="hover:shadow-md transition-shadow cursor-pointer">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
-                <card.icon className={`h-5 w-5 ${card.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-3xl font-bold ${card.color}`}>{card.value}</div>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
+        <Link href="/orders?today=1">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.todayOrders")}</CardTitle>
+              <ShoppingBag className="h-5 w-5 text-blue-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-blue-500">{stats.row4.todayOrders}</div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/packing?tab=partial_shipped">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.partialShipped")}</CardTitle>
+              <Truck className="h-5 w-5 text-cyan-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-cyan-500">{stats.row1.partialShipped}</div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/orders?status=hold_order">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.holdOrders")}</CardTitle>
+              <Ban className="h-5 w-5 text-yellow-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-yellow-500">{stats.row2.holdOrders}</div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/packing?tab=scheduled">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.scheduledToday")}</CardTitle>
+              <Calendar className="h-5 w-5 text-purple-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-purple-500">{stats.row5.scheduledToday}</div>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Recent Remarks (备注记录) — always show frame */}
@@ -412,21 +391,30 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Row 3: Inventory — moved to bottom */}
+      {/* Inventory — bottom */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {row3.map((card, i) => (
-          <Link key={i} href={card.link}>
-            <Card className="hover:shadow-md transition-shadow cursor-pointer">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
-                <card.icon className={`h-5 w-5 ${card.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-3xl font-bold ${card.color}`}>{card.value}</div>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
+        <Link href="/products?stock=low">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.lowStock")}</CardTitle>
+              <Warehouse className="h-5 w-5 text-orange-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-orange-500">{stats.row3.lowStock}</div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/products?stock=out">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.outOfStock")}</CardTitle>
+              <XCircle className="h-5 w-5 text-red-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-red-500">{stats.row3.outOfStock}</div>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
     </div>
   );

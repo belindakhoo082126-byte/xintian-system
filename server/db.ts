@@ -4152,6 +4152,23 @@ export async function getDashboardV11Stats() {
   const monthSales = await db.select({ total: sql`COALESCE(SUM(totalAmount), 0)` }).from(orders)
     .where(gte(orders.createdAt, firstOfMonth)) as any[];
 
+  // V2.3: Sales breakdown by order nature (local vs import pre-order)
+  // Only count paid/shipped/completed orders (exclude pending, hold_order, cancelled)
+  const paidStatuses = ['receipt_uploaded', 'packing', 'partial_shipped', 'shipped', 'completed'];
+  const localSalesMonth = await db.select({ total: sql`COALESCE(SUM(totalAmount), 0)` }).from(orders)
+    .where(and(
+      eq(orders.orderNature, 'normal'),
+      gte(orders.createdAt, firstOfMonth),
+      sql`${orders.physicalStatus} IN (${sql.join(paidStatuses.map(s => sql`${s}`), sql`,`)})`
+    )) as any[];
+  const importSalesMonth = await db.select({ total: sql`COALESCE(SUM(totalAmount), 0)` }).from(orders)
+    .where(and(
+      eq(orders.orderNature, 'import_preorder'),
+      gte(orders.createdAt, firstOfMonth),
+      sql`${orders.physicalStatus} IN (${sql.join(paidStatuses.map(s => sql`${s}`), sql`,`)})`
+    )) as any[];
+  const totalMonthSales = (Number(localSalesMonth[0]?.total || 0)) + (Number(importSalesMonth[0]?.total || 0));
+
   // Row 5: Scheduled shipping today
   const scheduledToday = await db.select({ count: sql`COUNT(*)` }).from(orders)
     .where(and(eq(orders.physicalStatus, 'packing'), eq(orders.scheduledShippingDate, today))) as any[];
@@ -4181,6 +4198,12 @@ export async function getDashboardV11Stats() {
       todayShipped: Number(todayShipped[0]?.count || 0),
       todaySales: todaySales[0]?.total || "0.00",
       monthSales: monthSales[0]?.total || "0.00",
+    },
+    // V2.3: Sales breakdown
+    salesBreakdown: {
+      localSalesMonth: Number(localSalesMonth[0]?.total || 0).toFixed(2),
+      importSalesMonth: Number(importSalesMonth[0]?.total || 0).toFixed(2),
+      totalMonthSales: totalMonthSales.toFixed(2),
     },
     row5: {
       scheduledToday: Number(scheduledToday[0]?.count || 0),
