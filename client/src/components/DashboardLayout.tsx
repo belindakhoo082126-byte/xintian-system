@@ -1,4 +1,3 @@
-import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useI18n } from "@/contexts/I18nContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -20,49 +19,159 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings, Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle, ClipboardList, Video, Plane } from "lucide-react";
+import {
+  LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users,
+  MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook,
+  FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings,
+  Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle,
+  ClipboardList, Video, Plane, ChevronDown, Bot, Home, FileText, Receipt,
+} from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
-const menuItems = [
+type MenuChild = {
+  icon: any;
+  label: string | { zh: string; en: string };
+  path: string;
+};
+
+type MenuGroup = {
+  icon: any;
+  label: string | { zh: string; en: string };
+  children: MenuChild[];
+};
+
+type MenuEntry = MenuChild | MenuGroup;
+
+function isGroup(item: MenuEntry): item is MenuGroup {
+  return (item as MenuGroup).children !== undefined;
+}
+
+const menuStructure: MenuEntry[] = [
+  // 1. Dashboard
   { icon: LayoutDashboard, label: "nav.dashboard", path: "/" },
-  { icon: Package, label: "nav.products", path: "/products" },
-  { icon: FolderTree, label: { zh: "分类管理", en: "Categories" }, path: "/categories" },
-  { icon: ShoppingCart, label: "nav.orders", path: "/orders" },
-  { icon: Crown, label: { zh: "会员订单", en: "Membership Orders" }, path: "/membership" },
-  { icon: Users, label: "nav.customers", path: "/customers" },
-  { icon: MessageSquare, label: { zh: "Flow 编辑器", en: "Flow Editor" }, path: "/flows" },
-  { icon: Truck, label: { zh: "供应商管理", en: "Suppliers" }, path: "/suppliers" },
-  { icon: PackagePlus, label: { zh: "进货管理", en: "Purchase Orders" }, path: "/purchase-orders" },
-  { icon: Video, label: { zh: "直播房间", en: "Live Rooms" }, path: "/live-rooms" },
-  { icon: Plane, label: { zh: "采购批次", en: "Import Batches" }, path: "/import-batches" },
-  { icon: TrendingUp, label: "nav.businessReport", path: "/profit-report" },
-  { icon: DollarSign, label: { zh: "销售与收款", en: "Sales & Payment" }, path: "/reports/sales-payment" },
-  { icon: ShoppingBag, label: { zh: "商品销售", en: "Product Sales" }, path: "/reports/product-sales" },
-  { icon: Users, label: { zh: "客户消费", en: "Customer Spending" }, path: "/reports/customer-spending" },
-  { icon: Boxes, label: { zh: "进货与库存", en: "Purchase & Inventory" }, path: "/reports/purchase-inventory" },
-  { icon: TrendingUp, label: { zh: "利润分析报告", en: "Profit Analysis" }, path: "/reports/profit-analysis" },
-  { icon: AlertTriangle, label: { zh: "损耗分析报告", en: "Loss Analysis" }, path: "/reports/loss-analysis" },
-  { icon: ClipboardList, label: { zh: "库存日志", en: "Inventory Log" }, path: "/inventory-log" },
-  { icon: Facebook, label: "nav.facebookSettings", path: "/facebook-settings" },
-  { icon: Ship, label: { zh: "运费规则", en: "Shipping Rules" }, path: "/shipping-rules" },
-  { icon: Warehouse, label: "nav.logistics", path: "/logistics" },
-  { icon: CreditCard, label: "nav.paymentSettings", path: "/payment-settings" },
-  { icon: Settings, label: "nav.systemSettings", path: "/system-settings" },
-  { icon: Store, label: "nav.mallSettings", path: "/mall-settings" },
+
+  // 2. 直播管理
+  {
+    icon: Video,
+    label: { zh: "直播管理", en: "Live Management" },
+    children: [
+      { icon: Video, label: { zh: "本地直播房间", en: "Local Live Rooms" }, path: "/live-rooms?type=normal" },
+      { icon: Plane, label: { zh: "中国代购直播", en: "Import Pre-order Live" }, path: "/live-rooms?type=import_preorder" },
+    ],
+  },
+
+  // 3. 订单管理
+  {
+    icon: ShoppingCart,
+    label: { zh: "订单管理", en: "Order Management" },
+    children: [
+      { icon: Home, label: { zh: "本地订单", en: "Local Orders" }, path: "/orders?nature=normal" },
+      { icon: Plane, label: { zh: "中国代购订单", en: "Import Pre-order Orders" }, path: "/orders?nature=import_preorder" },
+      { icon: Crown, label: { zh: "会员订单", en: "Membership Orders" }, path: "/membership" },
+      { icon: Search, label: { zh: "订单查询", en: "Order Tracking" }, path: "/order-tracking" },
+    ],
+  },
+
+  // 4. 包货工作台
   { icon: PackageCheck, label: "nav.packing", path: "/packing" },
-  { icon: Search, label: { zh: "订单查询", en: "Order Tracking" }, path: "/order-tracking" },
+
+  // 5. 商品管理
+  {
+    icon: Package,
+    label: { zh: "商品管理", en: "Product Management" },
+    children: [
+      { icon: Package, label: "nav.products", path: "/products" },
+      { icon: FolderTree, label: { zh: "分类管理", en: "Categories" }, path: "/categories" },
+      { icon: PackagePlus, label: { zh: "进货管理", en: "Purchase Orders" }, path: "/purchase-orders" },
+      { icon: Truck, label: { zh: "供应商管理", en: "Suppliers" }, path: "/suppliers" },
+      { icon: ClipboardList, label: { zh: "库存日志", en: "Inventory Log" }, path: "/inventory-log" },
+    ],
+  },
+
+  // 6. 客户管理
+  { icon: Users, label: "nav.customers", path: "/customers" },
+
+  // 7. AI 客服
+  {
+    icon: Bot,
+    label: { zh: "AI 客服", en: "AI Customer Service" },
+    children: [
+      { icon: Bot, label: { zh: "AI Agent", en: "AI Agent" }, path: "/flows" },
+      { icon: MessageSquare, label: { zh: "Flow 编辑器", en: "Flow Editor" }, path: "/flows" },
+    ],
+  },
+
+  // 8. 中国代购采购
+  {
+    icon: Plane,
+    label: { zh: "中国代购采购", en: "Import Purchasing" },
+    children: [
+      { icon: FileText, label: { zh: "CN（中国采购）", en: "CN (China Purchase)" }, path: "/import-batches?tab=cn" },
+      { icon: Boxes, label: { zh: "IB（Import Batch）", en: "IB (Import Batch)" }, path: "/import-batches?tab=ib" },
+    ],
+  },
+
+  // 9. 报告
+  {
+    icon: BarChart3,
+    label: { zh: "报告", en: "Reports" },
+    children: [
+      { icon: DollarSign, label: { zh: "销售与收款", en: "Sales & Payment" }, path: "/reports/sales-payment" },
+      { icon: ShoppingBag, label: { zh: "商品销售", en: "Product Sales" }, path: "/reports/product-sales" },
+      { icon: Users, label: { zh: "客户消费", en: "Customer Spending" }, path: "/reports/customer-spending" },
+      { icon: Boxes, label: { zh: "进货与库存", en: "Purchase & Inventory" }, path: "/reports/purchase-inventory" },
+      { icon: TrendingUp, label: { zh: "利润分析", en: "Profit Analysis" }, path: "/reports/profit-analysis" },
+      { icon: AlertTriangle, label: { zh: "损耗分析", en: "Loss Analysis" }, path: "/reports/loss-analysis" },
+      { icon: Receipt, label: { zh: "Payment Record", en: "Payment Record" }, path: "/profit-report" },
+    ],
+  },
+
+  // 10. 物流
+  {
+    icon: Ship,
+    label: { zh: "物流", en: "Logistics" },
+    children: [
+      { icon: Ship, label: { zh: "运费规则", en: "Shipping Rules" }, path: "/shipping-rules" },
+      { icon: Warehouse, label: "nav.logistics", path: "/logistics" },
+    ],
+  },
+
+  // 11. Setting
+  {
+    icon: Settings,
+    label: "nav.systemSettings",
+    children: [
+      { icon: Facebook, label: "nav.facebookSettings", path: "/facebook-settings" },
+      { icon: CreditCard, label: "nav.paymentSettings", path: "/payment-settings" },
+      { icon: Settings, label: "nav.systemSettings", path: "/system-settings" },
+      { icon: Store, label: "nav.mallSettings", path: "/mall-settings" },
+    ],
+  },
 ];
 
+// Flatten all paths for shipping staff filtering
+const ALL_PATHS = new Set<string>();
 const SHIPPING_STAFF_MENU_PATHS = new Set(["/packing", "/order-tracking"]);
+menuStructure.forEach(item => {
+  if (isGroup(item)) {
+    item.children.forEach(child => ALL_PATHS.add(child.path));
+  } else {
+    ALL_PATHS.add((item as MenuChild).path);
+  }
+});
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
@@ -145,13 +254,39 @@ function DashboardLayoutContent({
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isShippingStaff = user?.role !== "admin";
-  const visibleMenuItems = isShippingStaff
-    ? menuItems.filter((item) => SHIPPING_STAFF_MENU_PATHS.has(item.path))
-    : menuItems;
+
+  // For shipping staff, only show packing and order-tracking
+  const visibleMenu = isShippingStaff
+    ? menuStructure.filter(item => {
+        if (isGroup(item)) {
+          return item.children.some(child => SHIPPING_STAFF_MENU_PATHS.has(child.path));
+        }
+        return SHIPPING_STAFF_MENU_PATHS.has((item as MenuChild).path);
+      })
+    : menuStructure;
 
   const resolveLabel = (label: string | { zh: string; en: string }): string =>
     typeof label === "string" ? t(label) : (lang === "zh" ? label.zh : label.en);
-  const activeMenuItem = visibleMenuItems.find((item) => item.path === location);
+
+  // Find active label for header
+  let activeLabel = "Menu";
+  for (const item of visibleMenu) {
+    if (isGroup(item)) {
+      for (const child of item.children) {
+        if (location.startsWith(child.path.split('?')[0]) && child.path !== '/') {
+          activeLabel = resolveLabel(child.label);
+          break;
+        }
+      }
+    } else {
+      const itemPath = (item as MenuChild).path;
+      if (location === itemPath) {
+        activeLabel = resolveLabel(item.label);
+        break;
+      }
+    }
+  }
+
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -196,6 +331,14 @@ function DashboardLayoutContent({
     };
   }, [isResizing, setSidebarWidth]);
 
+  // Check if a group has an active child
+  const isGroupActive = (group: MenuGroup): boolean => {
+    return group.children.some(child => {
+      const childPath = child.path.split('?')[0];
+      return childPath !== '/' && location.startsWith(childPath);
+    });
+  };
+
   return (
     <>
       <div className="relative" ref={sidebarRef}>
@@ -226,25 +369,42 @@ function DashboardLayoutContent({
             </div>
           </SidebarHeader>
 
-          <SidebarContent className="gap-0">
+          <SidebarContent className="gap-0 overflow-y-auto">
             <SidebarMenu className="px-2 py-1">
-              {visibleMenuItems.map(item => {
-                const isActive = location === item.path;
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={resolveLabel(item.label)}
-                      className={`h-10 transition-all font-normal`}
-                    >
-                      <item.icon
-                        className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
+              {visibleMenu.map((item, idx) => {
+                if (isGroup(item)) {
+                  const groupActive = isGroupActive(item);
+                  return (
+                    <SidebarMenuItem key={`group-${idx}`}>
+                      <CollapsibleMenuGroup
+                        icon={item.icon}
+                        label={resolveLabel(item.label)}
+                        isActive={groupActive}
+                        isCollapsed={isCollapsed}
+                        children={item.children}
+                        location={location}
+                        setLocation={setLocation}
+                        resolveLabel={resolveLabel}
                       />
-                      <span>{resolveLabel(item.label)}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
+                    </SidebarMenuItem>
+                  );
+                } else {
+                  const child = item as MenuChild;
+                  const isActive = location === child.path;
+                  return (
+                    <SidebarMenuItem key={child.path}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        onClick={() => setLocation(child.path)}
+                        tooltip={resolveLabel(child.label)}
+                        className="h-10 transition-all font-normal"
+                      >
+                        <child.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+                        <span>{resolveLabel(child.label)}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                }
               })}
             </SidebarMenu>
           </SidebarContent>
@@ -324,7 +484,7 @@ function DashboardLayoutContent({
               <div className="flex items-center gap-3">
                 <div className="flex flex-col gap-1">
                   <span className="tracking-tight text-foreground">
-                    {activeMenuItem ? resolveLabel(activeMenuItem.label) : "Menu"}
+                    {activeLabel}
                   </span>
                 </div>
               </div>
@@ -347,6 +507,83 @@ function DashboardLayoutContent({
           {children}
         </main>
       </SidebarInset>
+    </>
+  );
+}
+
+// Collapsible menu group component
+function CollapsibleMenuGroup({
+  icon: Icon,
+  label,
+  isActive,
+  isCollapsed,
+  children,
+  location,
+  setLocation,
+  resolveLabel,
+}: {
+  icon: any;
+  label: string;
+  isActive: boolean;
+  isCollapsed: boolean;
+  children: MenuChild[];
+  location: string;
+  setLocation: (path: string) => void;
+  resolveLabel: (label: string | { zh: string; en: string }) => string;
+}) {
+  const [open, setOpen] = useState(true);
+
+  // Auto-open if group is active
+  useEffect(() => {
+    if (isActive) setOpen(true);
+  }, [isActive]);
+
+  if (isCollapsed) {
+    // When collapsed, show icon only and expand on hover via tooltip
+    return (
+      <SidebarMenuButton
+        isActive={isActive}
+        onClick={() => setOpen(!open)}
+        tooltip={label}
+        className="h-10 transition-all font-normal"
+      >
+        <Icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+        <span>{label}</span>
+      </SidebarMenuButton>
+    );
+  }
+
+  return (
+    <>
+      <SidebarMenuButton
+        isActive={isActive}
+        onClick={() => setOpen(!open)}
+        className="h-10 transition-all font-normal"
+      >
+        <Icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+        <span>{label}</span>
+        <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
+      </SidebarMenuButton>
+      {open && (
+        <SidebarMenuSub className="ml-4">
+          {children.map((child, ci) => {
+            const childPath = child.path.split('?')[0];
+            const childActive = childPath !== '/' && location.startsWith(childPath);
+            return (
+              <SidebarMenuSubItem key={`child-${ci}`}>
+                <SidebarMenuSubButton
+                  isActive={childActive}
+                  onClick={() => setLocation(child.path)}
+                  className="h-9 text-sm"
+                >
+                  <child.icon className={`h-3.5 w-3.5 ${childActive ? "text-primary" : ""}`} />
+                  <span>{resolveLabel(child.label)}</span>
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            );
+          })}
+        </SidebarMenuSub>
+      )}
     </>
   );
 }

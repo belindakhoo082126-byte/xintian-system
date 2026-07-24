@@ -334,6 +334,7 @@ export async function getOrders(filters?: {
   orderType?: string;
   search?: string;
   todayOnly?: boolean;
+  orderNature?: string;
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -342,6 +343,7 @@ export async function getOrders(filters?: {
   if (filters?.physicalStatus) conditions.push(eq(orders.physicalStatus, filters.physicalStatus as any));
   if (filters?.membershipStatus) conditions.push(eq(orders.membershipStatus, filters.membershipStatus as any));
   if (filters?.orderType) conditions.push(eq(orders.orderType, filters.orderType as any));
+  if (filters?.orderNature) conditions.push(eq((orders as any).orderNature, filters.orderNature as any));
   if (filters?.todayOnly) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);

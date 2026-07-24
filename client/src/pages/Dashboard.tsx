@@ -137,9 +137,83 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* V2.3 Row 2: Orders (待处理) — 4 cards */}
+      {/* V3.0 Row 2: Emergency (紧急事件) — AI Agent + Recent Remarks side by side */}
       <div>
-        <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "待处理" : "Pending Tasks"}</h2>
+        <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "紧急事件" : "Emergency"}</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* AI Agent Pending Notifications */}
+          <Card>
+            <CardHeader className="flex flex-row items-center gap-2">
+              <Bot className="h-5 w-5 text-orange-500" />
+              <CardTitle className="text-base">{lang === "zh" ? "AI Agent 待人工通知" : "AI Agent Pending Notifications"}</CardTitle>
+              <Badge variant="secondary" className="ml-auto">{pendingNotifications.length}</Badge>
+            </CardHeader>
+            <CardContent className="space-y-2 max-h-[200px] overflow-y-auto">
+              {pendingNotifications.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无待人工通知记录" : "No pending notifications"}</p>
+              ) : (
+                pendingNotifications.slice(0, 5).map((n: any) => (
+                  <Link key={n.id} href={n.orderId ? `/orders/${n.orderId}` : "/orders"}>
+                    <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm truncate">
+                          <Badge variant="outline" className="mr-2">{n.type}</Badge>
+                          {n.message || "(无消息内容)"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {n.orderNumber || `#${n.orderId || ""}`}
+                          {n.createdAt ? ` · ${new Date(n.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
+                        </p>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
+                    </div>
+                  </Link>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Recent Remarks */}
+          <Card>
+            <CardHeader className="flex flex-row items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-primary" />
+              <CardTitle className="text-base">{lang === "zh" ? "最近备注记录" : "Recent Remarks"}</CardTitle>
+              {recentRemarks.length > 0 && (
+                <Badge variant="secondary" className="ml-auto">{recentRemarks.length}</Badge>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-2 max-h-[200px] overflow-y-auto">
+              {recentRemarks.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无备注记录" : "No recent remarks"}</p>
+              ) : (
+                recentRemarks.slice(0, 5).map((r: any) => {
+                  const typeInfo = REMARK_TYPE_LABELS[r.type] || { label: r.type, color: "bg-gray-100 text-gray-700" };
+                  return (
+                    <Link key={r.id} href={`/orders/${r.orderId}`}>
+                      <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+                        <Badge className={`shrink-0 ${typeInfo.color}`} variant="secondary">
+                          {lang === "zh" ? typeInfo.zh : typeInfo.en}
+                        </Badge>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm truncate">{r.content}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {r.orderNumber || `#${r.orderId}`} {r.facebookName ? `· ${r.facebookName}` : ""}
+                            {r.createdAt ? ` · ${new Date(r.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* V3.0 Row 3: Work Status (工作状态) — 4 cards */}
+      <div>
+        <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "工作状态" : "Work Status"}</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {ordersRow.map((card, i) => (
             <Link key={i} href={card.link}>
@@ -320,76 +394,6 @@ export default function Dashboard() {
           </Card>
         </Link>
       </div>
-
-      {/* Recent Remarks (备注记录) — always show frame */}
-      <Card>
-        <CardHeader className="flex flex-row items-center gap-2">
-          <MessageSquare className="h-5 w-5 text-primary" />
-          <CardTitle className="text-base">{lang === "zh" ? "最近备注记录" : "Recent Remarks"}</CardTitle>
-          {recentRemarks.length > 0 && (
-            <Badge variant="secondary" className="ml-auto">{recentRemarks.length}</Badge>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {recentRemarks.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无备注记录" : "No recent remarks"}</p>
-          ) : (
-            recentRemarks.map((r: any) => {
-              const typeInfo = REMARK_TYPE_LABELS[r.type] || { label: r.type, color: "bg-gray-100 text-gray-700" };
-              return (
-                <Link key={r.id} href={`/orders/${r.orderId}`}>
-                  <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
-                    <Badge className={`shrink-0 ${typeInfo.color}`} variant="secondary">
-                      {lang === "zh" ? typeInfo.zh : typeInfo.en}
-                    </Badge>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate">{r.content}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {r.orderNumber || `#${r.orderId}`} {r.facebookName ? `· ${r.facebookName}` : ""}
-                        {r.createdBy ? ` · ${r.createdBy}` : ""}
-                        {r.createdAt ? ` · ${new Date(r.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })
-          )}
-        </CardContent>
-      </Card>
-
-      {/* AI Agent Pending Notifications (待人工通知) — always show frame */}
-      <Card>
-        <CardHeader className="flex flex-row items-center gap-2">
-          <Bot className="h-5 w-5 text-orange-500" />
-          <CardTitle className="text-base">{lang === "zh" ? "AI Agent 待人工通知" : "AI Agent Pending Notifications"}</CardTitle>
-          <Badge variant="secondary" className="ml-auto">{pendingNotifications.length}</Badge>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {pendingNotifications.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无待人工通知记录" : "No pending notifications"}</p>
-          ) : (
-            pendingNotifications.map((n: any) => (
-              <Link key={n.id} href={n.orderId ? `/orders/${n.orderId}` : "/orders"}>
-                <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm truncate">
-                      <Badge variant="outline" className="mr-2">{n.type}</Badge>
-                      {n.message || "(无消息内容)"}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {n.orderNumber || `#${n.orderId || ""}`} {n.facebookName ? `· ${n.facebookName}` : ""}
-                      {n.createdAt ? ` · ${new Date(n.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
-                      {n.errorMessage ? ` · 错误: ${n.errorMessage}` : ""}
-                    </p>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
-                </div>
-              </Link>
-            ))
-          )}
-        </CardContent>
-      </Card>
 
       {/* Inventory — bottom */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

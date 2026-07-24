@@ -41,9 +41,11 @@ export default function Orders() {
   const searchParams = useSearch();
   const urlStatus = new URLSearchParams(searchParams).get("status");
   const urlToday = new URLSearchParams(searchParams).get("today");
+  const urlNature = new URLSearchParams(searchParams).get("nature");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(urlStatus || "all");
   const [todayOnly, setTodayOnly] = useState(urlToday === "1");
+  const [natureFilter, setNatureFilter] = useState(urlNature || "all");
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailOrder, setDetailOrder] = useState<any>(null);
   const [shipForm, setShipForm] = useState({ courierCompany: "", trackingNumber: "" });
@@ -61,7 +63,8 @@ export default function Orders() {
     search: search || undefined,
     physicalStatus: statusFilter !== "all" ? statusFilter : undefined,
     todayOnly: todayOnly || undefined,
-  });
+    orderNature: natureFilter !== "all" ? natureFilter : undefined,
+  } as any);
 
   const updateStatusMutation = trpc.orders.updateStatus.useMutation({
     onSuccess: () => {
@@ -219,6 +222,16 @@ export default function Orders() {
             {Object.entries(PHYSICAL_STATUS).map(([k, v]) => (
               <SelectItem key={k} value={k}>{translate(v.label, v.enLabel)}</SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+        <Select value={natureFilter} onValueChange={setNatureFilter}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder={translate("订单性质", "Order Nature")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{translate("全部性质", "All Natures")}</SelectItem>
+            <SelectItem value="normal">{translate("本地订单", "Local Orders")}</SelectItem>
+            <SelectItem value="import_preorder">{translate("中国代购", "Import Pre-order")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
