@@ -231,6 +231,8 @@ export default function Orders() {
                 <TableHead>{translate("订单号", "Order No.")}</TableHead>
                 <TableHead>{translate("客户", "Customer")}</TableHead>
                 <TableHead>{translate("类型", "Type")}</TableHead>
+                <TableHead>{translate("来源", "Source")}</TableHead>
+                <TableHead>{translate("性质", "Nature")}</TableHead>
                 <TableHead>{translate("实体金额", "Physical Amount")}</TableHead>
                 <TableHead>{translate("运费", "Shipping Fee")}</TableHead>
                 <TableHead>{translate("总金额", "Total Amount")}</TableHead>
@@ -240,9 +242,9 @@ export default function Orders() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
               ) : orders?.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{translate("暂无订单", "No orders yet")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{translate("暂无订单", "No orders yet")}</TableCell></TableRow>
               ) : orders?.map(o => (
                 <TableRow key={o.id}>
                   <TableCell className="font-mono text-sm">{o.orderNumber}</TableCell>
@@ -251,6 +253,21 @@ export default function Orders() {
                     <Badge variant="outline">
                       {o.orderType === "mixed" ? translate("混合", "Mixed") : o.orderType === "membership" ? translate("会员", "Membership") : translate("实体", "Physical")}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-xs text-muted-foreground">
+                      {(o as any).orderSource === "admin" ? translate("Admin", "Admin") :
+                       (o as any).orderSource === "facebook_live" ? translate("直播", "Live") :
+                       (o as any).orderSource === "messenger" ? translate("Messenger", "Messenger") :
+                       (o as any).orderSource === "mall" ? translate("商城", "Mall") : translate("-", "-")}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    {(o as any).orderNature === "import_preorder" ? (
+                      <Badge className="bg-purple-100 text-purple-700">{translate("中国代购", "Import")}</Badge>
+                    ) : (
+                      <Badge variant="secondary">{translate("普通", "Normal")}</Badge>
+                    )}
                   </TableCell>
                   <TableCell>RM {o.physicalSubtotal}</TableCell>
                   <TableCell>RM {o.shippingFee}</TableCell>

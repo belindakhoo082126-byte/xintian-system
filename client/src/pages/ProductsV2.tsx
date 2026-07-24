@@ -17,13 +17,13 @@ import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon
 
 const RAW_PRODUCT_TYPES = [
   { value: "physical", zh: "实体商品", en: "Physical Product" },
-  { value: "membership", zh: "会员商品", en: "Membership Product" },
+  { value: "virtual", zh: "虚拟商品", en: "Virtual Product" },
   { value: "gift", zh: "赠品", en: "Gift Product" },
 ];
 
 const TYPE_BADGES: Record<string, string> = {
   physical: "bg-blue-100 text-blue-700",
-  membership: "bg-purple-100 text-purple-700",
+  virtual: "bg-purple-100 text-purple-700",
   gift: "bg-orange-100 text-orange-700",
 };
 
@@ -45,7 +45,7 @@ const PAGE_SIZE = 20;
 
 type ProductForm = {
   name: string;
-  type: "physical" | "membership" | "gift";
+  type: "physical" | "virtual" | "gift";
   productMode: "simple" | "variant";
   categoryId: number | undefined;
   unitId: number | undefined;
@@ -85,6 +85,12 @@ type ProductForm = {
   fertilizerDesc: string;
   pruningDesc: string;
   productImages: string[];
+  // V2.0: Sales mode
+  salesMode: string;
+  preorderWaitDays: string;
+  spotSaleEnabled: boolean;
+  spotSaleQty: number;
+  linkedBatchId: string;
 };
 
 const EMPTY_FORM: ProductForm = {
@@ -99,6 +105,7 @@ const EMPTY_FORM: ProductForm = {
   standaloneShippingMethod: "fixed_fee", standaloneShippingFee: "",
   lightDesc: "", waterDesc: "", fertilizerDesc: "", pruningDesc: "",
   productImages: [],
+  salesMode: "normal", preorderWaitDays: "", spotSaleEnabled: false, spotSaleQty: 0, linkedBatchId: "",
 };
 
 const RAW_STEPS = [
@@ -184,7 +191,7 @@ export default function ProductsV2() {
       const p = detailQuery.data;
       setForm({
         name: p.name || "",
-        type: p.type,
+        type: (p.type === "membership" ? "virtual" : p.type) as any,
         productMode: p.productMode || "simple",
         categoryId: p.categoryId || undefined,
         unitId: p.unitId || undefined,
@@ -224,6 +231,11 @@ export default function ProductsV2() {
         fertilizerDesc: p.fertilizerDesc || "",
         pruningDesc: p.pruningDesc || "",
         productImages: (p.images || []).map((img: any) => img.url || img),
+        salesMode: (p as any).salesMode || "normal",
+        preorderWaitDays: (p as any).preorderWaitDays || "",
+        spotSaleEnabled: (p as any).spotSaleEnabled ?? false,
+        spotSaleQty: (p as any).spotSaleQty ?? 0,
+        linkedBatchId: (p as any).linkedBatchId ? String((p as any).linkedBatchId) : "",
       });
       setVariants(p.variants || []);
       hydratedEditingIdRef.current = editingId;
@@ -372,7 +384,14 @@ export default function ProductsV2() {
       setStep(0);
       return;
     }
-    const data: any = { ...form };
+    const data: any = {
+      ...form,
+      salesMode: form.salesMode,
+      preorderWaitDays: form.preorderWaitDays || undefined,
+      spotSaleEnabled: form.spotSaleEnabled,
+      spotSaleQty: form.spotSaleQty,
+      linkedBatchId: form.linkedBatchId ? Number(form.linkedBatchId) : undefined,
+    };
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...data });
     } else {
@@ -424,7 +443,7 @@ export default function ProductsV2() {
     }
   }
 
-  const isMembership = form.type === "membership";
+  const isVirtual = form.type === "virtual";
   const isGift = form.type === "gift";
   const isPhysical = form.type === "physical";
   const isVariant = form.productMode === "variant";
@@ -801,10 +820,45 @@ export default function ProductsV2() {
                               </div>
                             )}
                           </div>
+                                                )}
+                      </div>
+                    )}
+                    {isPhysical && (
+                      <div className="space-y-3 rounded-lg border p-4 bg-muted/20">
+                        <div>
+                          <Label>{translate("销售模式", "Sales Mode")}</Label>
+                          <Select value={form.salesMode} onValueChange={(v) => setForm({ ...form, salesMode: v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="normal">{translate("普通现货", "Normal Stock")}</SelectItem>
+                              <SelectItem value="presale">{translate("可预售", "Presale")}</SelectItem>
+                              <SelectItem value="import_preorder">{translate("中国进口代购", "China Import Pre-order")}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {form.salesMode === "import_preorder" && (
+                          <div className="space-y-3">
+                            <div>
+                              <Label>{translate("预计等待时间", "Estimated Wait Time")}</Label>
+                              <Input value={form.preorderWaitDays} onChange={(e) => setForm({ ...form, preorderWaitDays: e.target.value })} placeholder={translate("例如: 30~45天", "e.g. 30~45 days")} />
+                            </div>
+                            <div className="flex items-center justify-between rounded-lg border p-3">
+                              <div>
+                                <Label>{translate("到货后现货销售", "Spot Sale After Arrival")}</Label>
+                                <p className="text-xs text-muted-foreground">{translate("到货后剩余库存可现货销售", "Remaining stock can be sold as normal after arrival")}</p>
+                              </div>
+                              <Switch checked={form.spotSaleEnabled} onCheckedChange={(v) => setForm({ ...form, spotSaleEnabled: v })} />
+                            </div>
+                            {form.spotSaleEnabled && (
+                              <div>
+                                <Label>{translate("现货销售数量", "Spot Sale Quantity")}</Label>
+                                <Input type="number" value={form.spotSaleQty} onChange={(e) => setForm({ ...form, spotSaleQty: Number(e.target.value) })} />
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}
-
                     {isPhysical && form.isSpecial && (
                       <div>
                         <Label>{translate("特价金额 (RM)", "Special Price (RM)")}</Label>
@@ -957,12 +1011,12 @@ export default function ProductsV2() {
                     <div>
                       <Label>{translate("当前成本 (RM)", "Current Cost (RM)")}</Label>
                       <Input type="number" placeholder="0.00" value={form.currentCost}
-                        readOnly disabled={isMembership} className="bg-muted/50 cursor-not-allowed" />
+                        readOnly disabled={isVirtual} className="bg-muted/50 cursor-not-allowed" />
                       <p className="text-xs text-muted-foreground mt-1">{translate("由进货管理自动更新（FIFO），此处仅供参考", "Auto-updated from purchase orders (FIFO), read-only reference")}</p>
                     </div>
 
                     {/* Price Simulator */}
-                    {!isGift && !isMembership && form.currentCost && (
+                    {!isGift && !isVirtual && form.currentCost && (
                       <div className="p-4 rounded-lg border bg-muted/30 space-y-3">
                         <div className="flex items-center gap-2">
                           <TrendingUp className="h-4 w-4 text-primary" />
@@ -1016,7 +1070,7 @@ export default function ProductsV2() {
                     </div>
 
                     {/* Physical: weight & dimensions */}
-                    {!isMembership && (
+                    {!isVirtual && (
                       <>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
@@ -1056,7 +1110,7 @@ export default function ProductsV2() {
                     )}
 
                     {/* Membership-specific */}
-                    {isMembership && (
+                    {isVirtual && (
                       <div className="space-y-4 p-4 border rounded-lg bg-purple-50/50 dark:bg-purple-950/20">
                         <h3 className="font-medium text-sm">{translate("会员商品专属设置", "Membership Product Exclusive Settings")}</h3>
                         <p className="text-xs text-muted-foreground">{translate("会员商品不计算重量、运费，不进入配货流程，无库存限制", "Membership products do not calculate weight or shipping, do not enter the distribution process, and have no inventory restrictions")}</p>
@@ -1245,8 +1299,8 @@ export default function ProductsV2() {
                           <div>{translate("状态", "Status")}: {translate(RAW_STATUS_LABELS[form.status]?.zh, RAW_STATUS_LABELS[form.status]?.en)}</div>
                           <div>{translate("可见性", "Visibility")}: {form.visibility === "public" ? translate("公开", "Public") : form.visibility === "link_only" ? translate("仅链接", "Link Only") : translate("隐藏", "Hidden")}</div>
                           <div>{translate("推荐", "Featured")}: {form.isFeatured ? translate("是", "Yes") : translate("否", "No")}</div>
-                          {!isMembership && <div>{translate("库存", "Stock")}: {form.stockQuantity}</div>}
-                          {!isMembership && form.currentCost && (
+                          {!isVirtual && <div>{translate("库存", "Stock")}: {form.stockQuantity}</div>}
+                          {!isVirtual && form.currentCost && (
                             <div>{translate("预计利润", "Estimated Profit")}: <span className={parseFloat(form.sellingPrice) - parseFloat(form.currentCost) >= 0 ? "text-green-600" : "text-red-600"}>RM {(parseFloat(form.sellingPrice) - parseFloat(form.currentCost)).toFixed(2)}</span></div>
                           )}
                         </div>
@@ -1267,7 +1321,7 @@ export default function ProductsV2() {
                       </CardContent>
                     </Card>
 
-                    {isMembership && (
+                    {isVirtual && (
                       <div className="p-3 rounded-lg bg-purple-50/50 dark:bg-purple-950/20 border text-sm">
                         <p className="font-medium">{translate("会员商品提示", "Membership Product Tip")}</p>
                         <p className="text-xs text-muted-foreground mt-1">{translate("保存后可生成会员专属购买链接，通过 Messenger 发送给客户", "After saving, you can generate exclusive member purchase links and send them to customers via Messenger")}</p>

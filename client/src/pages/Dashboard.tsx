@@ -6,6 +6,7 @@ import {
   ShoppingCart, Warehouse, Calendar, Bell,
   ShoppingBag, CheckCircle, XCircle, Ban,
   MessageSquare, Bot, ArrowRight, AlertTriangle,
+  Plane,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useI18n } from "@/contexts/I18nContext";
@@ -120,6 +121,47 @@ export default function Dashboard() {
         </Link>
       )}
 
+      {/* Import Pre-order Stats */}
+      {(stats as any).importPreorderStats && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Link href="/import-batches">
+            <Card className="border-purple-200 bg-purple-50 dark:bg-purple-950/20 hover:shadow-md transition-shadow cursor-pointer">
+              <CardContent className="flex items-center gap-3 py-4">
+                <Plane className="h-5 w-5 text-purple-500" />
+                <div className="flex-1">
+                  <span className="text-sm font-medium">{lang === "zh" ? "中国代购销售额" : "Import Pre-order Sales"}</span>
+                  <span className="text-xs text-muted-foreground ml-2">{lang === "zh" ? "已付款" : "Paid"}</span>
+                </div>
+                <span className="text-2xl font-bold text-purple-600">RM {(stats as any).importPreorderStats.totalPaidAmount || 0}</span>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/import-batches">
+            <Card className="border-purple-200 bg-purple-50 dark:bg-purple-950/20 hover:shadow-md transition-shadow cursor-pointer">
+              <CardContent className="flex items-center gap-3 py-4">
+                <DollarSign className="h-5 w-5 text-purple-500" />
+                <div className="flex-1">
+                  <span className="text-sm font-medium">{lang === "zh" ? "中国代购未汇款" : "Import Unpaid"}</span>
+                  <span className="text-xs text-muted-foreground ml-2">{lang === "zh" ? "待付款" : "Pending"}</span>
+                </div>
+                <span className="text-2xl font-bold text-purple-600">RM {(stats as any).importPreorderStats.totalUnpaidAmount || 0}</span>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/import-batches">
+            <Card className="border-red-200 bg-red-50 dark:bg-red-950/20 hover:shadow-md transition-shadow cursor-pointer">
+              <CardContent className="flex items-center gap-3 py-4">
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+                <div className="flex-1">
+                  <span className="text-sm font-medium">{lang === "zh" ? "代购异常订单" : "Import Special Orders"}</span>
+                  <span className="text-xs text-muted-foreground ml-2">{lang === "zh" ? "待处理" : "Pending"}</span>
+                </div>
+                <span className="text-2xl font-bold text-red-600">{(stats as any).importPreorderStats.specialOrdersCount || 0}</span>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      )}
       {/* Row 1: Today's Tasks */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {row1.map((card, i) => (

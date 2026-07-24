@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ChevronLeft, ClipboardPaste, Truck, Package, Merge } from "lucide-react";
+import { ChevronLeft, ClipboardPaste, Truck, Package, Merge, Plane } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function MallCheckout() {
   const [cart, setCart] = useState<any[]>([]);
@@ -28,6 +29,7 @@ export default function MallCheckout() {
   const [smartPasteText, setSmartPasteText] = useState("");
   const [showSmartPaste, setShowSmartPaste] = useState(false);
   const [orderResult, setOrderResult] = useState<any>(null);
+  const [importAgreed, setImportAgreed] = useState(false);
 
   const utils = trpc.useUtils();
   const { data: settings } = trpc.mall.settings.useQuery();
@@ -341,10 +343,26 @@ export default function MallCheckout() {
           </CardContent>
         </Card>
 
+        {/* Import Pre-order Agreement */}
+        {cart.some((i: any) => i.salesMode === "import_preorder") && (
+          <div className="rounded-lg border-2 border-purple-200 bg-purple-50 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-purple-700 font-medium">
+              <Plane className="h-4 w-4" />
+              中国进口代购商品提醒
+            </div>
+            <p className="text-sm text-purple-600">
+              您的购物车中包含中国进口代购商品。此商品需等待中国采购及运输，预计等待时间较长。付款后才会开始采购，到货后通知发货。
+            </p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox checked={importAgreed} onCheckedChange={(v) => setImportAgreed(!!v)} />
+              <span className="text-sm">我已了解这是中国进口预购商品，愿意等待采购及运输</span>
+            </label>
+          </div>
+        )}
         <Button
           className="w-full bg-[#2d6a4f] hover:bg-[#40916c] text-lg py-6"
           onClick={handleCheckout}
-          disabled={checkoutMutation.isPending}
+          disabled={checkoutMutation.isPending || (cart.some((i: any) => i.salesMode === "import_preorder") && !importAgreed)}
         >
           {checkoutMutation.isPending ? "提交中..." : `确认下单 · RM ${total.toFixed(2)}`}
         </Button>

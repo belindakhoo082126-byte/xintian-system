@@ -3532,5 +3532,211 @@ export const appRouter = router({
       return await db.getSubOrders(input.parentOrderId);
     }),
   }),
+
+  // ===========================================================================
+  // V2.0: Live Rooms (直播房间)
+  // ===========================================================================
+  liveRooms: router({
+    list: adminProcedure
+      .input(z.object({
+        status: z.enum(['scheduled', 'live', 'ended', 'closed']).optional(),
+        liveType: z.enum(['normal', 'import_preorder']).optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getLiveRooms(input || {});
+      }),
+
+    getById: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const room = await db.getLiveRoomById(input.id);
+        if (!room) throw new Error('直播房间不存在');
+        return room;
+      }),
+
+    create: adminProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        liveDate: z.coerce.date(),
+        facebookLiveUrl: z.string().optional(),
+        facebookVideoId: z.string().optional(),
+        liveType: z.enum(['normal', 'import_preorder']).optional(),
+        importBatchId: z.number().optional(),
+        preorderStartDate: z.coerce.date().optional(),
+        preorderEndDate: z.coerce.date().optional(),
+        estimatedWaitDays: z.string().optional(),
+        status: z.enum(['scheduled', 'live', 'ended', 'closed']).optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createLiveRoom(input);
+      }),
+
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        liveDate: z.coerce.date().optional(),
+        facebookLiveUrl: z.string().optional(),
+        facebookVideoId: z.string().optional(),
+        liveType: z.enum(['normal', 'import_preorder']).optional(),
+        importBatchId: z.number().optional(),
+        preorderStartDate: z.coerce.date().optional(),
+        preorderEndDate: z.coerce.date().optional(),
+        estimatedWaitDays: z.string().optional(),
+        status: z.enum(['scheduled', 'live', 'ended', 'closed']).optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateLiveRoom(id, data);
+        return { success: true };
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteLiveRoom(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // V2.0: Import Batches (采购批次)
+  // ===========================================================================
+  importBatches: router({
+    list: adminProcedure
+      .input(z.object({
+        status: z.enum(['in_progress', 'closed', 'purchased', 'preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed']).optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getImportBatches(input || {});
+      }),
+
+    getById: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const batch = await db.getImportBatchById(input.id);
+        if (!batch) throw new Error('采购批次不存在');
+        return batch;
+      }),
+
+    create: adminProcedure
+      .input(z.object({
+        batchNumber: z.string().min(1),
+        batchName: z.string().min(1),
+        sourceCountry: z.string().optional(),
+        supplierName: z.string().optional(),
+        liveRoomId: z.number().optional(),
+        preorderStartDate: z.coerce.date().optional(),
+        preorderEndDate: z.coerce.date().optional(),
+        shippingMethod: z.enum(['air', 'sea']).optional(),
+        chinaShippingCost: z.string().optional(),
+        status: z.enum(['in_progress', 'closed', 'purchased', 'preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed']).optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createImportBatch(input);
+      }),
+
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        batchName: z.string().optional(),
+        sourceCountry: z.string().optional(),
+        supplierName: z.string().optional(),
+        liveRoomId: z.number().optional(),
+        preorderStartDate: z.coerce.date().optional(),
+        preorderEndDate: z.coerce.date().optional(),
+        actualPurchaseDate: z.coerce.date().optional(),
+        shippingMethod: z.enum(['air', 'sea']).optional(),
+        chinaShippingCost: z.string().optional(),
+        status: z.enum(['in_progress', 'closed', 'purchased', 'preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed']).optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateImportBatch(id, data);
+        return { success: true };
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteImportBatch(input.id);
+        return { success: true };
+      }),
+
+    // Get batch items (采购汇总)
+    items: adminProcedure
+      .input(z.object({ batchId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getImportBatchItems(input.batchId);
+      }),
+
+    // Upsert batch item (add/update product in batch)
+    upsertItem: adminProcedure
+      .input(z.object({
+        batchId: z.number(),
+        productId: z.number(),
+        productName: z.string(),
+        variantId: z.number().optional(),
+        variantName: z.string().optional(),
+        paidQuantity: z.number().optional(),
+        finalPurchaseQuantity: z.number().optional(),
+        actualReceivedQty: z.number().optional(),
+        healthyQty: z.number().optional(),
+        damagedQty: z.number().optional(),
+        deadQty: z.number().optional(),
+        missingQty: z.number().optional(),
+        itemStatus: z.enum(['pending', 'all_arrived', 'partial_arrived', 'shortage', 'damaged', 'dead', 'missing']).optional(),
+        unitPurchaseCost: z.string().optional(),
+        spotSaleEnabled: z.boolean().optional(),
+        spotSaleQty: z.number().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.upsertImportBatchItem(input);
+      }),
+
+    // Delete batch item
+    deleteItem: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteImportBatchItem(input.id);
+        return { success: true };
+      }),
+
+    // Allocate shipping cost to items
+    allocateShipping: adminProcedure
+      .input(z.object({ batchId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.allocateShippingCost(input.batchId);
+      }),
+  }),
+
+  // ===========================================================================
+  // V2.0: Import Preorder Dashboard & Reports
+  // ===========================================================================
+  importPreorder: router({
+    stats: adminProcedure.query(async () => {
+      return await db.getImportPreorderStats();
+    }),
+
+    profitAnalysis: adminProcedure
+      .input(z.object({
+        batchId: z.number().optional(),
+        liveRoomId: z.number().optional(),
+        startDate: z.coerce.date().optional(),
+        endDate: z.coerce.date().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getImportPreorderProfitAnalysis(input || {});
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;

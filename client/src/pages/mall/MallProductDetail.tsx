@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ShoppingCart, Minus, Plus, ChevronLeft, Package, Truck, Shield, Sun, Droplets, Sparkles, Scissors } from "lucide-react";
+import { ShoppingCart, Minus, Plus, ChevronLeft, Package, Truck, Shield, Sun, Droplets, Sparkles, Scissors, Plane } from "lucide-react";
 import { useI18n } from "@/contexts/I18nContext";
 
 export default function MallProductDetail() {
@@ -160,6 +160,24 @@ export default function MallProductDetail() {
               </div>
             )}
 
+            {/* Import Pre-order Notice */}
+            {(product as any).salesMode === "import_preorder" && (
+              <div className="rounded-lg border-2 border-purple-200 bg-purple-50 p-4 space-y-2">
+                <div className="flex items-center gap-2 text-purple-700 font-medium">
+                  <Plane className="h-4 w-4" />
+                  {t("中国进口代购商品", "China Import Pre-order Product")}
+                </div>
+                <p className="text-sm text-purple-600">
+                  {t("此商品为中国进口代购，下单后需等待采购及运输。", "This product is imported from China. Please expect waiting time for purchasing and shipping.")}
+                  {(product as any).preorderWaitDays && (
+                    <span className="font-medium">{t("预计等待时间: ", "Estimated wait: ")}{(product as any).preorderWaitDays}</span>
+                  )}
+                </p>
+                <p className="text-xs text-purple-500">
+                  {t("付款后才会采购，请耐心等待。到货后通知发货。", "Purchasing begins after payment. You will be notified upon arrival.")}
+                </p>
+              </div>
+            )}
             {/* Quantity */}
             <div>
               <p className="text-sm font-medium mb-2">{t("数量", "Quantity")}</p>

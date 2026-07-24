@@ -22,6 +22,8 @@ import {
   // V1.2 imports
   orderExceptions, orderExceptionItems, orderExceptionReplacements, inventoryAdjustments,
   orderSubOrders, specialOrderActions,
+  // V2.0 imports
+  liveRooms, importBatches, importBatchItems,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -4993,4 +4995,389 @@ export async function updateOrderActualWeight(
     specialOrderStatus: isSpecialOrder ? "pending" as any : undefined,
   }).where(eq(orders.id, orderId));
   return { success: true };
+}
+
+// ============================================================================
+// V2.0: Live Rooms (直播房间)
+// ============================================================================
+
+export async function getLiveRooms(filters?: {
+  status?: string;
+  liveType?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select().from(liveRooms);
+  const conditions: any[] = [];
+  if (filters?.status) conditions.push(eq(liveRooms.status, filters.status as any));
+  if (filters?.liveType) conditions.push(eq(liveRooms.liveType, filters.liveType as any));
+  if (conditions.length > 0) {
+    query = query.where(conditions[0]) as any;
+    for (let i = 1; i < conditions.length; i++) {
+      query = (query as any).andWhere(conditions[i]);
+    }
+  }
+  query = (query as any).orderBy(liveRooms.liveDate) as any;
+  if (filters?.limit) query = (query as any).limit(filters.limit) as any;
+  if (filters?.offset) query = (query as any).offset(filters.offset) as any;
+  return await query;
+}
+
+export async function getLiveRoomById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(liveRooms).where(eq(liveRooms.id, id));
+  return result[0];
+}
+
+export async function createLiveRoom(data: {
+  name: string;
+  liveDate: Date;
+  facebookLiveUrl?: string;
+  facebookVideoId?: string;
+  liveType?: string;
+  importBatchId?: number;
+  preorderStartDate?: Date;
+  preorderEndDate?: Date;
+  estimatedWaitDays?: string;
+  status?: string;
+  notes?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const result = await db.insert(liveRooms).values({
+    name: data.name,
+    liveDate: data.liveDate,
+    facebookLiveUrl: data.facebookLiveUrl,
+    facebookVideoId: data.facebookVideoId,
+    liveType: (data.liveType as any) || 'normal',
+    importBatchId: data.importBatchId,
+    preorderStartDate: data.preorderStartDate,
+    preorderEndDate: data.preorderEndDate,
+    estimatedWaitDays: data.estimatedWaitDays,
+    status: (data.status as any) || 'scheduled',
+    notes: data.notes,
+  });
+  return { id: result[0].insertId };
+}
+
+export async function updateLiveRoom(id: number, data: Partial<{
+  name: string;
+  liveDate: Date;
+  facebookLiveUrl: string;
+  facebookVideoId: string;
+  liveType: string;
+  importBatchId: number;
+  preorderStartDate: Date;
+  preorderEndDate: Date;
+  estimatedWaitDays: string;
+  status: string;
+  notes: string;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.update(liveRooms).set(data as any).where(eq(liveRooms.id, id));
+  return { success: true };
+}
+
+export async function deleteLiveRoom(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.delete(liveRooms).where(eq(liveRooms.id, id));
+  return { success: true };
+}
+
+// ============================================================================
+// V2.0: Import Batches (采购批次)
+// ============================================================================
+
+export async function getImportBatches(filters?: {
+  status?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select().from(importBatches);
+  if (filters?.status) {
+    query = query.where(eq(importBatches.status, filters.status as any)) as any;
+  }
+  query = (query as any).orderBy(importBatches.createdAt) as any;
+  if (filters?.limit) query = (query as any).limit(filters.limit) as any;
+  if (filters?.offset) query = (query as any).offset(filters.offset) as any;
+  return await query;
+}
+
+export async function getImportBatchById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(importBatches).where(eq(importBatches.id, id));
+  return result[0];
+}
+
+export async function createImportBatch(data: {
+  batchNumber: string;
+  batchName: string;
+  sourceCountry?: string;
+  supplierName?: string;
+  liveRoomId?: number;
+  preorderStartDate?: Date;
+  preorderEndDate?: Date;
+  shippingMethod?: string;
+  chinaShippingCost?: string;
+  status?: string;
+  notes?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const result = await db.insert(importBatches).values({
+    batchNumber: data.batchNumber,
+    batchName: data.batchName,
+    sourceCountry: data.sourceCountry || '中国',
+    supplierName: data.supplierName,
+    liveRoomId: data.liveRoomId,
+    preorderStartDate: data.preorderStartDate,
+    preorderEndDate: data.preorderEndDate,
+    shippingMethod: (data.shippingMethod as any) || 'air',
+    chinaShippingCost: data.chinaShippingCost || '0',
+    status: (data.status as any) || 'in_progress',
+    notes: data.notes,
+  });
+  return { id: result[0].insertId };
+}
+
+export async function updateImportBatch(id: number, data: Partial<{
+  batchName: string;
+  sourceCountry: string;
+  supplierName: string;
+  liveRoomId: number;
+  preorderStartDate: Date;
+  preorderEndDate: Date;
+  actualPurchaseDate: Date;
+  shippingMethod: string;
+  chinaShippingCost: string;
+  status: string;
+  notes: string;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.update(importBatches).set(data as any).where(eq(importBatches.id, id));
+  return { success: true };
+}
+
+export async function deleteImportBatch(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.delete(importBatchItems).where(eq(importBatchItems.batchId, id));
+  await db.delete(importBatches).where(eq(importBatches.id, id));
+  return { success: true };
+}
+
+// ============================================================================
+// V2.0: Import Batch Items (采购批次商品明细)
+// ============================================================================
+
+export async function getImportBatchItems(batchId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(importBatchItems).where(eq(importBatchItems.batchId, batchId));
+}
+
+export async function upsertImportBatchItem(data: {
+  batchId: number;
+  productId: number;
+  productName: string;
+  variantId?: number;
+  variantName?: string;
+  paidQuantity?: number;
+  finalPurchaseQuantity?: number;
+  actualReceivedQty?: number;
+  healthyQty?: number;
+  damagedQty?: number;
+  deadQty?: number;
+  missingQty?: number;
+  itemStatus?: string;
+  unitPurchaseCost?: string;
+  spotSaleEnabled?: boolean;
+  spotSaleQty?: number;
+  notes?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  // Check if item already exists
+  const existing = await db.select().from(importBatchItems)
+    .where(eq(importBatchItems.batchId, data.batchId));
+  const found = existing.find(i => i.productId === data.productId && i.variantId === data.variantId);
+  if (found) {
+    await db.update(importBatchItems).set({
+      paidQuantity: data.paidQuantity ?? found.paidQuantity,
+      finalPurchaseQuantity: data.finalPurchaseQuantity ?? found.finalPurchaseQuantity,
+      actualReceivedQty: data.actualReceivedQty ?? found.actualReceivedQty,
+      healthyQty: data.healthyQty ?? found.healthyQty,
+      damagedQty: data.damagedQty ?? found.damagedQty,
+      deadQty: data.deadQty ?? found.deadQty,
+      missingQty: data.missingQty ?? found.missingQty,
+      itemStatus: (data.itemStatus as any) ?? found.itemStatus,
+      unitPurchaseCost: data.unitPurchaseCost ?? found.unitPurchaseCost,
+      spotSaleEnabled: data.spotSaleEnabled ?? found.spotSaleEnabled,
+      spotSaleQty: data.spotSaleQty ?? found.spotSaleQty,
+      notes: data.notes ?? found.notes,
+    }).where(eq(importBatchItems.id, found.id));
+    return { id: found.id };
+  }
+  const result = await db.insert(importBatchItems).values({
+    batchId: data.batchId,
+    productId: data.productId,
+    productName: data.productName,
+    variantId: data.variantId,
+    variantName: data.variantName,
+    paidQuantity: data.paidQuantity || 0,
+    finalPurchaseQuantity: data.finalPurchaseQuantity || 0,
+    actualReceivedQty: data.actualReceivedQty,
+    healthyQty: data.healthyQty,
+    damagedQty: data.damagedQty || 0,
+    deadQty: data.deadQty || 0,
+    missingQty: data.missingQty || 0,
+    itemStatus: (data.itemStatus as any) || 'pending',
+    unitPurchaseCost: data.unitPurchaseCost,
+    spotSaleEnabled: data.spotSaleEnabled || false,
+    spotSaleQty: data.spotSaleQty || 0,
+    notes: data.notes,
+  });
+  return { id: result[0].insertId };
+}
+
+export async function deleteImportBatchItem(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.delete(importBatchItems).where(eq(importBatchItems.id, id));
+  return { success: true };
+}
+
+// ============================================================================
+// V2.0: Allocate China shipping cost to batch items
+// ============================================================================
+
+export async function allocateShippingCost(batchId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const batch = await getImportBatchById(batchId);
+  if (!batch) throw new Error('Batch not found');
+  const items = await getImportBatchItems(batchId);
+  if (items.length === 0) return { allocated: 0 };
+  const totalQty = items.reduce((sum, i) => sum + (i.finalPurchaseQuantity || i.paidQuantity || 0), 0);
+  if (totalQty === 0) return { allocated: 0 };
+  const totalShipping = parseFloat(batch.chinaShippingCost?.toString() || '0');
+  const perUnit = totalShipping / totalQty;
+  for (const item of items) {
+    const qty = item.finalPurchaseQuantity || item.paidQuantity || 0;
+    const unitCost = parseFloat(item.unitPurchaseCost?.toString() || '0');
+    const allocated = perUnit * qty;
+    const totalUnitCost = (unitCost + perUnit).toFixed(2);
+    await db.update(importBatchItems).set({
+      allocatedShippingCost: perUnit.toFixed(2),
+      totalUnitCost: totalUnitCost as any,
+    }).where(eq(importBatchItems.id, item.id));
+  }
+  return { allocated: perUnit, totalQty, totalShipping };
+}
+
+// ============================================================================
+// V2.0: Get import preorder statistics for dashboard
+// ============================================================================
+
+export async function getImportPreorderStats() {
+  const db = await getDb();
+  if (!db) return { paidSales: 0, unpaidCount: 0, specialOrders: 0, activeBatches: 0 };
+  // Get all import_preorder orders
+  const importOrders = await db.select().from(orders).where(eq(orders.orderNature, 'import_preorder' as any));
+  const paidOrders = importOrders.filter(o => o.physicalStatus !== 'pending' && o.physicalStatus !== 'cancelled');
+  const unpaidOrders = importOrders.filter(o => o.physicalStatus === 'pending');
+  const specialOrders = importOrders.filter(o => o.isSpecialOrder);
+  const paidSales = paidOrders.reduce((sum, o) => sum + parseFloat(o.paidAmount?.toString() || '0'), 0);
+  // Get active batches count
+  const batches = await db.select().from(importBatches);
+  const activeBatches = batches.filter(b => b.status !== 'completed').length;
+  return {
+    paidSales: paidSales.toFixed(2),
+    unpaidCount: unpaidOrders.length,
+    specialOrders: specialOrders.length,
+    activeBatches,
+  };
+}
+
+// ============================================================================
+// V2.0: Get import preorder profit analysis
+// ============================================================================
+
+export async function getImportPreorderProfitAnalysis(filters?: {
+  batchId?: number;
+  liveRoomId?: number;
+  startDate?: Date;
+  endDate?: Date;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  // Get import orders
+  let importOrdersList = await db.select().from(orders).where(eq(orders.orderNature, 'import_preorder' as any));
+  if (filters?.batchId) {
+    importOrdersList = importOrdersList.filter(o => o.importBatchId === filters.batchId);
+  }
+  if (filters?.liveRoomId) {
+    importOrdersList = importOrdersList.filter(o => o.liveRoomId === filters.liveRoomId);
+  }
+  if (filters?.startDate) {
+    importOrdersList = importOrdersList.filter(o => new Date(o.createdAt) >= filters.startDate!);
+  }
+  if (filters?.endDate) {
+    importOrdersList = importOrdersList.filter(o => new Date(o.createdAt) <= filters.endDate!);
+  }
+  const paidOrders = importOrdersList.filter(o => o.physicalStatus !== 'pending' && o.physicalStatus !== 'cancelled');
+  const totalSales = paidOrders.reduce((sum, o) => sum + parseFloat(o.totalAmount?.toString() || '0'), 0);
+  const customerShipping = paidOrders.reduce((sum, o) => sum + parseFloat(o.customerPaidShipping?.toString() || '0'), 0);
+  // Get batch costs
+  let batchCosts = 0;
+  let chinaShipping = 0;
+  let localCourierCost = 0;
+  let scrapLoss = 0;
+  let refundLoss = 0;
+  for (const order of paidOrders) {
+    if (order.importBatchId) {
+      const items = await getImportBatchItems(order.importBatchId);
+      for (const item of items) {
+        const qty = item.finalPurchaseQuantity || item.paidQuantity || 0;
+        const unitCost = parseFloat(item.unitPurchaseCost?.toString() || '0');
+        batchCosts += unitCost * qty;
+      }
+      const batch = await getImportBatchById(order.importBatchId);
+      if (batch) {
+        chinaShipping += parseFloat(batch.chinaShippingCost?.toString() || '0');
+      }
+    }
+    localCourierCost += parseFloat(order.actualShippingFee?.toString() || '0');
+    // Get exceptions for scrap/refund
+    const exceptions = await db.select().from(orderExceptions).where(eq(orderExceptions.orderId, order.id));
+    for (const exc of exceptions) {
+      scrapLoss += parseFloat(exc.scrapCost?.toString() || '0');
+      refundLoss += parseFloat(exc.refundAmount?.toString() || '0');
+    }
+  }
+  const companyBearShipping = paidOrders.reduce((sum, o) => sum + parseFloat(o.shippingLoss?.toString() || '0'), 0);
+  const grossProfit = totalSales + customerShipping - batchCosts - chinaShipping - localCourierCost - scrapLoss - refundLoss;
+  const grossMargin = totalSales > 0 ? (grossProfit / totalSales) * 100 : 0;
+  return {
+    totalSales: totalSales.toFixed(2),
+    customerShipping: customerShipping.toFixed(2),
+    batchCosts: batchCosts.toFixed(2),
+    chinaShipping: chinaShipping.toFixed(2),
+    localCourierCost: localCourierCost.toFixed(2),
+    companyBearShipping: companyBearShipping.toFixed(2),
+    scrapLoss: scrapLoss.toFixed(2),
+    refundLoss: refundLoss.toFixed(2),
+    grossProfit: grossProfit.toFixed(2),
+    grossMargin: grossMargin.toFixed(1),
+    orderCount: paidOrders.length,
+  };
 }

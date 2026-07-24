@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings, Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle, ClipboardList } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users, MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook, FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings, Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle, ClipboardList, Video, Plane } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -42,6 +42,8 @@ const menuItems = [
   { icon: MessageSquare, label: { zh: "Flow 编辑器", en: "Flow Editor" }, path: "/flows" },
   { icon: Truck, label: { zh: "供应商管理", en: "Suppliers" }, path: "/suppliers" },
   { icon: PackagePlus, label: { zh: "进货管理", en: "Purchase Orders" }, path: "/purchase-orders" },
+  { icon: Video, label: { zh: "直播房间", en: "Live Rooms" }, path: "/live-rooms" },
+  { icon: Plane, label: { zh: "采购批次", en: "Import Batches" }, path: "/import-batches" },
   { icon: TrendingUp, label: "nav.businessReport", path: "/profit-report" },
   { icon: DollarSign, label: { zh: "销售与收款", en: "Sales & Payment" }, path: "/reports/sales-payment" },
   { icon: ShoppingBag, label: { zh: "商品销售", en: "Product Sales" }, path: "/reports/product-sales" },

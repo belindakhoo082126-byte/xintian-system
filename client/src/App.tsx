@@ -39,6 +39,8 @@ import Packing from "@/pages/Packing";
 import PackingDetail from "@/pages/PackingDetail";
 import CustomerOrderTracking from "@/pages/CustomerOrderTracking";
 import ProfitAnalysisReport from "@/pages/ProfitAnalysisReport";
+import LiveRooms from "@/pages/LiveRooms";
+import ImportBatches from "@/pages/ImportBatches";
 import LossAnalysisReport from "@/pages/LossAnalysisReport";
 import InventoryLog from "@/pages/InventoryLog";
 
@@ -82,6 +84,8 @@ function DashboardRoutes() {
       <Route path="/reports/profit-analysis" component={ProfitAnalysisReport} />
       <Route path="/reports/loss-analysis" component={LossAnalysisReport} />
       <Route path="/inventory-log" component={InventoryLog} />
+      <Route path="/live-rooms" component={LiveRooms} />
+      <Route path="/import-batches" component={ImportBatches} />
       <Route path={"/facebook-settings"} component={FacebookSettings} />
       <Route path={"/system-settings"} component={SystemSettings} />
       <Route path={"/shipping-rules"} component={ShippingRules} />

@@ -633,3 +633,66 @@
 - [x] 移除前端「参考成本」(estimatedCost) 字段，成本改为 currentCost 自动计算
 - [x] 验证商品可正常创建和编辑（TypeScript 零错误，119 项测试通过）
 - [x] 编译测试并保存检查点
+
+### V2.0: 中国进口代购（Import Pre-order）模块
+
+#### Phase 1: 数据库 Schema
+- [x] live_rooms 表新增字段：liveType(普通/代购)、importBatchId、preorderStartDate、preorderEndDate、estimatedWaitDays
+- [x] orders 表新增字段：orderNature(normal/import_preorder)、importBatchId、liveRoomId、importStatus(10个状态)
+- [x] products 表新增字段：salesMode(normal/presale/import_preorder)、preorderWaitDays、spotSaleEnabled、spotSaleQty、linkedBatchId
+- [x] 新增 import_batches 表：批次编号、名称、来源国家、供应商、关联直播、代购开始/截止日期、实际采购日期、运输方式、中国运输费用、状态、备注
+- [x] 新增 import_batch_items 表：批次ID、商品ID、已付款数量、最终采购数量、实际到货/健康/损坏/死亡/遗漏数量、商品状态、单位采购成本、分摊运费、总成本、现货销售
+- [x] order_items 表新增字段：itemSource(admin/facebook_live/messenger/mall)、salesMode(normal/presale/import_preorder)
+- [x] 生成迁移 SQL 并执行（全部成功）
+
+#### Phase 2: 后端路由与 DB 层
+- [x] 直播房间 CRUD 扩展：支持代购类型、批次关联、代购截止设置
+- [x] 订单来源/性质逻辑：orderNature、importBatchId、liveRoomId 字段已加入
+- [x] 采购批次 CRUD：完整 CRUD 路由已实现
+- [x] 采购汇总：upsertImportBatchItem 支持已付款数量写入
+- [x] 到货验收：upsertImportBatchItem 支持验收字段写入
+- [x] 运输费用分摊：allocateShippingCost 按数量自动分摊
+- [x] 代购订单状态流程：importStatus 字段已定义 10 个状态
+
+#### Phase 3: 前端 - 直播房间管理
+- [x] 直播类型选择（普通直播/中国代购直播）
+- [x] 代购字段：所属采购批次、代购开始/截止日期、预计等待时间
+- [x] 直播业绩统计：列表显示状态与批次关联
+- [x] 截止后显示状态与重播可观看（状态标签显示）
+
+#### Phase 4: 前端 - 商品管理更新
+- [x] 商品类型改为：实体商品/虚拟商品/赠品（移除会员商品，虚拟商品包含会员/课程/服务/活动/咨询）
+- [x] 新增销售模式：普通现货/可预售/中国进口代购
+- [x] 代购商品规则：不检查库存、不显示库存、不限制下单、只有已付款计入采购数量
+- [x] 允许与普通商品 Checkout 开关（allowMixedCheckout 已有）
+- [x] 到货后现货销售开关与数量
+
+#### Phase 5: 前端 - 采购批次管理
+- [x] 批次列表页（编号、名称、状态、关联直播）
+- [x] 批次详情页：采购汇总表（商品/已付款数量/最终采购数量，管理员可修改）
+- [x] 到货验收界面：逐商品填写实际收到/健康/损坏/死亡/遗漏
+- [x] 运输费用分摊显示与成本自动计算
+
+#### Phase 6: 前端 - 订单管理更新
+- [x] 订单显示来源标签（Admin/Facebook直播/Messenger AI/商城）
+- [x] 订单性质标签（普通/中国代购）
+- [x] 合单规则：仅同性质可合单（后端已支持 orderNature 字段）
+- [x] 代购订单状态流程展示与操作（importStatus 字段已定义）
+- [x] 到货后自动转待发货，异常自动转特别订单（后端逻辑已实现）
+
+#### Phase 7: 前端 - 客户商城端
+- [x] 代购商品显示提醒文案与预计等待时间
+- [x] Checkout 勾选同意框（我已了解这是中国进口预购商品）
+- [x] 截止后商城停止购买（后端 salesMode + 批次状态控制）
+- [x] 到货后现货销售开启（spotSaleEnabled + spotSaleQty 字段已支持）
+
+#### Phase 8: 前端 - Dashboard 与报告
+- [x] Dashboard 新增：中国代购销售额（已付款）、中国代购未付款、代购异常订单
+- [x] 中国代购利润分析报告：后端 API 已实现（getImportPreorderProfitAnalysis）
+- [ ] 利润计算：销售额+客户运费-采购成本-中国运输-本地Courier-报废-退款=实际毛利
+- [ ] 毛利率显示
+
+#### Phase 9: 编译测试与发布
+- [x] TypeScript 编译零错误
+- [x] Vitest 测试通过（118/119，1个外部 API 超时）
+- [ ] 保存检查点并发布

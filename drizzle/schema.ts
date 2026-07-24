@@ -172,6 +172,18 @@ export const products = mysqlTable("products", {
   fertilizerDesc: text("fertilizerDesc"),
   pruningDesc: text("pruningDesc"),
 
+  // V2.0: Sales mode (销售模式)
+  salesMode: mysqlEnum("salesMode", ["normal", "presale", "import_preorder"]).default("normal").notNull(),
+  // V2.0: Preorder wait days (预计等待时间, e.g. "30~45天")
+  preorderWaitDays: varchar("preorderWaitDays", { length: 100 }),
+  // V2.0: Allow mixed checkout with normal products (允许与普通商品一起Checkout)
+  // Note: allowMixedCheckout already exists above, repurposed for V2.0
+  // V2.0: Spot sale after arrival (到货后现货销售)
+  spotSaleEnabled: boolean("spotSaleEnabled").default(false).notNull(),
+  spotSaleQty: int("spotSaleQty").default(0).notNull(),
+  // V2.0: Linked import batch (for preorder products)
+  linkedBatchId: int("linkedBatchId"),
+
   // Internal notes
   notes: text("notes"),
 
@@ -514,6 +526,25 @@ export const orders = mysqlTable("orders", {
   specialOrderStatus: mysqlEnum("specialOrderStatus", ["pending", "resolved", "cancelled"]).default("pending"),
   // V1.2: Parent order for split orders
   parentOrderId: int("parentOrderId"),
+  // V2.0: Order nature (订单性质: normal or import_preorder)
+  orderNature: mysqlEnum("orderNature", ["normal", "import_preorder"]).default("normal").notNull(),
+  // V2.0: Linked import batch (for import_preorder orders)
+  importBatchId: int("importBatchId"),
+  // V2.0: Linked live room
+  liveRoomId: int("liveRoomId"),
+  // V2.0: Import preorder status (代购订单状态流程)
+  importStatus: mysqlEnum("importStatus", [
+    "waiting_payment",      // 等待付款
+    "paid_waiting_close",   // 已付款（等待代购截止）
+    "waiting_purchase",     // 等待统一采购
+    "purchased",            // 已向中国采购
+    "supplier_preparing",   // 供应商备货中
+    "in_transit",           // 运输中
+    "arriving_inspection",  // 到货验收中
+    "ready_to_ship",        // 待发货
+    "shipped",              // 已发货
+    "completed",            // 完成
+  ]).default("waiting_payment"),
 });
 
 export type Order = typeof orders.$inferSelect;
@@ -543,6 +574,10 @@ export const orderItems = mysqlTable("order_items", {
   subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
   // Weight per unit (for shipping calculation)
   unitWeight: decimal("unitWeight", { precision: 8, scale: 2 }).default("0"),
+  // V2.0: Item source (标记商品来自哪个渠道)
+  itemSource: mysqlEnum("itemSource", ["admin", "facebook_live", "messenger", "mall"]).default("admin"),
+  // V2.0: Sales mode snapshot
+  salesMode: mysqlEnum("salesMode", ["normal", "presale", "import_preorder"]).default("normal"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -1362,3 +1397,140 @@ export const specialOrderActions = mysqlTable("special_order_actions", {
 
 export type SpecialOrderAction = typeof specialOrderActions.$inferSelect;
 export type InsertSpecialOrderAction = typeof specialOrderActions.$inferInsert;
+
+
+// ============================================================================
+// V2.0: Live Rooms (直播房间)
+// ============================================================================
+
+export const liveRooms = mysqlTable("live_rooms", {
+  id: int("id").autoincrement().primaryKey(),
+  // Live room name
+  name: varchar("name", { length: 255 }).notNull(),
+  // Live date
+  liveDate: timestamp("liveDate").notNull(),
+  // Facebook Live video URL
+  facebookLiveUrl: varchar("facebookLiveUrl", { length: 500 }),
+  // Facebook Live video ID (for replay embedding)
+  facebookVideoId: varchar("facebookVideoId", { length: 255 }),
+  // Live type: normal or import_preorder
+  liveType: mysqlEnum("liveType", ["normal", "import_preorder"]).default("normal").notNull(),
+  // For import_preorder: linked batch ID
+  importBatchId: int("importBatchId"),
+  // Preorder window
+  preorderStartDate: timestamp("preorderStartDate"),
+  preorderEndDate: timestamp("preorderEndDate"),
+  // Estimated wait days (e.g. "30~45天")
+  estimatedWaitDays: varchar("estimatedWaitDays", { length: 100 }),
+  // Live room status
+  status: mysqlEnum("status", ["scheduled", "live", "ended", "closed"]).default("scheduled").notNull(),
+  // Notes
+  notes: text("notes"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LiveRoom = typeof liveRooms.$inferSelect;
+export type InsertLiveRoom = typeof liveRooms.$inferInsert;
+
+// ============================================================================
+// V2.0: Import Batches (采购批次)
+// ============================================================================
+
+export const importBatches = mysqlTable("import_batches", {
+  id: int("id").autoincrement().primaryKey(),
+  // Batch number (e.g. CN-2026-08-01)
+  batchNumber: varchar("batchNumber", { length: 50 }).notNull().unique(),
+  // Batch name
+  batchName: varchar("batchName", { length: 255 }).notNull(),
+  // Source country
+  sourceCountry: varchar("sourceCountry", { length: 100 }).default("中国").notNull(),
+  // Supplier name
+  supplierName: varchar("supplierName", { length: 255 }),
+  // Linked live room
+  liveRoomId: int("liveRoomId"),
+  // Preorder window
+  preorderStartDate: timestamp("preorderStartDate"),
+  preorderEndDate: timestamp("preorderEndDate"),
+  // Actual purchase date
+  actualPurchaseDate: timestamp("actualPurchaseDate"),
+  // Shipping method: air or sea
+  shippingMethod: mysqlEnum("shippingMethod", ["air", "sea"]),
+  // China shipping cost (total, in RM)
+  chinaShippingCost: decimal("chinaShippingCost", { precision: 12, scale: 2 }).default("0"),
+  // Batch status
+  status: mysqlEnum("status", [
+    "in_progress",    // 进行中
+    "closed",         // 已截止
+    "purchased",      // 已采购
+    "preparing",      // 备货中
+    "in_transit",     // 运输中
+    "partial_arrived", // 部分到货
+    "all_arrived",    // 全部到货
+    "completed",      // 完成
+  ]).default("in_progress").notNull(),
+  // Notes
+  notes: text("notes"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ImportBatch = typeof importBatches.$inferSelect;
+export type InsertImportBatch = typeof importBatches.$inferInsert;
+
+// ============================================================================
+// V2.0: Import Batch Items (采购批次商品明细 - 采购汇总与到货验收)
+// ============================================================================
+
+export const importBatchItems = mysqlTable("import_batch_items", {
+  id: int("id").autoincrement().primaryKey(),
+  // Batch ID
+  batchId: int("batchId").notNull(),
+  // Product ID
+  productId: int("productId").notNull(),
+  // Product name (snapshot)
+  productName: varchar("productName", { length: 255 }).notNull(),
+  // Variant ID (if applicable)
+  variantId: int("variantId"),
+  variantName: varchar("variantName", { length: 255 }),
+  // Paid quantity (auto-calculated from paid orders)
+  paidQuantity: int("paidQuantity").default(0).notNull(),
+  // Final purchase quantity (admin can adjust, e.g. paid 100 + spare 5 = 105)
+  finalPurchaseQuantity: int("finalPurchaseQuantity").default(0).notNull(),
+  // Arrival verification
+  actualReceivedQty: int("actualReceivedQty"),
+  healthyQty: int("healthyQty"),
+  damagedQty: int("damagedQty").default(0),
+  deadQty: int("deadQty").default(0),
+  missingQty: int("missingQty").default(0),
+  // Item status
+  itemStatus: mysqlEnum("itemStatus", [
+    "pending",         // 待到货
+    "all_arrived",     // 全部到货
+    "partial_arrived", // 部分到货
+    "shortage",        // 数量不足
+    "damaged",         // 损坏
+    "dead",            // 死亡
+    "missing",         // 遗漏
+  ]).default("pending"),
+  // Unit purchase cost (from supplier)
+  unitPurchaseCost: decimal("unitPurchaseCost", { precision: 10, scale: 2 }),
+  // Allocated China shipping cost per unit (auto-calculated)
+  allocatedShippingCost: decimal("allocatedShippingCost", { precision: 10, scale: 2 }),
+  // Total actual cost (unit + shipping)
+  totalUnitCost: decimal("totalUnitCost", { precision: 10, scale: 2 }),
+  // Spot sale enabled after arrival
+  spotSaleEnabled: boolean("spotSaleEnabled").default(false).notNull(),
+  // Spot sale quantity (remaining stock after fulfilling preorders)
+  spotSaleQty: int("spotSaleQty").default(0).notNull(),
+  // Notes
+  notes: text("notes"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ImportBatchItem = typeof importBatchItems.$inferSelect;
+export type InsertImportBatchItem = typeof importBatchItems.$inferInsert;
