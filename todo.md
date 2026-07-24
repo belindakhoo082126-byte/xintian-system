@@ -486,3 +486,11 @@
 - [x] auth.me 路由返回 preferredLanguage 字段
 - [x] 新增 auth.updateLanguage 路由用于保存语言偏好
 - [x] DashboardLayout 语言切换按钮调用后端保存
+
+## Dashboard + DashboardLayout 完整国际化
+
+- [x] Dashboard.tsx 所有卡片标题、提醒、日期格式使用 t() / lang 翻译
+- [x] DashboardLayout.tsx 菜单项使用翻译键（nav.*）或 {zh, en} 对象
+- [x] DashboardLayout.tsx 添加 resolveLabel 函数处理混合 label 类型
+- [x] TypeScript 编译零错误
+- [x] 96 个测试全部通过

@@ -8,20 +8,22 @@ import {
   MessageSquare, Bot, ArrowRight,
 } from "lucide-react";
 import { Link } from "wouter";
+import { useI18n } from "@/contexts/I18nContext";
 
-const REMARK_TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  live: { label: "直播备注", color: "bg-blue-100 text-blue-700" },
-  customer: { label: "客户备注", color: "bg-green-100 text-green-700" },
-  internal: { label: "内部备注", color: "bg-gray-100 text-gray-700" },
+const REMARK_TYPE_LABELS: Record<string, { zh: string; en: string; color: string }> = {
+  live: { zh: "直播备注", en: "Live Remark", color: "bg-blue-100 text-blue-700" },
+  customer: { zh: "客户备注", en: "Customer Remark", color: "bg-green-100 text-green-700" },
+  internal: { zh: "内部备注", en: "Internal Remark", color: "bg-gray-100 text-gray-700" },
 };
 
 export default function Dashboard() {
+  const { t, lang } = useI18n();
   const { data: stats, isLoading } = trpc.dashboardV11.stats.useQuery();
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <p className="text-muted-foreground">加载中...</p>
+        <p className="text-muted-foreground">{t("common.loading")}</p>
       </div>
     );
   }
@@ -30,48 +32,48 @@ export default function Dashboard() {
 
   const alerts: { label: string; count: number; link: string; color: string }[] = [];
   if (stats.alerts.pendingPayment > 0) {
-    alerts.push({ label: "待审核付款", count: stats.alerts.pendingPayment, link: "/orders?status=receipt_uploaded", color: "bg-orange-500" });
+    alerts.push({ label: t("dashboard.pendingPayment"), count: stats.alerts.pendingPayment, link: "/orders?status=receipt_uploaded", color: "bg-orange-500" });
   }
   if (stats.alerts.repotOrders > 0) {
-    alerts.push({ label: "换盆安排", count: stats.alerts.repotOrders, link: "/packing", color: "bg-blue-500" });
+    alerts.push({ label: t("dashboard.repotOrders"), count: stats.alerts.repotOrders, link: "/packing", color: "bg-blue-500" });
   }
   if (stats.alerts.scheduledToday > 0) {
-    alerts.push({ label: "今日预约发货", count: stats.alerts.scheduledToday, link: "/packing?tab=scheduled", color: "bg-purple-500" });
+    alerts.push({ label: t("dashboard.scheduledToday"), count: stats.alerts.scheduledToday, link: "/packing?tab=scheduled", color: "bg-purple-500" });
   }
   if (stats.alerts.holdExpiring > 0) {
-    alerts.push({ label: "保留订单", count: stats.alerts.holdExpiring, link: "/orders?status=hold_order", color: "bg-yellow-500" });
+    alerts.push({ label: t("dashboard.holdOrders"), count: stats.alerts.holdExpiring, link: "/orders?status=hold_order", color: "bg-yellow-500" });
   }
 
   // Row 1: Today's tasks — links with status filter
   const row1 = [
-    { title: "待审核付款", value: stats.row1.pendingPayment, icon: Clock, color: "text-orange-500", link: "/orders?status=receipt_uploaded" },
-    { title: "待出货", value: stats.row1.pendingShipment, icon: Package, color: "text-blue-500", link: "/packing?tab=packing" },
-    { title: "部分发货", value: stats.row1.partialShipped, icon: Truck, color: "text-cyan-500", link: "/packing?tab=partial_shipped" },
+    { title: t("dashboard.pendingPayment"), value: stats.row1.pendingPayment, icon: Clock, color: "text-orange-500", link: "/orders?status=receipt_uploaded" },
+    { title: t("dashboard.pendingShipment"), value: stats.row1.pendingShipment, icon: Package, color: "text-blue-500", link: "/packing?tab=packing" },
+    { title: t("dashboard.partialShipped"), value: stats.row1.partialShipped, icon: Truck, color: "text-cyan-500", link: "/packing?tab=partial_shipped" },
   ];
 
   // Row 2: Orders — links with status filter; "本月已汇款" not clickable
   const row2 = [
-    { title: "未汇款订单", value: stats.row2.unpaidOrders, icon: ShoppingCart, color: "text-red-500", link: "/orders?status=pending" },
-    { title: "本月已汇款", value: stats.row2.paidThisMonth, icon: CheckCircle, color: "text-green-500", link: null as string | null },
-    { title: "保留订单", value: stats.row2.holdOrders, icon: Ban, color: "text-yellow-500", link: "/orders?status=hold_order" },
+    { title: t("dashboard.unpaidOrders"), value: stats.row2.unpaidOrders, icon: ShoppingCart, color: "text-red-500", link: "/orders?status=pending" },
+    { title: t("dashboard.paidThisMonth"), value: stats.row2.paidThisMonth, icon: CheckCircle, color: "text-green-500", link: null as string | null },
+    { title: t("dashboard.holdOrders"), value: stats.row2.holdOrders, icon: Ban, color: "text-yellow-500", link: "/orders?status=hold_order" },
   ];
 
   // Row 3: Inventory — links with stock filter
   const row3 = [
-    { title: "库存不足", value: stats.row3.lowStock, icon: Warehouse, color: "text-orange-500", link: "/products?stock=low" },
-    { title: "缺货商品", value: stats.row3.outOfStock, icon: XCircle, color: "text-red-500", link: "/products?stock=out" },
+    { title: t("dashboard.lowStock"), value: stats.row3.lowStock, icon: Warehouse, color: "text-orange-500", link: "/products?stock=low" },
+    { title: t("dashboard.outOfStock"), value: stats.row3.outOfStock, icon: XCircle, color: "text-red-500", link: "/products?stock=out" },
   ];
 
   // Row 4: Business stats — today orders links to filtered orders
   const row4 = [
-    { title: "今日订单", value: stats.row4.todayOrders, icon: ShoppingBag, color: "text-blue-500", link: "/orders?today=1" },
-    { title: "今日已发货", value: stats.row4.todayShipped, icon: Truck, color: "text-green-500", link: "/packing?tab=shipped" },
-    { title: "今日销售额", value: `RM ${Number(stats.row4.todaySales).toFixed(2)}`, icon: DollarSign, color: "text-green-600", link: "/profit-report" },
-    { title: "本月销售额", value: `RM ${Number(stats.row4.monthSales).toFixed(2)}`, icon: TrendingUp, color: "text-primary", link: "/profit-report" },
+    { title: t("dashboard.todayOrders"), value: stats.row4.todayOrders, icon: ShoppingBag, color: "text-blue-500", link: "/orders?today=1" },
+    { title: t("dashboard.todayShipped"), value: stats.row4.todayShipped, icon: Truck, color: "text-green-500", link: "/packing?tab=shipped" },
+    { title: t("dashboard.todaySales"), value: `RM ${Number(stats.row4.todaySales).toFixed(2)}`, icon: DollarSign, color: "text-green-600", link: "/profit-report" },
+    { title: t("dashboard.monthSales"), value: `RM ${Number(stats.row4.monthSales).toFixed(2)}`, icon: TrendingUp, color: "text-primary", link: "/profit-report" },
   ];
 
   const row5 = [
-    { title: "今日预约发货", value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "/packing?tab=scheduled" },
+    { title: t("dashboard.scheduledToday"), value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "/packing?tab=scheduled" },
   ];
 
   const recentRemarks = (stats as any).recentRemarks || [];
@@ -80,8 +82,8 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
-        <h1 className="text-2xl font-bold">仪表板</h1>
-        <span className="text-sm text-muted-foreground">{new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}</span>
+        <h1 className="text-2xl font-bold">{t("dashboard.title")}</h1>
+        <span className="text-sm text-muted-foreground">{new Date().toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}</span>
       </div>
 
       {/* Order Alerts Banner */}
@@ -89,7 +91,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-3 flex-wrap p-4 rounded-lg border bg-muted/50">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Bell className="h-4 w-4 text-primary" />
-            <span>订单提醒</span>
+            <span>{t("dashboard.orderAlerts")}</span>
           </div>
           {alerts.map((alert, i) => (
             <Link key={i} href={alert.link}>
@@ -186,14 +188,14 @@ export default function Dashboard() {
       <Card>
         <CardHeader className="flex flex-row items-center gap-2">
           <MessageSquare className="h-5 w-5 text-primary" />
-          <CardTitle className="text-base">最近备注记录</CardTitle>
+          <CardTitle className="text-base">{lang === "zh" ? "最近备注记录" : "Recent Remarks"}</CardTitle>
           {recentRemarks.length > 0 && (
             <Badge variant="secondary" className="ml-auto">{recentRemarks.length}</Badge>
           )}
         </CardHeader>
         <CardContent className="space-y-2">
           {recentRemarks.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">暂无备注记录</p>
+            <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无备注记录" : "No recent remarks"}</p>
           ) : (
             recentRemarks.map((r: any) => {
               const typeInfo = REMARK_TYPE_LABELS[r.type] || { label: r.type, color: "bg-gray-100 text-gray-700" };
@@ -201,7 +203,7 @@ export default function Dashboard() {
                 <Link key={r.id} href={`/orders/${r.orderId}`}>
                   <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
                     <Badge className={`shrink-0 ${typeInfo.color}`} variant="secondary">
-                      {typeInfo.label}
+                      {lang === "zh" ? typeInfo.zh : typeInfo.en}
                     </Badge>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm truncate">{r.content}</p>
@@ -223,12 +225,12 @@ export default function Dashboard() {
       <Card>
         <CardHeader className="flex flex-row items-center gap-2">
           <Bot className="h-5 w-5 text-orange-500" />
-          <CardTitle className="text-base">AI Agent 待人工通知</CardTitle>
+          <CardTitle className="text-base">{lang === "zh" ? "AI Agent 待人工通知" : "AI Agent Pending Notifications"}</CardTitle>
           <Badge variant="secondary" className="ml-auto">{pendingNotifications.length}</Badge>
         </CardHeader>
         <CardContent className="space-y-2">
           {pendingNotifications.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">暂无待人工通知记录</p>
+            <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无待人工通知记录" : "No pending notifications"}</p>
           ) : (
             pendingNotifications.map((n: any) => (
               <Link key={n.id} href={n.orderId ? `/orders/${n.orderId}` : "/orders"}>

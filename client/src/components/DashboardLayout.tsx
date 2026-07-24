@@ -33,28 +33,28 @@ import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "仪表板", path: "/" },
-  { icon: Package, label: "商品管理", path: "/products" },
-  { icon: FolderTree, label: "分类管理", path: "/categories" },
-  { icon: ShoppingCart, label: "订单管理", path: "/orders" },
-  { icon: Crown, label: "会员订单", path: "/membership" },
-  { icon: Users, label: "客户管理", path: "/customers" },
-  { icon: MessageSquare, label: "Flow 编辑器", path: "/flows" },
-  { icon: Truck, label: "供应商管理", path: "/suppliers" },
-  { icon: PackagePlus, label: "进货管理", path: "/purchase-orders" },
-  { icon: TrendingUp, label: "经营报告", path: "/profit-report" },
-  { icon: DollarSign, label: "销售与收款", path: "/reports/sales-payment" },
-  { icon: ShoppingBag, label: "商品销售", path: "/reports/product-sales" },
-  { icon: Users, label: "客户消费", path: "/reports/customer-spending" },
-  { icon: Boxes, label: "进货与库存", path: "/reports/purchase-inventory" },
-  { icon: Facebook, label: "Facebook 设置", path: "/facebook-settings" },
-  { icon: Ship, label: "运费规则", path: "/shipping-rules" },
-  { icon: Warehouse, label: "物流整合", path: "/logistics" },
-  { icon: CreditCard, label: "付款设定", path: "/payment-settings" },
-  { icon: Settings, label: "系统设置", path: "/system-settings" },
-  { icon: Store, label: "商城设置", path: "/mall-settings" },
-  { icon: PackageCheck, label: "包货工作台", path: "/packing" },
-  { icon: Search, label: "订单查询", path: "/order-tracking" },
+  { icon: LayoutDashboard, label: "nav.dashboard", path: "/" },
+  { icon: Package, label: "nav.products", path: "/products" },
+  { icon: FolderTree, label: { zh: "分类管理", en: "Categories" }, path: "/categories" },
+  { icon: ShoppingCart, label: "nav.orders", path: "/orders" },
+  { icon: Crown, label: { zh: "会员订单", en: "Membership Orders" }, path: "/membership" },
+  { icon: Users, label: "nav.customers", path: "/customers" },
+  { icon: MessageSquare, label: { zh: "Flow 编辑器", en: "Flow Editor" }, path: "/flows" },
+  { icon: Truck, label: { zh: "供应商管理", en: "Suppliers" }, path: "/suppliers" },
+  { icon: PackagePlus, label: { zh: "进货管理", en: "Purchase Orders" }, path: "/purchase-orders" },
+  { icon: TrendingUp, label: "nav.businessReport", path: "/profit-report" },
+  { icon: DollarSign, label: { zh: "销售与收款", en: "Sales & Payment" }, path: "/reports/sales-payment" },
+  { icon: ShoppingBag, label: { zh: "商品销售", en: "Product Sales" }, path: "/reports/product-sales" },
+  { icon: Users, label: { zh: "客户消费", en: "Customer Spending" }, path: "/reports/customer-spending" },
+  { icon: Boxes, label: { zh: "进货与库存", en: "Purchase & Inventory" }, path: "/reports/purchase-inventory" },
+  { icon: Facebook, label: "nav.facebookSettings", path: "/facebook-settings" },
+  { icon: Ship, label: { zh: "运费规则", en: "Shipping Rules" }, path: "/shipping-rules" },
+  { icon: Warehouse, label: "nav.logistics", path: "/logistics" },
+  { icon: CreditCard, label: "nav.paymentSettings", path: "/payment-settings" },
+  { icon: Settings, label: "nav.systemSettings", path: "/system-settings" },
+  { icon: Store, label: "nav.mallSettings", path: "/mall-settings" },
+  { icon: PackageCheck, label: "nav.packing", path: "/packing" },
+  { icon: Search, label: { zh: "订单查询", en: "Order Tracking" }, path: "/order-tracking" },
 ];
 
 const SHIPPING_STAFF_MENU_PATHS = new Set(["/packing", "/order-tracking"]);
@@ -132,7 +132,7 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
-  const { lang, setLang } = useI18n();
+  const { lang, setLang, t } = useI18n();
   const { theme, setTheme } = useTheme();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
@@ -143,6 +143,9 @@ function DashboardLayoutContent({
   const visibleMenuItems = isShippingStaff
     ? menuItems.filter((item) => SHIPPING_STAFF_MENU_PATHS.has(item.path))
     : menuItems;
+
+  const resolveLabel = (label: string | { zh: string; en: string }): string =>
+    typeof label === "string" ? t(label) : (lang === "zh" ? label.zh : label.en);
   const activeMenuItem = visibleMenuItems.find((item) => item.path === location);
   const isMobile = useIsMobile();
 
@@ -227,13 +230,13 @@ function DashboardLayoutContent({
                     <SidebarMenuButton
                       isActive={isActive}
                       onClick={() => setLocation(item.path)}
-                      tooltip={item.label}
+                      tooltip={resolveLabel(item.label)}
                       className={`h-10 transition-all font-normal`}
                     >
                       <item.icon
                         className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
                       />
-                      <span>{item.label}</span>
+                      <span>{resolveLabel(item.label)}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -316,7 +319,7 @@ function DashboardLayoutContent({
               <div className="flex items-center gap-3">
                 <div className="flex flex-col gap-1">
                   <span className="tracking-tight text-foreground">
-                    {activeMenuItem?.label ?? "Menu"}
+                    {activeMenuItem ? resolveLabel(activeMenuItem.label) : "Menu"}
                   </span>
                 </div>
               </div>
