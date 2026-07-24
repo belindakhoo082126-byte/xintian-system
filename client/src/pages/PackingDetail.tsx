@@ -54,6 +54,29 @@ export default function PackingDetail() {
     weight: string;
     serviceId: string;
   }>>([{ courier: "Parcel Daily", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
+  const [actualWeightInput, setActualWeightInput] = useState("");
+
+  const { data: specialActions } = trpc.shippingV2.specialOrderActions.useQuery({ orderId }, { enabled: !!detail });
+  const updateWeightMutation = trpc.shippingV2.updateActualWeight.useMutation({
+    onSuccess: (data) => {
+      if (data.needsSpecialOrder) {
+        toast.warning(translate("已记录实际重量，订单需特别处理", "Actual weight recorded, order needs special handling"));
+      } else {
+        toast.success(translate("实际重量已更新", "Actual weight updated"));
+      }
+      utils.packing.detail.invalidate({ orderId });
+      setActualWeightInput("");
+    },
+    onError: (err: any) => toast.error(translate("更新失败: ", "Update failed: ") + err.message),
+  });
+  const specialOrderMutation = trpc.shippingV2.processSpecialOrder.useMutation({
+    onSuccess: () => {
+      toast.success(translate("特别订单已处理", "Special order processed"));
+      utils.packing.detail.invalidate({ orderId });
+      utils.shippingV2.specialOrderActions.invalidate({ orderId });
+    },
+    onError: (err: any) => toast.error(translate("处理失败: ", "Processing failed: ") + err.message),
+  });
 
   const parcelKingServicesQuery = trpc.parcelking.getServices.useQuery(undefined, {
     enabled: !!detail,
@@ -521,6 +544,199 @@ export default function PackingDetail() {
                 </div>
               </DialogContent>
             </Dialog>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Actual Weight & Shipping Difference - only for packing status */}
+      {canShip && (
+        <Card className="print-hide border-blue-200">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Package className="h-4 w-4 text-blue-500" />
+              {translate("实际重量与运费", "Actual Weight & Shipping")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Estimated weight display */}
+            {detail && (
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">{translate("预估重量", "Estimated Weight")}: </span>
+                  <span className="font-medium">{Number(detail.estimatedWeight || detail.totalWeight || 0).toFixed(2)} kg</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">{translate("客户已付运费", "Customer Paid Shipping")}: </span>
+                  <span className="font-medium">RM {Number(detail.customerPaidShipping || detail.shippingFee || 0).toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Actual weight input */}
+            {detail && !detail.actualWeight && (
+              <div className="flex items-end gap-3">
+                <div className="flex-1">
+                  <Label>{translate("实际重量 (kg)", "Actual Weight (kg)")}</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={actualWeightInput}
+                    onChange={(e) => setActualWeightInput(e.target.value)}
+                  />
+                </div>
+                <Button
+                  onClick={() => {
+                    const w = parseFloat(actualWeightInput);
+                    if (!w || w <= 0) {
+                      toast.error(translate("请输入有效重量", "Please enter a valid weight"));
+                      return;
+                    }
+                    updateWeightMutation.mutate({ orderId, actualWeight: w });
+                  }}
+                  disabled={updateWeightMutation.isPending || !actualWeightInput}
+                >
+                  {translate("确认", "Confirm")}
+                </Button>
+              </div>
+            )}
+
+            {/* Actual weight result */}
+            {detail?.actualWeight && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-4 text-sm border rounded-lg p-3 bg-blue-50 dark:bg-blue-950/20">
+                  <div>
+                    <span className="text-muted-foreground block">{translate("实际重量", "Actual Weight")}</span>
+                    <span className="font-medium">{Number(detail.actualWeight).toFixed(2)} kg</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block">{translate("实际运费", "Actual Shipping")}</span>
+                    <span className="font-medium">RM {Number(detail.actualShippingFee || 0).toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block">{translate("差额", "Difference")}</span>
+                    <span className={`font-medium ${Number(detail.shippingDifference || 0) > 0 ? "text-red-600" : Number(detail.shippingDifference || 0) < 0 ? "text-green-600" : ""}`}>
+                      RM {Number(detail.shippingDifference || 0).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Special order handling */}
+                {detail.isSpecialOrder && detail.specialOrderStatus === "pending" && (
+                  <div className="border rounded-lg p-3 bg-yellow-50 dark:bg-yellow-950/20 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                      <span className="font-medium text-sm">
+                        {detail.specialOrderType === "pending_shipping"
+                          ? translate("等待补运费", "Pending Additional Shipping Fee")
+                          : detail.specialOrderType === "pending_refund"
+                          ? translate("等待退款", "Pending Refund")
+                          : translate("特别订单", "Special Order")}
+                      </span>
+                      <Badge variant="destructive">RM {Math.abs(Number(detail.shippingDifference || 0)).toFixed(2)}</Badge>
+                    </div>
+
+                    {/* Special order action buttons */}
+                    <div className="flex flex-wrap gap-2">
+                      {detail.specialOrderType === "pending_shipping" && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              specialOrderMutation.mutate({
+                                orderId,
+                                actionType: "notify_shortage",
+                                amount: Math.abs(Number(detail.shippingDifference || 0)),
+                                remark: translate("已通知客户补运费", "Customer notified for additional shipping fee"),
+                              });
+                            }}
+                            disabled={specialOrderMutation.isPending}
+                          >
+                            {translate("通知补运费", "Notify Additional Shipping")}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => {
+                              specialOrderMutation.mutate({
+                                orderId,
+                                actionType: "confirm_received",
+                                amount: Math.abs(Number(detail.shippingDifference || 0)),
+                                remark: translate("已收到补运费", "Additional shipping fee received"),
+                              });
+                            }}
+                            disabled={specialOrderMutation.isPending}
+                          >
+                            {translate("确认收到", "Confirm Received")}
+                          </Button>
+                        </>
+                      )}
+                      {detail.specialOrderType === "pending_refund" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            specialOrderMutation.mutate({
+                              orderId,
+                              actionType: "refund",
+                              amount: Math.abs(Number(detail.shippingDifference || 0)),
+                              remark: translate("退款已完成", "Refund completed"),
+                            });
+                          }}
+                          disabled={specialOrderMutation.isPending}
+                        >
+                          {translate("退款", "Refund")}
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          specialOrderMutation.mutate({
+                            orderId,
+                            actionType: "company_bear",
+                            amount: Math.abs(Number(detail.shippingDifference || 0)),
+                            remark: translate("公司承担", "Company bears the cost"),
+                          });
+                        }}
+                        disabled={specialOrderMutation.isPending}
+                      >
+                        {translate("公司承担", "Company Bear")}
+                      </Button>
+                    </div>
+
+                    {/* Special order actions history */}
+                    {specialActions && (specialActions as any[]).length > 0 && (
+                      <div className="space-y-1 mt-2">
+                        {(specialActions as any[]).map((action: any) => (
+                          <div key={action.id} className="text-xs text-muted-foreground flex items-center gap-2">
+                            <span>{new Date(action.createdAt).toLocaleString()}</span>
+                            <span>{action.performedBy}</span>
+                            <Badge variant="secondary" className="text-xs">
+                              {action.actionType === "notify_shortage" ? translate("通知补运费", "Notify") :
+                               action.actionType === "confirm_received" ? translate("确认收到", "Confirmed") :
+                               action.actionType === "refund" ? translate("退款", "Refund") :
+                               action.actionType === "company_bear" ? translate("公司承担", "Company Bear") :
+                               translate("备注", "Remark")}
+                            </Badge>
+                            {action.remark && <span>— {action.remark}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Resolved special order */}
+                {detail.isSpecialOrder && detail.specialOrderStatus === "resolved" && (
+                  <div className="flex items-center gap-2 text-sm text-green-600">
+                    <CheckCircle2 className="h-4 w-4" />
+                    {translate("特别订单已处理", "Special order resolved")}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

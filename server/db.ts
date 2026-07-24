@@ -21,6 +21,7 @@ import {
   orderItemRepots, orderRemarks,
   // V1.2 imports
   orderExceptions, orderExceptionItems, orderExceptionReplacements, inventoryAdjustments,
+  orderSubOrders, specialOrderActions,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3391,6 +3392,14 @@ export async function getPackingDetail(orderId: number) {
     physicalStatus: orders.physicalStatus,
     createdAt: orders.createdAt,
     paymentConfirmedAt: orders.paymentConfirmedAt,
+    estimatedWeight: orders.estimatedWeight,
+    customerPaidShipping: orders.customerPaidShipping,
+    actualWeight: orders.actualWeight,
+    actualShippingFee: orders.actualShippingFee,
+    shippingDifference: orders.shippingDifference,
+    isSpecialOrder: orders.isSpecialOrder,
+    specialOrderType: orders.specialOrderType,
+    specialOrderStatus: orders.specialOrderStatus,
   }).from(orders)
     .leftJoin(customers, eq(orders.customerId, customers.id))
     .where(eq(orders.id, orderId))
@@ -4709,4 +4718,228 @@ export async function getLossAnalysisReport(dateRange: { start: Date; end: Date 
       lossCost: Number(r.loss_cost) || 0,
     })),
   };
+}
+
+// ============================================================================
+// V1.2: Shipping Fee Calculation Engine (运费计算引擎)
+// ============================================================================
+
+/**
+ * Calculate shipping fee for normal products based on XLCS rules:
+ * - If subtotal >= RM150: first 10kg free, excess at RM3/kg
+ * - If subtotal < RM150: first 10kg RM15, excess at RM15 + RM3/kg
+ */
+export function calculateNormalShippingFee(itemsSubtotal: number, totalWeightKg: number): {
+  chargeableWeight: number;
+  shippingFee: number;
+  isFreeShipping: boolean;
+} {
+  const isFreeShipping = itemsSubtotal >= 150;
+  const baseWeight = 10; // 10kg base
+  const excessWeight = Math.max(0, totalWeightKg - baseWeight);
+  const chargeableWeight = totalWeightKg; // actual weight is chargeable
+
+  let shippingFee: number;
+  if (isFreeShipping) {
+    // Free shipping for first 10kg, RM3/kg for excess
+    shippingFee = excessWeight * 3;
+  } else {
+    // RM15 for first 10kg, RM15 + RM3/kg for excess
+    shippingFee = 15 + excessWeight * 3;
+  }
+
+  return { chargeableWeight, shippingFee, isFreeShipping };
+}
+
+/**
+ * Calculate shipping fee for standalone shipping products
+ */
+export function calculateStandaloneShippingFee(
+  method: "fixed_fee" | "free_shipping",
+  fixedFee: number
+): number {
+  return method === "free_shipping" ? 0 : fixedFee;
+}
+
+// ============================================================================
+// V1.2: Auto Split Order Logic (自动拆单)
+// ============================================================================
+
+/**
+ * Split order items into sub-orders based on standalone shipping flag.
+ * Returns array of sub-order groups.
+ */
+export function splitOrderItems(items: Array<{
+  productId: number;
+  quantity: number;
+  unitPrice: number;
+  allowStandaloneShipping: boolean;
+  standaloneShippingMethod: "fixed_fee" | "free_shipping" | null;
+  standaloneShippingFee: number | null;
+  weight: number | null;
+}>): {
+  normalItems: typeof items;
+  standaloneItems: typeof items;
+  needsSplit: boolean;
+} {
+  const normalItems = items.filter(i => !i.allowStandaloneShipping);
+  const standaloneItems = items.filter(i => i.allowStandaloneShipping);
+  const needsSplit = standaloneItems.length > 0 && normalItems.length > 0;
+
+  return { normalItems, standaloneItems, needsSplit };
+}
+
+// ============================================================================
+// V1.2: Actual Weight Processing (实际重量处理)
+// ============================================================================
+
+/**
+ * Recalculate shipping fee based on actual weight and determine if special order is needed.
+ * Returns the difference and whether a special order should be created.
+ */
+export function processActualWeight(
+  actualWeightKg: number,
+  customerPaidShipping: number,
+  itemsSubtotal: number,
+  isStandalone: boolean,
+  standaloneMethod: "fixed_fee" | "free_shipping" | null,
+  standaloneFixedFee: number
+): {
+  actualShippingFee: number;
+  difference: number;
+  needsSpecialOrder: boolean;
+  specialOrderType: "pending_shipping" | "pending_refund" | null;
+} {
+  let actualShippingFee: number;
+
+  if (isStandalone && standaloneMethod) {
+    // Standalone: actual fee is from courier, but customer paid fixed fee or 0
+    // The difference is recorded as profit/loss but NOT charged to customer
+    actualShippingFee = calculateStandaloneShippingFee(standaloneMethod, standaloneFixedFee);
+    const difference = customerPaidShipping - actualShippingFee;
+    return {
+      actualShippingFee,
+      difference,
+      needsSpecialOrder: false, // Standalone doesn't trigger special order
+      specialOrderType: null,
+    };
+  }
+
+  // Normal product: recalculate based on actual weight
+  const { shippingFee } = calculateNormalShippingFee(itemsSubtotal, actualWeightKg);
+  actualShippingFee = shippingFee;
+
+  const difference = actualShippingFee - customerPaidShipping;
+  const needsSpecialOrder = Math.abs(difference) > 0.01 && actualWeightKg > 10;
+
+  let specialOrderType: "pending_shipping" | "pending_refund" | null = null;
+  if (needsSpecialOrder) {
+    specialOrderType = difference > 0 ? "pending_shipping" : "pending_refund";
+  }
+
+  return { actualShippingFee, difference, needsSpecialOrder, specialOrderType };
+}
+
+// ============================================================================
+// V1.2: Special Order Actions (特别订单处理)
+// ============================================================================
+
+export async function createSpecialOrderAction(
+  orderId: number,
+  actionType: "notify_shortage" | "confirm_received" | "refund" | "company_bear" | "remark",
+  amount: number,
+  performedBy: string,
+  remark?: string
+) {
+  const db = await getDb();
+  if (!db) return undefined;
+  await db.insert(specialOrderActions).values({
+    orderId,
+    actionType,
+    amount: amount.toString(),
+    performedBy,
+    remark,
+  });
+  return { success: true };
+}
+
+export async function getSpecialOrderActions(orderId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const actions = await db.select().from(specialOrderActions)
+    .where(eq(specialOrderActions.orderId, orderId))
+    .orderBy(desc(specialOrderActions.createdAt));
+  return actions;
+}
+
+export async function getSpecialOrders(params: { status?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return { items: [], total: 0 };
+  const conditions: any[] = [eq(orders.isSpecialOrder, true)];
+  if (params.status && params.status !== "all") {
+    conditions.push(eq(orders.specialOrderStatus, params.status as any));
+  }
+  const where = and(...conditions);
+  const limit = params.limit ?? 20;
+  const offset = params.offset ?? 0;
+  const items = await db.select().from(orders)
+    .where(where)
+    .orderBy(desc(orders.createdAt))
+    .limit(limit)
+    .offset(offset);
+  const countResult = await db.select({ count: sql`count(*)` }).from(orders).where(where);
+  const total = Number(countResult[0]?.count) || 0;
+  return { items, total };
+}
+
+// ============================================================================
+// V1.2: Sub Orders (子订单管理)
+// ============================================================================
+
+export async function getSubOrders(parentOrderId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const subs = await db.select().from(orderSubOrders)
+    .where(eq(orderSubOrders.parentOrderId, parentOrderId))
+    .orderBy(asc(orderSubOrders.id));
+  return subs;
+}
+
+export async function updateSubOrderActualWeight(
+  subOrderId: number,
+  actualWeight: number,
+  actualShippingFee: number
+) {
+  const db = await getDb();
+  if (!db) return undefined;
+  await db.update(orderSubOrders).set({
+    actualWeight: actualWeight.toString(),
+    actualShippingFee: actualShippingFee.toString(),
+  }).where(eq(orderSubOrders.id, subOrderId));
+  return { success: true };
+}
+
+export async function updateOrderActualWeight(
+  orderId: number,
+  actualWeight: number,
+  actualShippingFee: number,
+  shippingDifference: number,
+  shippingProfit: number | null,
+  shippingLoss: number | null,
+  isSpecialOrder: boolean,
+  specialOrderType: string | null
+) {
+  const db = await getDb();
+  if (!db) return undefined;
+  await db.update(orders).set({
+    actualWeight: actualWeight.toString(),
+    actualShippingFee: actualShippingFee.toString(),
+    shippingDifference: shippingDifference.toString(),
+    shippingProfit: shippingProfit !== null ? shippingProfit.toString() : null,
+    shippingLoss: shippingLoss !== null ? shippingLoss.toString() : null,
+    isSpecialOrder,
+    specialOrderType: specialOrderType as any,
+    specialOrderStatus: isSpecialOrder ? "pending" as any : undefined,
+  }).where(eq(orders.id, orderId));
+  return { success: true };
 }

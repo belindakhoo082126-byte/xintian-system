@@ -162,6 +162,9 @@ export const products = mysqlTable("products", {
 
   // V2: Standalone shipping (单颗邮寄)
   allowStandaloneShipping: boolean("allowStandaloneShipping").default(false).notNull(),
+  // V1.2: Standalone shipping method & fee
+  standaloneShippingMethod: mysqlEnum("standaloneShippingMethod", ["fixed_fee", "free_shipping"]).default("fixed_fee"),
+  standaloneShippingFee: decimal("standaloneShippingFee", { precision: 10, scale: 2 }).default("0"),
 
   // V2: Structured care description (结构化养护说明)
   lightDesc: text("lightDesc"),
@@ -495,6 +498,22 @@ export const orders = mysqlTable("orders", {
   autoCompleteAt: timestamp("autoCompleteAt"),
   // V1.1: Scheduled shipping date (预约发货日期)
   scheduledShippingDate: timestamp("scheduledShippingDate"),
+  // V1.2: Shipping weight & fee fields
+  estimatedWeight: decimal("estimatedWeight", { precision: 8, scale: 2 }).default("0"),
+  estimatedChargeableWeight: decimal("estimatedChargeableWeight", { precision: 8, scale: 2 }).default("0"),
+  customerPaidShipping: decimal("customerPaidShipping", { precision: 10, scale: 2 }).default("0"),
+  actualWeight: decimal("actualWeight", { precision: 8, scale: 2 }),
+  actualChargeableWeight: decimal("actualChargeableWeight", { precision: 8, scale: 2 }),
+  actualShippingFee: decimal("actualShippingFee", { precision: 10, scale: 2 }),
+  shippingDifference: decimal("shippingDifference", { precision: 10, scale: 2 }),
+  shippingProfit: decimal("shippingProfit", { precision: 10, scale: 2 }),
+  shippingLoss: decimal("shippingLoss", { precision: 10, scale: 2 }),
+  // V1.2: Special order flag
+  isSpecialOrder: boolean("isSpecialOrder").default(false).notNull(),
+  specialOrderType: mysqlEnum("specialOrderType", ["pending_shipping", "pending_refund", "company_bear"]),
+  specialOrderStatus: mysqlEnum("specialOrderStatus", ["pending", "resolved", "cancelled"]).default("pending"),
+  // V1.2: Parent order for split orders
+  parentOrderId: int("parentOrderId"),
 });
 
 export type Order = typeof orders.$inferSelect;
@@ -1277,3 +1296,69 @@ export const inventoryAdjustments = mysqlTable("inventory_adjustments", {
 });
 export type InventoryAdjustment = typeof inventoryAdjustments.$inferSelect;
 export type InsertInventoryAdjustment = typeof inventoryAdjustments.$inferInsert;
+
+// ============================================================================
+// V1.2: Sub Orders (子订单 - 自动拆单)
+// ============================================================================
+
+export const orderSubOrders = mysqlTable("order_sub_orders", {
+  id: int("id").autoincrement().primaryKey(),
+  // Parent order ID
+  parentOrderId: int("parentOrderId").notNull(),
+  // Sub order number (e.g. XL1023-A, XL1023-B)
+  subOrderNumber: varchar("subOrderNumber", { length: 60 }).notNull().unique(),
+  // Type: normal (普通商品) or standalone (单独邮寄商品)
+  subOrderType: mysqlEnum("subOrderType", ["normal", "standalone"]).notNull(),
+  // Items subtotal for this sub-order
+  itemsSubtotal: decimal("itemsSubtotal", { precision: 10, scale: 2 }).default("0"),
+  // Shipping method for this sub-order
+  shippingMethod: mysqlEnum("shippingMethod", ["normal_rule", "fixed_fee", "free_shipping"]).default("normal_rule").notNull(),
+  // Shipping fee charged to customer
+  shippingFee: decimal("shippingFee", { precision: 10, scale: 2 }).default("0"),
+  // Total for this sub-order
+  totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }).default("0"),
+  // Actual weight (filled at packing stage)
+  actualWeight: decimal("actualWeight", { precision: 8, scale: 2 }),
+  // Actual shipping fee from courier
+  actualShippingFee: decimal("actualShippingFee", { precision: 10, scale: 2 }),
+  // AWB number
+  awbNumber: varchar("awbNumber", { length: 100 }),
+  // Tracking number
+  trackingNumber: varchar("trackingNumber", { length: 100 }),
+  // Courier company
+  courierCompany: varchar("courierCompany", { length: 100 }),
+  // Sub-order status
+  status: mysqlEnum("status", ["pending", "ready_to_ship", "shipped", "cancelled"]).default("pending"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OrderSubOrder = typeof orderSubOrders.$inferSelect;
+export type InsertOrderSubOrder = typeof orderSubOrders.$inferInsert;
+
+// ============================================================================
+// V1.2: Special Order Actions (特别订单处理记录)
+// ============================================================================
+
+export const specialOrderActions = mysqlTable("special_order_actions", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  // Action type: notify_shortage / confirm_received / refund / company_bear / remark
+  actionType: mysqlEnum("actionType", [
+    "notify_shortage",    // 通知补运费
+    "confirm_received",   // 确认收到补运费
+    "refund",             // 退款
+    "company_bear",       // 公司承担
+    "remark",             // 备注
+  ]).notNull(),
+  // Amount involved
+  amount: decimal("amount", { precision: 10, scale: 2 }).default("0"),
+  // Who performed the action
+  performedBy: varchar("performedBy", { length: 255 }).notNull(),
+  // Remark/note
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SpecialOrderAction = typeof specialOrderActions.$inferSelect;
+export type InsertSpecialOrderAction = typeof specialOrderActions.$inferInsert;

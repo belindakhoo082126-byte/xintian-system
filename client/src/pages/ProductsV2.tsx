@@ -79,6 +79,8 @@ type ProductForm = {
   specialPrice: string;
   allowPresale: boolean;
   allowStandaloneShipping: boolean;
+  standaloneShippingMethod: string;
+  standaloneShippingFee: string;
   lightDesc: string;
   waterDesc: string;
   fertilizerDesc: string;
@@ -95,6 +97,7 @@ const EMPTY_FORM: ProductForm = {
   membershipIntro: "", telegramFlowLink: "", allowStandalonePurchase: true, allowMixedCheckout: true,
   notes: "", coverImageUrl: "", dimensions: {},
   isSpecial: false, specialPrice: "", allowPresale: false, allowStandaloneShipping: false,
+  standaloneShippingMethod: "fixed_fee", standaloneShippingFee: "",
   lightDesc: "", waterDesc: "", fertilizerDesc: "", pruningDesc: "",
   productImages: [],
 };
@@ -218,6 +221,8 @@ export default function ProductsV2() {
         specialPrice: p.specialPrice || "",
         allowPresale: p.allowPresale ?? false,
         allowStandaloneShipping: p.allowStandaloneShipping ?? false,
+        standaloneShippingMethod: (p as any).standaloneShippingMethod || "fixed_fee",
+        standaloneShippingFee: (p as any).standaloneShippingFee ? String((p as any).standaloneShippingFee) : "",
         lightDesc: p.lightDesc || "",
         waterDesc: p.waterDesc || "",
         fertilizerDesc: p.fertilizerDesc || "",
@@ -780,6 +785,27 @@ export default function ProductsV2() {
                           </div>
                           <Switch checked={form.allowStandaloneShipping} onCheckedChange={(v) => setForm({ ...form, allowStandaloneShipping: v })} />
                         </div>
+                        {form.allowStandaloneShipping && (
+                          <div className="space-y-3 rounded-lg border p-3 bg-muted/30">
+                            <div>
+                              <Label>{translate("运费方式", "Shipping Method")}</Label>
+                              <Select value={form.standaloneShippingMethod || "fixed_fee"} onValueChange={(v) => setForm({ ...form, standaloneShippingMethod: v })}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="fixed_fee">{translate("固定运费", "Fixed Fee")}</SelectItem>
+                                  <SelectItem value="free_shipping">{translate("免邮", "Free Shipping")}</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            {form.standaloneShippingMethod === "fixed_fee" && (
+                              <div>
+                                <Label>{translate("固定运费金额 (RM)", "Fixed Shipping Fee (RM)")}</Label>
+                                <Input type="number" step="0.01" placeholder="0.00" value={form.standaloneShippingFee || ""}
+                                  onChange={(e) => setForm({ ...form, standaloneShippingFee: e.target.value })} />
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 

@@ -56,13 +56,29 @@ export default function MallCheckout() {
 
   const subtotal = cart.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
   const totalWeight = cart.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
+  
+  // Split items into normal and standalone shipping
+  const normalItems = cart.filter(i => !i.isStandalone);
+  const standaloneItems = cart.filter(i => i.isStandalone);
+  const normalSubtotal = normalItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+  const specialItems = cart.filter(i => i.isSpecial);
+  const specialSubtotal = specialItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+  const regularSubtotal = subtotal - specialSubtotal;
+  
   let shippingFee = 0;
+  let standaloneShippingFee = 0;
   if (form.shippingMethod === "west_malaysia") {
-    shippingFee = subtotal >= 150 ? (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3) : 15;
+    shippingFee = normalSubtotal >= 150 ? (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3) : 15;
   } else if (form.shippingMethod === "east_malaysia") {
     shippingFee = 15;
   }
-  const total = subtotal + shippingFee;
+  // Add standalone shipping fees
+  standaloneItems.forEach(i => {
+    standaloneShippingFee += i.standaloneShippingFee || 0;
+  });
+  const totalShipping = shippingFee + standaloneShippingFee;
+  const total = subtotal + totalShipping;
+  const needsSplit = standaloneItems.length > 0 && normalItems.length > 0;
 
   async function handleSmartPaste() {
     if (!smartPasteText.trim()) return;
@@ -292,12 +308,33 @@ export default function MallCheckout() {
                 <span>RM {item.subtotal}</span>
               </div>
             ))}
+            {specialSubtotal > 0 && (
+              <div className="border-t pt-2 flex justify-between text-sm">
+                <span className="text-orange-600">特价商品小计</span><span className="text-orange-600">RM {specialSubtotal.toFixed(2)}</span>
+              </div>
+            )}
+            {regularSubtotal > 0 && regularSubtotal !== subtotal && (
+              <div className="flex justify-between text-sm">
+                <span>普通商品小计</span><span>RM {regularSubtotal.toFixed(2)}</span>
+              </div>
+            )}
             <div className="border-t pt-2 flex justify-between text-sm">
-              <span>小计</span><span>RM {subtotal.toFixed(2)}</span>
+              <span>商品小计</span><span>RM {subtotal.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span>运费</span><span>{shippingFee === 0 ? "免邮" : `RM ${shippingFee.toFixed(2)}`}</span>
-            </div>
+            {needsSplit ? (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span>包裹一运费</span><span>{shippingFee === 0 ? "免邮" : `RM ${shippingFee.toFixed(2)}`}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>包裹二运费（单独邮寄）</span><span>RM {standaloneShippingFee.toFixed(2)}</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex justify-between text-sm">
+                <span>运费</span><span>{totalShipping === 0 ? "免邮" : `RM ${totalShipping.toFixed(2)}`}</span>
+              </div>
+            )}
             <div className="border-t pt-2 flex justify-between font-semibold text-lg">
               <span>合计</span><span className="text-[#2d6a4f]">RM {total.toFixed(2)}</span>
             </div>

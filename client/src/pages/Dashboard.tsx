@@ -5,7 +5,7 @@ import {
   Clock, Package, Truck, DollarSign, TrendingUp,
   ShoppingCart, Warehouse, Calendar, Bell,
   ShoppingBag, CheckCircle, XCircle, Ban,
-  MessageSquare, Bot, ArrowRight,
+  MessageSquare, Bot, ArrowRight, AlertTriangle,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useI18n } from "@/contexts/I18nContext";
@@ -102,6 +102,22 @@ export default function Dashboard() {
             </Link>
           ))}
         </div>
+      )}
+
+      {/* Special Orders Alert */}
+      {(stats as any).specialOrdersCount > 0 && (
+        <Link href="/orders?status=special">
+          <Card className="border-yellow-300 bg-yellow-50 dark:bg-yellow-950/20 hover:shadow-md transition-shadow cursor-pointer">
+            <CardContent className="flex items-center gap-3 py-4">
+              <AlertTriangle className="h-5 w-5 text-yellow-500" />
+              <div className="flex-1">
+                <span className="text-sm font-medium">{t("dashboard.specialOrders") || t("dashboard.specialOrdersFallback")}</span>
+                <span className="text-xs text-muted-foreground ml-2">{lang === "zh" ? "等待处理" : "Pending action"}</span>
+              </div>
+              <span className="text-2xl font-bold text-yellow-600">{(stats as any).specialOrdersCount}</span>
+            </CardContent>
+          </Card>
+        </Link>
       )}
 
       {/* Row 1: Today's Tasks */}

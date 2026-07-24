@@ -3336,5 +3336,173 @@ export const appRouter = router({
       });
     }),
   }),
+  // ===========================================================================
+  // V1.2: Shipping Fee & Special Orders (运费与特别订单)
+  // ===========================================================================
+  shippingV2: router({
+    // Calculate shipping fee for checkout
+    calculate: publicProcedure.input(z.object({
+      items: z.array(z.object({
+        productId: z.number(),
+        quantity: z.number(),
+        isStandalone: z.boolean().optional(),
+      })),
+    })).mutation(async ({ input }) => {
+      // Fetch product details for each item
+      const productDetails = await Promise.all(
+        input.items.map(async (item) => {
+          const product = await db.getProductByIdEnhanced(item.productId);
+          return {
+            ...item,
+            product,
+          };
+        })
+      );
+      
+      // Split items into normal and standalone
+      const normalItems = productDetails.filter(i => !i.product?.allowStandaloneShipping);
+      const standaloneItems = productDetails.filter(i => i.product?.allowStandaloneShipping);
+      
+      // Calculate normal items subtotal and weight
+      const normalSubtotal = normalItems.reduce((sum, i) => sum + (Number(i.product?.sellingPrice || 0) * i.quantity), 0);
+      const normalWeight = normalItems.reduce((sum, i) => sum + (Number(i.product?.weightKg || 0) * i.quantity), 0);
+      
+      // Calculate normal shipping
+      const normalShipping = db.calculateNormalShippingFee(normalSubtotal, normalWeight);
+      
+      // Calculate standalone shipping for each standalone item
+      const standaloneShipping = standaloneItems.map(i => ({
+        productId: i.productId,
+        method: i.product?.standaloneShippingMethod || "fixed_fee",
+        fee: db.calculateStandaloneShippingFee(
+          (i.product?.standaloneShippingMethod as "fixed_fee" | "free_shipping") || "fixed_fee",
+          Number(i.product?.standaloneShippingFee || 0)
+        ),
+      }));
+      
+      const standaloneTotal = standaloneShipping.reduce((sum, s) => sum + s.fee, 0);
+      const totalShipping = normalShipping.shippingFee + standaloneTotal;
+      
+      return {
+        normalParcel: {
+          itemsSubtotal: normalSubtotal,
+          weight: normalWeight,
+          shippingFee: normalShipping.shippingFee,
+          isFreeShipping: normalShipping.isFreeShipping,
+        },
+        standaloneParcels: standaloneShipping,
+        totalShipping,
+        needsSplit: standaloneItems.length > 0 && normalItems.length > 0,
+      };
+    }),
+    
+    // Update actual weight for an order (packing stage)
+    updateActualWeight: shippingProcedure.input(z.object({
+      orderId: z.number(),
+      actualWeight: z.number(),
+    })).mutation(async ({ ctx, input }) => {
+      // Get order details
+      const order = await db.getOrderById(input.orderId);
+      if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Order not found" });
+      
+      const itemsSubtotal = Number(order.physicalSubtotal || 0);
+      const customerPaidShipping = Number(order.customerPaidShipping || order.shippingFee || 0);
+      
+      // Process actual weight
+      const result = db.processActualWeight(
+        input.actualWeight,
+        customerPaidShipping,
+        itemsSubtotal,
+        false, // normal order (not standalone)
+        null,
+        0
+      );
+      
+      // Update order with actual weight and shipping details
+      await db.updateOrderActualWeight(
+        input.orderId,
+        input.actualWeight,
+        result.actualShippingFee,
+        result.difference,
+        result.difference < 0 ? Math.abs(result.difference) : null, // shippingLoss
+        result.difference > 0 ? result.difference : null, // shippingProfit (company profit from overcharge)
+        result.needsSpecialOrder,
+        result.specialOrderType
+      );
+      
+      // If special order needed, create notification
+      if (result.needsSpecialOrder) {
+        await db.createSpecialOrderAction(
+          input.orderId,
+          "notify_shortage",
+          Math.abs(result.difference),
+          ctx.user?.name || "system",
+          result.specialOrderType === "pending_shipping"
+            ? `Need to collect RM${Math.abs(result.difference).toFixed(2)} additional shipping fee`
+            : `Need to refund RM${Math.abs(result.difference).toFixed(2)} shipping fee`
+        );
+      }
+      
+      return {
+        success: true,
+        actualShippingFee: result.actualShippingFee,
+        difference: result.difference,
+        needsSpecialOrder: result.needsSpecialOrder,
+        specialOrderType: result.specialOrderType,
+      };
+    }),
+    
+    // Get special orders list
+    specialOrders: adminProcedure.input(z.object({
+      status: z.string().optional(),
+      limit: z.number().optional(),
+      offset: z.number().optional(),
+    })).query(async ({ input }) => {
+      return await db.getSpecialOrders(input);
+    }),
+    
+    // Get special order actions for an order
+    specialOrderActions: protectedProcedure.input(z.object({
+      orderId: z.number(),
+    })).query(async ({ input }) => {
+      return await db.getSpecialOrderActions(input.orderId);
+    }),
+    
+    // Process special order action
+    processSpecialOrder: shippingProcedure.input(z.object({
+      orderId: z.number(),
+      actionType: z.enum(["notify_shortage", "confirm_received", "refund", "company_bear", "remark"]),
+      amount: z.number().optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      await db.createSpecialOrderAction(
+        input.orderId,
+        input.actionType,
+        input.amount || 0,
+        ctx.user?.name || "staff",
+        input.remark
+      );
+      
+      // If company_bear or confirm_received, resolve the special order
+      if (input.actionType === "company_bear" || input.actionType === "confirm_received" || input.actionType === "refund") {
+        const dbConn = await db.getDb();
+        if (dbConn) {
+          const { orders } = await import("../drizzle/schema");
+          await dbConn.update(orders).set({
+            specialOrderStatus: "resolved",
+          }).where(eq(orders.id, input.orderId));
+        }
+      }
+      
+      return { success: true };
+    }),
+    
+    // Get sub-orders for a parent order
+    subOrders: protectedProcedure.input(z.object({
+      parentOrderId: z.number(),
+    })).query(async ({ input }) => {
+      return await db.getSubOrders(input.parentOrderId);
+    }),
+  }),
 });
 export type AppRouter = typeof appRouter;
