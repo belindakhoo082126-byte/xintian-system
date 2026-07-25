@@ -5608,6 +5608,8 @@ export async function getSpecialOrderFollowUpStats() {
     pendingShippingCount: 0,
     pendingRefundCount: 0,
     logisticsErrorCount: 0,
+    notificationFailedCount: 0,
+    stockExceptionCount: 0,
     overdueCount: 0,
     totalPending: 0,
   };
@@ -5667,6 +5669,22 @@ export async function getSpecialOrderFollowUpStats() {
 
   const incompleteInfoCount = Number((incompleteRows as unknown as any[])[0]?.cnt) || 0;
 
+  // Count failed notifications (messenger/whatsapp/email) that need manual retry
+  const [notificationFailedRows] = await db.execute(sql`
+    SELECT COUNT(*) as cnt
+    FROM notification_logs
+    WHERE status = 'failed'
+  `);
+  const notificationFailedCount = Number((notificationFailedRows as unknown as any[])[0]?.cnt) || 0;
+
+  // Count open stock exceptions (out_of_stock and other unresolved exceptions)
+  const [stockExceptionRows] = await db.execute(sql`
+    SELECT COUNT(*) as cnt
+    FROM order_exceptions
+    WHERE status = 'open'
+  `);
+  const stockExceptionCount = Number((stockExceptionRows as unknown as any[])[0]?.cnt) || 0;
+
   const pendingShippingCount = typeCounts['pending_shipping'] || 0;
   const pendingRefundCount = typeCounts['pending_refund'] || 0;
   const totalPending = pendingShippingCount + pendingRefundCount + (typeCounts['company_bear'] || 0);
@@ -5675,6 +5693,8 @@ export async function getSpecialOrderFollowUpStats() {
     pendingShippingCount,
     pendingRefundCount,
     logisticsErrorCount: logisticsErrorCount + incompleteInfoCount,
+    notificationFailedCount,
+    stockExceptionCount,
     overdueCount,
     totalPending,
   };

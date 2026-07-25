@@ -745,3 +745,7 @@
 - [x] 前端：商城端组合包展示 + 菜单更新（商品管理 → 组合包管理）
 - [x] 编译测试、保存检查点并发布（119/119 测试通过）
 - [x] Move the Dashboard special-status order framework into the Emergency section and preserve its zero-data display
+- [x] Expand special order follow-up from 4 to 6 categories: add 自动通知失败 and 库存异常
+- [x] Update backend getSpecialOrderFollowUpStats to count failed notifications and open stock exceptions
+- [x] Update Dashboard frontend grid from 4 to 6 stat cards
+- [x] Update dashboardFollowUp.ts helper and tests for 6 categories

@@ -219,7 +219,7 @@ export default function Dashboard() {
               <Badge variant="secondary" className="ml-auto">{followUpDisplay.itemCount}</Badge>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <div className="rounded-lg border border-orange-100 bg-background/70 p-3 dark:border-orange-900/50">
                   <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待补运费" : "Pending Shipping"}</p>
                   <p className="mt-1 text-2xl font-bold text-orange-600">{followUpDisplay.pendingShippingCount}</p>
@@ -231,6 +231,14 @@ export default function Dashboard() {
                 <div className="rounded-lg border border-yellow-100 bg-background/70 p-3 dark:border-yellow-900/50">
                   <p className="text-xs text-muted-foreground">{lang === "zh" ? "物流异常" : "Logistics Error"}</p>
                   <p className="mt-1 text-2xl font-bold text-yellow-600">{followUpDisplay.logisticsErrorCount}</p>
+                </div>
+                <div className="rounded-lg border border-purple-100 bg-background/70 p-3 dark:border-purple-900/50">
+                  <p className="text-xs text-muted-foreground">{lang === "zh" ? "自动通知失败" : "Notification Failed"}</p>
+                  <p className="mt-1 text-2xl font-bold text-purple-600">{followUpDisplay.notificationFailedCount}</p>
+                </div>
+                <div className="rounded-lg border border-amber-100 bg-background/70 p-3 dark:border-amber-900/50">
+                  <p className="text-xs text-muted-foreground">{lang === "zh" ? "库存异常" : "Stock Exception"}</p>
+                  <p className="mt-1 text-2xl font-bold text-amber-600">{followUpDisplay.stockExceptionCount}</p>
                 </div>
                 <div className={`rounded-lg border bg-background/70 p-3 ${followUpDisplay.overdueCount > 0 ? "border-red-300" : "border-slate-200 dark:border-slate-800"}`}>
                   <p className="text-xs text-muted-foreground">{lang === "zh" ? "超 24 小时未处理" : "Overdue >24h"}</p>
