@@ -744,3 +744,4 @@
 - [x] 前端：补充组合、拆除组合弹窗 + 库存日志显示
 - [x] 前端：商城端组合包展示 + 菜单更新（商品管理 → 组合包管理）
 - [x] 编译测试、保存检查点并发布（119/119 测试通过）
+- [x] Move the Dashboard special-status order framework into the Emergency section and preserve its zero-data display
