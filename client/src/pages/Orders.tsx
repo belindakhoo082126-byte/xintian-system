@@ -271,6 +271,15 @@ export default function Orders() {
             <SelectItem value="import_preorder">{translate("中国代购", "Import Pre-order")}</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={specialOnly ? "special" : "all"} onValueChange={(v) => setSpecialOnly(v === "special")}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder={translate("特别状态", "Special Status")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{translate("全部", "All")}</SelectItem>
+            <SelectItem value="special">{translate("特别状态订单", "Special Status Orders")}</SelectItem>
+          </SelectContent>
+        </Select>
         {specialOnly && (
           <Badge variant="secondary" className="gap-1 bg-orange-100 text-orange-700">
             {translate("特别状态订单", "Special Status Orders")}
