@@ -3627,6 +3627,101 @@ export const appRouter = router({
         await db.deleteLiveRoom(input.id);
         return { success: true };
       }),
+
+    // --- Live Room Products (直播商品) ---
+    getProducts: adminProcedure
+      .input(z.object({ liveRoomId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getLiveRoomProducts(input.liveRoomId);
+      }),
+
+    addProduct: adminProcedure
+      .input(z.object({
+        liveRoomId: z.number(),
+        productId: z.number(),
+        variationId: z.number().optional(),
+        keyword: z.string().min(1),
+        displayName: z.string().min(1),
+        price: z.union([z.string(), z.number()]),
+        stock: z.number().default(0),
+        imageUrl: z.string().optional(),
+        specImage: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.addLiveRoomProduct(input);
+      }),
+
+    updateProduct: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        keyword: z.string().optional(),
+        displayName: z.string().optional(),
+        price: z.union([z.string(), z.number()]).optional(),
+        stock: z.number().optional(),
+        status: z.enum(['active', 'paused', 'sold_out']).optional(),
+        sortOrder: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateLiveRoomProduct(id, data);
+        return { success: true };
+      }),
+
+    deleteProduct: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteLiveRoomProduct(input.id);
+        return { success: true };
+      }),
+
+    adjustProductStock: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        quantityChange: z.number(),
+        reason: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.adjustLiveRoomProductStock(input.id, input);
+      }),
+
+    reorderProducts: adminProcedure
+      .input(z.object({
+        liveRoomId: z.number(),
+        orderedIds: z.array(z.number()),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.reorderLiveRoomProducts(input.liveRoomId, input.orderedIds);
+      }),
+
+    // --- Live Room Stats (业绩统计) ---
+    getStats: adminProcedure
+      .input(z.object({ liveRoomId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getLiveRoomStats(input.liveRoomId);
+      }),
+
+    getStatsBatch: adminProcedure
+      .input(z.object({ liveRoomIds: z.array(z.number()) }))
+      .query(async ({ input }) => {
+        return await db.getLiveRoomStatsBatch(input.liveRoomIds);
+      }),
+
+    // --- Keyword Copy (关键词复制) ---
+    copyKeyword: adminProcedure
+      .input(z.object({ liveRoomProductId: z.number() }))
+      .query(async ({ input }) => {
+        // Get live comment footer from system settings
+        const settings = await db.getSystemSettings();
+        const footer = settings?.liveCommentFooter || '👇 留言关键词即可自动下单';
+        return await db.generateKeywordCopyText(input.liveRoomProductId, footer);
+      }),
+
+    // --- Live Orders (直播订单) ---
+    getOrders: adminProcedure
+      .input(z.object({ liveRoomId: z.number(), limit: z.number().optional() }))
+      .query(async ({ input }) => {
+        return await db.getLiveRoomOrders(input.liveRoomId, input.limit || 50);
+      }),
   }),
 
   // ===========================================================================

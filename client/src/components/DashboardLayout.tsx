@@ -67,10 +67,7 @@ const menuStructure: MenuEntry[] = [
   {
     icon: Video,
     label: { zh: "直播管理", en: "Live Management" },
-    children: [
-      { icon: Video, label: { zh: "本地直播房间", en: "Local Live Rooms" }, path: "/live-rooms?type=normal" },
-      { icon: Plane, label: { zh: "中国代购直播", en: "Import Pre-order Live" }, path: "/live-rooms?type=import_preorder" },
-    ],
+    path: "/live-rooms",
   },
 
   // 3. 订单管理

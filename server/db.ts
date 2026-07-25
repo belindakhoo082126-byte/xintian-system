@@ -24,6 +24,8 @@ import {
   orderSubOrders, specialOrderActions,
   // V2.0 imports
   liveRooms, importBatches, importBatchItems,
+  // V2.0 Phase 2 imports - Live Room Products
+  liveRoomProducts,
   // V3.1 imports - Product Bundles
   productBundles, productBundleItems, bundleStockLogs,
 } from "../drizzle/schema";
@@ -6334,4 +6336,248 @@ export async function getBundleProfitAnalysis(filters?: {
     bundles: result,
     totalBundles: result.length,
   };
+}
+
+// ============================================================================
+// V2.0 Phase 2: Live Room Products (直播商品管理)
+// ============================================================================
+
+// @realtime-broadcast: liveRooms
+export async function getLiveRoomProducts(liveRoomId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(liveRoomProducts)
+    .where(eq(liveRoomProducts.liveRoomId, liveRoomId))
+    .orderBy(asc(liveRoomProducts.sortOrder));
+}
+
+// @realtime-broadcast: liveRooms
+export async function addLiveRoomProduct(data: {
+  liveRoomId: number;
+  productId: number;
+  variationId?: number | null;
+  keyword: string;
+  displayName: string;
+  price: string | number;
+  stock: number;
+  imageUrl?: string | null;
+  specImage?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Get next sort order
+  const existing = await db.select().from(liveRoomProducts)
+    .where(eq(liveRoomProducts.liveRoomId, data.liveRoomId));
+  const nextSort = existing.length;
+  const result = await db.insert(liveRoomProducts).values({
+    liveRoomId: data.liveRoomId,
+    productId: data.productId,
+    variationId: data.variationId || null,
+    keyword: data.keyword,
+    displayName: data.displayName,
+    price: String(data.price),
+    stock: data.stock,
+    orderedCount: 0,
+    status: "active",
+    sortOrder: nextSort,
+    imageUrl: data.imageUrl || null,
+    specImage: data.specImage || null,
+  });
+  broadcastChange("liveRooms");
+  return { id: result[0].insertId };
+}
+
+// @realtime-broadcast: liveRooms
+export async function updateLiveRoomProduct(id: number, data: {
+  keyword?: string;
+  displayName?: string;
+  price?: string | number;
+  stock?: number;
+  status?: "active" | "paused" | "sold_out";
+  sortOrder?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const updateData: any = {};
+  if (data.keyword !== undefined) updateData.keyword = data.keyword;
+  if (data.displayName !== undefined) updateData.displayName = data.displayName;
+  if (data.price !== undefined) updateData.price = String(data.price);
+  if (data.stock !== undefined) updateData.stock = data.stock;
+  if (data.status !== undefined) updateData.status = data.status;
+  if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
+  await db.update(liveRoomProducts).set(updateData).where(eq(liveRoomProducts.id, id));
+  broadcastChange("liveRooms");
+  return { success: true };
+}
+
+// @realtime-broadcast: liveRooms
+export async function deleteLiveRoomProduct(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(liveRoomProducts).where(eq(liveRoomProducts.id, id));
+  broadcastChange("liveRooms");
+  return { success: true };
+}
+
+// @realtime-broadcast: liveRooms,inventory
+export async function adjustLiveRoomProductStock(id: number, data: {
+  quantityChange: number;
+  reason?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const product = await db.select().from(liveRoomProducts)
+    .where(eq(liveRoomProducts.id, id)).limit(1);
+  if (product.length === 0) throw new Error("Live room product not found");
+  const newStock = Math.max(0, product[0].stock + data.quantityChange);
+  await db.update(liveRoomProducts).set({ stock: newStock })
+    .where(eq(liveRoomProducts.id, id));
+  // Also write to inventory adjustments log
+  if (data.quantityChange < 0 && data.reason) {
+    await db.insert(inventoryAdjustments).values({
+      productId: product[0].productId,
+      adjustmentType: data.reason as any,
+      quantityChange: data.quantityChange,
+      unitCost: "0",
+      reason: `Live room product stock adjustment (ID: ${id})`,
+      adjustedBy: "live_management",
+    });
+  }
+  broadcastChanges(["liveRooms", "inventory"]);
+  return { success: true, newStock };
+}
+
+// @realtime-broadcast: liveRooms
+export async function reorderLiveRoomProducts(liveRoomId: number, orderedIds: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.update(liveRoomProducts).set({ sortOrder: i })
+      .where(eq(liveRoomProducts.id, orderedIds[i]));
+  }
+  broadcastChange("liveRooms");
+  return { success: true };
+}
+
+// Get live room performance stats (喊单业绩)
+export async function getLiveRoomStats(liveRoomId: number) {
+  const db = await getDb();
+  if (!db) return { productCount: 0, orderCount: 0, totalItems: 0, totalRevenue: "0.00" };
+  const products = await db.select().from(liveRoomProducts)
+    .where(eq(liveRoomProducts.liveRoomId, liveRoomId));
+  const productCount = products.length;
+  const totalOrdered = products.reduce((sum: number, p: any) => sum + Number(p.orderedCount || 0), 0);
+  const totalRevenue = products.reduce((sum: number, p: any) =>
+    sum + Number(p.orderedCount || 0) * Number(p.price || 0), 0);
+  // Count distinct orders from live_order_captures linked to this room
+  const captures = await db.select().from(liveOrderCaptures)
+    .where(eq(liveOrderCaptures.status, "order_created"));
+  const orderCount = captures.filter((c: any) => c.orderId != null).length;
+  return {
+    productCount,
+    orderCount,
+    totalItems: totalOrdered,
+    totalRevenue: totalRevenue.toFixed(2),
+  };
+}
+
+// Batch stats for list view
+export async function getLiveRoomStatsBatch(liveRoomIds: number[]) {
+  const db = await getDb();
+  if (!db || liveRoomIds.length === 0) return {};
+  const result: Record<number, any> = {};
+  for (const roomId of liveRoomIds) {
+    const products = await db.select().from(liveRoomProducts)
+      .where(eq(liveRoomProducts.liveRoomId, roomId));
+    const productCount = products.length;
+    const totalOrdered = products.reduce((sum: number, p: any) => sum + Number(p.orderedCount || 0), 0);
+    const totalRevenue = products.reduce((sum: number, p: any) =>
+      sum + Number(p.orderedCount || 0) * Number(p.price || 0), 0);
+    result[roomId] = {
+      productCount,
+      orderCount: 0, // Will be enriched from captures if needed
+      totalItems: totalOrdered,
+      totalRevenue: totalRevenue.toFixed(2),
+    };
+  }
+  return result;
+}
+
+// Generate keyword copy text for a live room product
+export async function generateKeywordCopyText(liveRoomProductId: number, liveCommentFooter?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const product = await db.select().from(liveRoomProducts)
+    .where(eq(liveRoomProducts.id, liveRoomProductId)).limit(1);
+  if (product.length === 0) throw new Error("Product not found");
+  const p = product[0];
+  // Check if product has variants (same productId, different variationId)
+  const siblings = await db.select().from(liveRoomProducts)
+    .where(eq(liveRoomProducts.liveRoomId, p.liveRoomId));
+  const sameProduct = siblings.filter((s: any) => s.productId === p.productId);
+  const footer = liveCommentFooter || "👇 留言关键词即可自动下单";
+  if (sameProduct.length <= 1) {
+    // No variants — single product format
+    return `🌸 ${p.displayName}\n💰 RM${Number(p.price).toFixed(0)}\n📝 关键词：\n${p.keyword}+1\n\n${footer}`;
+  }
+  // Has variants — check if same price or different prices
+  const allSamePrice = sameProduct.every((s: any) => Number(s.price) === Number(p.price));
+  const lines = sameProduct.map((s: any) => {
+    const colorMatch = s.displayName.match(/[🔴❤️🩷💛💚💙🟣⚪️⚫️🟤]+\s*(\S+)/);
+    const colorName = colorMatch ? colorMatch[1] : s.displayName;
+    if (allSamePrice) {
+      return `${colorName}｜RM${Number(s.price).toFixed(0)}｜${s.keyword}+1`;
+    }
+    return `${colorName}｜RM${Number(s.price).toFixed(0)}｜${s.keyword}+1`;
+  });
+  // Use the base product name (without variant suffix)
+  const baseName = p.displayName.replace(/[🔴❤️🩷💛💚💙🟣⚪️⚫️🟤]+\s*\S+/, "").trim() || p.displayName;
+  return `🌸 ${baseName}\n\n${lines.join("\n")}\n\n${footer}`;
+}
+
+// Get live room orders (orders created from this live room's captures)
+export async function getLiveRoomOrders(liveRoomId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  // Get captures linked to this live room via liveVideoId matching
+  const room = await db.select().from(liveRooms).where(eq(liveRooms.id, liveRoomId)).limit(1);
+  if (room.length === 0) return [];
+  const roomData = room[0];
+  // Get captures that have an orderId and match by liveVideoId if available
+  const captures = await db.select().from(liveOrderCaptures)
+    .where(eq(liveOrderCaptures.status, "order_created"))
+    .orderBy(desc(liveOrderCaptures.createdAt))
+    .limit(limit);
+  // Filter captures that have an orderId
+  const orderCaptures = captures.filter((c: any) => c.orderId != null);
+  // Fetch corresponding orders
+  const result: any[] = [];
+  for (const capture of orderCaptures) {
+    const orderRows = await db.select().from(orders)
+      .where(eq(orders.id, capture.orderId as number)).limit(1);
+    if (orderRows.length > 0) {
+      const order = orderRows[0];
+      const customerRows = await db.select().from(customers)
+        .where(eq(customers.id, order.customerId)).limit(1);
+      const itemRows = await db.select().from(orderItems)
+        .where(eq(orderItems.orderId, order.id));
+      result.push({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        customerName: customerRows[0]?.name || capture.commenterName,
+        facebookName: customerRows[0]?.facebookName || capture.commenterName,
+        items: itemRows.map((item: any) => ({
+          productName: item.productName,
+          quantity: item.quantity,
+          subtotal: Number(item.subtotal),
+        })),
+        totalAmount: Number(order.totalAmount),
+        physicalStatus: order.physicalStatus,
+        membershipStatus: order.membershipStatus,
+        captureMessage: capture.commentMessage,
+        captureTime: capture.createdAt,
+      });
+    }
+  }
+  return result;
 }

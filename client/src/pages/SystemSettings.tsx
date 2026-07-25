@@ -231,6 +231,27 @@ export default function SystemSettings() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Live Comment Footer */}
+          <Card>
+            <CardHeader>
+              <CardTitle>直播留言 Footer</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                <Label>关键词复制文案 Footer</Label>
+                <Textarea
+                  value={form.liveCommentFooter || ""}
+                  onChange={(e) => update("liveCommentFooter", e.target.value)}
+                  rows={3}
+                  placeholder="例如: 👇 留言关键词即可自动下单"
+                />
+                <p className="text-xs text-muted-foreground">
+                  在直播详情页点击「复制关键词」时，自动附加在文案末尾的固定文字
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

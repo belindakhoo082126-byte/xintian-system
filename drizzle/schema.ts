@@ -748,6 +748,8 @@ export const systemSettings = mysqlTable("system_settings", {
   // Security
   requireStaffLogin: boolean("requireStaffLogin").default(true).notNull(),
   autoCompleteDays: int("autoCompleteDays").default(7).notNull(),
+  // Live comment footer (used in keyword copy & live post)
+  liveCommentFooter: text("liveCommentFooter"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
@@ -1439,6 +1441,44 @@ export const liveRooms = mysqlTable("live_rooms", {
 
 export type LiveRoom = typeof liveRooms.$inferSelect;
 export type InsertLiveRoom = typeof liveRooms.$inferInsert;
+
+// ============================================================================
+// V2.0 Phase 2: Live Room Products (直播商品)
+// ============================================================================
+
+export const liveRoomProducts = mysqlTable("live_room_products", {
+  id: int("id").autoincrement().primaryKey(),
+  // Linked live room
+  liveRoomId: int("liveRoomId").notNull(),
+  // Linked product (from products table)
+  productId: int("productId").notNull(),
+  // Linked variation (if product has variants)
+  variationId: int("variationId"),
+  // Keyword for live comment ordering (e.g. "PRR", "MP1")
+  keyword: varchar("keyword", { length: 50 }).notNull(),
+  // Display name (product name or variation name)
+  displayName: varchar("displayName", { length: 255 }).notNull(),
+  // Price for this live session
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  // Stock available for this live session
+  stock: int("stock").default(0).notNull(),
+  // Ordered count (how many times this keyword was captured)
+  orderedCount: int("orderedCount").default(0).notNull(),
+  // Status: active, paused, sold_out
+  status: mysqlEnum("status", ["active", "paused", "sold_out"]).default("active").notNull(),
+  // Sort order for display
+  sortOrder: int("sortOrder").default(0).notNull(),
+  // Image URL (cached from product)
+  imageUrl: varchar("imageUrl", { length: 500 }),
+  // Spec image URL (for variant products)
+  specImage: varchar("specImage", { length: 500 }),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LiveRoomProduct = typeof liveRoomProducts.$inferSelect;
+export type InsertLiveRoomProduct = typeof liveRoomProducts.$inferInsert;
 
 // ============================================================================
 // V2.0: Import Batches (采购批次)
