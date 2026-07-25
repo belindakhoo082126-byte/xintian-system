@@ -372,10 +372,41 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
 
       // Try keyword matching for live order capture (e.g. "ABS+2", "POT+1")
       try {
-        const { parseCommentKeywords, matchKeywordsToProducts, createOrderFromLiveCapture } = require("./db");
+        const { parseCommentKeywords, matchKeywordsToProducts, createOrderFromLiveCapture, getLiveRooms } = require("./db");
         const keywords = parseCommentKeywords(commentMessage);
         
         if (keywords.length > 0) {
+          // Check if any live room is currently active (not closed)
+          // For import_preorder rooms, check if preorderEndDate has passed
+          try {
+            const allRooms = await getLiveRooms({ status: 'live' });
+            const now = new Date();
+            const activeRooms = (allRooms || []).filter((r: any) => {
+              if (r.status === 'closed') return false;
+              if (r.status === 'ended') return false;
+              // For import_preorder, check preorder end date
+              if (r.liveType === 'import_preorder' && r.preorderEndDate) {
+                return new Date(r.preorderEndDate) > now;
+              }
+              return r.status === 'live';
+            });
+            if (activeRooms.length === 0) {
+              // No active live room — check scheduled rooms too
+              const scheduledRooms = await getLiveRooms({ status: 'scheduled' });
+              const activeScheduled = (scheduledRooms || []).filter((r: any) => {
+                if (r.liveType === 'import_preorder' && r.preorderEndDate) {
+                  return new Date(r.preorderEndDate) > now;
+                }
+                return true;
+              });
+              if (activeScheduled.length === 0) {
+                console.log("[Facebook] No active live room, skipping capture");
+                return;
+              }
+            }
+          } catch (roomCheckErr: any) {
+            console.log("[Facebook] Live room check failed, continuing capture:", roomCheckErr?.message);
+          }
           // Has keyword patterns, try to match products
           const { matched, unmatched } = await matchKeywordsToProducts(keywords);
           
