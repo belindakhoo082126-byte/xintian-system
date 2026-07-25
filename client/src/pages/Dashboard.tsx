@@ -274,7 +274,7 @@ export default function Dashboard() {
                 )}
               </div>
 
-              <Link href="/orders?status=special">
+              <Link href="/orders?special=1">
                 <div className="flex cursor-pointer items-center justify-end gap-1 text-sm font-medium text-orange-700 transition-colors hover:text-orange-800 dark:text-orange-400">
                   <span>{lang === "zh" ? "查看全部特别状态订单" : "View all special-status orders"}</span>
                   <ArrowRight className="h-4 w-4" />

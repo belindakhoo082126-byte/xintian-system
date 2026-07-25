@@ -1005,6 +1005,8 @@ export const appRouter = router({
         search: z.string().optional(),
         todayOnly: z.boolean().optional(),
         orderNature: z.string().optional(),
+        isSpecialOrder: z.boolean().optional(),
+        specialOrderStatus: z.string().optional(),
       }).optional())
       .query(async ({ input }) => {
         return await db.getOrders(input || {});

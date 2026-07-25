@@ -749,3 +749,4 @@
 - [x] Update backend getSpecialOrderFollowUpStats to count failed notifications and open stock exceptions
 - [x] Update Dashboard frontend grid from 4 to 6 stat cards
 - [x] Update dashboardFollowUp.ts helper and tests for 6 categories
+- [x] Fix Dashboard special order click-through to filter by special order status instead of showing all orders

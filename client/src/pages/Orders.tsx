@@ -42,10 +42,12 @@ export default function Orders() {
   const urlStatus = new URLSearchParams(searchParams).get("status");
   const urlToday = new URLSearchParams(searchParams).get("today");
   const urlNature = new URLSearchParams(searchParams).get("nature");
+  const urlSpecial = new URLSearchParams(searchParams).get("special");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(urlStatus || "all");
   const [todayOnly, setTodayOnly] = useState(urlToday === "1");
   const [natureFilter, setNatureFilter] = useState(urlNature || "all");
+  const [specialOnly, setSpecialOnly] = useState(urlSpecial === "1");
 
   // Sync filter state when URL query params change (e.g. sidebar sub-menu navigation)
   useEffect(() => {
@@ -54,9 +56,11 @@ export default function Orders() {
       const newStatus = params.get('status');
       const newToday = params.get('today');
       const newNature = params.get('nature');
+      const newSpecial = params.get('special');
       if (newStatus !== null) setStatusFilter(newStatus);
       if (newToday !== null) setTodayOnly(newToday === '1');
       if (newNature !== null) setNatureFilter(newNature);
+      if (newSpecial !== null) setSpecialOnly(newSpecial === '1');
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -79,6 +83,7 @@ export default function Orders() {
     physicalStatus: statusFilter !== "all" ? statusFilter : undefined,
     todayOnly: todayOnly || undefined,
     orderNature: natureFilter !== "all" ? natureFilter : undefined,
+    isSpecialOrder: specialOnly || undefined,
   } as any);
 
   const updateStatusMutation = trpc.orders.updateStatus.useMutation({
@@ -249,6 +254,12 @@ export default function Orders() {
             <SelectItem value="import_preorder">{translate("中国代购", "Import Pre-order")}</SelectItem>
           </SelectContent>
         </Select>
+        {specialOnly && (
+          <Badge variant="secondary" className="gap-1 bg-orange-100 text-orange-700">
+            {translate("特别状态订单", "Special Status Orders")}
+            <button onClick={() => setSpecialOnly(false)} className="ml-1 rounded-full hover:bg-orange-200">×</button>
+          </Badge>
+        )}
       </div>
 
       <Card>
