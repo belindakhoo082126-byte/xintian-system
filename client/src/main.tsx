@@ -16,13 +16,15 @@ const queryClient = new QueryClient({
       // when user switches between phone/tablet/desktop
       refetchOnWindowFocus: true,
       refetchOnReconnect: true,
-      // Data is considered stale after 30s, triggering background refetch
-      staleTime: 30 * 1000,
-      // Poll key queries every 60s to catch changes from other devices
-      // even when the tab is in the background
-      refetchInterval: 60 * 1000,
-      // Keep previous data while fetching new data to avoid UI flicker
-      // (placeholderData is set per-query in components where needed)
+      // Data is considered stale after 5s — SSE events trigger immediate
+      // invalidation, but this ensures freshness even if SSE drops
+      staleTime: 5 * 1000,
+      // Poll every 30s as a fallback to SSE push notifications
+      // This catches changes even if the SSE connection is temporarily down
+      refetchInterval: 30 * 1000,
+      // Retry failed queries quickly to recover from transient errors
+      retry: 2,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
     },
   },
 });

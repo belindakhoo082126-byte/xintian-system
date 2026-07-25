@@ -28,6 +28,7 @@ import {
   productBundles, productBundleItems, bundleStockLogs,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { broadcastChange, broadcastChanges } from './_core/realtime';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -475,6 +476,7 @@ export async function createOrderWithSplit(data: {
     lastOrderAt: new Date(),
   }).where(eq(customers.id, data.customerId));
 
+  broadcastChanges(["orders", "inventory", "dashboard", "customers"]);
   return { orderId, orderNumber, totalAmount: totalAmount.toFixed(2) };
 }
 
@@ -504,6 +506,7 @@ export async function updateOrderStatus(id: number, data: {
   if (data.physicalStatus === "completed") updateData.completedAt = new Date();
 
   await db.update(orders).set(updateData).where(eq(orders.id, id));
+  broadcastChanges(["orders", "dashboard"]);
 }
 
 // ============================================================================
@@ -4104,6 +4107,7 @@ export async function createOrderFromLiveCapture(data: {
     commentDate: new Date(),
   });
   
+  broadcastChanges(["orders", "inventory", "dashboard"]);
   return { orderId, orderNumber, totalAmount: subtotal.toFixed(2) };
 }
 

@@ -14,6 +14,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import facebookWebhook from "../facebook";
+import { addSSEClient } from "./realtime";
 import { sdk } from "./sdk";
 import * as db from "../db";
 import { sendTextMessage } from "../messenger";
@@ -150,6 +151,12 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ error: err.message, stack: err.stack, timestamp: new Date().toISOString() });
     }
+  });
+
+  // Real-time sync: Server-Sent Events endpoint
+  app.get("/api/sync", (req, res) => {
+    const cleanup = addSSEClient(res);
+    req.on("close", cleanup);
   });
 
   // Facebook Webhook routes (must be before tRPC to avoid body parsing conflicts)

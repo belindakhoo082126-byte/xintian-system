@@ -750,3 +750,9 @@
 - [x] Update Dashboard frontend grid from 4 to 6 stat cards
 - [x] Update dashboardFollowUp.ts helper and tests for 6 categories
 - [x] Fix Dashboard special order click-through to filter by special order status instead of showing all orders
+- [x] Real-time sync: Create SSE event broadcast system on backend (server/_core/realtime.ts)
+- [x] Real-time sync: Add SSE endpoint to Express server in index.ts
+- [x] Real-time sync: Emit change events from db.ts key mutation functions (orders, products, customers, inventory, live rooms)
+- [x] Real-time sync: Create frontend SSE subscription hook (useRealtimeSync)
+- [x] Real-time sync: Integrate SSE events with React Query cache invalidation
+- [x] Real-time sync: Optimize QueryClient config (staleTime, refetchInterval, cross-tab BroadcastChannel)

@@ -1,5 +1,6 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -109,6 +110,7 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="nature">
         <TooltipProvider>
+          <RealtimeSyncWrapper>
           <Toaster />
           {/* Public routes bypass DashboardLayout (no auth gate) */}
           <Switch>
@@ -127,10 +129,17 @@ function App() {
               </DashboardLayout>
             </Route>
           </Switch>
+          </RealtimeSyncWrapper>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );
+}
+
+/** Wrapper that establishes SSE connection for real-time data sync */
+function RealtimeSyncWrapper({ children }: { children: React.ReactNode }) {
+  useRealtimeSync();
+  return <>{children}</>;
 }
 
 export default App;
