@@ -43,11 +43,13 @@ export default function Orders() {
   const urlToday = new URLSearchParams(searchParams).get("today");
   const urlNature = new URLSearchParams(searchParams).get("nature");
   const urlSpecial = new URLSearchParams(searchParams).get("special");
+  const urlChannel = new URLSearchParams(searchParams).get("channel");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(urlStatus || "all");
   const [todayOnly, setTodayOnly] = useState(urlToday === "1");
   const [natureFilter, setNatureFilter] = useState(urlNature || "all");
   const [specialOnly, setSpecialOnly] = useState(urlSpecial === "1");
+  const [channelFilter, setChannelFilter] = useState(urlChannel || "all");
 
   // Sync filter state when URL query params change (e.g. sidebar sub-menu navigation)
   useEffect(() => {
@@ -57,10 +59,12 @@ export default function Orders() {
       const newToday = params.get('today');
       const newNature = params.get('nature');
       const newSpecial = params.get('special');
+      const newChannel = params.get('channel');
       if (newStatus !== null) setStatusFilter(newStatus);
       if (newToday !== null) setTodayOnly(newToday === '1');
       if (newNature !== null) setNatureFilter(newNature);
       if (newSpecial !== null) setSpecialOnly(newSpecial === '1');
+      if (newChannel !== null) setChannelFilter(newChannel);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -84,6 +88,7 @@ export default function Orders() {
     todayOnly: todayOnly || undefined,
     orderNature: natureFilter !== "all" ? natureFilter : undefined,
     isSpecialOrder: specialOnly || undefined,
+    salesChannel: channelFilter !== "all" ? channelFilter : undefined,
   } as any);
 
   const updateStatusMutation = trpc.orders.updateStatus.useMutation({
@@ -251,6 +256,18 @@ export default function Orders() {
           <SelectContent>
             <SelectItem value="all">{translate("全部性质", "All Natures")}</SelectItem>
             <SelectItem value="normal">{translate("本地订单", "Local Orders")}</SelectItem>
+            <SelectItem value="import_preorder">{translate("中国代购", "Import Pre-order")}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={channelFilter} onValueChange={setChannelFilter}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder={translate("订单类型", "Order Type")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{translate("全部类型", "All Types")}</SelectItem>
+            <SelectItem value="retail">{translate("零售", "Retail")}</SelectItem>
+            <SelectItem value="wholesale">{translate("批发", "Wholesale")}</SelectItem>
+            <SelectItem value="agent">{translate("代理", "Agent")}</SelectItem>
             <SelectItem value="import_preorder">{translate("中国代购", "Import Pre-order")}</SelectItem>
           </SelectContent>
         </Select>

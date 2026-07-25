@@ -419,6 +419,31 @@ export default function Customers() {
                   <option value="vip">{translate("VIP", "VIP")}</option>
                 </select>
               </div>
+              {/* V4: Customer Type (客户身份) */}
+              <div>
+                <Label>{translate("客户身份", "Customer Type")}</Label>
+                <select
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={editData.customerType || "retail"}
+                  onChange={e => setEditData({ ...editData, customerType: e.target.value })}
+                >
+                  <option value="retail">{translate("普通客户", "Retail Customer")}</option>
+                  <option value="wholesale">{translate("批发客户", "Wholesale Customer")}</option>
+                  <option value="agent">{translate("代理商", "Agent")}</option>
+                </select>
+              </div>
+              {/* V4: Wholesale/Agent account email */}
+              {(editData.customerType === "wholesale" || editData.customerType === "agent") && (
+                <div className="col-span-2">
+                  <Label>{translate("批发/代理账户 Email", "Wholesale/Agent Account Email")}</Label>
+                  <Input
+                    type="email"
+                    placeholder={translate("用于批发/代理登录", "For wholesale/agent login")}
+                    value={editData.accountEmail || ""}
+                    onChange={e => setEditData({ ...editData, accountEmail: e.target.value })}
+                  />
+                </div>
+              )}
               <div>
                 <Label>{translate("黑名单", "Blacklisted")}</Label>
                 <select

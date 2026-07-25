@@ -184,6 +184,18 @@ export const products = mysqlTable("products", {
   // V2.0: Linked import batch (for preorder products)
   linkedBatchId: int("linkedBatchId"),
 
+  // V4: Wholesale price (auto-calculated as sellingPrice × 50%, admin can override)
+  wholesalePrice: decimal("wholesalePrice", { precision: 10, scale: 2 }),
+  // V4: Agent price (auto-calculated as sellingPrice × 70%, admin can override)
+  agentPrice: decimal("agentPrice", { precision: 10, scale: 2 }),
+  // V4: Minimum order quantity for wholesale
+  moq: int("moq").default(0).notNull(),
+  // V4: Visibility — which customer types can see this product (JSON array: ["retail","member","wholesale","agent"])
+  visibleTo: text("visibleTo"), // JSON array, default ["retail","member","wholesale","agent"]
+  // V4: Special price date range
+  specialPriceStartDate: timestamp("specialPriceStartDate"),
+  specialPriceEndDate: timestamp("specialPriceEndDate"),
+
   // Internal notes
   notes: text("notes"),
 
@@ -446,6 +458,13 @@ export const customers = mysqlTable("customers", {
   blacklistBy: int("blacklistBy"),
   unblacklistAt: timestamp("unblacklistAt"),
   unblacklistBy: int("unblacklistBy"),
+  // V4: Customer type (retail / wholesale / agent)
+  customerType: mysqlEnum("customerType", ["retail", "wholesale", "agent"]).default("retail").notNull(),
+  // V4: Wholesale/agent account credentials
+  accountEmail: varchar("accountEmail", { length: 255 }),
+  accountPasswordHash: varchar("accountPasswordHash", { length: 255 }),
+  // V4: Login enabled flag
+  canLogin: boolean("canLogin").default(false).notNull(),
 });
 
 export type Customer = typeof customers.$inferSelect;
@@ -463,6 +482,8 @@ export const orders = mysqlTable("orders", {
   facebookId: varchar("facebookId", { length: 255 }),
   messengerId: varchar("messengerId", { length: 255 }),
   orderType: mysqlEnum("orderType", ["physical", "membership", "mixed"]).notNull(),
+  // V4: Sales channel (retail / wholesale / agent / import_preorder)
+  salesChannel: mysqlEnum("salesChannel", ["retail", "wholesale", "agent", "import_preorder"]).default("retail").notNull(),
   physicalSubtotal: decimal("physicalSubtotal", { precision: 10, scale: 2 }).default("0"),
   membershipSubtotal: decimal("membershipSubtotal", { precision: 10, scale: 2 }).default("0"),
   shippingFee: decimal("shippingFee", { precision: 10, scale: 2 }).default("0"),

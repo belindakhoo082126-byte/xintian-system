@@ -91,6 +91,13 @@ type ProductForm = {
   spotSaleEnabled: boolean;
   spotSaleQty: number;
   linkedBatchId: string;
+  // V4: Wholesale & Agent
+  wholesalePrice: string;
+  agentPrice: string;
+  moq: number;
+  visibleTo: string[];
+  specialPriceStartDate: string;
+  specialPriceEndDate: string;
 };
 
 const EMPTY_FORM: ProductForm = {
@@ -106,6 +113,8 @@ const EMPTY_FORM: ProductForm = {
   lightDesc: "", waterDesc: "", fertilizerDesc: "", pruningDesc: "",
   productImages: [],
   salesMode: "normal", preorderWaitDays: "", spotSaleEnabled: false, spotSaleQty: 0, linkedBatchId: "",
+  wholesalePrice: "", agentPrice: "", moq: 0, visibleTo: ["retail", "member", "wholesale", "agent"],
+  specialPriceStartDate: "", specialPriceEndDate: "",
 };
 
 const RAW_STEPS = [
@@ -236,6 +245,12 @@ export default function ProductsV2() {
         spotSaleEnabled: (p as any).spotSaleEnabled ?? false,
         spotSaleQty: (p as any).spotSaleQty ?? 0,
         linkedBatchId: (p as any).linkedBatchId ? String((p as any).linkedBatchId) : "",
+        wholesalePrice: (p as any).wholesalePrice ? String((p as any).wholesalePrice) : "",
+        agentPrice: (p as any).agentPrice ? String((p as any).agentPrice) : "",
+        moq: (p as any).moq ?? 0,
+        visibleTo: (() => { try { return JSON.parse((p as any).visibleTo || '"[\"retail\",\"member\",\"wholesale\",\"agent\"]"'); } catch { return ["retail", "member", "wholesale", "agent"]; } })(),
+        specialPriceStartDate: (p as any).specialPriceStartDate ? String((p as any).specialPriceStartDate).split("T")[0] : "",
+        specialPriceEndDate: (p as any).specialPriceEndDate ? String((p as any).specialPriceEndDate).split("T")[0] : "",
       });
       setVariants(p.variants || []);
       hydratedEditingIdRef.current = editingId;
@@ -391,6 +406,12 @@ export default function ProductsV2() {
       spotSaleEnabled: form.spotSaleEnabled,
       spotSaleQty: form.spotSaleQty,
       linkedBatchId: form.linkedBatchId ? Number(form.linkedBatchId) : undefined,
+      wholesalePrice: form.wholesalePrice ? Number(form.wholesalePrice) : undefined,
+      agentPrice: form.agentPrice ? Number(form.agentPrice) : undefined,
+      moq: form.moq,
+      visibleTo: JSON.stringify(form.visibleTo),
+      specialPriceStartDate: form.specialPriceStartDate || undefined,
+      specialPriceEndDate: form.specialPriceEndDate || undefined,
     };
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...data });
@@ -1055,6 +1076,107 @@ export default function ProductsV2() {
                         </div>
                       </div>
                     )}
+
+                    {/* V4: Wholesale & Agent Pricing */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <Label>{translate("批发价 (RM)", "Wholesale Price (RM)")}</Label>
+                        <Input type="number" placeholder="自动=售价×50%" value={form.wholesalePrice}
+                          onChange={(e) => setForm({ ...form, wholesalePrice: e.target.value })} disabled={isGift} />
+                        <p className="text-xs text-muted-foreground mt-1">{translate("留空自动计算", "Auto-calc if empty")}</p>
+                      </div>
+                      <div>
+                        <Label>{translate("代理价 (RM)", "Agent Price (RM)")}</Label>
+                        <Input type="number" placeholder="自动=售价×70%" value={form.agentPrice}
+                          onChange={(e) => setForm({ ...form, agentPrice: e.target.value })} disabled={isGift} />
+                        <p className="text-xs text-muted-foreground mt-1">{translate("留空自动计算", "Auto-calc if empty")}</p>
+                      </div>
+                      <div>
+                        <Label>{translate("最低批发量 (MOQ)", "Min Order Qty (MOQ)")}</Label>
+                        <Input type="number" placeholder="0" value={form.moq}
+                          onChange={(e) => setForm({ ...form, moq: parseInt(e.target.value) || 0 })} disabled={isGift} />
+                        <p className="text-xs text-muted-foreground mt-1">{translate("0=无限制", "0=No limit")}</p>
+                      </div>
+                    </div>
+
+                    {/* V4: Special Price Date Range */}
+                    {form.isSpecial && form.specialPrice && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>{translate("特价开始日期", "Special Price Start Date")}</Label>
+                          <Input type="date" value={form.specialPriceStartDate}
+                            onChange={(e) => setForm({ ...form, specialPriceStartDate: e.target.value })} />
+                        </div>
+                        <div>
+                          <Label>{translate("特价结束日期", "Special Price End Date")}</Label>
+                          <Input type="date" value={form.specialPriceEndDate}
+                            onChange={(e) => setForm({ ...form, specialPriceEndDate: e.target.value })} />
+                          <p className="text-xs text-muted-foreground mt-1">{translate("结束后自动恢复原价", "Auto-revert after end date")}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* V4: Price Preview (价格预览) */}
+                    {!isGift && form.sellingPrice && (
+                      <div className="p-4 rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 space-y-2">
+                        <h4 className="font-medium text-sm flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4 text-blue-500" />
+                          {translate("价格预览", "Price Preview")}
+                        </h4>
+                        <div className="grid grid-cols-4 gap-2 text-sm">
+                          <div className="p-2 rounded bg-background">
+                            <div className="text-xs text-muted-foreground">{translate("普通客户", "Retail")}</div>
+                            <div className="font-bold">RM {(parseFloat(form.sellingPrice) || 0).toFixed(2)}</div>
+                          </div>
+                          <div className="p-2 rounded bg-background">
+                            <div className="text-xs text-muted-foreground">{translate("会员", "Member")}</div>
+                            <div className="font-bold">RM {(parseFloat(form.memberPrice || form.sellingPrice) || 0).toFixed(2)}</div>
+                          </div>
+                          <div className="p-2 rounded bg-background">
+                            <div className="text-xs text-muted-foreground">{translate("批发", "Wholesale")}</div>
+                            <div className="font-bold">RM {(parseFloat(form.wholesalePrice) || (parseFloat(form.sellingPrice) || 0) * 0.5).toFixed(2)}</div>
+                          </div>
+                          <div className="p-2 rounded bg-background">
+                            <div className="text-xs text-muted-foreground">{translate("代理", "Agent")}</div>
+                            <div className="font-bold">RM {(parseFloat(form.agentPrice) || (parseFloat(form.sellingPrice) || 0) * 0.7).toFixed(2)}</div>
+                          </div>
+                        </div>
+                        {form.isSpecial && form.specialPrice && (
+                          <div className="text-xs text-orange-600 font-medium">
+                            {translate("⚠ 特价生效时，所有客户统一显示特价", "⚠ When special price is active, all customers see special price")}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* V4: Product Visibility (可见对象) */}
+                    <div>
+                      <Label>{translate("可见对象", "Visible To")}</Label>
+                      <div className="flex flex-wrap gap-3 mt-2">
+                        {[
+                          { value: "retail", label: translate("普通", "Retail") },
+                          { value: "member", label: translate("会员链接", "Member Link") },
+                          { value: "wholesale", label: translate("批发", "Wholesale") },
+                          { value: "agent", label: translate("代理", "Agent") },
+                        ].map((opt) => (
+                          <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={form.visibleTo.includes(opt.value)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setForm({ ...form, visibleTo: [...form.visibleTo, opt.value] });
+                                } else {
+                                  setForm({ ...form, visibleTo: form.visibleTo.filter((v) => v !== opt.value) });
+                                }
+                              }}
+                              className="rounded border-input"
+                            />
+                            <span className="text-sm">{opt.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
 
                     {/* Price Visibility */}
                     <div>

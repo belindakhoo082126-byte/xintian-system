@@ -104,6 +104,20 @@
 - [x] 图片上传（S3）— 已完成（商品封面、QR 图片、横幅图片）
 - [ ] 影片上传 — V1.2 规划
 
+## XLCS Phase 4: 批发及代理系统 (Wholesale & Agent)
+
+- [x] Schema: customers 表新增 customerType (retail/wholesale/agent) 字段
+- [x] Schema: products 表新增 wholesalePrice, agentPrice, moq, visibleTo 字段
+- [x] Schema: orders 表新增 salesChannel (retail/wholesale/agent/import_preorder) 字段
+- [x] Schema: purchase_order_items 进货时自动计算并同步 wholesalePrice/agentPrice
+- [x] 后端：统一价格引擎 (Price Engine) — 特价优先规则 + 客户类型价格计算
+- [x] 后端：进货保存时自动计算批发价(×50%)和代理价(×70%)，同步更新商品资料
+- [x] 后端：批发订单流程 + MOQ 校验 + 运费留空 + salesChannel 筛选
+- [x] 前端：商品管理新增批发价/代理价/MOQ/可见对象/价格预览
+- [x] 前端：客户管理新增客户身份切换（普通/批发/代理）
+- [x] 前端：订单管理新增订单类型筛选
+- [x] 前端：批发报表 + 代理报表 + 客户分类统计
+
 ## XLCS Phase 2.5: 直播 AI 客服 (Live AI Agent)
 
 - [x] 新建 live_ai_flows 表 (name, triggerKeywords JSON, replyContent, isEnabled, sortOrder) + schema 迁移

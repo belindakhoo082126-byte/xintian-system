@@ -384,6 +384,13 @@ export const appRouter = router({
         isPot: z.boolean().optional(),
         potCapacity: z.string().optional(),
         productImages: z.array(z.string()).optional(),
+        // V4: Wholesale & Agent
+        wholesalePrice: z.number().optional(),
+        agentPrice: z.number().optional(),
+        moq: z.number().optional(),
+        visibleTo: z.string().optional(),
+        specialPriceStartDate: z.string().optional(),
+        specialPriceEndDate: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         // Check keyword conflict
@@ -445,6 +452,13 @@ export const appRouter = router({
         isPot: z.boolean().optional(),
         potCapacity: z.string().optional(),
         productImages: z.array(z.string()).optional(),
+        // V4: Wholesale & Agent
+        wholesalePrice: z.number().optional(),
+        agentPrice: z.number().optional(),
+        moq: z.number().optional(),
+        visibleTo: z.string().optional(),
+        specialPriceStartDate: z.string().optional(),
+        specialPriceEndDate: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
@@ -991,6 +1005,22 @@ export const appRouter = router({
         const dateRange = db.getDateRange(input.preset, input.customStart, input.customEnd);
         return await db.getSpecialPriceProductProfit(dateRange);
       }),
+    // V4: Wholesale & Agent report
+    wholesaleAgent: adminProcedure
+      .input(z.object({
+        preset: z.string(),
+        customStart: z.string().optional(),
+        customEnd: z.string().optional(),
+      }))
+      .query(async ({ input }) => {
+        const dateRange = db.getDateRange(input.preset, input.customStart, input.customEnd);
+        return await db.getWholesaleAgentReport(dateRange);
+      }),
+    // V4: Customer type statistics
+    customerTypeStats: adminProcedure
+      .query(async () => {
+        return await db.getCustomerTypeStats();
+      }),
   }),
 
   // ===========================================================================
@@ -1007,6 +1037,7 @@ export const appRouter = router({
         orderNature: z.string().optional(),
         isSpecialOrder: z.boolean().optional(),
         specialOrderStatus: z.string().optional(),
+        salesChannel: z.string().optional(),
       }).optional())
       .query(async ({ input }) => {
         return await db.getOrders(input || {});
@@ -1041,6 +1072,7 @@ export const appRouter = router({
         shippingMethod: z.string().optional(),
         paymentMethodId: z.number().optional(),
         paymentMethodName: z.string().optional(),
+        salesChannel: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         return await db.createOrderWithSplit(input);
@@ -1565,6 +1597,9 @@ export const appRouter = router({
         notes: z.string().optional(),
         membershipLevel: z.enum(["regular", "member", "vip"]).optional(),
         pointsBalance: z.number().optional(),
+        customerType: z.enum(["retail", "wholesale", "agent"]).optional(),
+        accountEmail: z.string().optional(),
+        canLogin: z.boolean().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;

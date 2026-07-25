@@ -344,6 +344,7 @@ export async function getOrders(filters?: {
   orderNature?: string;
   isSpecialOrder?: boolean;
   specialOrderStatus?: string;
+  salesChannel?: string;
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -355,6 +356,7 @@ export async function getOrders(filters?: {
   if (filters?.orderNature) conditions.push(eq((orders as any).orderNature, filters.orderNature as any));
   if (filters?.isSpecialOrder !== undefined) conditions.push(eq((orders as any).isSpecialOrder, filters.isSpecialOrder ? 1 : 0));
   if (filters?.specialOrderStatus) conditions.push(eq((orders as any).specialOrderStatus, filters.specialOrderStatus as any));
+  if (filters?.salesChannel) conditions.push(eq((orders as any).salesChannel, filters.salesChannel as any));
   if (filters?.todayOnly) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -964,8 +966,17 @@ export async function createPurchaseOrder(data: {
 
     // Update product cost immediately (latest purchase cost)
     // Also sync selling price if provided (V2.1)
+    // V4: Auto-calculate wholesalePrice (×50%) and agentPrice (×70%) from sellingPrice
     const productUpdate: any = { cost: item.unitCost, currentCost: item.unitCost };
-    if (item.sellingPrice) productUpdate.sellingPrice = item.sellingPrice;
+    if (item.sellingPrice) {
+      productUpdate.sellingPrice = item.sellingPrice;
+      // Auto-calculate wholesale and agent prices
+      const sp = parseFloat(String(item.sellingPrice)) || 0;
+      if (sp > 0) {
+        productUpdate.wholesalePrice = Math.round(sp * 0.5 * 100) / 100;
+        productUpdate.agentPrice = Math.round(sp * 0.7 * 100) / 100;
+      }
+    }
     await db.update(products).set(productUpdate).where(eq(products.id, item.productId));
   }
 
@@ -1408,6 +1419,13 @@ export async function createProductEnhanced(data: {
   isPot?: boolean;
   potCapacity?: string;
   productImages?: string[];
+  // V4: Wholesale & Agent
+  wholesalePrice?: number;
+  agentPrice?: number;
+  moq?: number;
+  visibleTo?: string;
+  specialPriceStartDate?: string;
+  specialPriceEndDate?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
@@ -1462,6 +1480,13 @@ export async function createProductEnhanced(data: {
     mallSortOrder: data.mallSortOrder ?? 0,
     isPot: data.isPot ?? false,
     potCapacity: data.potCapacity,
+    // V4: Wholesale & Agent
+    wholesalePrice: data.wholesalePrice as any,
+    agentPrice: data.agentPrice as any,
+    moq: data.moq ?? 0,
+    visibleTo: data.visibleTo,
+    specialPriceStartDate: data.specialPriceStartDate ? new Date(data.specialPriceStartDate) : null,
+    specialPriceEndDate: data.specialPriceEndDate ? new Date(data.specialPriceEndDate) : null,
   });
   const productId = result[0].insertId;
   // Save product images to product_images table
@@ -1531,12 +1556,26 @@ export async function updateProductEnhanced(id: number, data: Partial<{
   isPot: boolean;
   potCapacity: string;
   productImages: string[];
+  // V4: Wholesale & Agent
+  wholesalePrice: number;
+  agentPrice: number;
+  moq: number;
+  visibleTo: string;
+  specialPriceStartDate: string;
+  specialPriceEndDate: string;
 }>) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
   const { productImages: imageUrls, ...updateData } = data;
   if (data.keyword) {
     updateData.keyword = data.keyword.toUpperCase().replace(/\s+/g, '');
+  }
+  // V4: Convert date strings to Date objects for timestamp fields
+  if (updateData.specialPriceStartDate !== undefined) {
+    (updateData as any).specialPriceStartDate = updateData.specialPriceStartDate ? new Date(updateData.specialPriceStartDate) : null;
+  }
+  if (updateData.specialPriceEndDate !== undefined) {
+    (updateData as any).specialPriceEndDate = updateData.specialPriceEndDate ? new Date(updateData.specialPriceEndDate) : null;
   }
   await db.update(products).set(updateData as any).where(eq(products.id, id));
   // Sync product images if provided
@@ -6729,4 +6768,90 @@ export async function matchLiveAiFlow(commentMessage: string): Promise<string | 
   }
   
   return null;
+}
+// ============================================================================
+// V4: Wholesale & Agent Report helpers
+// ============================================================================
+
+export async function getWholesaleAgentReport(dateRange: { start: Date; end: Date }) {
+  const db = await getDb();
+  if (!db) return { wholesale: { orderCount: 0, totalAmount: "0", paidAmount: "0" }, agent: { orderCount: 0, totalAmount: "0", paidAmount: "0" }, byCustomer: [] };
+
+  // Wholesale orders
+  const wholesaleOrders = await db.select({
+    count: sql`COUNT(*)`,
+    totalAmount: sql`COALESCE(SUM(${orders.totalAmount}), 0)`,
+    paidAmount: sql`COALESCE(SUM(${orders.paidAmount}), 0)`,
+  }).from(orders)
+    .where(and(
+      eq((orders as any).salesChannel, "wholesale"),
+      gte(orders.createdAt, dateRange.start),
+      sql`${orders.createdAt} <= ${dateRange.end}`
+    ));
+
+  // Agent orders
+  const agentOrders = await db.select({
+    count: sql`COUNT(*)`,
+    totalAmount: sql`COALESCE(SUM(${orders.totalAmount}), 0)`,
+    paidAmount: sql`COALESCE(SUM(${orders.paidAmount}), 0)`,
+  }).from(orders)
+    .where(and(
+      eq((orders as any).salesChannel, "agent"),
+      gte(orders.createdAt, dateRange.start),
+      sql`${orders.createdAt} <= ${dateRange.end}`
+    ));
+
+  // By customer breakdown
+  const byCustomer = await db.select({
+    customerId: orders.customerId,
+    customerName: customers.name,
+    customerType: (customers as any).customerType,
+    orderCount: sql`COUNT(*)`,
+    totalAmount: sql`COALESCE(SUM(${orders.totalAmount}), 0)`,
+    paidAmount: sql`COALESCE(SUM(${orders.paidAmount}), 0)`,
+  }).from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id))
+    .where(and(
+      sql`${(orders as any).salesChannel} IN ('wholesale', 'agent')`,
+      gte(orders.createdAt, dateRange.start),
+      sql`${orders.createdAt} <= ${dateRange.end}`
+    ))
+    .groupBy(orders.customerId, customers.name, (customers as any).customerType)
+    .orderBy(desc(sql`SUM(${orders.totalAmount})`));
+
+  return {
+    wholesale: {
+      orderCount: wholesaleOrders[0]?.count || 0,
+      totalAmount: String(wholesaleOrders[0]?.totalAmount || "0"),
+      paidAmount: String(wholesaleOrders[0]?.paidAmount || "0"),
+    },
+    agent: {
+      orderCount: agentOrders[0]?.count || 0,
+      totalAmount: String(agentOrders[0]?.totalAmount || "0"),
+      paidAmount: String(agentOrders[0]?.paidAmount || "0"),
+    },
+    byCustomer: byCustomer.map((r: any) => ({
+      ...r,
+      totalAmount: String(r.totalAmount),
+      paidAmount: String(r.paidAmount),
+    })),
+  };
+}
+
+export async function getCustomerTypeStats() {
+  const db = await getDb();
+  if (!db) return { retail: 0, wholesale: 0, agent: 0, total: 0 };
+
+  const result = await db.select({
+    customerType: (customers as any).customerType,
+    count: sql`COUNT(*)`,
+  }).from(customers)
+    .groupBy((customers as any).customerType);
+
+  const stats: any = { retail: 0, wholesale: 0, agent: 0, total: 0 };
+  for (const r of result as any[]) {
+    stats[r.customerType || "retail"] = r.count;
+    stats.total += r.count;
+  }
+  return stats;
 }
