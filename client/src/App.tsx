@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
 import ProductsV2 from "./pages/ProductsV2";
+import ProductBundles from "./pages/ProductBundles";
 import Categories from "./pages/Categories";
 import MemberLinkPreview from "./pages/MemberLinkPreview";
 import ProductPreview from "./pages/ProductPreview";
@@ -84,6 +85,7 @@ function DashboardRoutes() {
       <Route path="/reports/profit-analysis" component={ProfitAnalysisReport} />
       <Route path="/reports/loss-analysis" component={LossAnalysisReport} />
       <Route path="/inventory-log" component={InventoryLog} />
+      <Route path="/product-bundles" component={ProductBundles} />
       <Route path="/live-rooms" component={LiveRooms} />
       <Route path="/import-batches" component={ImportBatches} />
       <Route path={"/facebook-settings"} component={FacebookSettings} />

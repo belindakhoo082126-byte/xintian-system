@@ -1540,3 +1540,104 @@ export const importBatchItems = mysqlTable("import_batch_items", {
 
 export type ImportBatchItem = typeof importBatchItems.$inferSelect;
 export type InsertImportBatchItem = typeof importBatchItems.$inferInsert;
+
+// ============================================================================
+// V3.1: Product Bundles (组合包管理)
+// ============================================================================
+
+export const productBundles = mysqlTable("product_bundles", {
+  id: int("id").autoincrement().primaryKey(),
+  // Display name (e.g. "J5 营养组合")
+  name: varchar("name", { length: 200 }).notNull(),
+  // English name (optional)
+  nameEn: varchar("nameEn", { length: 200 }),
+  // Keyword for live/post ordering (e.g. "J5C")
+  keyword: varchar("keyword", { length: 50 }).notNull().unique(),
+  // Bundle selling price
+  sellingPrice: decimal("sellingPrice", { precision: 10, scale: 2 }).notNull(),
+  // Original total price (sum of single items)
+  originalTotalPrice: decimal("originalTotalPrice", { precision: 10, scale: 2 }).default("0").notNull(),
+  // Special price display (if bundle is on special)
+  specialPrice: decimal("specialPrice", { precision: 10, scale: 2 }),
+  // Cover image URL
+  coverImage: varchar("coverImage", { length: 500 }),
+  // Mall description
+  description: text("description"),
+  // Status: active or inactive
+  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  // Show in mall
+  showInMall: boolean("showInMall").default(true).notNull(),
+  // Bundle weight (for shipping calculation)
+  weight: decimal("weight", { precision: 8, scale: 2 }).default("0").notNull(),
+  // Internal notes
+  internalNotes: text("internalNotes"),
+  // Current bundle stock (how many bundles can be sold)
+  bundleStock: int("bundleStock").default(0).notNull(),
+  // Total cost of items in bundle (auto-calculated from item costs)
+  totalCost: decimal("totalCost", { precision: 10, scale: 2 }).default("0").notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ProductBundle = typeof productBundles.$inferSelect;
+export type InsertProductBundle = typeof productBundles.$inferInsert;
+
+export const productBundleItems = mysqlTable("product_bundle_items", {
+  id: int("id").autoincrement().primaryKey(),
+  // Bundle ID
+  bundleId: int("bundleId").notNull(),
+  // Product ID (single item)
+  productId: int("productId").notNull(),
+  // Variant ID (optional, if product has variants)
+  variantId: int("variantId"),
+  // Product name (snapshot for display)
+  productName: varchar("productName", { length: 200 }).notNull(),
+  // Variant name (snapshot, optional)
+  variantName: varchar("variantName", { length: 100 }),
+  // Quantity per bundle (e.g. 2 means 2 packs per bundle)
+  qtyPerBundle: int("qtyPerBundle").default(1).notNull(),
+  // Unit cost (snapshot from product/variant at time of bundle creation)
+  unitCost: decimal("unitCost", { precision: 10, scale: 2 }).default("0").notNull(),
+  // Unit selling price (snapshot from product/variant)
+  unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).default("0").notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ProductBundleItem = typeof productBundleItems.$inferSelect;
+export type InsertProductBundleItem = typeof productBundleItems.$inferInsert;
+
+// Bundle stock log (组合包库存日志)
+export const bundleStockLogs = mysqlTable("bundle_stock_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  // Bundle ID
+  bundleId: int("bundleId").notNull(),
+  // Action type
+  actionType: mysqlEnum("actionType", [
+    "create",       // 建立组合库存
+    "restock",      // 补充组合
+    "disassemble",  // 拆除组合
+    "sell",         // 销售扣减
+    "adjust",       // 手动调整
+  ]).notNull(),
+  // Quantity change (positive = add, negative = remove)
+  qtyChange: int("qtyChange").notNull(),
+  // Stock before action
+  stockBefore: int("stockBefore").notNull(),
+  // Stock after action
+  stockAfter: int("stockAfter").notNull(),
+  // Affected product IDs (comma-separated for single item stock logs)
+  affectedProducts: text("affectedProducts"),
+  // Reason (for disassemble: 改为单品出售/修改组合内容/组合活动结束/商品替换/商品损坏/其他)
+  reason: varchar("reason", { length: 100 }),
+  // Operator
+  operator: varchar("operator", { length: 100 }),
+  // Notes
+  notes: text("notes"),
+  // Timestamp
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type BundleStockLog = typeof bundleStockLogs.$inferSelect;
+export type InsertBundleStockLog = typeof bundleStockLogs.$inferInsert;

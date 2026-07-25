@@ -24,6 +24,8 @@ import {
   orderSubOrders, specialOrderActions,
   // V2.0 imports
   liveRooms, importBatches, importBatchItems,
+  // V3.1 imports - Product Bundles
+  productBundles, productBundleItems, bundleStockLogs,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -5798,4 +5800,510 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
   }
 
   return result;
+}
+
+// ============================================================================
+// V3.1: Product Bundle (组合包管理) DB Helpers
+// ============================================================================
+
+// Get all bundles with optional filters
+export async function getProductBundles(filters?: {
+  status?: string;
+  showInMall?: boolean;
+  search?: string;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select().from(productBundles);
+  const conditions: any[] = [];
+  if (filters?.status) conditions.push(eq(productBundles.status, filters.status as any));
+  if (filters?.showInMall !== undefined) conditions.push(eq(productBundles.showInMall, filters.showInMall));
+  if (filters?.search) {
+    conditions.push(or(
+      like(productBundles.name, `%${filters.search}%`),
+      like(productBundles.keyword, `%${filters.search}%`)
+    ));
+  }
+  if (conditions.length > 0) {
+    query = query.where(and(...conditions)) as any;
+  }
+  return await query.orderBy(desc(productBundles.createdAt));
+}
+
+// Get single bundle with items
+export async function getBundleById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const bundle = (await db.select().from(productBundles).where(eq(productBundles.id, id)).limit(1))[0];
+  if (!bundle) return undefined;
+  const items = await db.select().from(productBundleItems).where(eq(productBundleItems.bundleId, id));
+  return { ...bundle, items };
+}
+
+// Get bundle items only
+export async function getBundleItems(bundleId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(productBundleItems).where(eq(productBundleItems.bundleId, bundleId));
+}
+
+// Get bundle stock logs
+export async function getBundleStockLogs(bundleId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(bundleStockLogs)
+    .where(eq(bundleStockLogs.bundleId, bundleId))
+    .orderBy(desc(bundleStockLogs.createdAt));
+}
+
+// Calculate max bundle quantity based on item stock
+export async function calculateMaxBundleQty(items: Array<{ productId: number; qtyPerBundle: number }>) {
+  const db = await getDb();
+  if (!db) return 0;
+  let maxQty = Infinity;
+  const breakdown: Array<{ productId: number; productName: string; availableStock: number; qtyPerBundle: number; maxBundles: number }> = [];
+  
+  for (const item of items) {
+    const product = (await db.select().from(products).where(eq(products.id, item.productId)).limit(1))[0];
+    if (!product) {
+      breakdown.push({
+        productId: item.productId,
+        productName: 'Unknown',
+        availableStock: 0,
+        qtyPerBundle: item.qtyPerBundle,
+        maxBundles: 0,
+      });
+      maxQty = 0;
+      continue;
+    }
+    const availableStock = (product as any).stockQuantity || 0;
+    const maxBundles = Math.floor(availableStock / item.qtyPerBundle);
+    breakdown.push({
+      productId: item.productId,
+      productName: product.name,
+      availableStock,
+      qtyPerBundle: item.qtyPerBundle,
+      maxBundles,
+    });
+    if (maxBundles < maxQty) maxQty = maxBundles;
+  }
+  
+  return { maxQty: maxQty === Infinity ? 0 : maxQty, breakdown };
+}
+
+// Create bundle with items and transfer stock from single items
+export async function createBundleWithStock(data: {
+  name: string;
+  nameEn?: string;
+  keyword: string;
+  sellingPrice: string;
+  originalTotalPrice?: string;
+  specialPrice?: string;
+  coverImage?: string;
+  description?: string;
+  status?: string;
+  showInMall?: boolean;
+  weight?: string;
+  internalNotes?: string;
+  items: Array<{
+    productId: number;
+    variantId?: number;
+    productName: string;
+    variantName?: string;
+    qtyPerBundle: number;
+    unitCost: string;
+    unitPrice: string;
+  }>;
+  bundleQty: number; // How many bundles to create
+  operator?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // 1. Verify stock availability
+  const calcResult = await calculateMaxBundleQty(
+    data.items.map(i => ({ productId: i.productId, qtyPerBundle: i.qtyPerBundle }))
+  );
+  const maxQty = typeof calcResult === 'number' ? 0 : calcResult.maxQty;
+  const breakdown = typeof calcResult === 'number' ? [] : calcResult.breakdown;
+  if (data.bundleQty > maxQty) {
+    const limiting = breakdown.find((b: any) => b.maxBundles < data.bundleQty);
+    throw new Error(
+      `库存不足。${limiting?.productName || '某商品'}目前只有${limiting?.availableStock || 0}个，` +
+      `每组需要${limiting?.qtyPerBundle || 1}个，最多只能组成${maxQty}组。`
+    );
+  }
+
+  // 2. Calculate totals
+  const totalCost = data.items.reduce((sum, i) => sum + Number(i.unitCost) * i.qtyPerBundle, 0);
+  const originalTotal = data.originalTotalPrice 
+    ? Number(data.originalTotalPrice) 
+    : data.items.reduce((sum, i) => sum + Number(i.unitPrice) * i.qtyPerBundle, 0);
+
+  // 3. Insert bundle
+  const result = await db.insert(productBundles).values({
+    name: data.name,
+    nameEn: data.nameEn,
+    keyword: data.keyword,
+    sellingPrice: data.sellingPrice,
+    originalTotalPrice: String(originalTotal),
+    specialPrice: data.specialPrice,
+    coverImage: data.coverImage,
+    description: data.description,
+    status: (data.status as any) || 'active',
+    showInMall: data.showInMall ?? true,
+    weight: data.weight || '0',
+    internalNotes: data.internalNotes,
+    bundleStock: data.bundleQty,
+    totalCost: String(totalCost),
+  });
+  
+  const bundleId = (result as any)[0].insertId || (result as any).insertId;
+
+  // 4. Insert bundle items
+  for (const item of data.items) {
+    await db.insert(productBundleItems).values({
+      bundleId,
+      productId: item.productId,
+      variantId: item.variantId,
+      productName: item.productName,
+      variantName: item.variantName,
+      qtyPerBundle: item.qtyPerBundle,
+      unitCost: item.unitCost,
+      unitPrice: item.unitPrice,
+    });
+  }
+
+  // 5. Deduct stock from single items
+  for (const item of data.items) {
+    const product = (await db.select().from(products).where(eq(products.id, item.productId)).limit(1))[0];
+    if (product) {
+      const currentStock = (product as any).stockQuantity || 0;
+      const deductQty = item.qtyPerBundle * data.bundleQty;
+      const newStock = currentStock - deductQty;
+      await db.update(products)
+        .set({ stockQuantity: newStock } as any)
+        .where(eq(products.id, item.productId));
+      
+      // Log single item stock change
+      await db.insert(bundleStockLogs).values({
+        bundleId,
+        actionType: 'create',
+        qtyChange: -deductQty,
+        stockBefore: currentStock,
+        stockAfter: newStock,
+        affectedProducts: item.productName,
+        operator: data.operator || 'system',
+        notes: `转入组合包: ${data.name} (×${data.bundleQty}组)`,
+      });
+    }
+  }
+
+  // 6. Log bundle stock creation
+  await db.insert(bundleStockLogs).values({
+    bundleId,
+    actionType: 'create',
+    qtyChange: data.bundleQty,
+    stockBefore: 0,
+    stockAfter: data.bundleQty,
+    affectedProducts: data.items.map(i => i.productName).join(', '),
+    operator: data.operator || 'system',
+    notes: `建立组合库存 ${data.bundleQty} 组`,
+  });
+
+  return { bundleId, bundleStock: data.bundleQty, totalCost, originalTotal };
+}
+
+// Restock bundle (补充组合) - deduct more from single items, add to bundle stock
+export async function restockBundle(data: {
+  bundleId: number;
+  restockQty: number;
+  operator?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const bundle = (await db.select().from(productBundles).where(eq(productBundles.id, data.bundleId)).limit(1))[0];
+  if (!bundle) throw new Error("Bundle not found");
+
+  const items = await db.select().from(productBundleItems).where(eq(productBundleItems.bundleId, data.bundleId));
+  
+  // Verify stock
+  const calcResult = await calculateMaxBundleQty(
+    items.map(i => ({ productId: i.productId, qtyPerBundle: i.qtyPerBundle }))
+  );
+  const maxQty = typeof calcResult === 'number' ? 0 : calcResult.maxQty;
+  const breakdown = typeof calcResult === 'number' ? [] : calcResult.breakdown;
+  if (data.restockQty > maxQty) {
+    const limiting = breakdown.find((b: any) => b.maxBundles < data.restockQty);
+    throw new Error(
+      `库存不足。${limiting?.productName || '某商品'}目前只有${limiting?.availableStock || 0}个，` +
+      `每组需要${limiting?.qtyPerBundle || 1}个，最多只能补充${maxQty}组。`
+    );
+  }
+
+  const oldBundleStock = bundle.bundleStock;
+  const newBundleStock = oldBundleStock + data.restockQty;
+
+  // Deduct from single items
+  for (const item of items) {
+    const product = (await db.select().from(products).where(eq(products.id, item.productId)).limit(1))[0];
+    if (product) {
+      const currentStock = (product as any).stockQuantity || 0;
+      const deductQty = item.qtyPerBundle * data.restockQty;
+      const newStock = currentStock - deductQty;
+      await db.update(products)
+        .set({ stockQuantity: newStock } as any)
+        .where(eq(products.id, item.productId));
+      
+      await db.insert(bundleStockLogs).values({
+        bundleId: data.bundleId,
+        actionType: 'restock',
+        qtyChange: -deductQty,
+        stockBefore: currentStock,
+        stockAfter: newStock,
+        affectedProducts: item.productName,
+        operator: data.operator || 'system',
+        notes: `补充组合包扣减: ${bundle.name} (+${data.restockQty}组)`,
+      });
+    }
+  }
+
+  // Update bundle stock
+  await db.update(productBundles)
+    .set({ bundleStock: newBundleStock } as any)
+    .where(eq(productBundles.id, data.bundleId));
+
+  // Log bundle stock addition
+  await db.insert(bundleStockLogs).values({
+    bundleId: data.bundleId,
+    actionType: 'restock',
+    qtyChange: data.restockQty,
+    stockBefore: oldBundleStock,
+    stockAfter: newBundleStock,
+    affectedProducts: items.map(i => i.productName).join(', '),
+    operator: data.operator || 'system',
+    notes: `补充组合库存 ${data.restockQty} 组`,
+  });
+
+  return { newBundleStock };
+}
+
+// Disassemble bundle (拆除组合) - return items to single item stock
+export async function disassembleBundle(data: {
+  bundleId: number;
+  disassembleQty: number;
+  reason: string;
+  damagedProducts?: number[]; // Product IDs that are damaged (go to waste, not back to stock)
+  operator?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const bundle = (await db.select().from(productBundles).where(eq(productBundles.id, data.bundleId)).limit(1))[0];
+  if (!bundle) throw new Error("Bundle not found");
+  if (data.disassembleQty > bundle.bundleStock) {
+    throw new Error(`拆除数量不能大于剩余组合库存 (${bundle.bundleStock}组)`);
+  }
+
+  const items = await db.select().from(productBundleItems).where(eq(productBundleItems.bundleId, data.bundleId));
+  const oldBundleStock = bundle.bundleStock;
+  const newBundleStock = oldBundleStock - data.disassembleQty;
+
+  // Return items to single item stock (unless damaged)
+  for (const item of items) {
+    const product = (await db.select().from(products).where(eq(products.id, item.productId)).limit(1))[0];
+    if (product) {
+      const currentStock = (product as any).stockQuantity || 0;
+      const returnQty = item.qtyPerBundle * data.disassembleQty;
+      const isDamaged = data.damagedProducts?.includes(item.productId);
+      
+      if (isDamaged) {
+        // Damaged items go to waste - log but don't add back to stock
+        await db.insert(bundleStockLogs).values({
+          bundleId: data.bundleId,
+          actionType: 'disassemble',
+          qtyChange: 0,
+          stockBefore: currentStock,
+          stockAfter: currentStock,
+          affectedProducts: item.productName,
+          reason: data.reason,
+          operator: data.operator || 'system',
+          notes: `拆除组合: ${returnQty}个 ${item.productName} 损坏报废`,
+        });
+      } else {
+        // Normal items return to stock
+        const newStock = currentStock + returnQty;
+        await db.update(products)
+          .set({ stockQuantity: newStock } as any)
+          .where(eq(products.id, item.productId));
+        
+        await db.insert(bundleStockLogs).values({
+          bundleId: data.bundleId,
+          actionType: 'disassemble',
+          qtyChange: returnQty,
+          stockBefore: currentStock,
+          stockAfter: newStock,
+          affectedProducts: item.productName,
+          reason: data.reason,
+          operator: data.operator || 'system',
+          notes: `拆除组合退回: ${bundle.name} (-${data.disassembleQty}组)`,
+        });
+      }
+    }
+  }
+
+  // Update bundle stock
+  await db.update(productBundles)
+    .set({ bundleStock: newBundleStock } as any)
+    .where(eq(productBundles.id, data.bundleId));
+
+  // Log bundle stock removal
+  await db.insert(bundleStockLogs).values({
+    bundleId: data.bundleId,
+    actionType: 'disassemble',
+    qtyChange: -data.disassembleQty,
+    stockBefore: oldBundleStock,
+    stockAfter: newBundleStock,
+    affectedProducts: items.map(i => i.productName).join(', '),
+    reason: data.reason,
+    operator: data.operator || 'system',
+    notes: `拆除组合库存 ${data.disassembleQty} 组`,
+  });
+
+  return { newBundleStock };
+}
+
+// Update bundle (only metadata - name, price, image, etc. NOT items if stock exists)
+export async function updateBundle(id: number, data: {
+  name?: string;
+  nameEn?: string;
+  keyword?: string;
+  sellingPrice?: string;
+  originalTotalPrice?: string;
+  specialPrice?: string;
+  coverImage?: string;
+  description?: string;
+  status?: string;
+  showInMall?: boolean;
+  weight?: string;
+  internalNotes?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const updateData: any = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.nameEn !== undefined) updateData.nameEn = data.nameEn;
+  if (data.keyword !== undefined) updateData.keyword = data.keyword;
+  if (data.sellingPrice !== undefined) updateData.sellingPrice = data.sellingPrice;
+  if (data.originalTotalPrice !== undefined) updateData.originalTotalPrice = data.originalTotalPrice;
+  if (data.specialPrice !== undefined) updateData.specialPrice = data.specialPrice;
+  if (data.coverImage !== undefined) updateData.coverImage = data.coverImage;
+  if (data.description !== undefined) updateData.description = data.description;
+  if (data.status !== undefined) updateData.status = data.status;
+  if (data.showInMall !== undefined) updateData.showInMall = data.showInMall;
+  if (data.weight !== undefined) updateData.weight = data.weight;
+  if (data.internalNotes !== undefined) updateData.internalNotes = data.internalNotes;
+  
+  await db.update(productBundles).set(updateData).where(eq(productBundles.id, id));
+  return await getBundleById(id);
+}
+
+// Delete bundle (must have 0 stock)
+export async function deleteBundle(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const bundle = (await db.select().from(productBundles).where(eq(productBundles.id, id)).limit(1))[0];
+  if (!bundle) throw new Error("Bundle not found");
+  if (bundle.bundleStock > 0) {
+    throw new Error("组合包还有剩余库存，请先拆除组合后再删除。");
+  }
+  
+  await db.delete(productBundleItems).where(eq(productBundleItems.bundleId, id));
+  await db.delete(bundleStockLogs).where(eq(bundleStockLogs.bundleId, id));
+  await db.delete(productBundles).where(eq(productBundles.id, id));
+  return true;
+}
+
+// Get bundles for mall display
+export async function getMallBundles() {
+  const db = await getDb();
+  if (!db) return [];
+  const bundles = await db.select().from(productBundles)
+    .where(and(
+      eq(productBundles.status, 'active'),
+      eq(productBundles.showInMall, true)
+    ));
+  
+  const result = [];
+  for (const bundle of bundles) {
+    if (bundle.bundleStock <= 0) continue;
+    const items = await db.select().from(productBundleItems).where(eq(productBundleItems.bundleId, bundle.id));
+    result.push({ ...bundle, items });
+  }
+  return result;
+}
+
+// Deduct bundle stock on sale (only bundle stock, NOT single items)
+export async function deductBundleStock(bundleId: number, qty: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const bundle = (await db.select().from(productBundles).where(eq(productBundles.id, bundleId)).limit(1))[0];
+  if (!bundle) throw new Error("Bundle not found");
+  if (bundle.bundleStock < qty) {
+    throw new Error(`组合包库存不足 (剩余 ${bundle.bundleStock} 组)`);
+  }
+  
+  const oldStock = bundle.bundleStock;
+  const newStock = oldStock - qty;
+  
+  await db.update(productBundles)
+    .set({ bundleStock: newStock } as any)
+    .where(eq(productBundles.id, bundleId));
+  
+  await db.insert(bundleStockLogs).values({
+    bundleId,
+    actionType: 'sell',
+    qtyChange: -qty,
+    stockBefore: oldStock,
+    stockAfter: newStock,
+    operator: 'system',
+    notes: `销售组合包 ×${qty}组`,
+  });
+  
+  return { newStock };
+}
+
+// Get bundle profit analysis
+export async function getBundleProfitAnalysis(filters?: {
+  startDate?: string;
+  endDate?: string;
+}) {
+  const db = await getDb();
+  if (!db) return { totalSales: 0, totalCost: 0, totalProfit: 0, profitMargin: 0, bundles: [] };
+  
+  // Get all bundles
+  const allBundles = await db.select().from(productBundles);
+  
+  // For now, return basic info - actual sales data would come from order_items with bundle references
+  const result = allBundles.map((b: any) => ({
+    id: b.id,
+    name: b.name,
+    keyword: b.keyword,
+    sellingPrice: Number(b.sellingPrice),
+    totalCost: Number(b.totalCost),
+    bundleStock: b.bundleStock,
+    profit: Number(b.sellingPrice) - Number(b.totalCost),
+    profitMargin: Number(b.totalCost) > 0 
+      ? ((Number(b.sellingPrice) - Number(b.totalCost)) / Number(b.sellingPrice) * 100).toFixed(2) 
+      : '0',
+  }));
+  
+  return {
+    bundles: result,
+    totalBundles: result.length,
+  };
 }

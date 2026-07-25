@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search, ShoppingCart, Phone, MessageCircle, MapPin, ChevronRight, Home as HomeIcon, Package } from "lucide-react";
+import { Search, ShoppingCart, Phone, MessageCircle, MapPin, ChevronRight, Home as HomeIcon, Package, Boxes } from "lucide-react";
 import { MallLangToggle } from "@/components/MallLangToggle";
 
 export default function MallHome() {
@@ -21,6 +21,7 @@ export default function MallHome() {
   const { data: quickContacts } = trpc.mall.quickContacts.useQuery();
   const { data: categories } = trpc.mall.categories.useQuery();
   const { data: products, isLoading: isProductsLoading } = trpc.mall.products.useQuery({ categoryId, search: searchQuery || undefined });
+  const { data: bundles } = trpc.productBundles.mallList.useQuery();
 
   const cart = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("mall_cart") || "[]"); } catch { return []; }
@@ -103,6 +104,55 @@ export default function MallHome() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Bundles Section */}
+      {bundles && bundles.length > 0 && !searchQuery && !categoryId && (
+        <main className="max-w-6xl mx-auto px-4 py-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Boxes className="h-5 w-5 text-[#2d6a4f]" />
+            <h2 className="text-xl font-semibold text-[#1b4332]">组合优惠</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {bundles.map((b: any) => (
+              <Card key={b.id} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group">
+                <div className="aspect-square overflow-hidden bg-gray-100">
+                  {b.coverImage ? (
+                    <img src={b.coverImage} alt={b.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-400"><Boxes className="h-12 w-12" /></div>
+                  )}
+                </div>
+                <CardContent className="p-3">
+                  <p className="text-sm font-medium line-clamp-2 mb-1">{b.name}</p>
+                  <div className="flex items-center gap-2">
+                    {b.specialPrice && parseFloat(b.specialPrice) > 0 ? (
+                      <>
+                        <span className="text-lg font-bold text-orange-600">RM {b.specialPrice}</span>
+                        <span className="text-xs text-muted-foreground line-through">RM {b.sellingPrice}</span>
+                      </>
+                    ) : (
+                      <span className="text-lg font-bold text-[#2d6a4f]">RM {b.sellingPrice}</span>
+                    )}
+                    {b.originalTotalPrice && parseFloat(b.originalTotalPrice) > parseFloat(b.sellingPrice) && (
+                      <span className="text-xs text-muted-foreground line-through">RM {b.originalTotalPrice}</span>
+                    )}
+                  </div>
+                  <div className="flex gap-1 mt-1">
+                    <Badge className="bg-purple-100 text-purple-700">组合包</Badge>
+                    {b.bundleStock <= 5 && b.bundleStock > 0 && <Badge variant="secondary">仅剩{b.bundleStock}组</Badge>}
+                    {b.bundleStock <= 0 && <Badge variant="destructive">售罄</Badge>}
+                  </div>
+                  {b.items && b.items.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                      包含: {b.items.map((i: any) => i.productName).join('、')}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </main>
       )}
 
       {/* Products Grid */}

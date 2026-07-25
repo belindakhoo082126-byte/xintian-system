@@ -3744,13 +3744,12 @@ export const appRouter = router({
   }),
 
   // ===========================================================================
-  // V2.0: Import Preorder Dashboard & Reports
+    // V2.0: Import Preorder Dashboard & Reports
   // ===========================================================================
   importPreorder: router({
     stats: adminProcedure.query(async () => {
       return await db.getImportPreorderStats();
     }),
-
     profitAnalysis: adminProcedure
       .input(z.object({
         batchId: z.number().optional(),
@@ -3760,6 +3759,139 @@ export const appRouter = router({
       }).optional())
       .query(async ({ input }) => {
         return await db.getImportPreorderProfitAnalysis(input || {});
+      }),
+  }),
+
+  // ===========================================================================
+  // V3.1: Product Bundles (组合包管理)
+  // ===========================================================================
+  productBundles: router({
+    list: adminProcedure
+      .input(z.object({
+        status: z.string().optional(),
+        showInMall: z.boolean().optional(),
+        search: z.string().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getProductBundles(input || {});
+      }),
+
+    getById: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+ const bundle = await db.getBundleById(input.id);
+        if (!bundle) throw new Error("Bundle not found");
+        return bundle;
+      }),
+
+    create: adminProcedure
+      .input(z.object({
+        name: z.string(),
+        nameEn: z.string().optional(),
+        keyword: z.string(),
+        sellingPrice: z.string(),
+        originalTotalPrice: z.string().optional(),
+        specialPrice: z.string().optional(),
+        coverImage: z.string().optional(),
+        description: z.string().optional(),
+        status: z.string().optional(),
+        showInMall: z.boolean().optional(),
+        weight: z.string().optional(),
+        internalNotes: z.string().optional(),
+        items: z.array(z.object({
+          productId: z.number(),
+          variantId: z.number().optional(),
+          productName: z.string(),
+          variantName: z.string().optional(),
+          qtyPerBundle: z.number(),
+          unitCost: z.string(),
+          unitPrice: z.string(),
+        })),
+        bundleQty: z.number(),
+        operator: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createBundleWithStock(input);
+      }),
+
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        nameEn: z.string().optional(),
+        keyword: z.string().optional(),
+        sellingPrice: z.string().optional(),
+        originalTotalPrice: z.string().optional(),
+        specialPrice: z.string().optional(),
+        coverImage: z.string().optional(),
+        description: z.string().optional(),
+        status: z.string().optional(),
+        showInMall: z.boolean().optional(),
+        weight: z.string().optional(),
+        internalNotes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return await db.updateBundle(id, data);
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.deleteBundle(input.id);
+      }),
+
+    restock: adminProcedure
+      .input(z.object({
+        bundleId: z.number(),
+        restockQty: z.number(),
+        operator: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.restockBundle(input);
+      }),
+
+    disassemble: adminProcedure
+      .input(z.object({
+        bundleId: z.number(),
+        disassembleQty: z.number(),
+        reason: z.string(),
+        damagedProducts: z.array(z.number()).optional(),
+        operator: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.disassembleBundle(input);
+      }),
+
+    stockLogs: adminProcedure
+      .input(z.object({ bundleId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getBundleStockLogs(input.bundleId);
+      }),
+
+    calculateMax: adminProcedure
+      .input(z.object({
+        items: z.array(z.object({
+          productId: z.number(),
+          qtyPerBundle: z.number(),
+        })),
+      }))
+      .query(async ({ input }) => {
+        return await db.calculateMaxBundleQty(input.items);
+      }),
+
+    mallList: publicProcedure
+      .query(async () => {
+        return await db.getMallBundles();
+      }),
+
+    profitAnalysis: adminProcedure
+      .input(z.object({
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await db.getBundleProfitAnalysis(input || {});
       }),
   }),
 });

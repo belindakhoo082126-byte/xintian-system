@@ -94,6 +94,7 @@ const menuStructure: MenuEntry[] = [
     label: { zh: "商品管理", en: "Product Management" },
     children: [
       { icon: Package, label: "nav.products", path: "/products" },
+      { icon: Boxes, label: { zh: "组合包管理", en: "Product Bundles" }, path: "/product-bundles" },
       { icon: FolderTree, label: { zh: "分类管理", en: "Categories" }, path: "/categories" },
       { icon: PackagePlus, label: { zh: "进货管理", en: "Purchase Orders" }, path: "/purchase-orders" },
       { icon: Truck, label: { zh: "供应商管理", en: "Suppliers" }, path: "/suppliers" },
