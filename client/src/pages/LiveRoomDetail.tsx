@@ -27,7 +27,9 @@ const productStatusColors: Record<string, string> = {
   sold_out: "bg-red-100 text-red-700",
 };
 
-export default function LiveRoomDetail({ roomId, onBack }: { roomId: number; onBack: () => void }) {
+export default function LiveRoomDetail(props: any) {
+  const roomId = props.roomId ?? (props.match?.params?.id ? parseInt(props.match.params.id) : 0);
+  const onBack = props.onBack ?? (() => window.history.back());
   const queryClient = trpc.useUtils();
   const roomQuery = trpc.liveRooms.getById.useQuery({ id: roomId });
   const productsQuery = trpc.liveRooms.getProducts.useQuery({ liveRoomId: roomId });

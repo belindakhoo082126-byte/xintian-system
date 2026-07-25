@@ -104,6 +104,16 @@
 - [x] 图片上传（S3）— 已完成（商品封面、QR 图片、横幅图片）
 - [ ] 影片上传 — V1.2 规划
 
+## XLCS Phase 2.5: 直播 AI 客服 (Live AI Agent)
+
+- [x] 新建 live_ai_flows 表 (name, triggerKeywords JSON, replyContent, isEnabled, sortOrder) + schema 迁移
+- [x] 后端：Live AI Flow CRUD API (list, create, update, delete, reorder, duplicate)
+- [x] 后端：语义匹配 API (留言内容 → 匹配 Flow → 返回回复内容)
+- [x] 后端：Facebook Webhook 集成 — 捉单前先检查 AI Flow 匹配，匹配则自动回复
+- [x] 前端：直播 AI 客服 Flow 管理页面 (列表 + 新增/编辑/复制/删除/启用停用/排序)
+- [x] 前端：Flow 编辑表单 (名称、触发关键词多选、回复内容富文本、启用开关)
+- [x] 侧边栏菜单新增「直播 AI 客服」+ App.tsx 路由注册
+
 ## XLCS Phase 2: 直播管理 (Live Management)
 
 - [x] 合并菜单：本地直播 + 中国代购直播 → 直播管理（类型筛选 全部/本地/中国代购）

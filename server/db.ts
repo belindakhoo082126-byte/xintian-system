@@ -26,6 +26,8 @@ import {
   liveRooms, importBatches, importBatchItems,
   // V2.0 Phase 2 imports - Live Room Products
   liveRoomProducts,
+  // V2.0 Phase 2.5 imports - Live AI Flows
+  liveAiFlows,
   // V3.1 imports - Product Bundles
   productBundles, productBundleItems, bundleStockLogs,
 } from "../drizzle/schema";
@@ -6580,4 +6582,151 @@ export async function getLiveRoomOrders(liveRoomId: number, limit = 50) {
     }
   }
   return result;
+}
+
+// ============================================================================
+// Live AI Flows (直播 AI 客服) - CRUD + Semantic Matching
+// ============================================================================
+
+// List all AI flows (sorted by sortOrder)
+export async function getLiveAiFlows() {
+  const db = await getDb();
+  if (!db) return [];
+  const result = await db.select().from(liveAiFlows)
+    .orderBy(asc(liveAiFlows.sortOrder), desc(liveAiFlows.createdAt));
+  return result;
+}
+
+// Get single AI flow by id
+export async function getLiveAiFlowById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(liveAiFlows).where(eq(liveAiFlows.id, id)).limit(1);
+  return result[0] || null;
+}
+
+// Create new AI flow
+export async function createLiveAiFlow(data: {
+  name: string;
+  triggerKeywords: string; // JSON array
+  replyContent: string;
+  isEnabled?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Get max sortOrder
+  const allFlows = await db.select().from(liveAiFlows);
+  const maxSort = allFlows.reduce((max, f) => Math.max(max, f.sortOrder), 0);
+  const result = await db.insert(liveAiFlows).values({
+    name: data.name,
+    triggerKeywords: data.triggerKeywords,
+    replyContent: data.replyContent,
+    isEnabled: data.isEnabled ?? true,
+    sortOrder: maxSort + 1,
+  });
+  broadcastChange("liveAiFlows");
+  return { id: result[0].insertId };
+}
+
+// Update AI flow
+export async function updateLiveAiFlow(id: number, data: {
+  name?: string;
+  triggerKeywords?: string;
+  replyContent?: string;
+  isEnabled?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const updateData: any = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.triggerKeywords !== undefined) updateData.triggerKeywords = data.triggerKeywords;
+  if (data.replyContent !== undefined) updateData.replyContent = data.replyContent;
+  if (data.isEnabled !== undefined) updateData.isEnabled = data.isEnabled;
+  await db.update(liveAiFlows).set(updateData).where(eq(liveAiFlows.id, id));
+  broadcastChange("liveAiFlows");
+  return { success: true };
+}
+
+// Delete AI flow
+export async function deleteLiveAiFlow(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(liveAiFlows).where(eq(liveAiFlows.id, id));
+  broadcastChange("liveAiFlows");
+  return { success: true };
+}
+
+// Duplicate AI flow
+export async function duplicateLiveAiFlow(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const original = await db.select().from(liveAiFlows).where(eq(liveAiFlows.id, id)).limit(1);
+  if (original.length === 0) throw new Error("Flow not found");
+  const orig = original[0];
+  const allFlows = await db.select().from(liveAiFlows);
+  const maxSort = allFlows.reduce((max, f) => Math.max(max, f.sortOrder), 0);
+  const result = await db.insert(liveAiFlows).values({
+    name: `${orig.name} (副本)`,
+    triggerKeywords: orig.triggerKeywords,
+    replyContent: orig.replyContent,
+    isEnabled: false, // Duplicated flows start disabled
+    sortOrder: maxSort + 1,
+  });
+  broadcastChange("liveAiFlows");
+  return { id: result[0].insertId };
+}
+
+// Reorder AI flows
+export async function reorderLiveAiFlows(ids: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  for (let i = 0; i < ids.length; i++) {
+    await db.update(liveAiFlows).set({ sortOrder: i + 1 }).where(eq(liveAiFlows.id, ids[i]));
+  }
+  broadcastChange("liveAiFlows");
+  return { success: true };
+}
+
+// Semantic matching: check if a comment message matches any AI flow
+// Returns the matched flow's reply content, or null if no match
+export async function matchLiveAiFlow(commentMessage: string): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  // Get all enabled flows, sorted by sortOrder (priority)
+  const flows = await db.select().from(liveAiFlows)
+    .where(eq(liveAiFlows.isEnabled, true))
+    .orderBy(asc(liveAiFlows.sortOrder));
+  
+  if (flows.length === 0) return null;
+  
+  const lowerMsg = commentMessage.toLowerCase().trim();
+  
+  for (const flow of flows) {
+    try {
+      const keywords: string[] = JSON.parse(flow.triggerKeywords);
+      for (const keyword of keywords) {
+        const lowerKeyword = keyword.toLowerCase().trim();
+        // Check if the comment contains the keyword (substring match)
+        // Also check semantic similarity using simple token overlap
+        if (lowerMsg.includes(lowerKeyword)) {
+          return flow.replyContent;
+        }
+        // Token-based semantic matching: split both into tokens and check overlap
+        const msgTokens = lowerMsg.split(/\s+/).filter((t: string) => t.length > 0);
+        const keywordTokens = lowerKeyword.split(/\s+/).filter((t: string) => t.length > 0);
+        if (keywordTokens.length > 0 && msgTokens.length > 0) {
+          const overlap = keywordTokens.filter((t: string) => msgTokens.some((m: string) => m.includes(t) || t.includes(m)));
+          // If all keyword tokens have a match in the message, trigger the flow
+          if (overlap.length === keywordTokens.length) {
+            return flow.replyContent;
+          }
+        }
+      }
+    } catch (e) {
+      // Skip invalid JSON
+      continue;
+    }
+  }
+  
+  return null;
 }

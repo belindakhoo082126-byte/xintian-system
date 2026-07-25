@@ -109,6 +109,7 @@ const menuStructure: MenuEntry[] = [
     children: [
       { icon: Bot, label: { zh: "AI Agent", en: "AI Agent" }, path: "/flows" },
       { icon: MessageSquare, label: { zh: "Flow 编辑器", en: "Flow Editor" }, path: "/flows" },
+      { icon: Video, label: { zh: "直播 AI 客服", en: "Live AI Agent" }, path: "/live-ai-flows" },
     ],
   },
 

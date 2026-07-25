@@ -33,6 +33,7 @@ export type SyncCategory =
   | "orderExceptions"
   | "specialOrders"
   | "membership"
+  | "liveAiFlows"
   | "all";
 
 interface SyncEvent {

@@ -1481,6 +1481,30 @@ export type LiveRoomProduct = typeof liveRoomProducts.$inferSelect;
 export type InsertLiveRoomProduct = typeof liveRoomProducts.$inferInsert;
 
 // ============================================================================
+// V2.0 Phase 2.5: Live AI Flows (直播 AI 客服)
+// ============================================================================
+
+export const liveAiFlows = mysqlTable("live_ai_flows", {
+  id: int("id").autoincrement().primaryKey(),
+  // Flow name (e.g. "营业地点", "运费", "付款方式")
+  name: varchar("name", { length: 255 }).notNull(),
+  // Trigger keywords (JSON array of strings, e.g. ["你们在哪里", "店在哪里", "营业时间"])
+  triggerKeywords: text("triggerKeywords").notNull(),
+  // Auto reply content (supports text, emoji, URLs, line breaks)
+  replyContent: text("replyContent").notNull(),
+  // Is enabled
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  // Sort order
+  sortOrder: int("sortOrder").default(0).notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LiveAiFlow = typeof liveAiFlows.$inferSelect;
+export type InsertLiveAiFlow = typeof liveAiFlows.$inferInsert;
+
+// ============================================================================
 // V2.0: Import Batches (采购批次)
 // ============================================================================
 

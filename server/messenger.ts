@@ -370,6 +370,20 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
     if (commentMessage) {
       const lowerMsg = commentMessage.toLowerCase();
 
+      // Try AI Flow matching first (before keyword capture)
+      try {
+        const { matchLiveAiFlow } = require("./db");
+        const aiReply = await matchLiveAiFlow(commentMessage);
+        if (aiReply) {
+          // AI Flow matched — auto-reply and return (no order capture)
+          await replyToComment(commentId, aiReply);
+          console.log("[Facebook] AI Flow auto-reply sent for comment:", commentMessage);
+          return;
+        }
+      } catch (aiErr: any) {
+        console.log("[Facebook] AI Flow matching error:", aiErr?.message);
+      }
+
       // Try keyword matching for live order capture (e.g. "ABS+2", "POT+1")
       try {
         const { parseCommentKeywords, matchKeywordsToProducts, createOrderFromLiveCapture, getLiveRooms } = require("./db");

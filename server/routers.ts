@@ -3991,5 +3991,62 @@ export const appRouter = router({
         return await db.getBundleProfitAnalysis(input || {});
       }),
   }),
+
+  // ===========================================================================
+  // V2.0 Phase 2.5: Live AI Flows (直播 AI 客服)
+  // ===========================================================================
+  liveAiFlows: router({
+    list: adminProcedure
+      .query(async () => {
+        return await db.getLiveAiFlows();
+      }),
+    getById: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getLiveAiFlowById(input.id);
+      }),
+    create: adminProcedure
+      .input(z.object({
+        name: z.string(),
+        triggerKeywords: z.string(),
+        replyContent: z.string(),
+        isEnabled: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createLiveAiFlow(input);
+      }),
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        triggerKeywords: z.string().optional(),
+        replyContent: z.string().optional(),
+        isEnabled: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.updateLiveAiFlow(input.id, input);
+      }),
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.deleteLiveAiFlow(input.id);
+      }),
+    duplicate: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.duplicateLiveAiFlow(input.id);
+      }),
+    reorder: adminProcedure
+      .input(z.object({ ids: z.array(z.number()) }))
+      .mutation(async ({ input }) => {
+        return await db.reorderLiveAiFlows(input.ids);
+      }),
+    match: publicProcedure
+      .input(z.object({ message: z.string() }))
+      .query(async ({ input }) => {
+        const reply = await db.matchLiveAiFlow(input.message);
+        return { matched: reply !== null, reply };
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;
