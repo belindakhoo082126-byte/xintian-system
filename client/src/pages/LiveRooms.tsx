@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,29 @@ export default function LiveRooms() {
   const liveRooms = liveRoomsQuery.data as any[] | undefined;
   const isLoading = liveRoomsQuery.isLoading;
   const batches = batchesQuery.data as any[] | undefined;
+
+  // Read ?type= URL param to filter by live type (normal / import_preorder)
+  const [typeFilter, setTypeFilter] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('type') || 'all';
+  });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      setTypeFilter(params.get('type') || 'all');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Filter rooms by type
+  const filteredRooms = (liveRooms || []).filter((room: any) => {
+    if (typeFilter === 'all') return true;
+    if (typeFilter === 'import_preorder') return room.liveType === 'import_preorder';
+    if (typeFilter === 'normal') return room.liveType !== 'import_preorder';
+    return true;
+  });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -238,10 +261,10 @@ export default function LiveRooms() {
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-8 text-center text-muted-foreground">加载中...</div>
-          ) : !liveRooms || liveRooms.length === 0 ? (
+          ) : !filteredRooms || filteredRooms.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <Video className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p>暂无直播房间，点击右上角创建</p>
+              <p>{typeFilter === 'import_preorder' ? '暂无中国代购直播' : typeFilter === 'normal' ? '暂无普通直播' : '暂无直播房间，点击右上角创建'}</p>
             </div>
           ) : (
             <Table>
@@ -257,7 +280,7 @@ export default function LiveRooms() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {liveRooms.map((room: any) => {
+                {filteredRooms.map((room: any) => {
                   const batch = (batches || []).find((b: any) => b.id === room.importBatchId) as any;
                   return (
                     <TableRow key={room.id}>

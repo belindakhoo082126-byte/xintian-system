@@ -1,5 +1,7 @@
 # 心田电商后台管理系统 - TODO
 
+- [x] Fix sidebar sub-menu query param navigation: LiveRooms.tsx (?type=), ImportBatches.tsx (?tab=), Orders.tsx (?nature= sync)
+
 ## 数据库层
 
 - [x] 设计并创建 products 表（支持四种商品类型 + 会员商品专属字段）

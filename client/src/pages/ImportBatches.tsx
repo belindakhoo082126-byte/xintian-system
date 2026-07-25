@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,32 @@ export default function ImportBatches() {
   const queryClient = trpc.useUtils();
   const batchesQuery = trpc.importBatches.list.useQuery({});
   const batches = batchesQuery.data as any[] | undefined;
+
+  // Read ?tab= URL param to switch between CN (China Purchase) and IB (Import Batch) views
+  const [urlTab, setUrlTab] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('tab') || 'cn';
+  });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      setUrlTab(params.get('tab') || 'cn');
+      // Return to list view when tab changes via URL navigation
+      setSelectedBatchId(null);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // CN tab: batches in purchasing phase; IB tab: batches in import/arrival phase
+  const cnStatuses = ['in_progress', 'closed', 'purchased'];
+  const ibStatuses = ['preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed'];
+  const filteredBatches = (batches || []).filter((batch: any) => {
+    if (urlTab === 'cn') return cnStatuses.includes(batch.status);
+    if (urlTab === 'ib') return ibStatuses.includes(batch.status);
+    return true;
+  });
 
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -267,9 +293,11 @@ export default function ImportBatches() {
         </Dialog>
       </div>
 
-      <Tabs defaultValue="list" className="w-full">
+      <Tabs value={selectedBatchId ? "detail" : "list"} className="w-full">
         <TabsList>
-          <TabsTrigger value="list">批次列表</TabsTrigger>
+          <TabsTrigger value="list" onClick={() => setSelectedBatchId(null)}>
+            {urlTab === 'cn' ? '中国采购列表' : '进口批次列表'}
+          </TabsTrigger>
           {selectedBatchId && <TabsTrigger value="detail">批次详情</TabsTrigger>}
         </TabsList>
 
@@ -278,10 +306,10 @@ export default function ImportBatches() {
             <CardContent className="p-0">
               {batchesQuery.isLoading ? (
                 <div className="p-8 text-center text-muted-foreground">加载中...</div>
-              ) : !batches || batches.length === 0 ? (
+              ) : !filteredBatches || filteredBatches.length === 0 ? (
                 <div className="p-8 text-center text-muted-foreground">
                   <Plane className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                  <p>暂无采购批次，点击右上角创建</p>
+                  <p>{urlTab === 'cn' ? '暂无中国采购批次' : '暂无进口批次'}</p>
                 </div>
               ) : (
                 <Table>
@@ -296,7 +324,7 @@ export default function ImportBatches() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {batches.map((batch: any) => (
+                    {filteredBatches.map((batch: any) => (
                       <TableRow key={batch.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedBatchId(batch.id)}>
                         <TableCell className="font-medium">{batch.batchNumber}</TableCell>
                         <TableCell>{batch.batchName}</TableCell>

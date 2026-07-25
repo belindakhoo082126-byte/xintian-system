@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
@@ -46,6 +46,21 @@ export default function Orders() {
   const [statusFilter, setStatusFilter] = useState(urlStatus || "all");
   const [todayOnly, setTodayOnly] = useState(urlToday === "1");
   const [natureFilter, setNatureFilter] = useState(urlNature || "all");
+
+  // Sync filter state when URL query params change (e.g. sidebar sub-menu navigation)
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const newStatus = params.get('status');
+      const newToday = params.get('today');
+      const newNature = params.get('nature');
+      if (newStatus !== null) setStatusFilter(newStatus);
+      if (newToday !== null) setTodayOnly(newToday === '1');
+      if (newNature !== null) setNatureFilter(newNature);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailOrder, setDetailOrder] = useState<any>(null);
   const [shipForm, setShipForm] = useState({ courierCompany: "", trackingNumber: "" });
