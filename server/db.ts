@@ -5618,28 +5618,28 @@ export async function getSpecialOrderFollowUpStats() {
   // Count special orders by type that are still pending
   const [rows] = await db.execute(sql`
     SELECT 
-      special_order_type,
+      specialOrderType,
       COUNT(*) as cnt
     FROM orders
-    WHERE is_special_order = 1
-      AND special_order_status = 'pending'
-      AND physical_status != 'cancelled'
-    GROUP BY special_order_type
+    WHERE isSpecialOrder = 1
+      AND specialOrderStatus = 'pending'
+      AND physicalStatus != 'cancelled'
+    GROUP BY specialOrderType
   `);
 
   const typeCounts: Record<string, number> = {};
   (rows as unknown as any[]).forEach((r: any) => {
-    typeCounts[r.special_order_type] = Number(r.cnt) || 0;
+    typeCounts[r.specialOrderType] = Number(r.cnt) || 0;
   });
 
   // Count overdue (>24h since creation, still pending)
   const [overdueRows] = await db.execute(sql`
     SELECT COUNT(*) as cnt
     FROM orders
-    WHERE is_special_order = 1
-      AND special_order_status = 'pending'
-      AND physical_status != 'cancelled'
-      AND created_at <= ${twentyFourHoursAgo}
+    WHERE isSpecialOrder = 1
+      AND specialOrderStatus = 'pending'
+      AND physicalStatus != 'cancelled'
+      AND createdAt <= ${twentyFourHoursAgo}
   `);
 
   const overdueCount = Number((overdueRows as unknown as any[])[0]?.cnt) || 0;
@@ -5649,7 +5649,7 @@ export async function getSpecialOrderFollowUpStats() {
     SELECT COUNT(*) as cnt
     FROM order_sub_orders
     WHERE status = 'ready_to_ship'
-      AND (awb_number IS NULL OR awb_number = '')
+      AND (awbNumber IS NULL OR awbNumber = '')
   `);
 
   const logisticsErrorCount = Number((logisticsRows as unknown as any[])[0]?.cnt) || 0;
@@ -5658,11 +5658,11 @@ export async function getSpecialOrderFollowUpStats() {
   const [incompleteRows] = await db.execute(sql`
     SELECT COUNT(*) as cnt
     FROM orders o
-    INNER JOIN customers c ON o.customer_id = c.id
-    WHERE o.is_special_order = 0
-      AND o.physical_status = 'pending'
-      AND (c.phone_number IS NULL OR c.phone_number = '' 
-           OR o.shipping_address IS NULL OR o.shipping_address = '')
+    INNER JOIN customers c ON o.customerId = c.id
+    WHERE o.isSpecialOrder = 0
+      AND o.physicalStatus = 'pending'
+      AND (c.phoneNumber IS NULL OR c.phoneNumber = '' 
+           OR o.shippingAddress IS NULL OR o.shippingAddress = '')
   `);
 
   const incompleteInfoCount = Number((incompleteRows as unknown as any[])[0]?.cnt) || 0;
@@ -5691,32 +5691,32 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
   const [rows] = await db.execute(sql`
     SELECT 
       o.id as order_id,
-      o.order_number,
-      o.parent_order_id,
-      o.special_order_type,
-      o.special_order_status,
-      o.shipping_difference,
-      o.customer_paid_shipping,
-      o.actual_shipping_fee,
-      o.physical_status,
-      o.created_at,
-      o.shipping_address,
+      o.orderNumber,
+      o.parentOrderId,
+      o.specialOrderType,
+      o.specialOrderStatus,
+      o.shippingDifference,
+      o.customerPaidShipping,
+      o.actualShippingFee,
+      o.physicalStatus,
+      o.createdAt,
+      o.shippingAddress,
       c.id as customer_id,
       c.name as customer_name,
-      c.phone_number as customer_phone,
-      c.facebook_name,
+      c.phoneNumber as customer_phone,
+      c.facebookName,
       (SELECT remark FROM special_order_actions sa 
-       WHERE sa.order_id = o.id AND sa.remark IS NOT NULL AND sa.remark != ''
-       ORDER BY sa.created_at DESC LIMIT 1) as last_remark,
-      (SELECT performed_by FROM special_order_actions sa 
-       WHERE sa.order_id = o.id 
-       ORDER BY sa.created_at DESC LIMIT 1) as last_handler
+       WHERE sa.orderId = o.id AND sa.remark IS NOT NULL AND sa.remark != ''
+       ORDER BY sa.createdAt DESC LIMIT 1) as last_remark,
+      (SELECT performedBy FROM special_order_actions sa 
+       WHERE sa.orderId = o.id 
+       ORDER BY sa.createdAt DESC LIMIT 1) as last_handler
     FROM orders o
-    LEFT JOIN customers c ON o.customer_id = c.id
-    WHERE o.is_special_order = 1
-      AND o.special_order_status = 'pending'
-      AND o.physical_status != 'cancelled'
-    ORDER BY o.created_at ASC
+    LEFT JOIN customers c ON o.customerId = c.id
+    WHERE o.isSpecialOrder = 1
+      AND o.specialOrderStatus = 'pending'
+      AND o.physicalStatus != 'cancelled'
+    ORDER BY o.createdAt ASC
     LIMIT ${limit}
   `);
 
@@ -5725,32 +5725,32 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
   // Get sub-orders for each parent order
   const result: any[] = [];
   for (const item of items) {
-    const createdAt = new Date(item.created_at);
+    const createdAt = new Date(item.createdAt);
     const waitTimeMs = now - createdAt.getTime();
     const waitHours = Math.floor(waitTimeMs / (60 * 60 * 1000));
     const isOverdue = waitTimeMs > 24 * 60 * 60 * 1000;
 
     // Get sub-orders if this is a parent order
     let subOrders: any[] = [];
-    if (item.parent_order_id) {
+    if (item.parentOrderId) {
       const [subs] = await db.execute(sql`
-        SELECT sub_order_number, status, awb_number, tracking_number, shipping_fee
+        SELECT subOrderNumber, status, awbNumber, trackingNumber, shippingFee
         FROM order_sub_orders
-        WHERE parent_order_id = ${item.parent_order_id}
+        WHERE parentOrderId = ${item.parentOrderId}
       `);
       subOrders = (subs as unknown as any[]).map((s: any) => ({
-        subOrderNumber: s.sub_order_number,
+        subOrderNumber: s.subOrderNumber,
         status: s.status,
-        awbNumber: s.awb_number,
-        trackingNumber: s.tracking_number,
-        shippingFee: s.shipping_fee,
+        awbNumber: s.awbNumber,
+        trackingNumber: s.trackingNumber,
+        shippingFee: s.shippingFee,
       }));
     }
 
     // Determine special type label
     let specialTypeLabel = '';
     let specialTypeColor = '';
-    switch (item.special_order_type) {
+    switch (item.specialOrderType) {
       case 'pending_shipping':
         specialTypeLabel = '等待补运费';
         specialTypeColor = 'orange';
@@ -5769,24 +5769,24 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
     }
 
     // Check for incomplete customer info
-    const hasIncompleteInfo = !item.customer_phone || !item.shipping_address;
-    if (hasIncompleteInfo && !item.special_order_type) {
+    const hasIncompleteInfo = !item.customer_phone || !item.shippingAddress;
+    if (hasIncompleteInfo && !item.specialOrderType) {
       specialTypeLabel = '客户资料不完整';
       specialTypeColor = 'yellow';
     }
 
     // Calculate amount
-    const amount = item.special_order_type === 'pending_refund'
-      ? Math.abs(Number(item.shipping_difference) || 0)
-      : Number(item.shipping_difference) || 0;
+    const amount = item.specialOrderType === 'pending_refund'
+      ? Math.abs(Number(item.shippingDifference) || 0)
+      : Number(item.shippingDifference) || 0;
 
     result.push({
       orderId: item.order_id,
-      orderNumber: item.order_number,
-      parentOrderId: item.parent_order_id,
+      orderNumber: item.orderNumber,
+      parentOrderId: item.parentOrderId,
       customerName: item.customer_name || item.facebook_name || '未知',
       customerPhone: item.customer_phone || '',
-      specialType: item.special_order_type || (hasIncompleteInfo ? 'incomplete_info' : 'other'),
+      specialType: item.specialOrderType || (hasIncompleteInfo ? 'incomplete_info' : 'other'),
       specialTypeLabel,
       specialTypeColor,
       amount: amount.toFixed(2),
@@ -5795,7 +5795,7 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
       lastRemark: item.last_remark || '',
       lastHandler: item.last_handler || '',
       subOrders,
-      physicalStatus: item.physical_status,
+      physicalStatus: item.physicalStatus,
     });
   }
 

@@ -1,6 +1,8 @@
 # 心田电商后台管理系统 - TODO
 
 - [x] Fix sidebar sub-menu query param navigation: LiveRooms.tsx (?type=), ImportBatches.tsx (?tab=), Orders.tsx (?nature= sync)
+- [x] Fix Dashboard special order follow-up SQL errors: raw SQL uses snake_case but DB columns are camelCase
+- [x] Ensure Dashboard special order module shows framework even when data is 0
 
 ## 数据库层
 
