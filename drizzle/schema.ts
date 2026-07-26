@@ -517,10 +517,10 @@ export const orders = mysqlTable("orders", {
   paymentMethodId: int("paymentMethodId"),
   paymentMethodName: varchar("paymentMethodName", { length: 100 }),
   receiptUrl: varchar("receiptUrl", { length: 500 }),
-  // Order source tracking
+  // Order source tracking (订单来源: FB直播/FB贴文/FB Reel/Messenger/商城/Admin手动/Walk-in)
   orderSource: mysqlEnum("orderSource", [
     "facebook_live", "facebook_post", "facebook_reel",
-    "messenger", "store", "manual"
+    "messenger", "store", "manual", "walk_in"
   ]).default("manual"),
   sourceName: varchar("sourceName", { length: 255 }),
   // Facebook comment tracking
@@ -554,10 +554,13 @@ export const orders = mysqlTable("orders", {
   specialOrderStatus: mysqlEnum("specialOrderStatus", ["pending", "resolved", "cancelled"]).default("pending"),
   // V1.2: Parent order for split orders
   parentOrderId: int("parentOrderId"),
-  // V2.0: Order nature (订单性质: normal or import_preorder)
-  orderNature: mysqlEnum("orderNature", ["normal", "import_preorder"]).default("normal").notNull(),
+  // V2.0: Order nature (订单性质: local/import_preorder/wholesale/agent)
+  orderNature: mysqlEnum("orderNature", ["normal", "import_preorder", "wholesale", "agent"]).default("normal").notNull(),
   // V2.0: Linked import batch (for import_preorder orders)
   importBatchId: int("importBatchId"),
+  // V2.1: Cancel reason and operator
+  cancelReason: varchar("cancelReason", { length: 255 }),
+  cancelledBy: varchar("cancelledBy", { length: 255 }),
   // V2.0: Linked live room
   liveRoomId: int("liveRoomId"),
   // V2.0: Import preorder status (代购订单状态流程)
@@ -606,6 +609,10 @@ export const orderItems = mysqlTable("order_items", {
   itemSource: mysqlEnum("itemSource", ["admin", "facebook_live", "messenger", "mall"]).default("admin"),
   // V2.0: Sales mode snapshot
   salesMode: mysqlEnum("salesMode", ["normal", "presale", "import_preorder"]).default("normal"),
+  // V2.1: Price snapshot fields (利润快照)
+  priceType: mysqlEnum("priceType", ["retail", "wholesale", "agent", "special", "manual"]).default("retail"),
+  unitCost: decimal("unitCost", { precision: 10, scale: 2 }).default("0"),
+  originalUnitPrice: decimal("originalUnitPrice", { precision: 10, scale: 2 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -1787,3 +1794,52 @@ export const bundleStockLogs = mysqlTable("bundle_stock_logs", {
 
 export type BundleStockLog = typeof bundleStockLogs.$inferSelect;
 export type InsertBundleStockLog = typeof bundleStockLogs.$inferInsert;
+
+// ============================================================================
+// Order Payments (订单付款记录 - 支持多次汇款)
+// ============================================================================
+
+export const orderPayments = mysqlTable("order_payments", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  // Payment amount for this record
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  // Payment method used
+  paymentMethodId: int("paymentMethodId"),
+  paymentMethodName: varchar("paymentMethodName", { length: 100 }),
+  // Receipt proof URL (uploaded image/file)
+  receiptUrl: varchar("receiptUrl", { length: 500 }),
+  // Payment date (when customer made the transfer)
+  paymentDate: timestamp("paymentDate"),
+  // Who recorded this payment (admin name)
+  recordedBy: varchar("recordedBy", { length: 255 }),
+  // Notes
+  notes: text("notes"),
+  // Timestamp
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OrderPayment = typeof orderPayments.$inferSelect;
+export type InsertOrderPayment = typeof orderPayments.$inferInsert;
+
+// ============================================================================
+// Order Operation Logs (订单操作日志 - 完整操作记录)
+// ============================================================================
+
+export const orderOperationLogs = mysqlTable("order_operation_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  // Operation type: create, update, payment, ship, notify, complete, cancel, status_change, item_add, item_remove, item_edit
+  operationType: varchar("operationType", { length: 50 }).notNull(),
+  // Operation description
+  description: text("description"),
+  // JSON snapshot of changed fields { field: { old, new } }
+  changes: text("changes"),
+  // Who performed the operation
+  operator: varchar("operator", { length: 255 }),
+  // Timestamp
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OrderOperationLog = typeof orderOperationLogs.$inferSelect;
+export type InsertOrderOperationLog = typeof orderOperationLogs.$inferInsert;

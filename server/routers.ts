@@ -1069,15 +1069,26 @@ export const appRouter = router({
           subtotal: z.string(),
           variationId: z.number().optional(),
           variationName: z.string().optional(),
+          priceType: z.string().optional(),
+          unitCost: z.string().optional(),
+          originalUnitPrice: z.string().optional(),
         })),
         shippingAddress: z.string().optional(),
         shippingMethod: z.string().optional(),
         paymentMethodId: z.number().optional(),
         paymentMethodName: z.string().optional(),
         salesChannel: z.string().optional(),
+        orderNature: z.string().optional(),
+        orderSource: z.string().optional(),
+        sourceName: z.string().optional(),
+        liveRoomId: z.number().optional(),
       }))
-      .mutation(async ({ input }) => {
-        return await db.createOrderWithSplit(input);
+      .mutation(async ({ input, ctx }) => {
+        const result = await db.createOrderWithSplit(input);
+        if (result.orderId) {
+          await db.logOrderOperation(result.orderId, "create", `Order created by ${ctx.user?.name || "admin"}`, null, ctx.user?.name || "admin");
+        }
+        return result;
       }),
 
     updateStatus: adminProcedure
@@ -1106,6 +1117,123 @@ export const appRouter = router({
     })).query(async ({ input }) => {
       return await db.getSpecialOrderFollowUpList(input.limit);
     }),
+
+    // V2.1: Order payments (多次汇款)
+    getPayments: adminProcedure
+      .input(z.object({ orderId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getOrderPayments(input.orderId);
+      }),
+
+    addPayment: adminProcedure
+      .input(z.object({
+        orderId: z.number(),
+        amount: z.string(),
+        paymentMethodId: z.number().optional(),
+        paymentMethodName: z.string().optional(),
+        receiptUrl: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.addOrderPayment({
+          orderId: input.orderId,
+          amount: input.amount,
+          paymentMethodId: input.paymentMethodId,
+          paymentMethodName: input.paymentMethodName,
+          receiptUrl: input.receiptUrl,
+          recordedBy: ctx.user?.name || "admin",
+          notes: input.notes,
+        });
+        return { success: true };
+      }),
+
+    // V2.1: Cancel order with reason
+    cancelOrder: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        reason: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.cancelOrderWithReason(input.id, input.reason, ctx.user?.name || "admin");
+        return { success: true };
+      }),
+
+    // V2.1: Order operation logs
+    getOperationLogs: adminProcedure
+      .input(z.object({ orderId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getOrderOperationLogs(input.orderId);
+      }),
+
+    // V2.1: Search products for order creation (名称/编号/关键词/SKU)
+    searchProductsForOrder: adminProcedure
+      .input(z.object({ query: z.string() }))
+      .query(async ({ input }) => {
+        return await db.getProducts({ search: input.query });
+      }),
+
+    // V2.1: Get order detail with items, payments, and logs
+    getDetail: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const order = await db.getOrderById(input.id);
+        if (!order) throw new Error("Order not found");
+        const items = await db.getOrderItems(input.id);
+        const payments = await db.getOrderPayments(input.id);
+        const logs = await db.getOrderOperationLogs(input.id);
+        return { ...order, items, payments, logs };
+      }),
+
+    // V2.1: Compare shipping quotes from multiple providers
+    compareShippingQuotes: adminProcedure
+      .input(z.object({
+        fromPostcode: z.string(),
+        toPostcode: z.string(),
+        weightKg: z.number(),
+      }))
+      .query(async ({ input }) => {
+        const results: any[] = [];
+
+        // Try ParcelDaily
+        try {
+          const quote = await parceldaily.getQuote({
+            fromPostcode: input.fromPostcode,
+            toPostcode: input.toPostcode,
+            kg: input.weightKg,
+          });
+          const couriers = parceldaily.extractCourierPrices(quote);
+          for (const c of couriers) {
+            results.push({ provider: "ParcelDaily", ...c });
+          }
+        } catch (e: any) {
+          // Skip if ParcelDaily fails
+        }
+
+        // Try ParcelKing
+        if (parcelking.isParcelKingConfigured()) {
+          try {
+            const pkResult = await parcelking.priceQuery({
+              from_postcode: input.fromPostcode,
+              to_postcode: input.toPostcode,
+              parcel_weight_kg: input.weightKg,
+            });
+            if (pkResult && pkResult.services) {
+              for (const s of pkResult.services) {
+                results.push({
+                  provider: "ParcelKing",
+                  courier: s.service_name,
+                  price: s.total_price,
+                  estDelivery: s.estimated_days || null,
+                });
+              }
+            }
+          } catch (e: any) {
+            // Skip ParcelKing if it fails entirely
+          }
+        }
+
+        return { success: true, quotes: results };
+      }),
   }),
   // ===========================================================================
   // Membership Fee Reviews

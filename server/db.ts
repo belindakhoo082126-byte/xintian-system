@@ -31,6 +31,8 @@ import {
   liveComments,
   // V3.1 imports - Product Bundles
   productBundles, productBundleItems, bundleStockLogs,
+  // V2.1 imports - Order Payments & Operation Logs
+  orderPayments, orderOperationLogs,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -135,7 +137,11 @@ export async function getProducts(filters?: { type?: string; search?: string; is
   const conditions: any[] = [];
   if (filters?.type) conditions.push(eq(products.type, filters.type as any));
   if (filters?.isListed !== undefined) conditions.push(eq(products.isListed, filters.isListed));
-  if (filters?.search) conditions.push(like(products.name, `%${filters.search}%`));
+  if (filters?.search) conditions.push(or(
+    like(products.name, `%${filters.search}%`),
+    like(products.sku, `%${filters.search}%`),
+    like(products.keyword, `%${filters.search}%`)
+  ) as any);
   if (conditions.length > 0) {
     query = query.where(and(...conditions)) as any;
   }
@@ -182,7 +188,12 @@ export async function getCustomers(search?: string) {
         like(customers.name, `%${search}%`),
         like(customers.facebookName, `%${search}%`),
         like(customers.phoneNumber, `%${search}%`),
-        like(customers.email, `%${search}%`)
+        like(customers.email, `%${search}%`),
+        like(customers.facebookId, `%${search}%`),
+        like(customers.messengerId, `%${search}%`),
+        like(customers.customerId, `%${search}%`),
+        like(customers.displayName, `%${search}%`),
+        like(customers.whatsappPhone, `%${search}%`)
       )
     ) as any;
   }
@@ -366,7 +377,9 @@ export async function getOrders(filters?: {
   if (filters?.search) {
     conditions.push(or(
       like(orders.orderNumber, `%${filters.search}%`),
-      like(orders.facebookName, `%${filters.search}%`)
+      like(orders.facebookName, `%${filters.search}%`),
+      like(orders.trackingNumber, `%${filters.search}%`),
+      like(orders.sourceName, `%${filters.search}%`)
     ));
   }
   if (conditions.length > 0) {
@@ -402,11 +415,18 @@ export async function createOrderWithSplit(data: {
     subtotal: string;
     variationId?: number;
     variationName?: string;
+    priceType?: string;
+    unitCost?: string;
+    originalUnitPrice?: string;
   }>;
   shippingAddress?: string;
   shippingMethod?: string;
   paymentMethodId?: number;
   paymentMethodName?: string;
+  orderNature?: string;
+  orderSource?: string;
+  sourceName?: string;
+  liveRoomId?: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -457,9 +477,16 @@ export async function createOrderWithSplit(data: {
     shippingMethod: (data.shippingMethod as any) || null,
     paymentMethodId: (data.paymentMethodId as any) || null,
     paymentMethodName: (data.paymentMethodName as any) || null,
+    orderNature: (data.orderNature as any) || "normal",
+    orderSource: (data.orderSource as any) || "manual",
+    sourceName: data.sourceName || null,
+    liveRoomId: data.liveRoomId || null,
   });
 
   const orderId = (orderResult as any)[0].insertId;
+
+  // Log operation
+  await logOrderOperation(orderId, "create", `Order created with ${data.items.length} items`, null, null);
 
   // Insert order items
   for (const item of data.items) {
@@ -473,6 +500,9 @@ export async function createOrderWithSplit(data: {
       subtotal: item.subtotal,
       variationId: item.variationId || null,
       variationName: item.variationName || null,
+      priceType: (item.priceType as any) || "retail",
+      unitCost: item.unitCost || "0",
+      originalUnitPrice: item.originalUnitPrice || null,
     });
   }
 
@@ -513,7 +543,139 @@ export async function updateOrderStatus(id: number, data: {
   if (data.physicalStatus === "completed") updateData.completedAt = new Date();
 
   await db.update(orders).set(updateData).where(eq(orders.id, id));
+
+  // Log status change
+  const oldOrder = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
+  if (oldOrder.length > 0) {
+    await logOrderOperation(id, "status_change", `Status changed to ${data.physicalStatus || data.membershipStatus}`, null, null);
+  }
+
   broadcastChanges(["orders", "dashboard"]);
+}
+
+// ============================================================================
+// Order Operation Log helpers
+// ============================================================================
+
+export async function logOrderOperation(orderId: number, operationType: string, description?: string | null, changes?: string | null, operator?: string | null) {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.insert(orderOperationLogs).values({
+      orderId,
+      operationType,
+      description: description || null,
+      changes: changes || null,
+      operator: operator || null,
+    });
+  } catch (e) {
+    // Non-critical: don't fail the operation if logging fails
+    console.warn("[OrderOperationLog] Failed to log:", e);
+  }
+}
+
+export async function getOrderOperationLogs(orderId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(orderOperationLogs).where(eq(orderOperationLogs.orderId, orderId)).orderBy(desc(orderOperationLogs.createdAt));
+}
+
+// ============================================================================
+// Order Payment helpers (多次汇款)
+// ============================================================================
+
+export async function getOrderPayments(orderId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(orderPayments).where(eq(orderPayments.orderId, orderId)).orderBy(desc(orderPayments.createdAt));
+}
+
+export async function addOrderPayment(data: {
+  orderId: number;
+  amount: string;
+  paymentMethodId?: number;
+  paymentMethodName?: string;
+  receiptUrl?: string;
+  paymentDate?: Date;
+  recordedBy?: string;
+  notes?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.insert(orderPayments).values({
+    orderId: data.orderId,
+    amount: data.amount,
+    paymentMethodId: data.paymentMethodId || null,
+    paymentMethodName: data.paymentMethodName || null,
+    receiptUrl: data.receiptUrl || null,
+    paymentDate: data.paymentDate || new Date(),
+    recordedBy: data.recordedBy || null,
+    notes: data.notes || null,
+  });
+
+  // Update order paidAmount
+  const allPayments = await db.select().from(orderPayments).where(eq(orderPayments.orderId, data.orderId));
+  const totalPaid = allPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
+  const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
+  if (order.length > 0) {
+    const totalAmount = parseFloat(String(order[0].totalAmount));
+    let newStatus = order[0].physicalStatus;
+    if (totalPaid >= totalAmount) {
+      newStatus = "packing";
+    } else if (totalPaid > 0) {
+      newStatus = "partial_payment";
+    }
+    await db.update(orders).set({
+      paidAmount: totalPaid.toFixed(2),
+      physicalStatus: newStatus as any,
+      paymentUploadedAt: new Date(),
+    }).where(eq(orders.id, data.orderId));
+  }
+
+  await logOrderOperation(data.orderId, "payment", `Payment recorded: RM${data.amount}`, null, data.recordedBy);
+  broadcastChanges(["orders", "dashboard"]);
+}
+
+// ============================================================================
+// Cancel Order with reason and inventory release
+// ============================================================================
+
+export async function cancelOrderWithReason(id: number, reason: string, operator?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const order = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
+  if (order.length === 0) throw new Error("Order not found");
+  if (order[0].physicalStatus === "cancelled") throw new Error("Order already cancelled");
+  if (order[0].physicalStatus === "shipped" || order[0].physicalStatus === "completed") {
+    throw new Error("Cannot cancel shipped or completed order");
+  }
+
+  await db.update(orders).set({
+    physicalStatus: "cancelled",
+    cancelReason: reason,
+    cancelledBy: operator || null,
+  }).where(eq(orders.id, id));
+
+  // Release reserved stock for live room products if this was a live order
+  if (order[0].liveRoomId) {
+    const items = await db.select().from(orderItems).where(eq(orderItems.orderId, id));
+    for (const item of items) {
+      if (item.variationId) {
+        await db.update(productVariations).set({
+          stockQuantity: sql`${productVariations.stockQuantity} + ${item.quantity}`,
+        }).where(eq(productVariations.id, item.variationId));
+      } else {
+        await db.update(products).set({
+          stockQuantity: sql`${products.stockQuantity} + ${item.quantity}`,
+        }).where(eq(products.id, item.productId));
+      }
+    }
+  }
+
+  await logOrderOperation(id, "cancel", `Order cancelled: ${reason}`, null, operator);
+  broadcastChanges(["orders", "dashboard", "inventory"]);
 }
 
 // ============================================================================
