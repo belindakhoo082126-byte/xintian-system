@@ -85,6 +85,7 @@ type ProductForm = {
   fertilizerDesc: string;
   pruningDesc: string;
   productImages: string[];
+  videoUrl: string;
   // V2.0: Sales mode
   salesMode: string;
   preorderWaitDays: string;
@@ -112,6 +113,7 @@ const EMPTY_FORM: ProductForm = {
   standaloneShippingMethod: "fixed_fee", standaloneShippingFee: "",
   lightDesc: "", waterDesc: "", fertilizerDesc: "", pruningDesc: "",
   productImages: [],
+  videoUrl: "",
   salesMode: "normal", preorderWaitDays: "", spotSaleEnabled: false, spotSaleQty: 0, linkedBatchId: "",
   wholesalePrice: "", agentPrice: "", moq: 0, visibleTo: ["retail", "member", "wholesale", "agent"],
   specialPriceStartDate: "", specialPriceEndDate: "",
@@ -240,6 +242,7 @@ export default function ProductsV2() {
         fertilizerDesc: p.fertilizerDesc || "",
         pruningDesc: p.pruningDesc || "",
         productImages: (p.images || []).map((img: any) => img.url || img),
+        videoUrl: (p as any).videoUrl || "",
         salesMode: (p as any).salesMode || "normal",
         preorderWaitDays: (p as any).preorderWaitDays || "",
         spotSaleEnabled: (p as any).spotSaleEnabled ?? false,
@@ -973,6 +976,56 @@ export default function ProductsV2() {
                         </label>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">{translate("可上传多张商品照片，商城将轮播展示", "Upload multiple images; mall will display as a gallery")}</p>
+                    </div>
+
+                    <div>
+                      <Label>{translate("商品影片", "Product Video")}</Label>
+                      <div className="flex items-center gap-3">
+                        <Input value={form.videoUrl} onChange={(e) => setForm({ ...form, videoUrl: e.target.value })} placeholder={translate("https://... 或点击上传影片", "https://... or click to upload video")} />
+                        <label className="cursor-pointer">
+                          <Button variant="outline" asChild>
+                            <span>{translate("上传影片", "Upload Video")}</span>
+                          </Button>
+                          <input type="file" accept="video/*" className="hidden" onChange={async (ev) => {
+                            const file = ev.target.files?.[0];
+                            if (!file) return;
+                            if (file.size > 50 * 1024 * 1024) {
+                              toast.error(translate("影片大小不能超过 50MB", "Video size cannot exceed 50MB"));
+                              return;
+                            }
+                            const reader = new FileReader();
+                            reader.onload = async () => {
+                              const base64 = reader.result as string;
+                              try {
+                                const res = await fetch("/api/upload", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ base64, filename: file.name }),
+                                });
+                                if (res.ok) {
+                                  const data = await res.json();
+                                  setForm({ ...form, videoUrl: data.url });
+                                  toast.success(translate("影片已上传", "Video uploaded"));
+                                } else {
+                                  toast.error(translate("上传失败", "Upload failed"));
+                                }
+                              } catch {
+                                toast.error(translate("上传失败，请重试", "Upload failed, please try again"));
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }} />
+                        </label>
+                      </div>
+                      {form.videoUrl && (
+                        <div className="mt-2">
+                          <video src={form.videoUrl} controls className="w-full max-w-md rounded-lg" />
+                          <Button variant="ghost" size="sm" className="mt-1 text-destructive" onClick={() => setForm({ ...form, videoUrl: "" })}>
+                            {translate("移除影片", "Remove Video")}
+                          </Button>
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-1">{translate("支持 MP4/MOV/WebM 格式，最大 50MB。商城将在商品详情页播放影片。", "Supports MP4/MOV/WebM, max 50MB. Mall will play video on product detail page.")}</p>
                     </div>
 
                     <div>
