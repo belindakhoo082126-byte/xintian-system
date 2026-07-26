@@ -3768,9 +3768,9 @@ export const appRouter = router({
 
     // --- Product Search & Batch Add ---
     searchProducts: adminProcedure
-      .input(z.object({ liveRoomId: z.number(), query: z.string() }))
+      .input(z.object({ liveRoomId: z.number(), query: z.string(), categoryId: z.number().optional() }))
       .query(async ({ input }) => {
-        return await db.searchProductsForLiveRoom(input.liveRoomId, input.query);
+        return await db.searchProductsForLiveRoom(input.liveRoomId, input.query, input.categoryId);
       }),
 
     batchAddProducts: adminProcedure

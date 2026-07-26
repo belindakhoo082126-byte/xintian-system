@@ -121,6 +121,13 @@ export default function LiveRoomDetail(props: any) {
   const [commentFilter, setCommentFilter] = useState("all");
   const [messengerFilter, setMessengerFilter] = useState("all");
   const [orderViewMode, setOrderViewMode] = useState<"byCustomer" | "byProduct">("byCustomer");
+  const [batchSelectedIds, setBatchSelectedIds] = useState<number[]>([]);
+  const [batchSelectedProducts, setBatchSelectedProducts] = useState<Record<number, any>>({});
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [batchAddMode, setBatchAddMode] = useState(false);
+  const [batchAddKeyword, setBatchAddKeyword] = useState("");
+  const [batchAddPriceMode, setBatchAddPriceMode] = useState<"original" | "custom">("original");
+  const [batchAddPrice, setBatchAddPrice] = useState("");
   const [selectedComment, setSelectedComment] = useState<any | null>(null);
 
   const [endLiveConfirmOpen, setEndLiveConfirmOpen] = useState(false);
@@ -135,9 +142,10 @@ export default function LiveRoomDetail(props: any) {
 
   // Product search for batch add
   const productSearchResults = trpc.liveRooms.searchProducts.useQuery(
-    { liveRoomId: roomId, query: productSearchQuery },
+    { liveRoomId: roomId, query: productSearchQuery, categoryId: categoryFilter !== "all" ? Number(categoryFilter) : undefined },
     { enabled: productSearchQuery.length > 0 }
   );
+  const categoriesQuery = trpc.categories.list.useQuery({ activeOnly: true });
 
   // Customer search (for comment customer panel)
   const [customerSearchName, setCustomerSearchName] = useState("");
@@ -158,6 +166,21 @@ export default function LiveRoomDetail(props: any) {
       setProductSearchQuery("");
     },
     onError: (e: any) => toast.error("加入失败: " + e.message),
+  });
+
+  const batchAddMutation = trpc.liveRooms.batchAddProducts.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`已批量加入 ${data?.count || 0} 个商品`);
+      queryClient.liveRooms.getProducts.invalidate({ liveRoomId: roomId });
+      queryClient.liveRooms.getStats.invalidate({ liveRoomId: roomId });
+      queryClient.liveRooms.getStatsBatch.invalidate();
+      setAddDialogOpen(false);
+      setBatchSelectedIds([]);
+      setBatchAddMode(false);
+      setBatchAddKeyword("");
+      setProductSearchQuery("");
+    },
+    onError: (e: any) => toast.error("批量加入失败: " + e.message),
   });
 
   const updateProductMutation = trpc.liveRooms.updateProduct.useMutation({
@@ -559,104 +582,133 @@ export default function LiveRoomDetail(props: any) {
               </Card>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {liveProducts.map((p: any, index: number) => (
-                  <Card key={p.id} className="overflow-hidden">
-                    <CardContent className="p-4">
-                      <div className="flex items-start gap-3">
-                        {/* Product image */}
-                        {p.imageUrl ? (
-                          <img src={p.imageUrl} alt={p.displayName} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
-                        ) : (
-                          <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-                            <Package className="h-6 w-6 text-muted-foreground" />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="font-medium truncate">{p.displayName}</p>
-                              <p className="text-sm text-muted-foreground">RM{Number(p.price).toFixed(0)} · 关键词: {p.keyword}</p>
+                {(() => {
+                  // Group products by productId to show variations together
+                  const grouped: Record<number, any[]> = {};
+                  liveProducts.forEach((p: any) => {
+                    const pid = p.productId;
+                    if (!grouped[pid]) grouped[pid] = [];
+                    grouped[pid].push(p);
+                  });
+                  const productIds = Object.keys(grouped).map(Number);
+                  let flatIndex = 0;
+                  return productIds.map(pid => {
+                    const variants = grouped[pid];
+                    const hasMultipleVariants = variants.length > 1;
+                    return (
+                      <Card key={pid} className="overflow-hidden">
+                        <CardContent className="p-4">
+                          {hasMultipleVariants && (
+                            <div className="mb-3 pb-2 border-b">
+                              <p className="text-xs font-medium text-muted-foreground">
+                                {variants[0].displayName.replace(/\s*[-–—]\s*.*/, "")} ({variants.length} 个规格)
+                              </p>
                             </div>
-                            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 ${productStatusColors[p.status] || ""}`}>
-                              {productStatusLabels[p.status] || p.status}
-                            </span>
-                          </div>
-                          {/* Stock info */}
-                          <div className="flex items-center gap-3 mt-2 text-sm">
-                            <span className="text-muted-foreground">
-                              开始: <span className="font-medium">{p.startStock ?? p.stock ?? 0}</span>
-                            </span>
-                            <span className="text-muted-foreground">
-                              可售: <span className={`font-medium ${(p.availableStock ?? p.stock ?? 0) <= 0 ? "text-red-600" : ""}`}>{p.availableStock ?? p.stock ?? 0}</span>
-                            </span>
-                            <span className="text-muted-foreground">
-                              已喊单: <span className="font-medium text-blue-600">{p.orderedCount || 0}</span>
-                            </span>
-                            {p.allowPreorder && (
-                              <span className="text-muted-foreground">
-                                预购: <span className="font-medium text-purple-600">{p.preorderCount || 0}</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                          )}
+                          {variants.map((p: any) => {
+                            const index = flatIndex++;
+                            return (
+                              <div key={p.id} className={hasMultipleVariants ? "mb-3 last:mb-0" : ""}>
+                                <div className="flex items-start gap-3">
+                                  {/* Product/variation image */}
+                                  {p.imageUrl ? (
+                                    <img src={p.imageUrl} alt={p.displayName} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
+                                  ) : (
+                                    <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                                      <Package className="h-6 w-6 text-muted-foreground" />
+                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <p className="font-medium truncate">{p.displayName}</p>
+                                        <p className="text-sm text-muted-foreground">RM{Number(p.price).toFixed(0)} · 关键词: {p.keyword}</p>
+                                      </div>
+                                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 ${productStatusColors[p.status] || ""}`}>
+                                        {productStatusLabels[p.status] || p.status}
+                                      </span>
+                                    </div>
+                                    {/* Stock info */}
+                                    <div className="flex items-center gap-3 mt-2 text-sm">
+                                      <span className="text-muted-foreground">
+                                        开始: <span className="font-medium">{p.startStock ?? p.stock ?? 0}</span>
+                                      </span>
+                                      <span className="text-muted-foreground">
+                                        可售: <span className={`font-medium ${(p.availableStock ?? p.stock ?? 0) <= 0 ? "text-red-600" : ""}`}>{p.availableStock ?? p.stock ?? 0}</span>
+                                      </span>
+                                      <span className="text-muted-foreground">
+                                        已喊单: <span className="font-medium text-blue-600">{p.orderedCount || 0}</span>
+                                      </span>
+                                      {p.allowPreorder && (
+                                        <span className="text-muted-foreground">
+                                          预购: <span className="font-medium text-purple-600">{p.preorderCount || 0}</span>
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
 
-                      {/* Preorder toggle */}
-                      <div className="flex items-center gap-2 mt-3 pt-3 border-t">
-                        <Switch
-                          checked={!!p.allowPreorder}
-                          onCheckedChange={(checked) => togglePreorderMutation.mutate({ id: p.id, allowPreorder: checked })}
-                        />
-                        <span className="text-xs text-muted-foreground">允许预购（库存为0时继续捉单）</span>
-                      </div>
+                                {/* Preorder toggle */}
+                                <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                                  <Switch
+                                    checked={!!p.allowPreorder}
+                                    onCheckedChange={(checked) => togglePreorderMutation.mutate({ id: p.id, allowPreorder: checked })}
+                                  />
+                                  <span className="text-xs text-muted-foreground">允许预购</span>
+                                </div>
 
-                      {/* Action buttons */}
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {p.status === "active" && (
-                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleStatusChange(p.id, "paused")}>
-                            <Pause className="h-3 w-3" /> 暂停
-                          </Button>
-                        )}
-                        {p.status === "paused" && (
-                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleStatusChange(p.id, "active")}>
-                            <Play className="h-3 w-3" /> 恢复
-                          </Button>
-                        )}
-                        {p.status !== "sold_out" && (
-                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-red-600" onClick={() => handleStatusChange(p.id, "sold_out")}>
-                            <XCircle className="h-3 w-3" /> 售完
-                          </Button>
-                        )}
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => openStockDialog(p.id)}>
-                          <Package className="h-3 w-3" /> 库存
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleCopyKeyword(p.id)}>
-                          <Copy className="h-3 w-3" /> 复制
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => {
-                          const newKeyword = prompt("输入新关键词:", p.keyword);
-                          if (newKeyword && newKeyword !== p.keyword) {
-                            updateProductMutation.mutate({ id: p.id, keyword: newKeyword });
-                            toast.success("关键词已更新");
-                          }
-                        }}>
-                          <Search className="h-3 w-3" /> 关键词
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleReorder(index, "up")} disabled={index === 0}>
-                          <ChevronUp className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleReorder(index, "down")} disabled={index === liveProducts.length - 1}>
-                          <ChevronDown className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-destructive" onClick={() => {
-                          if (confirm("确认移除此商品？")) deleteProductMutation.mutate({ id: p.id });
-                        }}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                                {/* Action buttons */}
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                  {p.status === "active" && (
+                                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleStatusChange(p.id, "paused")}>
+                                      <Pause className="h-3 w-3" /> 暂停
+                                    </Button>
+                                  )}
+                                  {p.status === "paused" && (
+                                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleStatusChange(p.id, "active")}>
+                                      <Play className="h-3 w-3" /> 恢复
+                                    </Button>
+                                  )}
+                                  {p.status !== "sold_out" && (
+                                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-red-600" onClick={() => handleStatusChange(p.id, "sold_out")}>
+                                      <XCircle className="h-3 w-3" /> 售完
+                                    </Button>
+                                  )}
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => openStockDialog(p.id)}>
+                                    <Package className="h-3 w-3" /> 库存
+                                  </Button>
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleCopyKeyword(p.id)}>
+                                    <Copy className="h-3 w-3" /> 复制
+                                  </Button>
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => {
+                                    const newKeyword = prompt("输入新关键词:", p.keyword);
+                                    if (newKeyword && newKeyword !== p.keyword) {
+                                      updateProductMutation.mutate({ id: p.id, keyword: newKeyword });
+                                      toast.success("关键词已更新");
+                                    }
+                                  }}>
+                                    <Search className="h-3 w-3" /> 关键词
+                                  </Button>
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleReorder(index, "up")} disabled={index === 0}>
+                                    <ChevronUp className="h-3 w-3" />
+                                  </Button>
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleReorder(index, "down")} disabled={index === liveProducts.length - 1}>
+                                    <ChevronDown className="h-3 w-3" />
+                                  </Button>
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-destructive" onClick={() => {
+                                    if (confirm("确认移除此商品？")) deleteProductMutation.mutate({ id: p.id });
+                                  }}>
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </CardContent>
+                      </Card>
+                    );
+                  });
+                })()}
               </div>
             )}
           </div>
@@ -1382,33 +1434,98 @@ export default function LiveRoomDetail(props: any) {
             <DialogTitle>加入直播商品</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {/* Mode toggle: single vs batch */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant={!batchAddMode ? "default" : "outline"}
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => { setBatchAddMode(false); setBatchSelectedIds([]); }}
+              >
+                单个添加
+              </Button>
+              <Button
+                variant={batchAddMode ? "default" : "outline"}
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => { setBatchAddMode(true); setNewProduct({ productId: "", variationId: "", keyword: "", displayName: "", price: "", stock: 0 }); }}
+              >
+                批量添加
+              </Button>
+            </div>
+
             <div>
-              <Label>搜索商品</Label>
-              <Input
-                value={productSearchQuery}
-                onChange={(e) => setProductSearchQuery(e.target.value)}
-                placeholder="输入商品名称、SKU 或关键词搜索..."
-                className="mb-2"
-              />
+              <div className="flex items-center gap-2 mb-2">
+                <Input
+                  value={productSearchQuery}
+                  onChange={(e) => setProductSearchQuery(e.target.value)}
+                  placeholder="输入商品名称、SKU 或关键词搜索..."
+                  className="flex-1"
+                />
+                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                  <SelectTrigger className="w-32"><SelectValue placeholder="分类" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部分类</SelectItem>
+                    {(categoriesQuery.data || []).map((c: any) => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {productSearchQuery && productSearchResults.data && productSearchResults.data.length > 0 && (
                 <div className="border rounded-lg max-h-48 overflow-y-auto">
                   {productSearchResults.data.map((p: any) => (
                     <div
                       key={p.id}
-                      className="flex items-center justify-between p-2 hover:bg-muted cursor-pointer border-b last:border-b-0"
+                      className={`flex items-center justify-between p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 ${
+                        batchAddMode && batchSelectedIds.includes(p.id) ? "bg-primary/10" : ""
+                      }`}
                       onClick={() => {
-                        setNewProduct({
-                          ...newProduct,
-                          productId: String(p.id),
-                          displayName: p.name,
-                          price: String(p.sellingPrice || ""),
-                          stock: Number(p.stockQuantity || 0),
-                          keyword: p.keyword || "",
-                        });
-                        setProductSearchQuery("");
+                        if (batchAddMode) {
+                          // Toggle selection in batch mode
+                          if (batchSelectedIds.includes(p.id)) {
+                            setBatchSelectedIds(batchSelectedIds.filter(id => id !== p.id));
+                            const next = { ...batchSelectedProducts };
+                            delete next[p.id];
+                            setBatchSelectedProducts(next);
+                          } else {
+                            setBatchSelectedIds([...batchSelectedIds, p.id]);
+                            setBatchSelectedProducts({ ...batchSelectedProducts, [p.id]: p });
+                          }
+                        } else {
+                          setNewProduct({
+                            ...newProduct,
+                            productId: String(p.id),
+                            displayName: p.name,
+                            price: String(p.sellingPrice || ""),
+                            stock: Number(p.stockQuantity || 0),
+                            keyword: p.keyword || "",
+                          });
+                          setProductSearchQuery("");
+                        }
                       }}
                     >
                       <div className="flex items-center gap-2">
+                        {batchAddMode && (
+                          <input
+                            type="checkbox"
+                            checked={batchSelectedIds.includes(p.id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              if (batchSelectedIds.includes(p.id)) {
+                                setBatchSelectedIds(batchSelectedIds.filter(id => id !== p.id));
+                                const next = { ...batchSelectedProducts };
+                                delete next[p.id];
+                                setBatchSelectedProducts(next);
+                              } else {
+                                setBatchSelectedIds([...batchSelectedIds, p.id]);
+                                setBatchSelectedProducts({ ...batchSelectedProducts, [p.id]: p });
+                              }
+                            }}
+                            className="h-4 w-4"
+                          />
+                        )}
                         {p.coverImageUrl && (
                           <img src={p.coverImageUrl} alt="" className="w-8 h-8 rounded object-cover" />
                         )}
@@ -1428,6 +1545,66 @@ export default function LiveRoomDetail(props: any) {
                 <p className="text-sm text-muted-foreground text-center py-4">未找到匹配的商品</p>
               )}
             </div>
+
+            {/* Batch mode: show selected count and batch options */}
+            {batchAddMode && batchSelectedIds.length > 0 && (
+              <div className="p-3 border rounded-lg bg-muted/30 space-y-3">
+                <p className="text-sm font-medium">已选择 {batchSelectedIds.length} 个商品</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>统一关键词前缀（可选）</Label>
+                    <Input
+                      value={batchAddKeyword}
+                      onChange={(e) => setBatchAddKeyword(e.target.value.toUpperCase().replace(/\s+/g, ""))}
+                      placeholder="例如: PRR"
+                    />
+                  </div>
+                  <div>
+                    <Label>售价模式</Label>
+                    <Select value={batchAddPriceMode} onValueChange={(v) => setBatchAddPriceMode(v as any)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="original">使用原价</SelectItem>
+                        <SelectItem value="custom">统一自定义价</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {batchAddPriceMode === "custom" && (
+                    <div>
+                      <Label>统一售价</Label>
+                      <Input type="number" value={batchAddPrice} onChange={(e) => setBatchAddPrice(e.target.value)} placeholder="RM" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Single mode: show selected product and form */}
+            {!batchAddMode && newProduct.productId && (
+              <div className="p-3 border rounded-lg bg-muted/30">
+                <p className="text-sm font-medium">已选择: {newProduct.displayName}</p>
+              </div>
+            )}
+            {!batchAddMode && newProduct.productId && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>关键词 *</Label>
+                  <Input value={newProduct.keyword} onChange={(e) => setNewProduct({ ...newProduct, keyword: e.target.value.toUpperCase().replace(/\s+/g, "") })} placeholder="例如: PRR" />
+                </div>
+                <div>
+                  <Label>显示名称 *</Label>
+                  <Input value={newProduct.displayName} onChange={(e) => setNewProduct({ ...newProduct, displayName: e.target.value })} placeholder="商品名称" />
+                </div>
+                <div>
+                  <Label>售价 *</Label>
+                  <Input type="number" value={newProduct.price} onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })} placeholder="RM" />
+                </div>
+                <div>
+                  <Label>库存</Label>
+                  <Input type="number" value={newProduct.stock} onChange={(e) => setNewProduct({ ...newProduct, stock: Number(e.target.value) })} />
+                </div>
+              </div>
+            )}
             {newProduct.productId && (
               <div className="p-3 border rounded-lg bg-muted/30">
                 <p className="text-sm font-medium">已选择: {newProduct.displayName}</p>
@@ -1453,8 +1630,39 @@ export default function LiveRoomDetail(props: any) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>取消</Button>
-            <Button onClick={handleAddProduct} disabled={addProductMutation.isPending}>加入</Button>
+            <Button variant="outline" onClick={() => { setAddDialogOpen(false); setBatchAddMode(false); setBatchSelectedIds([]); }}>取消</Button>
+            {batchAddMode ? (
+              <Button
+                onClick={() => {
+                  if (batchSelectedIds.length === 0) {
+                    toast.error("请先选择商品");
+                    return;
+                  }
+                  const items = batchSelectedIds.map((pid, idx) => {
+                    const p = batchSelectedProducts[pid];
+                    if (!p) return null;
+                    return {
+                      productId: p.id,
+                      keyword: batchAddKeyword ? `${batchAddKeyword}${idx + 1}` : (p.keyword || `P${idx + 1}`),
+                      displayName: p.name,
+                      price: batchAddPriceMode === "custom" ? Number(batchAddPrice || 0) : Number(p.sellingPrice || 0),
+                      stock: Number(p.stockQuantity || 0),
+                      imageUrl: p.coverImageUrl || undefined,
+                    };
+                  }).filter(Boolean) as any[];
+                  if (items.length === 0) {
+                    toast.error("所选商品数据不完整");
+                    return;
+                  }
+                  batchAddMutation.mutate({ liveRoomId: roomId, items });
+                }}
+                disabled={batchAddMutation.isPending || batchSelectedIds.length === 0}
+              >
+                批量加入 ({batchSelectedIds.length})
+              </Button>
+            ) : (
+              <Button onClick={handleAddProduct} disabled={addProductMutation.isPending}>加入</Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

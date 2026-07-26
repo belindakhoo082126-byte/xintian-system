@@ -6958,10 +6958,14 @@ export async function getCustomerTypeStats() {
 // ============================================================================
 
 // @realtime-broadcast: liveRooms
-export async function searchProductsForLiveRoom(liveRoomId: number, query: string) {
+export async function searchProductsForLiveRoom(liveRoomId: number, query: string, categoryId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const likePattern = `%${query}%`;
+  let whereClause = sql`(${products.name} LIKE ${likePattern} OR ${products.sku} LIKE ${likePattern} OR ${products.keyword} LIKE ${likePattern})`;
+  if (categoryId) {
+    whereClause = sql`(${products.name} LIKE ${likePattern} OR ${products.sku} LIKE ${likePattern} OR ${products.keyword} LIKE ${likePattern}) AND ${products.categoryId} = ${categoryId}`;
+  }
   const results = await db.select({
     id: products.id,
     name: products.name,
@@ -6970,9 +6974,10 @@ export async function searchProductsForLiveRoom(liveRoomId: number, query: strin
     coverImageUrl: products.coverImageUrl,
     sellingPrice: products.sellingPrice,
     stockQuantity: products.stockQuantity,
+    categoryId: products.categoryId,
     hasVariants: sql`EXISTS(SELECT 1 FROM ${variants} v WHERE v.productId = ${products.id})`,
   }).from(products)
-    .where(sql`${products.name} LIKE ${likePattern} OR ${products.sku} LIKE ${likePattern} OR ${products.keyword} LIKE ${likePattern}`)
+    .where(whereClause)
     .limit(20);
   return results;
 }
