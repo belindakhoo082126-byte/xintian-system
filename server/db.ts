@@ -3563,6 +3563,31 @@ export async function mallCheckout(data: {
     totalSpent: sql`${customers.totalSpent} + ${totalAmount.toFixed(2)}`,
   }).where(eq(customers.id, customer.id));
 
+  // V2.1: Create customer remark if provided
+  if ((data as any).customerRemark) {
+    await db.insert(orderRemarks).values({
+      orderId,
+      type: "customer",
+      content: (data as any).customerRemark,
+      remarkCategory: "customer_other",
+      createdBy: data.customerName,
+    });
+  }
+
+  // V2.1: Create repotting remarks if provided
+  if ((data as any).repotPairs && (data as any).repotPairs.length > 0) {
+    const repotData = (data as any).repotPairs;
+    const repotContent = repotData.map((p: any) => `${p.plantName} ×${p.quantity} → ${p.potName} ×${p.quantity}`).join('\n');
+    await db.insert(orderRemarks).values({
+      orderId,
+      type: "customer",
+      content: `【换盆】\n${repotContent}`,
+      remarkCategory: "repotting",
+      repottingData: JSON.stringify(repotData),
+      createdBy: data.customerName,
+    });
+  }
+
   return { orderId, orderNumber, merged: false, totalAmount: totalAmount.toFixed(2) };
 }
 
@@ -4592,6 +4617,10 @@ export async function createOrderRemark(data: {
   type: "live" | "customer" | "internal";
   content: string;
   createdBy?: string;
+  remarkCategory?: string;
+  scheduledShippingDate?: string;
+  repottingData?: string;
+  selectTreeData?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -4600,7 +4629,110 @@ export async function createOrderRemark(data: {
     type: data.type,
     content: data.content,
     createdBy: data.createdBy || null,
+    remarkCategory: (data.remarkCategory as any) || null,
+    scheduledShippingDate: data.scheduledShippingDate ? new Date(data.scheduledShippingDate) : null,
+    repottingData: data.repottingData || null,
+    selectTreeData: data.selectTreeData || null,
   });
+
+  // If scheduled shipping date is set, update order status to scheduled
+  if (data.remarkCategory === "scheduled_shipping" && data.scheduledShippingDate) {
+    await db.update(orders).set({
+      physicalStatus: "scheduled" as any,
+    }).where(eq(orders.id, data.orderId));
+    broadcastChanges(["orders", "dashboard"]);
+  }
+
+  broadcastChanges(["orders", "dashboard"]);
+}
+
+// V2.1: Process order remark (mark as processed)
+export async function processOrderRemark(id: number, processedBy: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(orderRemarks).set({
+    processingStatus: "processed",
+    processedBy,
+    processedAt: new Date(),
+  }).where(eq(orderRemarks.id, id));
+  broadcastChanges(["orders", "dashboard"]);
+}
+
+// V2.1: Get pending remark orders for Dashboard
+export async function getPendingRemarkOrders() {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({
+    remarkId: orderRemarks.id,
+    orderId: orderRemarks.orderId,
+    orderNumber: orders.orderNumber,
+    facebookName: orders.facebookName,
+    physicalStatus: orders.physicalStatus,
+    remarkCategory: orderRemarks.remarkCategory,
+    content: orderRemarks.content,
+    repottingData: orderRemarks.repottingData,
+    selectTreeData: orderRemarks.selectTreeData,
+    scheduledShippingDate: orderRemarks.scheduledShippingDate,
+    processingStatus: orderRemarks.processingStatus,
+    createdBy: orderRemarks.createdBy,
+    createdAt: orderRemarks.createdAt,
+    processedBy: orderRemarks.processedBy,
+    processedAt: orderRemarks.processedAt,
+  }).from(orderRemarks)
+    .leftJoin(orders, eq(orderRemarks.orderId, orders.id))
+    .where(eq(orderRemarks.processingStatus, "pending"))
+    .orderBy(desc(orderRemarks.createdAt));
+  // Deduplicate by orderId (same order with multiple remarks counts as 1)
+  const seen = new Set<number>();
+  return rows.filter((r: any) => {
+    if (seen.has(r.orderId)) return false;
+    seen.add(r.orderId);
+    return true;
+  });
+}
+
+// V2.1: Get all remarks with order info (for remark list page)
+export async function getAllRemarksWithOrder(limit?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const query = db.select({
+    remarkId: orderRemarks.id,
+    orderId: orderRemarks.orderId,
+    orderNumber: orders.orderNumber,
+    facebookName: orders.facebookName,
+    physicalStatus: orders.physicalStatus,
+    type: orderRemarks.type,
+    remarkCategory: orderRemarks.remarkCategory,
+    content: orderRemarks.content,
+    repottingData: orderRemarks.repottingData,
+    selectTreeData: orderRemarks.selectTreeData,
+    scheduledShippingDate: orderRemarks.scheduledShippingDate,
+    processingStatus: orderRemarks.processingStatus,
+    createdBy: orderRemarks.createdBy,
+    createdAt: orderRemarks.createdAt,
+    processedBy: orderRemarks.processedBy,
+    processedAt: orderRemarks.processedAt,
+  }).from(orderRemarks)
+    .leftJoin(orders, eq(orderRemarks.orderId, orders.id))
+    .orderBy(desc(orderRemarks.createdAt));
+  if (limit) {
+    return await query.limit(limit);
+  }
+  return await query;
+}
+
+// V2.1: Get today's scheduled shipping count for Dashboard
+export async function getTodayScheduledShippingCount() {
+  const db = await getDb();
+  if (!db) return 0;
+  const today = new Date().toISOString().split('T')[0];
+  const rows = await db.select({ count: sql`COUNT(*)` }).from(orderRemarks)
+    .where(and(
+      eq(orderRemarks.remarkCategory, "scheduled_shipping"),
+      eq(orderRemarks.processingStatus, "pending"),
+      eq(orderRemarks.scheduledShippingDate, today as any),
+    ));
+  return Number(rows[0]?.count || 0);
 }
 
 export async function deleteOrderRemark(id: number) {

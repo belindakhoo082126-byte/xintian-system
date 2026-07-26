@@ -6,16 +6,19 @@ import {
   ShoppingCart, Warehouse, Calendar, Bell,
   ShoppingBag, CheckCircle, XCircle, Ban,
   MessageSquare, Bot, ArrowRight, AlertTriangle,
-  Plane, Eye, Home,
+  Plane, Eye, Home, FileText, MessageCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useI18n } from "@/contexts/I18nContext";
 import { getFollowUpDisplayState } from "./dashboardFollowUp";
 
-const REMARK_TYPE_LABELS: Record<string, { zh: string; en: string; color: string }> = {
-  live: { zh: "直播备注", en: "Live Remark", color: "bg-blue-100 text-blue-700" },
-  customer: { zh: "客户备注", en: "Customer Remark", color: "bg-green-100 text-green-700" },
-  internal: { zh: "内部备注", en: "Internal Remark", color: "bg-gray-100 text-gray-700" },
+const REMARK_CATEGORY_LABELS: Record<string, { zh: string; en: string; color: string }> = {
+  repotting: { zh: "客户换盆", en: "Customer Repot", color: "bg-green-100 text-green-700" },
+  customer_other: { zh: "客户备注", en: "Customer Note", color: "bg-blue-100 text-blue-700" },
+  scheduled_shipping: { zh: "预约发货", en: "Scheduled Ship", color: "bg-purple-100 text-purple-700" },
+  internal_repotting: { zh: "后台换盆", en: "Internal Repot", color: "bg-amber-100 text-amber-700" },
+  select_tree: { zh: "选树身", en: "Select Tree", color: "bg-orange-100 text-orange-700" },
+  internal_other: { zh: "后台备注", en: "Internal Note", color: "bg-gray-100 text-gray-700" },
 };
 
 export default function Dashboard() {
@@ -24,6 +27,8 @@ export default function Dashboard() {
   const { data: followUpStats } = trpc.orders.followUpStats.useQuery();
   const { data: followUpList } = trpc.orders.followUpList.useQuery({ limit: 50 });
   const followUpDisplay = getFollowUpDisplayState(followUpStats, followUpList);
+  const { data: pendingRemarks } = trpc.orderRemarks.pendingOrders.useQuery();
+  const { data: allRemarks } = trpc.orderRemarks.allWithOrder.useQuery({ limit: 50 });
 
   if (isLoading) {
     return (
@@ -49,7 +54,7 @@ export default function Dashboard() {
     alerts.push({ label: t("dashboard.holdOrders"), count: stats.alerts.holdExpiring, link: "/orders?status=hold_order", color: "bg-yellow-500" });
   }
 
-  // V2.3 Row 1: Sales (营业额) — 3 cards in one row for comparison
+  // V2.3 Row 1: Sales (营业额) — 3 cards
   const salesRow = [
     {
       title: lang === "zh" ? "本地销售额" : "Local Sales",
@@ -80,16 +85,23 @@ export default function Dashboard() {
     },
   ];
 
-  // V2.3 Row 2: Orders (待处理) — 4 cards
-  const ordersRow = [
-    { title: t("dashboard.pendingPayment"), value: stats.row1.pendingPayment, icon: Clock, color: "text-orange-500", link: "/orders?status=receipt_uploaded" },
-    { title: t("dashboard.pendingShipment"), value: stats.row1.pendingShipment, icon: Package, color: "text-blue-500", link: "/packing?tab=packing" },
-    { title: t("dashboard.todayShipped"), value: stats.row4.todayShipped, icon: Truck, color: "text-green-500", link: "/packing?tab=shipped" },
-    { title: t("dashboard.lowStock"), value: stats.row3.lowStock + stats.row3.outOfStock, icon: Warehouse, color: "text-red-500", link: "/products?stock=low" },
+  // V2.1: 10 fixed work status cards — always visible even at 0
+  const workCards = [
+    { title: lang === "zh" ? "待审核付款" : "Pending Payment Review", value: stats.row1.pendingPayment, icon: Clock, color: "text-orange-500", link: "/orders?status=receipt_uploaded" },
+    { title: lang === "zh" ? "待包货" : "Pending Packing", value: stats.row1.pendingShipment, icon: Package, color: "text-blue-500", link: "/packing?tab=packing" },
+    { title: lang === "zh" ? "今日已发货" : "Today Shipped", value: stats.row4.todayShipped, icon: Truck, color: "text-green-500", link: "/packing?tab=shipped" },
+    { title: lang === "zh" ? "今日订单" : "Today Orders", value: stats.row4.todayOrders, icon: ShoppingBag, color: "text-cyan-500", link: "/orders?today=1" },
+    { title: lang === "zh" ? "部分发货" : "Partial Shipped", value: stats.row1.partialShipped, icon: Truck, color: "text-indigo-500", link: "/packing?tab=partial_shipped" },
+    { title: lang === "zh" ? "保留订单" : "Hold Orders", value: stats.row2.holdOrders, icon: Ban, color: "text-yellow-500", link: "/orders?status=hold_order" },
+    { title: lang === "zh" ? "今日预约发货" : "Today Scheduled", value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "/packing?tab=scheduled" },
+    { title: lang === "zh" ? "订单备注" : "Order Remarks", value: (pendingRemarks as any)?.length || 0, icon: FileText, color: "text-amber-500", link: "/orders?tab=remarks" },
+    { title: lang === "zh" ? "未读 Messenger" : "Unread Messenger", value: 0, icon: MessageCircle, color: "text-pink-500", link: "/messenger" },
+    { title: lang === "zh" ? "库存预警" : "Stock Alert", value: stats.row3.lowStock + stats.row3.outOfStock, icon: Warehouse, color: "text-red-500", link: "/products?stock=low" },
   ];
 
   const recentRemarks = (stats as any).recentRemarks || [];
   const pendingNotifications = (stats as any).pendingNotifications || [];
+  const pendingRemarkCount = (pendingRemarks as any)?.length || 0;
 
   return (
     <div className="space-y-6">
@@ -116,7 +128,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* V2.3 Row 1: Sales (营业额) — 3 cards in one row */}
+      {/* V2.3 Row 1: Sales (营业额) — 3 cards */}
       <div>
         <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "营业额（本月）" : "Sales (This Month)"}</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -139,165 +151,19 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* V3.0 Row 2: Emergency (紧急事件) — AI Agent + Recent Remarks side by side */}
-      <div>
-        <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "紧急事件" : "Emergency"}</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* AI Agent Pending Notifications */}
-          <Card>
-            <CardHeader className="flex flex-row items-center gap-2">
-              <Bot className="h-5 w-5 text-orange-500" />
-              <CardTitle className="text-base">{lang === "zh" ? "AI Agent 待人工通知" : "AI Agent Pending Notifications"}</CardTitle>
-              <Badge variant="secondary" className="ml-auto">{pendingNotifications.length}</Badge>
-            </CardHeader>
-            <CardContent className="space-y-2 max-h-[200px] overflow-y-auto">
-              {pendingNotifications.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无待人工通知记录" : "No pending notifications"}</p>
-              ) : (
-                pendingNotifications.slice(0, 5).map((n: any) => (
-                  <Link key={n.id} href={n.orderId ? `/orders/${n.orderId}` : "/orders"}>
-                    <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm truncate">
-                          <Badge variant="outline" className="mr-2">{n.type}</Badge>
-                          {n.message || "(无消息内容)"}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {n.orderNumber || `#${n.orderId || ""}`}
-                          {n.createdAt ? ` · ${new Date(n.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
-                        </p>
-                      </div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
-                    </div>
-                  </Link>
-                ))
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Recent Remarks */}
-          <Card>
-            <CardHeader className="flex flex-row items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-primary" />
-              <CardTitle className="text-base">{lang === "zh" ? "最近备注记录" : "Recent Remarks"}</CardTitle>
-              {recentRemarks.length > 0 && (
-                <Badge variant="secondary" className="ml-auto">{recentRemarks.length}</Badge>
-              )}
-            </CardHeader>
-            <CardContent className="space-y-2 max-h-[200px] overflow-y-auto">
-              {recentRemarks.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无备注记录" : "No recent remarks"}</p>
-              ) : (
-                recentRemarks.slice(0, 5).map((r: any) => {
-                  const typeInfo = REMARK_TYPE_LABELS[r.type] || { label: r.type, color: "bg-gray-100 text-gray-700" };
-                  return (
-                    <Link key={r.id} href={`/orders/${r.orderId}`}>
-                      <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
-                        <Badge className={`shrink-0 ${typeInfo.color}`} variant="secondary">
-                          {lang === "zh" ? typeInfo.zh : typeInfo.en}
-                        </Badge>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm truncate">{r.content}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {r.orderNumber || `#${r.orderId}`} {r.facebookName ? `· ${r.facebookName}` : ""}
-                            {r.createdAt ? ` · ${new Date(r.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
-                          </p>
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Special-status orders are an urgent workflow and remain visible at zero. */}
-          <Card className="lg:col-span-2 border-orange-200 bg-orange-50/40 dark:border-orange-900/60 dark:bg-orange-950/10">
-            <CardHeader className="flex flex-row items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-orange-500" />
-              <CardTitle className="text-base">{lang === "zh" ? "特别状态订单待跟进" : "Special-status Order Follow-up"}</CardTitle>
-              <Badge variant="secondary" className="ml-auto">{followUpDisplay.itemCount}</Badge>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <div className="rounded-lg border border-orange-100 bg-background/70 p-3 dark:border-orange-900/50">
-                  <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待补运费" : "Pending Shipping"}</p>
-                  <p className="mt-1 text-2xl font-bold text-orange-600">{followUpDisplay.pendingShippingCount}</p>
-                </div>
-                <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50">
-                  <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待退款" : "Pending Refund"}</p>
-                  <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.pendingRefundCount}</p>
-                </div>
-                <div className="rounded-lg border border-yellow-100 bg-background/70 p-3 dark:border-yellow-900/50">
-                  <p className="text-xs text-muted-foreground">{lang === "zh" ? "物流异常" : "Logistics Error"}</p>
-                  <p className="mt-1 text-2xl font-bold text-yellow-600">{followUpDisplay.logisticsErrorCount}</p>
-                </div>
-                <div className="rounded-lg border border-purple-100 bg-background/70 p-3 dark:border-purple-900/50">
-                  <p className="text-xs text-muted-foreground">{lang === "zh" ? "自动通知失败" : "Notification Failed"}</p>
-                  <p className="mt-1 text-2xl font-bold text-purple-600">{followUpDisplay.notificationFailedCount}</p>
-                </div>
-                <div className="rounded-lg border border-amber-100 bg-background/70 p-3 dark:border-amber-900/50">
-                  <p className="text-xs text-muted-foreground">{lang === "zh" ? "库存异常" : "Stock Exception"}</p>
-                  <p className="mt-1 text-2xl font-bold text-amber-600">{followUpDisplay.stockExceptionCount}</p>
-                </div>
-                <div className={`rounded-lg border bg-background/70 p-3 ${followUpDisplay.overdueCount > 0 ? "border-red-300" : "border-slate-200 dark:border-slate-800"}`}>
-                  <p className="text-xs text-muted-foreground">{lang === "zh" ? "超 24 小时未处理" : "Overdue >24h"}</p>
-                  <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.overdueCount}</p>
-                </div>
-              </div>
-
-              <div className="border-t border-orange-100 pt-3 dark:border-orange-900/60">
-                {(!followUpList || (followUpList as any).length === 0) ? (
-                  <p className="py-3 text-center text-sm text-muted-foreground">{lang === "zh" ? "暂无待跟进特别订单；相关统计会在此持续显示。" : "No pending special-status orders. The monitoring framework remains visible here."}</p>
-                ) : (
-                  <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
-                    {(followUpList as any).map((item: any) => (
-                      <Link key={item.orderId} href={`/orders/${item.orderId}`}>
-                        <div className={`flex items-center justify-between gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50 ${item.isOverdue ? "border-red-300 bg-red-50 dark:bg-red-950/20" : "border-transparent"}`}>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{item.orderNumber}</p>
-                            <p className="truncate text-xs text-muted-foreground">{item.customerName}{item.lastRemark ? ` · ${item.lastRemark}` : ""}</p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <Badge className={item.specialTypeColor === "orange" ? "bg-orange-100 text-orange-700" : item.specialTypeColor === "red" ? "bg-red-100 text-red-700" : item.specialTypeColor === "yellow" ? "bg-yellow-100 text-yellow-700" : item.specialTypeColor === "blue" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-700"} variant="secondary">
-                              {item.specialTypeLabel}
-                            </Badge>
-                            <span className={`text-xs ${item.isOverdue ? "font-bold text-red-600" : "text-muted-foreground"}`}>
-                              {item.isOverdue ? (lang === "zh" ? `超时 ${item.waitHours}h` : `Overdue ${item.waitHours}h`) : `${item.waitHours}h`}
-                            </span>
-                            <Eye className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <Link href="/orders?special=1">
-                <div className="flex cursor-pointer items-center justify-end gap-1 text-sm font-medium text-orange-700 transition-colors hover:text-orange-800 dark:text-orange-400">
-                  <span>{lang === "zh" ? "查看全部特别状态订单" : "View all special-status orders"}</span>
-                  <ArrowRight className="h-4 w-4" />
-                </div>
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* V3.0 Row 3: Work Status (工作状态) — 4 cards */}
+      {/* V2.1: 10 Fixed Work Status Cards — always visible */}
       <div>
         <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "工作状态" : "Work Status"}</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {ordersRow.map((card, i) => (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          {workCards.map((card, i) => (
             <Link key={i} href={card.link}>
               <Card className="hover:shadow-md transition-shadow cursor-pointer">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
-                  <card.icon className={`h-5 w-5 ${card.color}`} />
+                  <CardTitle className="text-xs font-medium text-muted-foreground">{card.title}</CardTitle>
+                  <card.icon className={`h-4 w-4 ${card.color}`} />
                 </CardHeader>
                 <CardContent>
-                  <div className={`text-3xl font-bold ${card.color}`}>{card.value}</div>
+                  <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
                 </CardContent>
               </Card>
             </Link>
@@ -305,78 +171,186 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Other Stats Row: Today's orders, Partial shipped, Hold orders, Scheduled today */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Link href="/orders?today=1">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.todayOrders")}</CardTitle>
-              <ShoppingBag className="h-5 w-5 text-blue-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-blue-500">{stats.row4.todayOrders}</div>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/packing?tab=partial_shipped">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.partialShipped")}</CardTitle>
-              <Truck className="h-5 w-5 text-cyan-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-cyan-500">{stats.row1.partialShipped}</div>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/orders?status=hold_order">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.holdOrders")}</CardTitle>
-              <Ban className="h-5 w-5 text-yellow-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-yellow-500">{stats.row2.holdOrders}</div>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/packing?tab=scheduled">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.scheduledToday")}</CardTitle>
-              <Calendar className="h-5 w-5 text-purple-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-purple-500">{stats.row5.scheduledToday}</div>
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
+      {/* V3.0: Special-status Order Follow-up */}
+      <Card className="border-orange-200 bg-orange-50/40 dark:border-orange-900/60 dark:bg-orange-950/10">
+        <CardHeader className="flex flex-row items-center gap-2">
+          <AlertTriangle className="h-5 w-5 text-orange-500" />
+          <CardTitle className="text-base">{lang === "zh" ? "特别状态订单待跟进" : "Special-status Order Follow-up"}</CardTitle>
+          <Badge variant="secondary" className="ml-auto">{followUpDisplay.itemCount}</Badge>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="rounded-lg border border-orange-100 bg-background/70 p-3 dark:border-orange-900/50">
+              <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待补运费" : "Pending Shipping"}</p>
+              <p className="mt-1 text-2xl font-bold text-orange-600">{followUpDisplay.pendingShippingCount}</p>
+            </div>
+            <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50">
+              <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待退款" : "Pending Refund"}</p>
+              <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.pendingRefundCount}</p>
+            </div>
+            <div className="rounded-lg border border-yellow-100 bg-background/70 p-3 dark:border-yellow-900/50">
+              <p className="text-xs text-muted-foreground">{lang === "zh" ? "物流异常" : "Logistics Error"}</p>
+              <p className="mt-1 text-2xl font-bold text-yellow-600">{followUpDisplay.logisticsErrorCount}</p>
+            </div>
+            <div className="rounded-lg border border-purple-100 bg-background/70 p-3 dark:border-purple-900/50">
+              <p className="text-xs text-muted-foreground">{lang === "zh" ? "自动通知失败" : "Notification Failed"}</p>
+              <p className="mt-1 text-2xl font-bold text-purple-600">{followUpDisplay.notificationFailedCount}</p>
+            </div>
+            <div className="rounded-lg border border-amber-100 bg-background/70 p-3 dark:border-amber-900/50">
+              <p className="text-xs text-muted-foreground">{lang === "zh" ? "库存异常" : "Stock Exception"}</p>
+              <p className="mt-1 text-2xl font-bold text-amber-600">{followUpDisplay.stockExceptionCount}</p>
+            </div>
+            <div className={`rounded-lg border bg-background/70 p-3 ${followUpDisplay.overdueCount > 0 ? "border-red-300" : "border-slate-200 dark:border-slate-800"}`}>
+              <p className="text-xs text-muted-foreground">{lang === "zh" ? "超 24 小时未处理" : "Overdue >24h"}</p>
+              <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.overdueCount}</p>
+            </div>
+          </div>
 
-      {/* Inventory — bottom */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Link href="/products?stock=low">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.lowStock")}</CardTitle>
-              <Warehouse className="h-5 w-5 text-orange-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-orange-500">{stats.row3.lowStock}</div>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/products?stock=out">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.outOfStock")}</CardTitle>
-              <XCircle className="h-5 w-5 text-red-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-red-500">{stats.row3.outOfStock}</div>
-            </CardContent>
-          </Card>
-        </Link>
+          <div className="border-t border-orange-100 pt-3 dark:border-orange-900/60">
+            {(!followUpList || (followUpList as any).length === 0) ? (
+              <p className="py-3 text-center text-sm text-muted-foreground">{lang === "zh" ? "暂无待跟进特别订单；相关统计会在此持续显示。" : "No pending special-status orders. The monitoring framework remains visible here."}</p>
+            ) : (
+              <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
+                {(followUpList as any).map((item: any) => (
+                  <Link key={item.orderId} href={`/orders/${item.orderId}`}>
+                    <div className={`flex items-center justify-between gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50 ${item.isOverdue ? "border-red-300 bg-red-50 dark:bg-red-950/20" : "border-transparent"}`}>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{item.orderNumber}</p>
+                        <p className="truncate text-xs text-muted-foreground">{item.customerName}{item.lastRemark ? ` · ${item.lastRemark}` : ""}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Badge className={item.specialTypeColor === "orange" ? "bg-orange-100 text-orange-700" : item.specialTypeColor === "red" ? "bg-red-100 text-red-700" : item.specialTypeColor === "yellow" ? "bg-yellow-100 text-yellow-700" : item.specialTypeColor === "blue" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-700"} variant="secondary">
+                          {item.specialTypeLabel}
+                        </Badge>
+                        <span className={`text-xs ${item.isOverdue ? "font-bold text-red-600" : "text-muted-foreground"}`}>
+                          {item.isOverdue ? (lang === "zh" ? `超时 ${item.waitHours}h` : `Overdue ${item.waitHours}h`) : `${item.waitHours}h`}
+                        </span>
+                        <Eye className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <Link href="/orders?special=1">
+            <div className="flex cursor-pointer items-center justify-end gap-1 text-sm font-medium text-orange-700 transition-colors hover:text-orange-800 dark:text-orange-400">
+              <span>{lang === "zh" ? "查看全部特别状态订单" : "View all special-status orders"}</span>
+              <ArrowRight className="h-4 w-4" />
+            </div>
+          </Link>
+        </CardContent>
+      </Card>
+
+      {/* V2.1: Order Remarks Section — pending remarks list */}
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          <FileText className="h-5 w-5 text-amber-500" />
+          <CardTitle className="text-base">{lang === "zh" ? "订单备注（待处理）" : "Order Remarks (Pending)"}</CardTitle>
+          <Badge variant="secondary" className="ml-auto">{pendingRemarkCount}</Badge>
+        </CardHeader>
+        <CardContent className="space-y-2 max-h-[300px] overflow-y-auto">
+          {pendingRemarkCount === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无待处理备注" : "No pending remarks"}</p>
+          ) : (
+            (pendingRemarks as any).slice(0, 10).map((r: any) => {
+              const catInfo = REMARK_CATEGORY_LABELS[r.remarkCategory] || null;
+              return (
+                <Link key={r.remarkId} href={`/orders/${r.orderId}`}>
+                  <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+                    {catInfo && (
+                      <Badge className={`shrink-0 ${catInfo.color}`} variant="secondary">
+                        {lang === "zh" ? catInfo.zh : catInfo.en}
+                      </Badge>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate">{r.content}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {r.orderNumber || `#${r.orderId}`} {r.facebookName ? `· ${r.facebookName}` : ""}
+                        {r.createdAt ? ` · ${new Date(r.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
+                      </p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
+                  </div>
+                </Link>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
+
+      {/* AI Agent Pending Notifications + Recent Remarks side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <Bot className="h-5 w-5 text-orange-500" />
+            <CardTitle className="text-base">{lang === "zh" ? "AI Agent 待人工通知" : "AI Agent Pending Notifications"}</CardTitle>
+            <Badge variant="secondary" className="ml-auto">{pendingNotifications.length}</Badge>
+          </CardHeader>
+          <CardContent className="space-y-2 max-h-[200px] overflow-y-auto">
+            {pendingNotifications.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无待人工通知记录" : "No pending notifications"}</p>
+            ) : (
+              pendingNotifications.slice(0, 5).map((n: any) => (
+                <Link key={n.id} href={n.orderId ? `/orders/${n.orderId}` : "/orders"}>
+                  <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate">
+                        <Badge variant="outline" className="mr-2">{n.type}</Badge>
+                        {n.message || "(无消息内容)"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {n.orderNumber || `#${n.orderId || ""}`}
+                        {n.createdAt ? ` · ${new Date(n.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
+                      </p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
+                  </div>
+                </Link>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-primary" />
+            <CardTitle className="text-base">{lang === "zh" ? "最近备注记录" : "Recent Remarks"}</CardTitle>
+            {recentRemarks.length > 0 && (
+              <Badge variant="secondary" className="ml-auto">{recentRemarks.length}</Badge>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-2 max-h-[200px] overflow-y-auto">
+            {recentRemarks.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无备注记录" : "No recent remarks"}</p>
+            ) : (
+              recentRemarks.slice(0, 5).map((r: any) => {
+                const catInfo = REMARK_CATEGORY_LABELS[(r as any).remarkCategory] || null;
+                const typeLabel = catInfo
+                  ? (lang === "zh" ? catInfo.zh : catInfo.en)
+                  : (r.type === "live" ? (lang === "zh" ? "直播备注" : "Live") : r.type === "customer" ? (lang === "zh" ? "客户备注" : "Customer") : (lang === "zh" ? "内部备注" : "Internal"));
+                const typeColor = catInfo?.color || "bg-gray-100 text-gray-700";
+                return (
+                  <Link key={r.id} href={`/orders/${r.orderId}`}>
+                    <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+                      <Badge className={`shrink-0 ${typeColor}`} variant="secondary">
+                        {typeLabel}
+                      </Badge>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm truncate">{r.content}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {r.orderNumber || `#${r.orderId}`} {r.facebookName ? `· ${r.facebookName}` : ""}
+                          {r.createdAt ? ` · ${new Date(r.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

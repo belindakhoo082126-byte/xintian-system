@@ -840,3 +840,27 @@
 - [x] Real-time sync: Create frontend SSE subscription hook (useRealtimeSync)
 - [x] Real-time sync: Integrate SSE events with React Query cache invalidation
 - [x] Real-time sync: Optimize QueryClient config (staleTime, refetchInterval, cross-tab BroadcastChannel)
+
+## XLCS Dashboard、订单备注、预约发货、换盆功能调整
+
+- [x] Dashboard 10 卡片固定显示：待审核付款/待包货/今日已发货/今日订单/部分发货/保留订单/今日预约发货/订单备注/未读Messenger/库存预警
+- [x] Dashboard 卡片即使数量为0也固定显示，不隐藏
+- [x] Dashboard 新增「订单备注」卡片：统计未处理备注订单数（去重），点击进入备注列表
+- [x] Dashboard 新增「未读 Messenger」卡片：统计未回复对话数，点击进入 Messenger 页面
+- [x] Dashboard 库存预警取代库存不足/缺货商品卡片
+- [x] 订单状态新增：预约发货(scheduled) + 特别订单(special)
+- [x] 订单备注分两类：客户备注(换盆/其他) + 后台备注(发货日期/换盆/选树身/其他)
+- [x] 客户备注限制：只能选换盆和其他备注，不可选发货日期和选树身
+- [x] 后台备注-发货日期：填写预约日期 → 订单自动进入预约发货 → 预约日期=今天时出现在Dashboard今日预约发货
+- [x] 后台备注-换盆：选择植物→对应花盆→数量，支持多笔
+- [x] 后台备注-选树身：只选订单内哪个植物需要选树身，不填具体要求
+- [x] 后台备注-其他：自由填写
+- [x] 订单备注处理状态：待处理/已处理，Dashboard只统计待处理
+- [x] 备注处理完成后保存处理人及处理时间，备注内容永久保留
+- [x] 订单备注列表：订单编号/客户名称/订单状态/备注类型/备注内容/建立时间/建立人/处理状态/处理人/处理时间
+- [x] 客户免费换盆流程：选择植物→选择订单内花盆→数量，无花盆则提示
+- [x] 换盆资料同步显示：后台订单详情备注 Tab
+- [x] 商城 Check Out 页面换盆选项 + 提醒文字
+- [ ] 植物商品页显示免费换盆提示 — 待后续实现
+- [ ] 花盆商品页显示免费换盆提示 — 待后续实现
+- [x] Check Out 页面换盆选项 + 提醒文字 + 客户备注 + 后端自动创建 remark

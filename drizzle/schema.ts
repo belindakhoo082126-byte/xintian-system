@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, json, uniqueIndex } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, json, uniqueIndex, date } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -501,6 +501,8 @@ export const orders = mysqlTable("orders", {
     "partial_shipped",   // 部分发货 - some items shipped
     "completed",         // 完成订单
     "cancelled",         // 已取消
+    "scheduled",         // 预约发货 - scheduled shipping
+    "special",           // 特别订单 - special order
   ]).default("pending"),
   membershipStatus: mysqlEnum("membershipStatus", [
     "pending", "receipt_uploaded", "pending_review",
@@ -1238,7 +1240,26 @@ export const orderRemarks = mysqlTable("order_remarks", {
   orderId: int("orderId").notNull(),
   // Type: live (直播备注), customer (客户备注), internal (内部备注)
   type: mysqlEnum("type", ["live", "customer", "internal"]).notNull(),
+  // V2.1: Remark category (备注类别: repotting/customer_other/scheduled_shipping/select_tree/internal_repotting/internal_other)
+  remarkCategory: mysqlEnum("remarkCategory", [
+    "repotting",          // 客户换盆
+    "customer_other",     // 客户其他备注
+    "scheduled_shipping", // 后台发货日期
+    "internal_repotting", // 后台换盆
+    "select_tree",        // 后台选树身
+    "internal_other",     // 后台其他备注
+  ]),
   content: text("content").notNull(),
+  // V2.1: Processing status (处理状态: pending/processed)
+  processingStatus: mysqlEnum("processingStatus", ["pending", "processed"]).default("pending"),
+  processedBy: varchar("processedBy", { length: 255 }),
+  processedAt: timestamp("processedAt"),
+  // V2.1: Scheduled shipping date (预约发货日期, for scheduled_shipping category)
+  scheduledShippingDate: date("scheduledShippingDate"),
+  // V2.1: Repotting data (换盆关联: JSON array of {plantProductId, plantName, potProductId, potName, quantity})
+  repottingData: text("repottingData"),
+  // V2.1: Select tree data (选树身: JSON array of {productId, productName})
+  selectTreeData: text("selectTreeData"),
   // Who created this remark
   createdBy: varchar("createdBy", { length: 255 }),
   // Timestamps

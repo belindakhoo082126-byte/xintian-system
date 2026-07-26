@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban } from "lucide-react";
+import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useSearch } from "wouter";
 
@@ -27,6 +27,8 @@ const PHYSICAL_STATUS = {
   shipped: { label: "已发货", enLabel: "Shipped", variant: "default" },
   completed: { label: "已完成", enLabel: "Completed", variant: "default" },
   cancelled: { label: "已取消", enLabel: "Cancelled", variant: "destructive" },
+  scheduled: { label: "预约发货", enLabel: "Scheduled Shipping", variant: "secondary" },
+  special: { label: "特别订单", enLabel: "Special Order", variant: "secondary" },
 } as const;
 
 const ORDER_NATURE = {
@@ -122,6 +124,8 @@ export default function Orders() {
   const [cancelReason, setCancelReason] = useState("");
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
+  const [remarkForm, setRemarkForm] = useState({ remarkCategory: "", content: "", scheduledShippingDate: "", repottingData: "", selectTreeData: "" });
+  const [showRemarkForm, setShowRemarkForm] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -153,6 +157,33 @@ export default function Orders() {
     { query: productSearchQuery },
     { enabled: productSearchQuery.length > 0 }
   );
+
+  // Order remarks
+  const { data: orderRemarksData, refetch: refetchRemarks } = trpc.orderRemarks.list.useQuery(
+    { orderId: detailOrderId! },
+    { enabled: detailOrderId !== null }
+  );
+
+  const createRemarkMutation = trpc.orderRemarks.create.useMutation({
+    onSuccess: () => {
+      refetchRemarks();
+      utils.orderRemarks.pendingOrders.invalidate();
+      utils.orders.invalidate();
+      setRemarkForm({ remarkCategory: "", content: "", scheduledShippingDate: "", repottingData: "", selectTreeData: "" });
+      setShowRemarkForm(false);
+      toast.success(translate("备注已添加", "Remark added"));
+    },
+    onError: (e) => toast.error(translate("操作失败: {message}", "Operation failed: {message}", { message: e.message })),
+  });
+
+  const processRemarkMutation = trpc.orderRemarks.process.useMutation({
+    onSuccess: () => {
+      refetchRemarks();
+      utils.orderRemarks.pendingOrders.invalidate();
+      toast.success(translate("备注已标记为已处理", "Remark marked as processed"));
+    },
+    onError: (e) => toast.error(translate("操作失败: {message}", "Operation failed: {message}", { message: e.message })),
+  });
 
   const updateStatusMutation = trpc.orders.updateStatus.useMutation({
     onSuccess: () => {
@@ -540,11 +571,12 @@ export default function Orders() {
           </DialogHeader>
           {orderDetail && (
             <Tabs value={detailTab} onValueChange={setDetailTab}>
-              <TabsList className="grid w-full grid-cols-5">
+              <TabsList className="grid w-full grid-cols-6">
                 <TabsTrigger value="info">{translate("基本资料", "Info")}</TabsTrigger>
                 <TabsTrigger value="items">{translate("商品内容", "Items")}</TabsTrigger>
                 <TabsTrigger value="payment">{translate("金额/付款", "Payment")}</TabsTrigger>
                 <TabsTrigger value="shipping">{translate("包货/发货", "Shipping")}</TabsTrigger>
+                <TabsTrigger value="remarks">{translate("备注", "Remarks")}</TabsTrigger>
                 <TabsTrigger value="logs">{translate("操作日志", "Logs")}</TabsTrigger>
               </TabsList>
 
@@ -825,6 +857,160 @@ export default function Orders() {
                     )}
                   </div>
                 )}
+              </TabsContent>
+
+              {/* Tab: Order Remarks */}
+              <TabsContent value="remarks" className="space-y-3">
+                {/* Add remark form */}
+                {showRemarkForm ? (
+                  <div className="space-y-3 p-4 border rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <Label className="font-medium">{translate("添加后台备注", "Add Internal Remark")}</Label>
+                      <Button variant="ghost" size="sm" onClick={() => setShowRemarkForm(false)}><X className="h-4 w-4" /></Button>
+                    </div>
+                    <div>
+                      <Label className="text-sm">{translate("备注类别", "Remark Category")}</Label>
+                      <Select value={remarkForm.remarkCategory} onValueChange={(v) => setRemarkForm({ ...remarkForm, remarkCategory: v })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={translate("选择类别", "Select category")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="scheduled_shipping">{translate("发货日期", "Shipping Date")}</SelectItem>
+                          <SelectItem value="internal_repotting">{translate("换盆", "Repotting")}</SelectItem>
+                          <SelectItem value="select_tree">{translate("选树身", "Select Tree")}</SelectItem>
+                          <SelectItem value="internal_other">{translate("其他", "Other")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {remarkForm.remarkCategory === "scheduled_shipping" && (
+                      <div>
+                        <Label className="text-sm">{translate("预约发货日期", "Scheduled Shipping Date")}</Label>
+                        <Input
+                          type="date"
+                          value={remarkForm.scheduledShippingDate}
+                          onChange={(e) => setRemarkForm({ ...remarkForm, scheduledShippingDate: e.target.value })}
+                        />
+                      </div>
+                    )}
+                    {remarkForm.remarkCategory === "internal_repotting" && (
+                      <div className="space-y-2">
+                        <Label className="text-sm">{translate("换盆内容（格式：植物 → 花盆 x 数量）", "Repotting details (format: Plant → Pot x Qty)")}</Label>
+                        <Textarea
+                          placeholder={translate("例如：玫瑰 ×1 → BABA170 白盆 ×1", "e.g. Rose ×1 → BABA170 White Pot ×1")}
+                          value={remarkForm.content}
+                          onChange={(e) => setRemarkForm({ ...remarkForm, content: e.target.value })}
+                          rows={3}
+                        />
+                      </div>
+                    )}
+                    {remarkForm.remarkCategory === "select_tree" && (
+                      <div className="space-y-2">
+                        <Label className="text-sm">{translate("选树身内容（选择订单内哪个植物）", "Select tree (which plant in order)")}</Label>
+                        <Textarea
+                          placeholder={translate("例如：黑莓 Freedom ×1\n葡萄 夏黑 ×1", "e.g. Blackberry Freedom ×1\nGrape Summer Black ×1")}
+                          value={remarkForm.content}
+                          onChange={(e) => setRemarkForm({ ...remarkForm, content: e.target.value })}
+                          rows={3}
+                        />
+                      </div>
+                    )}
+                    {remarkForm.remarkCategory === "internal_other" && (
+                      <div>
+                        <Label className="text-sm">{translate("备注内容", "Remark Content")}</Label>
+                        <Textarea
+                          value={remarkForm.content}
+                          onChange={(e) => setRemarkForm({ ...remarkForm, content: e.target.value })}
+                          rows={3}
+                        />
+                      </div>
+                    )}
+                    <Button
+                      size="sm"
+                      disabled={!remarkForm.remarkCategory || !remarkForm.content}
+                      onClick={() => {
+                        createRemarkMutation.mutate({
+                          orderId: orderDetail.id,
+                          type: "internal",
+                          content: remarkForm.content,
+                          remarkCategory: remarkForm.remarkCategory as any,
+                          scheduledShippingDate: remarkForm.scheduledShippingDate || undefined,
+                        });
+                      }}
+                    >
+                      {translate("保存备注", "Save Remark")}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={() => setShowRemarkForm(true)}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    {translate("添加后台备注", "Add Internal Remark")}
+                  </Button>
+                )}
+
+                {/* Remarks list */}
+                <ScrollArea className="h-[350px]">
+                  <div className="space-y-2">
+                    {orderRemarksData?.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">{translate("暂无备注", "No remarks")}</p>
+                    ) : (
+                      orderRemarksData?.map((r: any) => (
+                        <div key={r.id} className={`p-3 border rounded-lg space-y-1 ${r.processingStatus === "pending" ? "border-amber-200 bg-amber-50/30" : "border-green-200 bg-green-50/20"}`}>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="outline" className="text-xs">
+                              {r.type === "live" ? translate("直播", "Live") : r.type === "customer" ? translate("客户", "Customer") : translate("后台", "Internal")}
+                            </Badge>
+                            {r.remarkCategory && (
+                              <Badge variant="secondary" className="text-xs">
+                                {r.remarkCategory === "repotting" ? translate("换盆", "Repot") :
+                                 r.remarkCategory === "customer_other" ? translate("客户备注", "Customer Note") :
+                                 r.remarkCategory === "scheduled_shipping" ? translate("发货日期", "Ship Date") :
+                                 r.remarkCategory === "internal_repotting" ? translate("换盆", "Repot") :
+                                 r.remarkCategory === "select_tree" ? translate("选树身", "Select Tree") :
+                                 translate("其他", "Other")}
+                              </Badge>
+                            )}
+                            {r.processingStatus === "pending" ? (
+                              <Badge variant="outline" className="text-xs text-amber-600">{translate("待处理", "Pending")}</Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs text-green-600">{translate("已处理", "Processed")}</Badge>
+                            )}
+                            <span className="text-xs text-muted-foreground ml-auto">{new Date(r.createdAt).toLocaleString()}</span>
+                          </div>
+                          <p className="text-sm">{r.content}</p>
+                          {r.scheduledShippingDate && (
+                            <p className="text-xs text-purple-600 flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {translate("预约发货日期", "Scheduled date")}: {new Date(r.scheduledShippingDate).toLocaleDateString()}
+                            </p>
+                          )}
+                          {r.repottingData && (
+                            <div className="text-xs text-green-700 bg-green-50 dark:bg-green-950/20 p-2 rounded">
+                              <Sprout className="h-3 w-3 inline mr-1" />
+                              {translate("换盆", "Repotting")}: {r.repottingData}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>{translate("建立人", "Created by")}: {r.createdBy || "-"}</span>
+                            {r.processedBy && (
+                              <span>· {translate("处理人", "Processed by")}: {r.processedBy} · {r.processedAt ? new Date(r.processedAt).toLocaleString() : ""}</span>
+                            )}
+                            {r.processingStatus === "pending" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="ml-auto h-6 text-xs"
+                                onClick={() => processRemarkMutation.mutate(r.id)}
+                              >
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                {translate("标记已处理", "Mark Processed")}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
               </TabsContent>
 
               {/* Tab: Operation Logs */}

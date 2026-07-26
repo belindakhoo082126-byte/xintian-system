@@ -2818,6 +2818,14 @@ export const appRouter = router({
       paymentMethodId: z.number().optional(),
       paymentMethodName: z.string().optional(),
       mergeIntoOrderId: z.number().optional(),
+      repotPairs: z.array(z.object({
+        plantProductId: z.number(),
+        plantName: z.string(),
+        potProductId: z.number(),
+        potName: z.string(),
+        quantity: z.number().min(1),
+      })).optional(),
+      customerRemark: z.string().optional(),
     })).mutation(async ({ input }) => {
       try {
         return await db.mallCheckout(input);
@@ -3277,18 +3285,39 @@ export const appRouter = router({
       type: z.enum(["live", "customer", "internal"]),
       content: z.string().min(1),
       createdBy: z.string().optional(),
+      remarkCategory: z.enum(["repotting","customer_other","scheduled_shipping","internal_repotting","select_tree","internal_other"]).optional(),
+      scheduledShippingDate: z.string().optional(),
+      repottingData: z.string().optional(),
+      selectTreeData: z.string().optional(),
     })).mutation(async ({ input, ctx }) => {
       await db.createOrderRemark({
         orderId: input.orderId,
         type: input.type,
         content: input.content,
         createdBy: input.createdBy || ctx.user?.name || undefined,
+        remarkCategory: input.remarkCategory,
+        scheduledShippingDate: input.scheduledShippingDate,
+        repottingData: input.repottingData,
+        selectTreeData: input.selectTreeData,
       });
       return { success: true };
     }),
     delete: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await db.deleteOrderRemark(input.id);
       return { success: true };
+    }),
+    // V2.1: Process remark (mark as processed)
+    process: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+      await db.processOrderRemark(input.id, ctx.user?.name || "admin");
+      return { success: true };
+    }),
+    // V2.1: Get pending remark orders for Dashboard
+    pendingOrders: adminProcedure.query(async () => {
+      return await db.getPendingRemarkOrders();
+    }),
+    // V2.1: Get all remarks with order info
+    allWithOrder: adminProcedure.input(z.object({ limit: z.number().optional() })).query(async ({ input }) => {
+      return await db.getAllRemarksWithOrder(input.limit);
     }),
   }),
 

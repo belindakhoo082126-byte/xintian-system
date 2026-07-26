@@ -25,6 +25,9 @@ export default function MallCheckout() {
     deliveryRemark: "", shippingMethod: "west_malaysia",
   });
   const [mergeIntoOrderId, setMergeIntoOrderId] = useState<number | undefined>(undefined);
+  const [repotEnabled, setRepotEnabled] = useState(false);
+  const [repotPairs, setRepotPairs] = useState<{ plantProductId: number; plantName: string; potProductId: number; potName: string; quantity: number }[]>([]);
+  const [customerRemark, setCustomerRemark] = useState("");
   const [paymentMethodId, setPaymentMethodId] = useState<number | undefined>(undefined);
   const [smartPasteText, setSmartPasteText] = useState("");
   const [showSmartPaste, setShowSmartPaste] = useState(false);
@@ -135,7 +138,9 @@ export default function MallCheckout() {
       paymentMethodId,
       paymentMethodName: selectedPayment?.name,
       mergeIntoOrderId,
-    });
+      repotPairs: repotEnabled ? repotPairs.filter(p => p.plantProductId && p.potProductId) : [],
+      customerRemark: customerRemark || undefined,
+    } as any);
   }
 
   if (orderResult) {
@@ -215,6 +220,88 @@ export default function MallCheckout() {
               <div><Label>州属 *</Label><Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} /></div>
             </div>
             <div><Label>配送备注</Label><Input value={form.deliveryRemark} onChange={(e) => setForm({ ...form, deliveryRemark: e.target.value })} placeholder="如：周末配送" /></div>
+          </CardContent>
+        </Card>
+
+        {/* Free Repotting Service */}
+        <Card className="border-green-200 bg-green-50/30">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Checkbox checked={repotEnabled} onCheckedChange={(v) => setRepotEnabled(!!v)} id="repot-checkbox" />
+              <Label htmlFor="repot-checkbox" className="font-medium cursor-pointer">🪴 免费换盆服务</Label>
+            </div>
+            {repotEnabled && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">如需换盆，请选择对应的植物和花盆，以及换盆数量。</p>
+                {cart.filter(i => i.productType === "plant" || !i.productType).length === 0 && cart.filter(i => i.productType === "pot").length === 0 ? (
+                  <p className="text-xs text-orange-600">要换盆的花友，请先把需要使用的花盆加入订单，再回来选择换盆。</p>
+                ) : (
+                  <>
+                    {repotPairs.map((pair, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <Select value={String(pair.plantProductId)} onValueChange={(v) => {
+                          const item = cart.find(i => String(i.productId) === v);
+                          const newPairs = [...repotPairs];
+                          newPairs[idx] = { ...pair, plantProductId: Number(v), plantName: item?.productName || "" };
+                          setRepotPairs(newPairs);
+                        }}>
+                          <SelectTrigger className="flex-1"><SelectValue placeholder="选择植物" /></SelectTrigger>
+                          <SelectContent>
+                            {cart.filter(i => i.productType === "plant" || !i.productType).map((i) => (
+                              <SelectItem key={i.productId} value={String(i.productId)}>{i.productName} {i.variationName ? `(${i.variationName})` : ""}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <span className="text-sm">→</span>
+                        <Select value={String(pair.potProductId)} onValueChange={(v) => {
+                          const item = cart.find(i => String(i.productId) === v);
+                          const newPairs = [...repotPairs];
+                          newPairs[idx] = { ...pair, potProductId: Number(v), potName: item?.productName || "" };
+                          setRepotPairs(newPairs);
+                        }}>
+                          <SelectTrigger className="flex-1"><SelectValue placeholder="选择花盆" /></SelectTrigger>
+                          <SelectContent>
+                            {cart.filter(i => i.productType === "pot").map((i) => (
+                              <SelectItem key={i.productId} value={String(i.productId)}>{i.productName} {i.variationName ? `(${i.variationName})` : ""}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          min={1}
+                          className="w-16"
+                          value={pair.quantity}
+                          onChange={(e) => {
+                            const newPairs = [...repotPairs];
+                            newPairs[idx] = { ...pair, quantity: parseInt(e.target.value) || 1 };
+                            setRepotPairs(newPairs);
+                          }}
+                        />
+                        <Button variant="ghost" size="sm" onClick={() => setRepotPairs(repotPairs.filter((_, i) => i !== idx))}>
+                          ✕
+                        </Button>
+                      </div>
+                    ))}
+                    <Button variant="outline" size="sm" onClick={() => setRepotPairs([...repotPairs, { plantProductId: 0, plantName: "", potProductId: 0, potName: "", quantity: 1 }])}>
+                      + 新增换盆
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Customer Remark */}
+        <Card>
+          <CardContent className="p-4 space-y-2">
+            <Label className="font-medium">订单备注</Label>
+            <Textarea
+              value={customerRemark}
+              onChange={(e) => setCustomerRemark(e.target.value)}
+              placeholder="其他备注（如需换盆请上方勾选）"
+              rows={2}
+            />
           </CardContent>
         </Card>
 
