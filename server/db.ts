@@ -4100,7 +4100,73 @@ export async function createOrderFromLiveCapture(data: {
   const subtotal = data.matchedProducts.reduce((sum, p) => sum + parseFloat(p.unitPrice) * p.quantity, 0);
   const totalWeight = data.matchedProducts.reduce((sum, p) => sum + 0.5 * p.quantity, 0);
   
-  // Create order
+  // Check for existing open order from same customer in same live room (for order merging)
+  // Same customer + same live room + order not yet closed = merge into existing order
+  let existingOrderId: number | null = null;
+  if (data.liveVideoId) {
+    const existingOrders = await db.select().from(orders)
+      .where(sql`customerId = ${customer.id} AND orderSource = 'facebook_live' AND physicalStatus NOT IN ('closed', 'cancelled', 'completed')`)
+      .orderBy(desc(orders.createdAt))
+      .limit(1);
+    if (existingOrders.length > 0) {
+      // Check if this order is from the same live session (within 4 hours)
+      const orderTime = new Date(existingOrders[0].createdAt).getTime();
+      const now = Date.now();
+      if (now - orderTime < 4 * 60 * 60 * 1000) {
+        existingOrderId = existingOrders[0].id;
+      }
+    }
+  }
+  
+  if (existingOrderId) {
+    // Merge into existing order: add new items
+    for (const p of data.matchedProducts) {
+      const itemSubtotal = (parseFloat(p.unitPrice) * p.quantity).toFixed(2);
+      await db.insert(orderItems).values({
+        orderId: existingOrderId,
+        productId: p.productId,
+        productName: p.productName,
+        productSku: p.productSku || null,
+        productType: "physical",
+        quantity: p.quantity,
+        unitPrice: p.unitPrice,
+        subtotal: itemSubtotal,
+        facebookKeyword: p.keyword,
+        discount: "0.00",
+      });
+    }
+    // Recalculate order total
+    const allItems = await db.select({
+      total: sql`COALESCE(SUM(subtotal), 0)`,
+      weight: sql`COALESCE(SUM(quantity * 0.5), 0)`,
+    }).from(orderItems).where(eq(orderItems.orderId, existingOrderId));
+    await db.update(orders).set({
+      physicalSubtotal: String(allItems[0]?.total || 0),
+      totalAmount: String(allItems[0]?.total || 0),
+      totalWeight: String(allItems[0]?.weight || 0),
+    }).where(eq(orders.id, existingOrderId));
+    
+    // Create live capture record linked to existing order
+    await db.insert(liveOrderCaptures).values({
+      commentId: data.commentId || null,
+      commenterName: data.commenterName,
+      commenterPsid: data.commenterPsid || null,
+      commentMessage: data.commentMessage,
+      postId: data.postId || null,
+      liveVideoId: data.liveVideoId || null,
+      parsedKeywords: JSON.stringify(data.matchedProducts.map(p => ({ keyword: p.keyword, quantity: p.quantity }))),
+      matchedProducts: JSON.stringify(data.matchedProducts),
+      status: "order_merged",
+      orderId: existingOrderId,
+      commentDate: new Date(),
+    });
+    
+    broadcastChanges(["orders", "inventory", "dashboard"]);
+    const existingOrder = await db.select().from(orders).where(eq(orders.id, existingOrderId)).limit(1);
+    return { orderId: existingOrderId, orderNumber: existingOrder[0]?.orderNumber || "", totalAmount: String(allItems[0]?.total || 0), merged: true };
+  }
+  
+  // Create new order
   const orderNumber = `XT${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const orderResult = await db.insert(orders).values({
     orderNumber,
@@ -5222,7 +5288,7 @@ export async function createLiveRoom(data: {
     preorderStartDate: data.preorderStartDate,
     preorderEndDate: data.preorderEndDate,
     estimatedWaitDays: data.estimatedWaitDays,
-    status: (data.status as any) || 'scheduled',
+    status: (data.status as any) || 'preparing',
     notes: data.notes,
     streamerName: data.streamerName || null,
     facebookPageId: data.facebookPageId || null,
@@ -6492,14 +6558,26 @@ export async function adjustLiveRoomProductStock(id: number, data: {
   const newAvailableStock = newStartStock - product[0].reservedCount;
   await db.update(liveRoomProducts).set({ startStock: newStartStock, availableStock: newAvailableStock })
     .where(eq(liveRoomProducts.id, id));
-  // Also write to inventory adjustments log
-  if (data.quantityChange < 0 && data.reason) {
+  // Sync main product stock (increase/decrease accordingly)
+  if (product[0].variationId) {
+    // For products with variations, update variation stock
+    await db.update(productVariations)
+      .set({ stockQuantity: sql`GREATEST(0, stockQuantity + ${data.quantityChange})` })
+      .where(eq(productVariations.id, product[0].variationId));
+  } else {
+    // For products without variations, update product stock
+    await db.update(products)
+      .set({ stockQuantity: sql`GREATEST(0, stockQuantity + ${data.quantityChange})` })
+      .where(eq(products.id, product[0].productId));
+  }
+  // Write to inventory adjustments log for ALL changes (not just negative)
+  if (data.reason) {
     await db.insert(inventoryAdjustments).values({
       productId: product[0].productId,
       adjustmentType: data.reason as any,
       quantityChange: data.quantityChange,
       unitCost: "0",
-      reason: `Live room product stock adjustment (ID: ${id})`,
+      reason: `Live room product stock adjustment (ID: ${id}, Reason: ${data.reason})`,
       adjustedBy: "live_management",
     });
   }

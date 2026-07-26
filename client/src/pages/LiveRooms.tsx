@@ -19,14 +19,14 @@ const liveTypeLabels: Record<string, string> = {
 };
 
 const statusLabels: Record<string, string> = {
-  scheduled: "未开始",
+  preparing: "准备中",
   live: "直播中",
   ended: "已结束",
   closed: "已截止",
 };
 
 const statusColors: Record<string, string> = {
-  scheduled: "bg-blue-100 text-blue-700",
+  preparing: "bg-blue-100 text-blue-700",
   live: "bg-green-100 text-green-700",
   ended: "bg-gray-100 text-gray-600",
   closed: "bg-orange-100 text-orange-700",
@@ -89,7 +89,7 @@ export default function LiveRooms() {
     preorderStartDate: "",
     preorderEndDate: "",
     estimatedWaitDays: "",
-    status: "scheduled" as "scheduled" | "live" | "ended" | "closed",
+    status: "preparing" as "preparing" | "live" | "ended" | "closed",
     notes: "",
   });
 
@@ -125,7 +125,7 @@ export default function LiveRooms() {
     setFormData({
       name: "", liveDate: "", facebookLiveUrl: "", facebookVideoId: "",
       liveType: "normal", importBatchId: "", preorderStartDate: "", preorderEndDate: "",
-      estimatedWaitDays: "", status: "scheduled", notes: "",
+      estimatedWaitDays: "", status: "preparing", notes: "",
     });
     setEditingId(null);
   }
@@ -142,7 +142,7 @@ export default function LiveRooms() {
       preorderStartDate: room.preorderStartDate ? new Date(room.preorderStartDate).toISOString().slice(0, 16) : "",
       preorderEndDate: room.preorderEndDate ? new Date(room.preorderEndDate).toISOString().slice(0, 16) : "",
       estimatedWaitDays: room.estimatedWaitDays || "",
-      status: (room.status as any) || "scheduled",
+      status: (room.status as any) || "preparing",
       notes: room.notes || "",
     });
     setDialogOpen(true);
@@ -270,7 +270,7 @@ export default function LiveRooms() {
                 <Select value={formData.status} onValueChange={v => setFormData({ ...formData, status: v as any })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="scheduled">未开始</SelectItem>
+                    <SelectItem value="preparing">准备中</SelectItem>
                     <SelectItem value="live">直播中</SelectItem>
                     <SelectItem value="ended">已结束</SelectItem>
                     <SelectItem value="closed">已截止</SelectItem>

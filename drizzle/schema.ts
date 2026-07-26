@@ -1185,7 +1185,7 @@ export const liveOrderCaptures = mysqlTable("live_order_captures", {
   // Matched products (JSON array of { productId, keyword, quantity })
   matchedProducts: text("matchedProducts"),
   // Status: matched, no_match, order_created, failed
-  status: mysqlEnum("status", ["matched", "no_match", "order_created", "failed"]).default("matched").notNull(),
+  status: mysqlEnum("status", ["matched", "no_match", "order_created", "order_merged", "failed"]).default("matched").notNull(),
   // Created order ID (if order was created)
   orderId: int("orderId"),
   // Error message (if failed)
@@ -1454,7 +1454,7 @@ export const liveRooms = mysqlTable("live_rooms", {
   // Estimated wait days (e.g. "30~45天")
   estimatedWaitDays: varchar("estimatedWaitDays", { length: 100 }),
   // Live room status: preparing (准备中), live (直播中), ended (已结束), closed (已关闭)
-  status: mysqlEnum("status", ["scheduled", "preparing", "live", "ended", "closed"]).default("preparing").notNull(),
+  status: mysqlEnum("status", ["preparing", "live", "ended", "closed"]).default("preparing").notNull(),
   // Streamer name (optional)
   streamerName: varchar("streamerName", { length: 255 }),
   // Facebook Page ID (which page is streaming)

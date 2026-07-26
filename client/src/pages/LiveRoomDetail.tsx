@@ -18,7 +18,7 @@ import {
   ArrowLeft, Plus, Trash2, Pause, Play, XCircle, Copy, MessageSquare,
   Package, DollarSign, ShoppingCart, Boxes, ChevronUp, ChevronDown,
   Search, Eye, Users, AlertCircle, Video, BarChart3, Send,
-  CheckCircle2, Clock, TrendingUp, ShoppingBag, User, Mail, Phone,
+  CheckCircle2, Clock, TrendingUp, ShoppingBag, User, Mail, Phone, Edit,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -35,7 +35,6 @@ const productStatusColors: Record<string, string> = {
 };
 
 const roomStatusLabels: Record<string, string> = {
-  scheduled: "未开始",
   preparing: "准备中",
   live: "直播中",
   ended: "已结束",
@@ -43,7 +42,6 @@ const roomStatusLabels: Record<string, string> = {
 };
 
 const roomStatusColors: Record<string, string> = {
-  scheduled: "bg-blue-100 text-blue-700",
   preparing: "bg-purple-100 text-purple-700",
   live: "bg-green-100 text-green-700",
   ended: "bg-gray-100 text-gray-600",
@@ -122,6 +120,7 @@ export default function LiveRoomDetail(props: any) {
   const [commentSearch, setCommentSearch] = useState("");
   const [commentFilter, setCommentFilter] = useState("all");
   const [messengerFilter, setMessengerFilter] = useState("all");
+  const [orderViewMode, setOrderViewMode] = useState<"byCustomer" | "byProduct">("byCustomer");
   const [selectedComment, setSelectedComment] = useState<any | null>(null);
 
   const [endLiveConfirmOpen, setEndLiveConfirmOpen] = useState(false);
@@ -919,7 +918,7 @@ export default function LiveRoomDetail(props: any) {
                                   className="h-6 text-xs gap-1"
                                   onClick={() => {
                                     // Navigate to customer detail page
-                                    window.open(`#customers?id=${c.id}`, "_blank");
+                                    window.open(`/customers?id=${c.id}`, "_blank");
                                   }}
                                 >
                                   <Eye className="h-3 w-3" /> 查看资料
@@ -930,7 +929,7 @@ export default function LiveRoomDetail(props: any) {
                                   className="h-6 text-xs gap-1"
                                   onClick={() => {
                                     // Navigate to orders filtered by customer
-                                    window.open(`#orders?customer=${c.id}`, "_blank");
+                                    window.open(`/orders?customer=${c.id}`, "_blank");
                                   }}
                                 >
                                   <ShoppingBag className="h-3 w-3" /> 历史订单
@@ -941,7 +940,7 @@ export default function LiveRoomDetail(props: any) {
                                   className="h-6 text-xs gap-1"
                                   onClick={() => {
                                     // Navigate to manual order creation
-                                    window.open(`#orders?new=1&customer=${c.id}`, "_blank");
+                                    window.open(`/orders?new=1&customer=${c.id}`, "_blank");
                                   }}
                                 >
                                   <Plus className="h-3 w-3" /> 帮客下单
@@ -973,7 +972,7 @@ export default function LiveRoomDetail(props: any) {
                             className="h-6 text-xs gap-1 mt-1"
                             onClick={() => {
                               // Navigate to customer creation
-                              window.open(`#customers?new=1&fbName=${encodeURIComponent(selectedComment.commenterName || "")}`, "_blank");
+                              window.open(`/customers?new=1&fbName=${encodeURIComponent(selectedComment.commenterName || "")}`, "_blank");
                             }}
                           >
                             <Plus className="h-3 w-3" /> 新建客户
@@ -1055,12 +1054,32 @@ export default function LiveRoomDetail(props: any) {
         {/* Tab: Live Orders */}
         <TabsContent value="orders">
           <div className="space-y-3">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              直播订单
-              {liveOrders.length > 0 && (
-                <Badge variant="secondary" className="text-xs">{liveOrders.length}</Badge>
-              )}
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                直播订单
+                {liveOrders.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">{liveOrders.length}</Badge>
+                )}
+              </h2>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={orderViewMode === "byCustomer" ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setOrderViewMode("byCustomer")}
+                >
+                  按客户
+                </Button>
+                <Button
+                  variant={orderViewMode === "byProduct" ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setOrderViewMode("byProduct")}
+                >
+                  按商品
+                </Button>
+              </div>
+            </div>
             {liveOrdersQuery.isLoading ? (
               <Card><CardContent className="p-4 text-center text-muted-foreground">加载中...</CardContent></Card>
             ) : liveOrders.length === 0 ? (
@@ -1073,7 +1092,7 @@ export default function LiveRoomDetail(props: any) {
                   </div>
                 </CardContent>
               </Card>
-            ) : (
+            ) : orderViewMode === "byCustomer" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {liveOrders.map((order: any, idx: number) => (
                   <Card key={idx} className="overflow-hidden">
@@ -1102,9 +1121,88 @@ export default function LiveRoomDetail(props: any) {
                           "{order.captureMessage}"
                         </p>
                       )}
+                      <div className="flex gap-1 mt-2 pt-2 border-t">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs gap-1"
+                          onClick={() => {
+                            window.open(`/orders/${order.id}`, "_blank");
+                          }}
+                        >
+                          <Eye className="h-3 w-3" /> 查看详情
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs gap-1"
+                          onClick={() => {
+                            window.open(`/orders/${order.id}`, "_blank");
+                          }}
+                        >
+                          <Edit className="h-3 w-3" /> 编辑
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
+              </div>
+            ) : (
+              /* By Product view */
+              <div className="space-y-3">
+                {liveProducts.map((p: any) => {
+                  const productOrders = liveOrders.filter((o: any) =>
+                    (o.items || []).some((item: any) =>
+                      item.productName === p.displayName || item.productId === p.productId
+                    )
+                  );
+                  if (productOrders.length === 0) return null;
+                  return (
+                    <Card key={p.id}>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            {p.imageUrl && <img src={p.imageUrl} alt="" className="w-6 h-6 rounded" />}
+                            {p.displayName}
+                            <Badge variant="outline" className="text-xs">{productOrders.length} 单</Badge>
+                          </CardTitle>
+                          <span className="text-sm font-bold text-green-600">
+                            {productOrders.reduce((sum: number, o: any) => {
+                              const item = (o.items || []).find((i: any) => i.productName === p.displayName || i.productId === p.productId);
+                              return sum + (item?.quantity || 0);
+                            }, 0)} 件
+                          </span>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <div className="space-y-1">
+                          {productOrders.map((o: any, i: number) => {
+                            const item = (o.items || []).find((i: any) => i.productName === p.displayName || i.productId === p.productId);
+                            return (
+                              <div key={i} className="flex items-center justify-between text-xs py-1 border-b last:border-b-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{o.customerName || o.facebookName || "未知"}</span>
+                                  <span className="text-muted-foreground">x{item?.quantity || 0}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-muted-foreground">{o.orderNumber}</span>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 text-xs"
+                                    onClick={() => window.open(`/orders/${o.id}`, "_blank")}
+                                  >
+                                    <Eye className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </div>

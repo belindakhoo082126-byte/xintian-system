@@ -407,33 +407,20 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
               return r.status === 'live';
             });
             if (activeRooms.length === 0) {
-              // No active live room — check scheduled/preparing rooms too
-              const scheduledRooms = await getLiveRooms({ status: 'scheduled' });
-              const activeScheduled = (scheduledRooms || []).filter((r: any) => {
+              // No active live room — check preparing rooms (preparing = 准备中)
+              const preparingRooms = await getLiveRooms({ status: 'preparing' });
+              const activePreparing = (preparingRooms || []).filter((r: any) => {
                 if (r.liveType === 'import_preorder' && r.preorderEndDate) {
                   return new Date(r.preorderEndDate) > now;
                 }
                 return true;
               });
-              if (activeScheduled.length === 0) {
-                // Also check preparing rooms
-                const preparingRooms = await getLiveRooms({ status: 'preparing' });
-                const activePreparing = (preparingRooms || []).filter((r: any) => {
-                  if (r.liveType === 'import_preorder' && r.preorderEndDate) {
-                    return new Date(r.preorderEndDate) > now;
-                  }
-                  return true;
-                });
-                if (activePreparing.length === 0) {
-                  console.log("[Facebook] No active live room, skipping capture");
-                  return;
-                }
-                activeRoom = activePreparing[0];
-                activeRoomId = activePreparing[0].id;
-              } else {
-                activeRoom = activeScheduled[0];
-                activeRoomId = activeScheduled[0].id;
+              if (activePreparing.length === 0) {
+                console.log("[Facebook] No active live room, skipping capture");
+                return;
               }
+              activeRoom = activePreparing[0];
+              activeRoomId = activePreparing[0].id;
             } else {
               activeRoom = activeRooms[0];
               activeRoomId = activeRooms[0].id;
@@ -537,9 +524,16 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
               `${commenterName} 您好！已自动建单 ✅\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请私信我们提供收货地址和付款方式哦~`
             );
             
-            // Also try to send Messenger message
+            // Also try to send Messenger message — layered notification strategy
             try {
-              await sendTextMessage(commenterPsid || '', `您好 ${commenterName}！\n\n您的直播订单已创建：\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请提供以下信息完成订单：\n1. 收货地址\n2. 联系电话\n3. 付款方式`);
+              const isMerged = (orderResult as any).merged;
+              if (isMerged) {
+                // Subsequent capture: brief notification (high-frequency merge)
+                await sendTextMessage(commenterPsid || '', `${commenterName} 您好！已追加到订单 ${orderResult.orderNumber}\n新增: ${itemList}\n当前总额: RM ${orderResult.totalAmount}`);
+              } else {
+                // First capture: full notification with details
+                await sendTextMessage(commenterPsid || '', `您好 ${commenterName}！\n\n您的直播订单已创建：\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请提供以下信息完成订单：\n1. 收货地址\n2. 联系电话\n3. 付款方式`);
+              }
             } catch (msgErr) {
               console.log("[Facebook] Could not send Messenger message (expected if no PSID)");
             }

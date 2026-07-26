@@ -3602,7 +3602,7 @@ export const appRouter = router({
   liveRooms: router({
     list: adminProcedure
       .input(z.object({
-        status: z.enum(['scheduled', 'live', 'ended', 'closed']).optional(),
+        status: z.enum(['preparing', 'live', 'ended', 'closed']).optional(),
         liveType: z.enum(['normal', 'import_preorder']).optional(),
         limit: z.number().optional(),
         offset: z.number().optional(),
@@ -3630,7 +3630,7 @@ export const appRouter = router({
         preorderStartDate: z.coerce.date().optional(),
         preorderEndDate: z.coerce.date().optional(),
         estimatedWaitDays: z.string().optional(),
-        status: z.enum(['scheduled', 'preparing', 'live', 'ended', 'closed']).optional(),
+        status: z.enum(['preparing', 'live', 'ended', 'closed']).optional(),
         notes: z.string().optional(),
         streamerName: z.string().optional(),
         facebookPageId: z.string().optional(),
@@ -3652,7 +3652,7 @@ export const appRouter = router({
         preorderStartDate: z.coerce.date().optional(),
         preorderEndDate: z.coerce.date().optional(),
         estimatedWaitDays: z.string().optional(),
-        status: z.enum(['scheduled', 'preparing', 'live', 'ended', 'closed']).optional(),
+        status: z.enum(['preparing', 'live', 'ended', 'closed']).optional(),
         notes: z.string().optional(),
         streamerName: z.string().optional(),
         facebookPageId: z.string().optional(),
