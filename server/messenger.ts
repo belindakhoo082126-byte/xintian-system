@@ -546,12 +546,14 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
             
             return; // Order created, skip generic replies
           } else if (unmatched.length > 0) {
-            // Keywords found but no product match
-            const unmatchedList = unmatched.map((u: any) => u.keyword).join(", ");
-            await replyToComment(
-              commentId,
-              `${commenterName} 您好！关键词 "${unmatchedList}" 暂未匹配到商品，请私信我们确认哦~`
-            );
+            // Keywords found but no product match — do NOT reply for sold_out or no_match
+            // Per spec: 缺货留言不建单/不通知/不回复，后台保留未成立记录
+            const allSoldOut = unmatched.every((u: any) => u.reason === 'sold_out');
+            if (allSoldOut) {
+              // All sold out — silent, no reply
+              return;
+            }
+            // For other unmatched (not in room), also silent — record is already saved in live_comments
             return;
           }
         }

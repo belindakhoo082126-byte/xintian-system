@@ -111,6 +111,8 @@ export default function LiveRoomDetail(props: any) {
   // State
   const [activeTab, setActiveTab] = useState("products");
   const [videoCollapsed, setVideoCollapsed] = useState(false);
+  const [videoClosed, setVideoClosed] = useState(false);
+  const [videoError, setVideoError] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [stockDialogOpen, setStockDialogOpen] = useState(false);
   const [stockProductId, setStockProductId] = useState<number | null>(null);
@@ -119,6 +121,7 @@ export default function LiveRoomDetail(props: any) {
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [commentSearch, setCommentSearch] = useState("");
   const [commentFilter, setCommentFilter] = useState("all");
+  const [messengerFilter, setMessengerFilter] = useState("all");
   const [selectedComment, setSelectedComment] = useState<any | null>(null);
 
   const [endLiveConfirmOpen, setEndLiveConfirmOpen] = useState(false);
@@ -239,14 +242,21 @@ export default function LiveRoomDetail(props: any) {
         (c.commenterName || "").toLowerCase().includes(lower) ||
         (c.commentMessage || "").toLowerCase().includes(lower) ||
         (c.parsedKeyword || "").toLowerCase().includes(lower) ||
-        (c.orderNumber || "").toLowerCase().includes(lower)
+        (c.orderNumber || "").toLowerCase().includes(lower) ||
+        (c.matchedProductName || "").toLowerCase().includes(lower)
       );
     }
-    if (commentFilter !== "all") {
+    if (commentFilter !== "all" && commentFilter !== "messenger_failed") {
       result = result.filter((c: any) => c.matchResult === commentFilter);
     }
+    if (commentFilter === "messenger_failed") {
+      result = result.filter((c: any) => c.messengerStatus === "failed");
+    }
+    if (messengerFilter !== "all") {
+      result = result.filter((c: any) => c.messengerStatus === messengerFilter);
+    }
     return result;
-  }, [comments, commentSearch, commentFilter]);
+  }, [comments, commentSearch, commentFilter, messengerFilter]);
 
   // Comment stats derived
   const commentStatsMap = useMemo(() => {
@@ -451,7 +461,7 @@ export default function LiveRoomDetail(props: any) {
       </div>
 
       {/* Collapsible Facebook Video Player */}
-      {room.facebookVideoId && (
+      {room.facebookVideoId && !videoClosed && (
         <Collapsible open={!videoCollapsed} onOpenChange={(open) => setVideoCollapsed(!open)}>
           <Card>
             <CollapsibleTrigger asChild>
@@ -461,29 +471,52 @@ export default function LiveRoomDetail(props: any) {
                     <Video className="h-4 w-4" />
                     直播画面
                   </CardTitle>
-                  <Button variant="ghost" size="sm" className="h-7 gap-1">
-                    {videoCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-                    {videoCollapsed ? "展开" : "收起"}
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" className="h-7 gap-1" onClick={(e) => { e.stopPropagation(); setVideoClosed(true); }}>
+                      <XCircle className="h-4 w-4" />
+                      关闭
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 gap-1">
+                      {videoCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                      {videoCollapsed ? "展开" : "收起"}
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
             </CollapsibleTrigger>
             <CollapsibleContent>
               <CardContent className="pt-0">
-                <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
-                  <iframe
-                    src={`https://www.facebook.com/plugins/video.php?height=476&href=https://www.facebook.com/facebook/videos/${room.facebookVideoId}&show_text=false&width=560&t=0`}
-                    className="absolute top-0 left-0 w-full h-full rounded-lg border-0"
-                    scrolling="no"
-                    frameBorder="0"
-                    allowFullScreen
-                    allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-                  />
-                </div>
+                {videoError ? (
+                  <div className="w-full flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <AlertCircle className="h-8 w-8 mb-2 text-orange-500" />
+                    <p className="text-sm">直播画面加载失败，捉单功能不受影响</p>
+                    <Button variant="outline" size="sm" className="mt-2 gap-1" onClick={() => setVideoError(false)}>
+                      <Video className="h-3 w-3" /> 重试
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
+                    <iframe
+                      src={`https://www.facebook.com/plugins/video.php?height=476&href=https://www.facebook.com/facebook/videos/${room.facebookVideoId}&show_text=false&width=560&t=0`}
+                      className="absolute top-0 left-0 w-full h-full rounded-lg border-0"
+                      scrolling="no"
+                      frameBorder="0"
+                      allowFullScreen
+                      allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+                      onError={() => setVideoError(true)}
+                    />
+                  </div>
+                )}
               </CardContent>
             </CollapsibleContent>
           </Card>
         </Collapsible>
+      )}
+      {room.facebookVideoId && videoClosed && (
+        <Button variant="outline" size="sm" className="gap-2" onClick={() => { setVideoClosed(false); setVideoError(false); }}>
+          <Video className="h-4 w-4" />
+          显示直播画面
+        </Button>
       )}
 
       {/* Main Tabs: Products / Comments / Orders / Report */}
@@ -668,11 +701,11 @@ export default function LiveRoomDetail(props: any) {
                 <Input
                   value={commentSearch}
                   onChange={(e) => setCommentSearch(e.target.value)}
-                  placeholder="搜索留言人、内容、关键词、订单号..."
+                  placeholder="搜索留言人、内容、关键词、订单号、商品名..."
                   className="flex-1"
                 />
                 <Select value={commentFilter} onValueChange={setCommentFilter}>
-                  <SelectTrigger className="w-40">
+                  <SelectTrigger className="w-36">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -684,6 +717,20 @@ export default function LiveRoomDetail(props: any) {
                     <SelectItem value="preorder">预购</SelectItem>
                     <SelectItem value="duplicate">重复留言</SelectItem>
                     <SelectItem value="ai_replied">AI回复</SelectItem>
+                    <SelectItem value="messenger_failed">私聊失败</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={messengerFilter} onValueChange={setMessengerFilter}>
+                  <SelectTrigger className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">私聊全部</SelectItem>
+                    <SelectItem value="sent">已发送</SelectItem>
+                    <SelectItem value="failed">发送失败</SelectItem>
+                    <SelectItem value="pending">待发送</SelectItem>
+                    <SelectItem value="not_needed">无需发送</SelectItem>
+                    <SelectItem value="manually_handled">已手动处理</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -847,6 +894,94 @@ export default function LiveRoomDetail(props: any) {
                     </div>
                     <Separator />
                     <div className="flex flex-col gap-2">
+                      {/* Customer search results */}
+                      {customerSearchName && customerSearchResults.data && customerSearchResults.data.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium text-muted-foreground">匹配客户 ({customerSearchResults.data.length})</p>
+                          {customerSearchResults.data.slice(0, 3).map((c: any) => (
+                            <div key={c.id} className="p-3 border rounded-lg space-y-2 text-sm">
+                              <div className="flex items-center justify-between">
+                                <p className="font-medium">{c.name || c.facebookName || "客户 #" + c.id}</p>
+                                <Badge variant="outline" className="text-xs">{c.membershipLevel || "regular"}</Badge>
+                              </div>
+                              {c.phoneNumber && <p className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" />{c.phoneNumber}</p>}
+                              {c.email && <p className="text-xs text-muted-foreground flex items-center gap-1"><Mail className="h-3 w-3" />{c.email}</p>}
+                              <div className="flex gap-3 text-xs text-muted-foreground">
+                                <span>订单: {c.totalOrders || 0}</span>
+                                <span>消费: RM{c.totalSpent || "0"}</span>
+                                <span>积分: {c.pointsBalance || 0}</span>
+                              </div>
+                              {/* Action buttons for found customer */}
+                              <div className="flex flex-wrap gap-1 pt-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 text-xs gap-1"
+                                  onClick={() => {
+                                    // Navigate to customer detail page
+                                    window.open(`#customers?id=${c.id}`, "_blank");
+                                  }}
+                                >
+                                  <Eye className="h-3 w-3" /> 查看资料
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 text-xs gap-1"
+                                  onClick={() => {
+                                    // Navigate to orders filtered by customer
+                                    window.open(`#orders?customer=${c.id}`, "_blank");
+                                  }}
+                                >
+                                  <ShoppingBag className="h-3 w-3" /> 历史订单
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 text-xs gap-1"
+                                  onClick={() => {
+                                    // Navigate to manual order creation
+                                    window.open(`#orders?new=1&customer=${c.id}`, "_blank");
+                                  }}
+                                >
+                                  <Plus className="h-3 w-3" /> 帮客下单
+                                </Button>
+                                {c.messengerId && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 text-xs gap-1"
+                                    onClick={() => {
+                                      window.open(`https://m.me/${c.messengerId}`, "_blank");
+                                    }}
+                                  >
+                                    <Send className="h-3 w-3" /> 发Messenger
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {customerSearchName && customerSearchResults.data && customerSearchResults.data.length === 0 && (
+                        <div className="p-3 border border-orange-200 rounded-lg bg-orange-50/50 dark:bg-orange-950/20 text-center">
+                          <AlertCircle className="h-5 w-5 mx-auto mb-1 text-orange-500" />
+                          <p className="text-xs text-muted-foreground">未找到匹配客户，可能为新客户</p>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-xs gap-1 mt-1"
+                            onClick={() => {
+                              // Navigate to customer creation
+                              window.open(`#customers?new=1&fbName=${encodeURIComponent(selectedComment.commenterName || "")}`, "_blank");
+                            }}
+                          >
+                            <Plus className="h-3 w-3" /> 新建客户
+                          </Button>
+                        </div>
+                      )}
+                      <Separator />
+                      {/* General actions */}
                       <Button
                         variant="outline"
                         size="sm"
@@ -860,22 +995,6 @@ export default function LiveRoomDetail(props: any) {
                         <Search className="h-3 w-3" />
                         搜索客户
                       </Button>
-                      {customerSearchName && customerSearchResults.data && customerSearchResults.data.length > 0 && (
-                        <div className="space-y-2">
-                          {customerSearchResults.data.slice(0, 3).map((c: any) => (
-                            <div key={c.id} className="p-3 border rounded-lg space-y-1 text-sm">
-                              <p className="font-medium">{c.name || c.facebookName || "客户 #" + c.id}</p>
-                              {c.phoneNumber && <p className="text-xs text-muted-foreground">电话: {c.phoneNumber}</p>}
-                              {c.email && <p className="text-xs text-muted-foreground">邮箱: {c.email}</p>}
-                              <p className="text-xs text-muted-foreground">订单数: {c.totalOrders || 0}</p>
-                              <p className="text-xs text-muted-foreground">消费总额: RM{c.totalSpent || "0"}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {customerSearchName && customerSearchResults.data && customerSearchResults.data.length === 0 && (
-                        <p className="text-xs text-muted-foreground text-center py-2">未找到匹配的客户记录，可能为新客户</p>
-                      )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -890,6 +1009,20 @@ export default function LiveRoomDetail(props: any) {
                         <Copy className="h-3 w-3" />
                         复制名称
                       </Button>
+                      {selectedComment.orderNumber && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => {
+                            navigator.clipboard.writeText(selectedComment.orderNumber);
+                            toast.success("订单号已复制");
+                          }}
+                        >
+                          <Copy className="h-3 w-3" />
+                          复制订单号
+                        </Button>
+                      )}
                       {!selectedComment.isHandled && (
                         <Button
                           variant="outline"
@@ -1006,7 +1139,7 @@ export default function LiveRoomDetail(props: any) {
                     <ShoppingCart className="h-4 w-4 text-orange-500" />
                     <p className="text-sm text-muted-foreground">捉单数</p>
                   </div>
-                  <p className="text-2xl font-bold">{report.totalOrders || 0}</p>
+                  <p className="text-2xl font-bold">{report.captureCount || 0}</p>
                 </CardContent>
               </Card>
               <Card>
@@ -1016,6 +1149,28 @@ export default function LiveRoomDetail(props: any) {
                     <p className="text-sm text-muted-foreground">销售额</p>
                   </div>
                   <p className="text-2xl font-bold text-emerald-600">RM{Number(report.totalRevenue || 0).toFixed(2)}</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Second row: orders + items */}
+            <div className="grid grid-cols-3 gap-3">
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <p className="text-sm text-muted-foreground">订单数</p>
+                  <p className="text-xl font-bold">{report.totalOrders || 0}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <p className="text-sm text-muted-foreground">商品件数</p>
+                  <p className="text-xl font-bold">{report.totalItems || 0}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <p className="text-sm text-muted-foreground">客单价</p>
+                  <p className="text-xl font-bold">{(report.totalOrders > 0) ? `RM${(Number(report.totalRevenue || 0) / report.totalOrders).toFixed(2)}` : "—"}</p>
                 </CardContent>
               </Card>
             </div>

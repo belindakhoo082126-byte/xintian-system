@@ -7154,10 +7154,17 @@ export async function getLiveRoomReport(liveRoomId: number) {
     .from(liveComments).where(sql`liveRoomId = ${liveRoomId} AND messengerStatus = 'sent'`);
   const messengerFailed = await db.select({ count: sql`count(*)` })
     .from(liveComments).where(sql`liveRoomId = ${liveRoomId} AND messengerStatus = 'failed'`);
+  // Total items sold (sum of orderedCount across all room products)
+  const totalItems = await db.select({ total: sql`COALESCE(SUM(orderedCount), 0)` })
+    .from(liveRoomProducts).where(eq(liveRoomProducts.liveRoomId, liveRoomId));
+  // Capture count (捉单数 = matched comments)
+  const captureCount = matchedComments[0]?.count || 0;
   return {
     totalComments: Number(totalComments[0]?.count || 0),
     matchedComments: Number(matchedComments[0]?.count || 0),
+    captureCount: Number(captureCount),
     totalOrders: Number(ordersData[0]?.count || 0),
+    totalItems: Number(totalItems[0]?.total || 0),
     totalRevenue: Number(ordersData[0]?.totalAmount || 0),
     paidOrders: Number(ordersData[0]?.paidCount || 0),
     cancelledOrders: Number(ordersData[0]?.cancelledCount || 0),
