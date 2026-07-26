@@ -50,6 +50,7 @@ type ProductForm = {
   categoryId: number | undefined;
   unitId: number | undefined;
   keyword: string;
+  keywordChannels: string[];
   status: "draft" | "active" | "inactive" | "out_of_stock";
   visibility: "public" | "link_only" | "hidden";
   priceVisibility: "show" | "hide" | "member_link";
@@ -103,7 +104,7 @@ type ProductForm = {
 
 const EMPTY_FORM: ProductForm = {
   name: "", type: "physical", productMode: "simple", categoryId: undefined, unitId: undefined,
-  keyword: "", status: "draft", visibility: "public", priceVisibility: "show",
+  keyword: "", keywordChannels: ["fb_live", "fb_post", "fb_reel", "messenger", "whatsapp"], status: "draft", visibility: "public", priceVisibility: "show",
   shortDescZh: "", shortDescEn: "", fullDescZh: "", fullDescEn: "", careZh: "", careEn: "",
   sellingPrice: "", compareAtPrice: "", memberPrice: "", currentCost: "",
   weightKg: "", stockQuantity: 0, isFeatured: false, featuredSortOrder: 0,
@@ -207,6 +208,7 @@ export default function ProductsV2() {
         categoryId: p.categoryId || undefined,
         unitId: p.unitId || undefined,
         keyword: p.keyword || "",
+        keywordChannels: (() => { try { const ch = JSON.parse((p as any).keywordChannels || "[]"); return Array.isArray(ch) && ch.length > 0 ? ch : ["fb_live", "fb_post", "fb_reel", "messenger", "whatsapp"]; } catch { return ["fb_live", "fb_post", "fb_reel", "messenger", "whatsapp"]; } })(),
         status: p.status || "draft",
         visibility: p.visibility || "public",
         priceVisibility: p.priceVisibility || "show",
@@ -415,6 +417,7 @@ export default function ProductsV2() {
       visibleTo: JSON.stringify(form.visibleTo),
       specialPriceStartDate: form.specialPriceStartDate || undefined,
       specialPriceEndDate: form.specialPriceEndDate || undefined,
+      keywordChannels: JSON.stringify(form.keywordChannels),
     };
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...data });
@@ -797,6 +800,42 @@ export default function ProductsV2() {
                         {form.keyword && !keywordAvailable && (
                           <p className="text-xs text-red-500 mt-1">{translate("关键词已被使用", "Keyword already in use")}</p>
                         )}
+                        {/* Keyword Channels */}
+                        <div className="mt-2">
+                          <p className="text-xs text-muted-foreground mb-1.5">{translate("关键词适用渠道", "Keyword Channels")}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {[
+                              { value: "fb_live", label: translate("FB直播", "FB Live") },
+                              { value: "fb_post", label: translate("FB贴文", "FB Post") },
+                              { value: "fb_reel", label: translate("FB Reel", "FB Reel") },
+                              { value: "messenger", label: translate("Messenger", "Messenger") },
+                              { value: "whatsapp", label: translate("WhatsApp", "WhatsApp") },
+                            ].map(ch => {
+                              const active = form.keywordChannels.includes(ch.value);
+                              return (
+                                <button
+                                  key={ch.value}
+                                  type="button"
+                                  className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
+                                    active
+                                      ? "bg-primary text-primary-foreground border-primary"
+                                      : "bg-background text-muted-foreground border-border hover:bg-muted"
+                                  }`}
+                                  onClick={() => {
+                                    setForm({
+                                      ...form,
+                                      keywordChannels: active
+                                        ? form.keywordChannels.filter((c: string) => c !== ch.value)
+                                        : [...form.keywordChannels, ch.value],
+                                    });
+                                  }}
+                                >
+                                  {ch.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
                     </div>
 

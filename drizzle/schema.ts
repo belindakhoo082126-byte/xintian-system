@@ -132,6 +132,8 @@ export const products = mysqlTable("products", {
   // Legacy categories & keywords
   categories: text("categories"), // JSON array (legacy)
   keywords: varchar("keywords", { length: 500 }),
+  // Keyword applicable channels: JSON array of ["fb_live", "fb_post", "fb_reel", "messenger", "whatsapp"]
+  keywordChannels: text("keywordChannels"),
   videoUrl: varchar("videoUrl", { length: 500 }),
 
   // Membership-specific fields
@@ -1451,8 +1453,14 @@ export const liveRooms = mysqlTable("live_rooms", {
   preorderEndDate: timestamp("preorderEndDate"),
   // Estimated wait days (e.g. "30~45天")
   estimatedWaitDays: varchar("estimatedWaitDays", { length: 100 }),
-  // Live room status
-  status: mysqlEnum("status", ["scheduled", "live", "ended", "closed"]).default("scheduled").notNull(),
+  // Live room status: preparing (准备中), live (直播中), ended (已结束), closed (已关闭)
+  status: mysqlEnum("status", ["scheduled", "preparing", "live", "ended", "closed"]).default("preparing").notNull(),
+  // Streamer name (optional)
+  streamerName: varchar("streamerName", { length: 255 }),
+  // Facebook Page ID (which page is streaming)
+  facebookPageId: varchar("facebookPageId", { length: 255 }),
+  // Estimated start time (optional)
+  estimatedStartTime: varchar("estimatedStartTime", { length: 50 }),
   // Notes
   notes: text("notes"),
   // Timestamps
@@ -1481,10 +1489,18 @@ export const liveRoomProducts = mysqlTable("live_room_products", {
   displayName: varchar("displayName", { length: 255 }).notNull(),
   // Price for this live session
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
-  // Stock available for this live session
-  stock: int("stock").default(0).notNull(),
-  // Ordered count (how many times this keyword was captured)
+  // Stock at live start (initial stock when product was added to live room)
+  startStock: int("startStock").default(0).notNull(),
+  // Reserved count (orders created but not yet fulfilled)
+  reservedCount: int("reservedCount").default(0).notNull(),
+  // Available stock (startStock - reservedCount, or negative if preorder)
+  availableStock: int("availableStock").default(0).notNull(),
+  // Ordered count (total orders captured for this product in this live)
   orderedCount: int("orderedCount").default(0).notNull(),
+  // Preorder enabled (allow ordering even when stock is 0)
+  allowPreorder: boolean("allowPreorder").default(false).notNull(),
+  // Preorder count (how many preordered units)
+  preorderCount: int("preorderCount").default(0).notNull(),
   // Status: active, paused, sold_out
   status: mysqlEnum("status", ["active", "paused", "sold_out"]).default("active").notNull(),
   // Sort order for display
@@ -1524,6 +1540,51 @@ export const liveAiFlows = mysqlTable("live_ai_flows", {
 
 export type LiveAiFlow = typeof liveAiFlows.$inferSelect;
 export type InsertLiveAiFlow = typeof liveAiFlows.$inferInsert;
+
+// ============================================================================
+// V2.0 Phase 3: Live Comments (直播留言记录)
+// ============================================================================
+
+export const liveComments = mysqlTable("live_comments", {
+  id: int("id").autoincrement().primaryKey(),
+  // Linked live room
+  liveRoomId: int("liveRoomId").notNull(),
+  // Facebook comment info
+  commentId: varchar("commentId", { length: 255 }),
+  commenterName: varchar("commenterName", { length: 255 }).notNull(),
+  commenterPsid: varchar("commenterPsid", { length: 255 }),
+  commenterAvatarUrl: varchar("commenterAvatarUrl", { length: 500 }),
+  commentMessage: text("commentMessage").notNull(),
+  // Parsed info
+  parsedKeyword: varchar("parsedKeyword", { length: 100 }),
+  parsedQuantity: int("parsedQuantity").default(0),
+  // Match result: matched, no_match, paused, sold_out, preorder, duplicate, ignored, ai_replied
+  matchResult: mysqlEnum("matchResult", ["matched", "no_match", "paused", "sold_out", "preorder", "duplicate", "ignored", "ai_replied"]).default("no_match").notNull(),
+  // Matched product info
+  matchedProductId: int("matchedProductId"),
+  matchedProductName: varchar("matchedProductName", { length: 255 }),
+  matchedLiveRoomProductId: int("matchedLiveRoomProductId"),
+  // Order info
+  orderId: int("orderId"),
+  orderNumber: varchar("orderNumber", { length: 50 }),
+  // Messenger send status: pending, sent, failed, not_needed, manually_handled
+  messengerStatus: mysqlEnum("messengerStatus", ["pending", "sent", "failed", "not_needed", "manually_handled"]).default("not_needed"),
+  messengerError: text("messengerError"),
+  // AI Flow match (if matched by AI Flow)
+  aiFlowId: int("aiFlowId"),
+  aiReplyContent: text("aiReplyContent"),
+  // Whether admin has manually handled this comment
+  isHandled: boolean("isHandled").default(false).notNull(),
+  // Timestamps
+  commentDate: timestamp("commentDate"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  // Prevents duplicate entries when Facebook retries webhook delivery
+  commentIdUnique: uniqueIndex("uq_live_comment_id").on(table.commentId),
+}));
+
+export type LiveComment = typeof liveComments.$inferSelect;
+export type InsertLiveComment = typeof liveComments.$inferInsert;
 
 // ============================================================================
 // V2.0: Import Batches (采购批次)

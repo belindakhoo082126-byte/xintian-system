@@ -28,6 +28,7 @@ import {
   liveRoomProducts,
   // V2.0 Phase 2.5 imports - Live AI Flows
   liveAiFlows,
+  liveComments,
   // V3.1 imports - Product Bundles
   productBundles, productBundleItems, bundleStockLogs,
 } from "../drizzle/schema";
@@ -1426,6 +1427,7 @@ export async function createProductEnhanced(data: {
   visibleTo?: string;
   specialPriceStartDate?: string;
   specialPriceEndDate?: string;
+  keywordChannels?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
@@ -1487,6 +1489,7 @@ export async function createProductEnhanced(data: {
     visibleTo: data.visibleTo,
     specialPriceStartDate: data.specialPriceStartDate ? new Date(data.specialPriceStartDate) : null,
     specialPriceEndDate: data.specialPriceEndDate ? new Date(data.specialPriceEndDate) : null,
+    keywordChannels: data.keywordChannels || null,
   });
   const productId = result[0].insertId;
   // Save product images to product_images table
@@ -1563,6 +1566,7 @@ export async function updateProductEnhanced(id: number, data: Partial<{
   visibleTo: string;
   specialPriceStartDate: string;
   specialPriceEndDate: string;
+  keywordChannels: string;
 }>) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
@@ -5202,6 +5206,9 @@ export async function createLiveRoom(data: {
   estimatedWaitDays?: string;
   status?: string;
   notes?: string;
+  streamerName?: string;
+  facebookPageId?: string;
+  estimatedStartTime?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
@@ -5217,6 +5224,9 @@ export async function createLiveRoom(data: {
     estimatedWaitDays: data.estimatedWaitDays,
     status: (data.status as any) || 'scheduled',
     notes: data.notes,
+    streamerName: data.streamerName || null,
+    facebookPageId: data.facebookPageId || null,
+    estimatedStartTime: data.estimatedStartTime || null,
   });
   return { id: result[0].insertId };
 }
@@ -5233,10 +5243,14 @@ export async function updateLiveRoom(id: number, data: Partial<{
   estimatedWaitDays: string;
   status: string;
   notes: string;
+  streamerName: string;
+  facebookPageId: string;
+  estimatedStartTime: string;
 }>) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
   await db.update(liveRooms).set(data as any).where(eq(liveRooms.id, id));
+  broadcastChange('liveRooms');
   return { success: true };
 }
 
@@ -6417,8 +6431,12 @@ export async function addLiveRoomProduct(data: {
     keyword: data.keyword,
     displayName: data.displayName,
     price: String(data.price),
-    stock: data.stock,
+    startStock: data.stock,
+    reservedCount: 0,
+    availableStock: data.stock,
     orderedCount: 0,
+    allowPreorder: false,
+    preorderCount: 0,
     status: "active",
     sortOrder: nextSort,
     imageUrl: data.imageUrl || null,
@@ -6470,8 +6488,9 @@ export async function adjustLiveRoomProductStock(id: number, data: {
   const product = await db.select().from(liveRoomProducts)
     .where(eq(liveRoomProducts.id, id)).limit(1);
   if (product.length === 0) throw new Error("Live room product not found");
-  const newStock = Math.max(0, product[0].stock + data.quantityChange);
-  await db.update(liveRoomProducts).set({ stock: newStock })
+  const newStartStock = Math.max(0, product[0].startStock + data.quantityChange);
+  const newAvailableStock = newStartStock - product[0].reservedCount;
+  await db.update(liveRoomProducts).set({ startStock: newStartStock, availableStock: newAvailableStock })
     .where(eq(liveRoomProducts.id, id));
   // Also write to inventory adjustments log
   if (data.quantityChange < 0 && data.reason) {
@@ -6485,7 +6504,7 @@ export async function adjustLiveRoomProductStock(id: number, data: {
     });
   }
   broadcastChanges(["liveRooms", "inventory"]);
-  return { success: true, newStock };
+  return { success: true, startStock: newStartStock, availableStock: newAvailableStock };
 }
 
 // @realtime-broadcast: liveRooms
@@ -6854,4 +6873,301 @@ export async function getCustomerTypeStats() {
     stats.total += r.count;
   }
   return stats;
+}
+
+// ============================================================================
+// Phase 3: Live Management - Product Search, Preorder, Stock Calculation
+// ============================================================================
+
+// @realtime-broadcast: liveRooms
+export async function searchProductsForLiveRoom(liveRoomId: number, query: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const likePattern = `%${query}%`;
+  const results = await db.select({
+    id: products.id,
+    name: products.name,
+    sku: products.sku,
+    keyword: products.keyword,
+    coverImageUrl: products.coverImageUrl,
+    sellingPrice: products.sellingPrice,
+    stockQuantity: products.stockQuantity,
+    hasVariants: sql`EXISTS(SELECT 1 FROM ${variants} v WHERE v.productId = ${products.id})`,
+  }).from(products)
+    .where(sql`${products.name} LIKE ${likePattern} OR ${products.sku} LIKE ${likePattern} OR ${products.keyword} LIKE ${likePattern}`)
+    .limit(20);
+  return results;
+}
+
+// @realtime-broadcast: liveRooms
+export async function batchAddProductsToLiveRoom(liveRoomId: number, items: Array<{
+  productId: number;
+  variationId?: number;
+  keyword: string;
+  displayName: string;
+  price: number;
+  stock: number;
+  imageUrl?: string;
+  specImage?: string;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db.select().from(liveRoomProducts)
+    .where(eq(liveRoomProducts.liveRoomId, liveRoomId));
+  const nextSort = existing.length;
+  const inserted: number[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const data = items[i];
+    const result = await db.insert(liveRoomProducts).values({
+      liveRoomId,
+      productId: data.productId,
+      variationId: data.variationId || null,
+      keyword: data.keyword,
+      displayName: data.displayName,
+      price: String(data.price),
+      startStock: data.stock,
+      reservedCount: 0,
+      availableStock: data.stock,
+      orderedCount: 0,
+      allowPreorder: false,
+      preorderCount: 0,
+      status: "active",
+      sortOrder: nextSort + i,
+      imageUrl: data.imageUrl || null,
+      specImage: data.specImage || null,
+    });
+    inserted.push(result[0].insertId);
+  }
+  broadcastChange("liveRooms");
+  return { insertedIds: inserted, count: inserted.length };
+}
+
+// @realtime-broadcast: liveRooms
+export async function toggleLiveRoomProductPreorder(id: number, allowPreorder: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(liveRoomProducts).set({ allowPreorder }).where(eq(liveRoomProducts.id, id));
+  broadcastChange("liveRooms");
+  return { success: true };
+}
+
+// @realtime-broadcast: liveRooms
+export async function getLiveRoomProductDetails(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const product = await db.select().from(liveRoomProducts)
+    .where(eq(liveRoomProducts.id, id)).limit(1);
+  if (product.length === 0) throw new Error("Live room product not found");
+  return product[0];
+}
+
+// @realtime-broadcast: liveRooms
+export async function updateLiveRoomProductStock(id: number, newStartStock: number, reason?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const product = await db.select().from(liveRoomProducts)
+    .where(eq(liveRoomProducts.id, id)).limit(1);
+  if (product.length === 0) throw new Error("Live room product not found");
+  const diff = newStartStock - product[0].startStock;
+  const newAvailableStock = newStartStock - product[0].reservedCount;
+  await db.update(liveRoomProducts).set({
+    startStock: newStartStock,
+    availableStock: newAvailableStock,
+  }).where(eq(liveRoomProducts.id, id));
+  if (diff < 0 && reason) {
+    await db.insert(inventoryAdjustments).values({
+      productId: product[0].productId,
+      adjustmentType: reason as any,
+      quantityChange: diff,
+      unitCost: "0",
+      reason: `Live room stock adjustment (ID: ${id})`,
+      adjustedBy: "live_management",
+    });
+  }
+  broadcastChanges(["liveRooms", "inventory"]);
+  return { success: true, startStock: newStartStock, availableStock: newAvailableStock };
+}
+
+// ============================================================================
+// Phase 3: Live Comments (直播留言记录)
+// ============================================================================
+
+// @realtime-broadcast: liveRooms
+export async function recordLiveComment(data: {
+  liveRoomId: number;
+  commentId?: string;
+  commenterName: string;
+  commenterPsid?: string;
+  commenterAvatarUrl?: string;
+  commentMessage: string;
+  parsedKeyword?: string;
+  parsedQuantity?: number;
+  matchResult?: string;
+  matchedProductId?: number;
+  matchedProductName?: string;
+  matchedLiveRoomProductId?: number;
+  orderId?: number;
+  orderNumber?: string;
+  messengerStatus?: string;
+  aiFlowId?: number;
+  aiReplyContent?: string;
+  commentDate?: Date;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Check for duplicate commentId
+  if (data.commentId) {
+    const existing = await db.select({ id: liveComments.id }).from(liveComments)
+      .where(eq(liveComments.commentId, data.commentId)).limit(1);
+    if (existing.length > 0) return { id: existing[0].id, duplicate: true };
+  }
+  const result = await db.insert(liveComments).values({
+    liveRoomId: data.liveRoomId,
+    commentId: data.commentId || null,
+    commenterName: data.commenterName,
+    commenterPsid: data.commenterPsid || null,
+    commenterAvatarUrl: data.commenterAvatarUrl || null,
+    commentMessage: data.commentMessage,
+    parsedKeyword: data.parsedKeyword || null,
+    parsedQuantity: data.parsedQuantity || 0,
+    matchResult: (data.matchResult as any) || "no_match",
+    matchedProductId: data.matchedProductId || null,
+    matchedProductName: data.matchedProductName || null,
+    matchedLiveRoomProductId: data.matchedLiveRoomProductId || null,
+    orderId: data.orderId || null,
+    orderNumber: data.orderNumber || null,
+    messengerStatus: (data.messengerStatus as any) || "not_needed",
+    aiFlowId: data.aiFlowId || null,
+    aiReplyContent: data.aiReplyContent || null,
+    commentDate: data.commentDate || null,
+  });
+  broadcastChange("liveRooms");
+  return { id: result[0].insertId, duplicate: false };
+}
+
+export async function getLiveComments(liveRoomId: number, filters?: {
+  search?: string;
+  matchResult?: string;
+  messengerStatus?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const conditions: any[] = [eq(liveComments.liveRoomId, liveRoomId)];
+  if (filters?.search) {
+    const likePattern = `%${filters.search}%`;
+    conditions.push(sql`commenterName LIKE ${likePattern} OR commentMessage LIKE ${likePattern} OR parsedKeyword LIKE ${likePattern} OR orderNumber LIKE ${likePattern}`);
+  }
+  if (filters?.matchResult && filters.matchResult !== "all") {
+    conditions.push(eq(liveComments.matchResult, filters.matchResult as any));
+  }
+  if (filters?.messengerStatus && filters.messengerStatus !== "all") {
+    conditions.push(eq(liveComments.messengerStatus, filters.messengerStatus as any));
+  }
+  const limit = filters?.limit || 100;
+  const offset = filters?.offset || 0;
+  const results = await db.select().from(liveComments)
+    .where(and(...conditions))
+    .orderBy(desc(liveComments.createdAt)).limit(limit).offset(offset);
+  return results;
+}
+
+export async function getLiveCommentStats(liveRoomId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const stats = await db.select({
+    matchResult: liveComments.matchResult,
+    count: sql`count(*)`,
+  }).from(liveComments)
+    .where(eq(liveComments.liveRoomId, liveRoomId))
+    .groupBy(liveComments.matchResult);
+  const messengerStats = await db.select({
+    messengerStatus: liveComments.messengerStatus,
+    count: sql`count(*)`,
+  }).from(liveComments)
+    .where(eq(liveComments.liveRoomId, liveRoomId))
+    .groupBy(liveComments.messengerStatus);
+  return { matchResultStats: stats, messengerStats };
+}
+
+// @realtime-broadcast: liveRooms
+export async function updateLiveCommentMessengerStatus(commentId: number, status: string, error?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(liveComments).set({
+    messengerStatus: status as any,
+    messengerError: error || null,
+  }).where(eq(liveComments.id, commentId));
+  broadcastChange("liveRooms");
+  return { success: true };
+}
+
+// @realtime-broadcast: liveRooms
+export async function markLiveCommentHandled(commentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(liveComments).set({ isHandled: true })
+    .where(eq(liveComments.id, commentId));
+  broadcastChange("liveRooms");
+  return { success: true };
+}
+
+// ============================================================================
+// Phase 3: Live Room Report (直播报告)
+// ============================================================================
+
+export async function getLiveRoomReport(liveRoomId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Total comments
+  const totalComments = await db.select({ count: sql`count(*)` })
+    .from(liveComments).where(eq(liveComments.liveRoomId, liveRoomId));
+  // Matched comments (valid keywords)
+  const matchedComments = await db.select({ count: sql`count(*)` })
+    .from(liveComments).where(sql`liveRoomId = ${liveRoomId} AND matchResult = 'matched'`);
+  // Orders for this live room
+  const ordersData = await db.select({
+    count: sql`count(*)`,
+    totalAmount: sql`COALESCE(SUM(totalAmount), 0)`,
+    paidCount: sql`SUM(CASE WHEN paymentStatus = 'paid' THEN 1 ELSE 0 END)`,
+    cancelledCount: sql`SUM(CASE WHEN physicalStatus = 'cancelled' THEN 1 ELSE 0 END)`,
+    refundedCount: sql`SUM(CASE WHEN paymentStatus = 'refunded' THEN 1 ELSE 0 END)`,
+  }).from(orders).where(eq(orders.liveRoomId, liveRoomId));
+  // Product sales
+  const productSales = await db.select({
+    productName: liveRoomProducts.displayName,
+    keyword: liveRoomProducts.keyword,
+    orderedCount: liveRoomProducts.orderedCount,
+    price: liveRoomProducts.price,
+    revenue: sql`${liveRoomProducts.orderedCount} * ${liveRoomProducts.price}`,
+  }).from(liveRoomProducts)
+    .where(eq(liveRoomProducts.liveRoomId, liveRoomId))
+    .orderBy(desc(liveRoomProducts.orderedCount));
+  // New customers (customers whose first order was from this live room)
+  const newCustomers = await db.select({ count: sql`count(DISTINCT customerId)` })
+    .from(orders).where(sql`liveRoomId = ${liveRoomId} AND customerId NOT IN (
+      SELECT customerId FROM orders WHERE liveRoomId != ${liveRoomId} AND createdAt < (SELECT MIN(createdAt) FROM orders WHERE liveRoomId = ${liveRoomId})
+    )`);
+  // Messenger success rate
+  const messengerSent = await db.select({ count: sql`count(*)` })
+    .from(liveComments).where(sql`liveRoomId = ${liveRoomId} AND messengerStatus = 'sent'`);
+  const messengerFailed = await db.select({ count: sql`count(*)` })
+    .from(liveComments).where(sql`liveRoomId = ${liveRoomId} AND messengerStatus = 'failed'`);
+  return {
+    totalComments: Number(totalComments[0]?.count || 0),
+    matchedComments: Number(matchedComments[0]?.count || 0),
+    totalOrders: Number(ordersData[0]?.count || 0),
+    totalRevenue: Number(ordersData[0]?.totalAmount || 0),
+    paidOrders: Number(ordersData[0]?.paidCount || 0),
+    cancelledOrders: Number(ordersData[0]?.cancelledCount || 0),
+    refundedOrders: Number(ordersData[0]?.refundedCount || 0),
+    productSales: productSales.map((p: any) => ({
+      ...p,
+      revenue: Number(p.revenue),
+    })),
+    newCustomers: Number(newCustomers[0]?.count || 0),
+    messengerSent: Number(messengerSent[0]?.count || 0),
+    messengerFailed: Number(messengerFailed[0]?.count || 0),
+  };
 }

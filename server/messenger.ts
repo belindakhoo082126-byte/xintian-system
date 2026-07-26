@@ -386,12 +386,14 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
 
       // Try keyword matching for live order capture (e.g. "ABS+2", "POT+1")
       try {
-        const { parseCommentKeywords, matchKeywordsToProducts, createOrderFromLiveCapture, getLiveRooms } = require("./db");
+        const { parseCommentKeywords, matchKeywordsToProducts, createOrderFromLiveCapture, getLiveRooms, getLiveRoomProducts, recordLiveComment } = require("./db");
         const keywords = parseCommentKeywords(commentMessage);
         
         if (keywords.length > 0) {
           // Check if any live room is currently active (not closed)
           // For import_preorder rooms, check if preorderEndDate has passed
+          let activeRoomId: number | null = null;
+          let activeRoom: any = null;
           try {
             const allRooms = await getLiveRooms({ status: 'live' });
             const now = new Date();
@@ -405,7 +407,7 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
               return r.status === 'live';
             });
             if (activeRooms.length === 0) {
-              // No active live room — check scheduled rooms too
+              // No active live room — check scheduled/preparing rooms too
               const scheduledRooms = await getLiveRooms({ status: 'scheduled' });
               const activeScheduled = (scheduledRooms || []).filter((r: any) => {
                 if (r.liveType === 'import_preorder' && r.preorderEndDate) {
@@ -414,15 +416,101 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
                 return true;
               });
               if (activeScheduled.length === 0) {
-                console.log("[Facebook] No active live room, skipping capture");
-                return;
+                // Also check preparing rooms
+                const preparingRooms = await getLiveRooms({ status: 'preparing' });
+                const activePreparing = (preparingRooms || []).filter((r: any) => {
+                  if (r.liveType === 'import_preorder' && r.preorderEndDate) {
+                    return new Date(r.preorderEndDate) > now;
+                  }
+                  return true;
+                });
+                if (activePreparing.length === 0) {
+                  console.log("[Facebook] No active live room, skipping capture");
+                  return;
+                }
+                activeRoom = activePreparing[0];
+                activeRoomId = activePreparing[0].id;
+              } else {
+                activeRoom = activeScheduled[0];
+                activeRoomId = activeScheduled[0].id;
               }
+            } else {
+              activeRoom = activeRooms[0];
+              activeRoomId = activeRooms[0].id;
             }
           } catch (roomCheckErr: any) {
             console.log("[Facebook] Live room check failed, continuing capture:", roomCheckErr?.message);
           }
-          // Has keyword patterns, try to match products
-          const { matched, unmatched } = await matchKeywordsToProducts(keywords);
+          
+          // If we have an active live room, try to match only products in that room
+          let matched: any[] = [];
+          let unmatched: any[] = [];
+          if (activeRoomId) {
+            try {
+              const roomProducts = await getLiveRoomProducts(activeRoomId);
+              // Build keyword -> product map from live room products
+              const roomProductMap = new Map();
+              for (const rp of roomProducts) {
+                if (rp.status === 'paused') continue; // Skip paused products
+                if (rp.status === 'sold_out' && !rp.allowPreorder) continue; // Skip sold out unless preorder allowed
+                roomProductMap.set(rp.keyword.toUpperCase().replace(/\s+/g, ''), rp);
+              }
+              for (const kw of keywords) {
+                const upperKw = kw.keyword.toUpperCase().replace(/\s+/g, '');
+                const roomProduct = roomProductMap.get(upperKw);
+                if (roomProduct) {
+                  // Check stock
+                  if (roomProduct.availableStock <= 0 && !roomProduct.allowPreorder) {
+                    // Out of stock, don't create order
+                    unmatched.push({ keyword: kw.keyword, reason: 'sold_out' });
+                  } else {
+                    matched.push({
+                      keyword: kw.keyword,
+                      quantity: kw.quantity,
+                      productId: roomProduct.productId,
+                      productName: roomProduct.displayName,
+                      productSku: '',
+                      unitPrice: parseFloat(roomProduct.price),
+                      liveRoomProductId: roomProduct.id,
+                      isPreorder: roomProduct.availableStock <= 0 && roomProduct.allowPreorder,
+                    });
+                  }
+                } else {
+                  unmatched.push({ keyword: kw.keyword, reason: 'not_in_room' });
+                }
+              }
+              // Record live comment
+              try {
+                await recordLiveComment({
+                  liveRoomId: activeRoomId,
+                  commentId,
+                  commenterName,
+                  commenterPsid: commenterPsid || '',
+                  commentMessage,
+                  parsedKeyword: keywords.map((k: any) => k.keyword).join(', '),
+                  parsedQuantity: keywords.reduce((sum: number, k: any) => sum + k.quantity, 0),
+                  matchResult: matched.length > 0 ? 'matched' : (unmatched.some((u: any) => u.reason === 'sold_out') ? 'sold_out' : 'no_match'),
+                  matchedProductId: matched[0]?.productId,
+                  matchedProductName: matched[0]?.productName,
+                  matchedLiveRoomProductId: matched[0]?.liveRoomProductId,
+                  commentDate: new Date(),
+                });
+              } catch (recErr: any) {
+                console.log("[Facebook] Failed to record live comment:", recErr?.message);
+              }
+            } catch (roomProdErr: any) {
+              console.log("[Facebook] Failed to get live room products, falling back to global match:", roomProdErr?.message);
+              // Fall back to global keyword matching
+              const result = await matchKeywordsToProducts(keywords);
+              matched = result.matched;
+              unmatched = result.unmatched;
+            }
+          } else {
+            // No active room found, use global keyword matching (for non-live channels)
+            const result = await matchKeywordsToProducts(keywords);
+            matched = result.matched;
+            unmatched = result.unmatched;
+          }
           
           if (matched.length > 0) {
             // Create order from matched products

@@ -391,6 +391,7 @@ export const appRouter = router({
         visibleTo: z.string().optional(),
         specialPriceStartDate: z.string().optional(),
         specialPriceEndDate: z.string().optional(),
+        keywordChannels: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         // Check keyword conflict
@@ -459,6 +460,7 @@ export const appRouter = router({
         visibleTo: z.string().optional(),
         specialPriceStartDate: z.string().optional(),
         specialPriceEndDate: z.string().optional(),
+        keywordChannels: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
@@ -3628,8 +3630,11 @@ export const appRouter = router({
         preorderStartDate: z.coerce.date().optional(),
         preorderEndDate: z.coerce.date().optional(),
         estimatedWaitDays: z.string().optional(),
-        status: z.enum(['scheduled', 'live', 'ended', 'closed']).optional(),
+        status: z.enum(['scheduled', 'preparing', 'live', 'ended', 'closed']).optional(),
         notes: z.string().optional(),
+        streamerName: z.string().optional(),
+        facebookPageId: z.string().optional(),
+        estimatedStartTime: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         return await db.createLiveRoom(input);
@@ -3647,8 +3652,11 @@ export const appRouter = router({
         preorderStartDate: z.coerce.date().optional(),
         preorderEndDate: z.coerce.date().optional(),
         estimatedWaitDays: z.string().optional(),
-        status: z.enum(['scheduled', 'live', 'ended', 'closed']).optional(),
+        status: z.enum(['scheduled', 'preparing', 'live', 'ended', 'closed']).optional(),
         notes: z.string().optional(),
+        streamerName: z.string().optional(),
+        facebookPageId: z.string().optional(),
+        estimatedStartTime: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
@@ -3756,6 +3764,86 @@ export const appRouter = router({
       .input(z.object({ liveRoomId: z.number(), limit: z.number().optional() }))
       .query(async ({ input }) => {
         return await db.getLiveRoomOrders(input.liveRoomId, input.limit || 50);
+      }),
+
+    // --- Product Search & Batch Add ---
+    searchProducts: adminProcedure
+      .input(z.object({ liveRoomId: z.number(), query: z.string() }))
+      .query(async ({ input }) => {
+        return await db.searchProductsForLiveRoom(input.liveRoomId, input.query);
+      }),
+
+    batchAddProducts: adminProcedure
+      .input(z.object({
+        liveRoomId: z.number(),
+        items: z.array(z.object({
+          productId: z.number(),
+          variationId: z.number().optional(),
+          keyword: z.string(),
+          displayName: z.string(),
+          price: z.union([z.string(), z.number()]),
+          stock: z.number().default(0),
+          imageUrl: z.string().optional(),
+          specImage: z.string().optional(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.batchAddProductsToLiveRoom(input.liveRoomId, input.items as any);
+      }),
+
+    // --- Preorder Toggle ---
+    togglePreorder: adminProcedure
+      .input(z.object({ id: z.number(), allowPreorder: z.boolean() }))
+      .mutation(async ({ input }) => {
+        return await db.toggleLiveRoomProductPreorder(input.id, input.allowPreorder);
+      }),
+
+    // --- Live Comments (直播留言) ---
+    getComments: adminProcedure
+      .input(z.object({
+        liveRoomId: z.number(),
+        search: z.string().optional(),
+        matchResult: z.string().optional(),
+        messengerStatus: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await db.getLiveComments(input.liveRoomId, input);
+      }),
+
+    getCommentStats: adminProcedure
+      .input(z.object({ liveRoomId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getLiveCommentStats(input.liveRoomId);
+      }),
+
+    updateCommentMessengerStatus: adminProcedure
+      .input(z.object({ commentId: z.number(), status: z.string(), error: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        return await db.updateLiveCommentMessengerStatus(input.commentId, input.status, input.error);
+      }),
+
+    markCommentHandled: adminProcedure
+      .input(z.object({ commentId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.markLiveCommentHandled(input.commentId);
+      }),
+
+    // --- Live Room Report (直播报告) ---
+    getReport: adminProcedure
+      .input(z.object({ liveRoomId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getLiveRoomReport(input.liveRoomId);
+      }),
+
+    // --- End Live (直播结束) ---
+    endLive: adminProcedure
+      .input(z.object({ liveRoomId: z.number() }))
+      .mutation(async ({ input }) => {
+        // Set status to ended
+        await db.updateLiveRoom(input.liveRoomId, { status: 'ended' } as any);
+        return { success: true };
       }),
   }),
 
