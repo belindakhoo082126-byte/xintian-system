@@ -182,6 +182,14 @@ export default function MallProductDetail() {
                 </p>
               </div>
             )}
+            {/* Free Repotting Notice for plants */}
+            {product.categoryId && (
+              <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+                <p className="font-medium">🪴 {t("免费换盆服务", "Free Repotting Service")}</p>
+                <p className="text-xs mt-1">{t("购买植物并同单加购花盆，结账时可选择免费换盆。", "Buy plants and pots in the same order, select free repotting at checkout.")}</p>
+              </div>
+            )}
+
             {/* Quantity */}
             <div>
               <p className="text-sm font-medium mb-2">{t("数量", "Quantity")}</p>
