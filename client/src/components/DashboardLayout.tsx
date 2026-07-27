@@ -75,10 +75,10 @@ const menuStructure: MenuEntry[] = [
     icon: ShoppingCart,
     label: { zh: "订单管理", en: "Order Management" },
     children: [
-      { icon: Home, label: { zh: "本地订单", en: "Local Orders" }, path: "/orders?nature=normal" },
-      { icon: Plane, label: { zh: "中国代购订单", en: "Import Pre-order Orders" }, path: "/orders?nature=import_preorder" },
+      { icon: Home, label: { zh: "本地订单", en: "Local Orders" }, path: "/orders/local" },
+      { icon: Plane, label: { zh: "中国代购订单", en: "Import Orders" }, path: "/orders/import" },
       { icon: Crown, label: { zh: "会员订单", en: "Membership Orders" }, path: "/membership" },
-      { icon: Search, label: { zh: "订单查询", en: "Order Tracking" }, path: "/order-tracking" },
+      { icon: Search, label: { zh: "订单查询", en: "Order Search" }, path: "/orders/search" },
     ],
   },
 

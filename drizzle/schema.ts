@@ -462,6 +462,8 @@ export const customers = mysqlTable("customers", {
   unblacklistBy: int("unblacklistBy"),
   // V4: Customer type (retail / wholesale / agent)
   customerType: mysqlEnum("customerType", ["retail", "wholesale", "agent"]).default("retail").notNull(),
+  // V2.2: Customer credit balance (客户Credit余额)
+  creditBalance: decimal("creditBalance", { precision: 10, scale: 2 }).default("0").notNull(),
   // V4: Wholesale/agent account credentials
   accountEmail: varchar("accountEmail", { length: 255 }),
   accountPasswordHash: varchar("accountPasswordHash", { length: 255 }),
@@ -519,10 +521,10 @@ export const orders = mysqlTable("orders", {
   paymentMethodId: int("paymentMethodId"),
   paymentMethodName: varchar("paymentMethodName", { length: 100 }),
   receiptUrl: varchar("receiptUrl", { length: 500 }),
-  // Order source tracking (订单来源: FB直播/FB贴文/FB Reel/Messenger/商城/Admin手动/Walk-in)
+  // V2.2: Order source tracking (订单来源: FB直播/FB贴文/FB Reel/Messenger/商城/Admin手动)
   orderSource: mysqlEnum("orderSource", [
     "facebook_live", "facebook_post", "facebook_reel",
-    "messenger", "store", "manual", "walk_in"
+    "messenger", "store", "manual"
   ]).default("manual"),
   sourceName: varchar("sourceName", { length: 255 }),
   // Facebook comment tracking
@@ -530,8 +532,15 @@ export const orders = mysqlTable("orders", {
   commentDate: timestamp("commentDate"),
   // Total weight for shipping calculation
   totalWeight: decimal("totalWeight", { precision: 8, scale: 2 }).default("0"),
-  // Discount
+  // V2.2: Promotion / discount / extra charge fields
   discountAmount: decimal("discountAmount", { precision: 10, scale: 2 }).default("0"),
+  promotionId: int("promotionId"),
+  promotionName: varchar("promotionName", { length: 255 }),
+  promotionDiscount: decimal("promotionDiscount", { precision: 10, scale: 2 }).default("0"),
+  extraCharge: decimal("extraCharge", { precision: 10, scale: 2 }).default("0"),
+  extraChargeDescription: varchar("extraChargeDescription", { length: 500 }),
+  creditUsed: decimal("creditUsed", { precision: 10, scale: 2 }).default("0"),
+  creditRefunded: decimal("creditRefunded", { precision: 10, scale: 2 }).default("0"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   paymentUploadedAt: timestamp("paymentUploadedAt"),
   paymentConfirmedAt: timestamp("paymentConfirmedAt"),
@@ -556,8 +565,10 @@ export const orders = mysqlTable("orders", {
   specialOrderStatus: mysqlEnum("specialOrderStatus", ["pending", "resolved", "cancelled"]).default("pending"),
   // V1.2: Parent order for split orders
   parentOrderId: int("parentOrderId"),
-  // V2.0: Order nature (订单性质: local/import_preorder/wholesale/agent)
-  orderNature: mysqlEnum("orderNature", ["normal", "import_preorder", "wholesale", "agent"]).default("normal").notNull(),
+  // V2.2: Order category (订单分类: local=本地 / import=中国代购)
+  orderCategory: mysqlEnum("orderCategory", ["local", "import"]).default("local").notNull(),
+  // V2.2: Order nature (订单性质: retail/wholesale/agent)
+  orderNature: mysqlEnum("orderNature", ["retail", "wholesale", "agent"]).default("retail").notNull(),
   // V2.0: Linked import batch (for import_preorder orders)
   importBatchId: int("importBatchId"),
   // V2.1: Cancel reason and operator

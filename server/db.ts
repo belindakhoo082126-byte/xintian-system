@@ -1,4 +1,4 @@
-import { eq, ne, and, or, desc, asc, sql, gte, lte, isNull, like } from "drizzle-orm";
+import { eq, ne, and, or, desc, asc, sql, gte, lte, isNull, like, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -137,11 +137,25 @@ export async function getProducts(filters?: { type?: string; search?: string; is
   const conditions: any[] = [];
   if (filters?.type) conditions.push(eq(products.type, filters.type as any));
   if (filters?.isListed !== undefined) conditions.push(eq(products.isListed, filters.isListed));
-  if (filters?.search) conditions.push(or(
-    like(products.name, `%${filters.search}%`),
-    like(products.sku, `%${filters.search}%`),
-    like(products.keyword, `%${filters.search}%`)
-  ) as any);
+  if (filters?.search) {
+    // V2.2: Enhanced search - include variation name and variation keyword via subquery
+    const searchTerm = `%${filters.search}%`;
+    // First find product IDs that have matching variations
+    const variationMatches = await db.select({ productId: productVariations.productId })
+      .from(productVariations)
+      .where(or(
+        like(productVariations.name, searchTerm),
+        like(productVariations.keywords, searchTerm)
+      ) as any);
+    const matchedProductIds = variationMatches.map(v => v.productId);
+    
+    conditions.push(or(
+      like(products.name, searchTerm),
+      like(products.sku, searchTerm),
+      like(products.keyword, searchTerm),
+      ...(matchedProductIds.length > 0 ? [inArray(products.id, matchedProductIds) as any] : [])
+    ) as any);
+  }
   if (conditions.length > 0) {
     query = query.where(and(...conditions)) as any;
   }
@@ -354,6 +368,7 @@ export async function getOrders(filters?: {
   search?: string;
   todayOnly?: boolean;
   orderNature?: string;
+  orderCategory?: string;
   isSpecialOrder?: boolean;
   specialOrderStatus?: string;
   salesChannel?: string;
@@ -366,6 +381,7 @@ export async function getOrders(filters?: {
   if (filters?.membershipStatus) conditions.push(eq(orders.membershipStatus, filters.membershipStatus as any));
   if (filters?.orderType) conditions.push(eq(orders.orderType, filters.orderType as any));
   if (filters?.orderNature) conditions.push(eq((orders as any).orderNature, filters.orderNature as any));
+  if (filters?.orderCategory) conditions.push(eq((orders as any).orderCategory, filters.orderCategory as any));
   if (filters?.isSpecialOrder !== undefined) conditions.push(eq((orders as any).isSpecialOrder, filters.isSpecialOrder ? 1 : 0));
   if (filters?.specialOrderStatus) conditions.push(eq((orders as any).specialOrderStatus, filters.specialOrderStatus as any));
   if (filters?.salesChannel) conditions.push(eq((orders as any).salesChannel, filters.salesChannel as any));
@@ -379,7 +395,9 @@ export async function getOrders(filters?: {
       like(orders.orderNumber, `%${filters.search}%`),
       like(orders.facebookName, `%${filters.search}%`),
       like(orders.trackingNumber, `%${filters.search}%`),
-      like(orders.sourceName, `%${filters.search}%`)
+      like(orders.sourceName, `%${filters.search}%`),
+      like(orders.facebookId, `%${filters.search}%`),
+      like(orders.messengerId, `%${filters.search}%`)
     ));
   }
   if (conditions.length > 0) {
@@ -425,8 +443,27 @@ export async function createOrderWithSplit(data: {
   paymentMethodName?: string;
   orderNature?: string;
   orderSource?: string;
+  orderCategory?: string;
   sourceName?: string;
   liveRoomId?: number;
+  // V2.2: Promotion / discount / extra charge / credit
+  promotionId?: number;
+  promotionName?: string;
+  promotionDiscount?: string;
+  discountAmount?: string;
+  discountReason?: string;
+  extraCharge?: string;
+  extraChargeDescription?: string;
+  creditUsed?: string;
+  // V2.2: Recipient info
+  recipientName?: string;
+  recipientPhone?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postcode?: string;
+  country?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -446,19 +483,31 @@ export async function createOrderWithSplit(data: {
     .filter(i => i.productType === "membership")
     .reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
 
-  // Calculate shipping for physical + gift items (both have weight)
-  // Gift items count toward free-shipping threshold even though they are free
+  // V2.2: Calculate shipping using new West Malaysia rules
+  // Free shipping threshold is based on 商品结算金额 = subtotal - promotion - discount (not credit or extra charge)
   let shippingFee = 0;
+  const promotionDiscountNum = parseFloat(data.promotionDiscount || "0");
+  const discountAmountNum = parseFloat(data.discountAmount || "0");
+  const extraChargeNum = parseFloat(data.extraCharge || "0");
+  const creditUsedNum = parseFloat(data.creditUsed || "0");
+  
+  // 商品结算金额 = 商品小计 - 促销优惠 - 人工折扣 (Credit and extra charge don't affect free shipping threshold)
+  const settledAmount = physicalSubtotal + membershipSubtotal - promotionDiscountNum - discountAmountNum;
+  
   if (hasPhysical && data.shippingMethod === "west_malaysia") {
-    // Simplified weight calc: each physical/gift item counts as 0.5kg minimum
     const totalWeight = data.items
       .filter(i => i.productType === "physical" || i.productType === "gift")
       .reduce((sum, i) => sum + 0.5 * i.quantity, 0);
-    shippingFee = totalWeight <= 10 ? 15 : 15 + Math.ceil(totalWeight - 10) * 3;
+    const shipResult = calculateWestMalaysiaShipping(totalWeight, settledAmount);
+    shippingFee = shipResult.shippingFee;
   }
 
-  const totalAmount = physicalSubtotal + membershipSubtotal + shippingFee;
-  const orderNumber = `XT${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  // V2.2: Total = 商品小计 - 促销优惠 - 人工折扣 + 额外收费 + 运费 - 使用Credit
+  const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscountNum - discountAmountNum + extraChargeNum + shippingFee - creditUsedNum;
+  
+  // V2.2: Generate order number with XT/CXT prefix based on orderCategory
+  const prefix = data.orderCategory === "import" ? "CXT" : "XT";
+  const orderNumber = `${prefix}${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
   const orderResult = await db.insert(orders).values({
     orderNumber,
@@ -477,10 +526,18 @@ export async function createOrderWithSplit(data: {
     shippingMethod: (data.shippingMethod as any) || null,
     paymentMethodId: (data.paymentMethodId as any) || null,
     paymentMethodName: (data.paymentMethodName as any) || null,
-    orderNature: (data.orderNature as any) || "normal",
+    orderNature: (data.orderNature as any) || "retail",
     orderSource: (data.orderSource as any) || "manual",
+    orderCategory: (data.orderCategory as any) || "local",
     sourceName: data.sourceName || null,
     liveRoomId: data.liveRoomId || null,
+    // V2.2: Promotion / discount / extra charge / credit
+    promotionId: data.promotionId || null,
+    promotionName: data.promotionName || null,
+    promotionDiscount: data.promotionDiscount || null,
+    extraCharge: data.extraCharge || null,
+    extraChargeDescription: data.extraChargeDescription || null,
+    creditUsed: data.creditUsed || null,
   });
 
   const orderId = (orderResult as any)[0].insertId;
@@ -3679,6 +3736,105 @@ export function parseSmartPaste(text: string): {
 }
 
 // ============================================================================
+// V2.2: AI Smart Parse - Use LLM to parse customer address text
+// ============================================================================
+
+export async function aiSmartParse(text: string) {
+  // First try rule-based parsing
+  const ruleParsed = parseSmartPaste(text);
+  
+  // If we got good enough data, return it
+  if (ruleParsed.customerName && ruleParsed.contactNumber && ruleParsed.postcode) {
+    return { ...ruleParsed, rawText: text, method: "rule" };
+  }
+  
+  // Otherwise, use LLM for smarter parsing
+  try {
+    const { invokeLLM } = await import("./_core/llm.js");
+    const prompt = `Parse the following Malaysian customer address text and extract structured data. Return JSON only.
+Extract: customerName, contactNumber, addressLine1, addressLine2, postcode, city, state, area (West/East Malaysia).
+Malaysian states: Johor, Kedah, Kelantan, Melaka, Negeri Sembilan, Pahang, Penang/Pulau Pinang, Perak, Perlis, Sabah, Sarawak, Selangor, Terengganu, Kuala Lumpur, Putrajaya, Labuan.
+Sabah/Sarawak/Labuan = East Malaysia, others = West Malaysia.
+
+Text:
+${text}`;
+    
+    const response = await invokeLLM({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      responseFormat: { type: "json_object" },
+    });
+    
+    const content = typeof response.choices?.[0]?.message?.content === "string"
+      ? response.choices[0].message.content
+      : "{}";
+    const aiParsed = JSON.parse(content);
+    return { ...aiParsed, rawText: text, method: "ai" };
+  } catch (error) {
+    // Fallback to rule-based result
+    return { ...ruleParsed, rawText: text, method: "rule_fallback" };
+  }
+}
+
+// ============================================================================
+// V2.2: Customer Credit functions
+// ============================================================================
+
+export async function useCustomerCredit(customerId: number, amount: number, orderId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const customer = await getCustomerById(customerId);
+  if (!customer) throw new Error("Customer not found");
+  const balance = parseFloat(customer.creditBalance?.toString() || "0");
+  if (balance < amount) throw new Error(`Insufficient credit: ${balance} < ${amount}`);
+  await db.update(customers).set({
+    creditBalance: (balance - amount).toFixed(2),
+  }).where(eq(customers.id, customerId));
+  await logOrderOperation(orderId, "credit_used", `Used customer credit: RM${amount.toFixed(2)}`);
+  return { remainingCredit: (balance - amount).toFixed(2) };
+}
+
+export async function refundCustomerCredit(customerId: number, amount: number, orderId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const customer = await getCustomerById(customerId);
+  if (!customer) throw new Error("Customer not found");
+  const balance = parseFloat(customer.creditBalance?.toString() || "0");
+  await db.update(customers).set({
+    creditBalance: (balance + amount).toFixed(2),
+  }).where(eq(customers.id, customerId));
+  await logOrderOperation(orderId, "credit_refunded", `Refunded customer credit: RM${amount.toFixed(2)}`);
+  return { newBalance: (balance + amount).toFixed(2) };
+}
+
+// ============================================================================
+// V2.2: West Malaysia shipping fee calculation
+// ============================================================================
+
+export function calculateWestMalaysiaShipping(totalWeight: number, orderTotal: number = 0): { shippingFee: number; freeShipping: boolean; extraWeightCharge: number } {
+  // V2.2 West Malaysia shipping rules per requirement document:
+  // Order total >= RM150: first 10kg free, extra RM3/kg
+  // Order total < RM150: first 10kg RM15, extra RM3/kg
+  const FREE_SHIPPING_THRESHOLD = 150; // RM
+  const BASE_WEIGHT = 10; // kg
+  const BASE_FEE_UNDER = 15; // RM (when order < RM150)
+  const EXTRA_PER_KG = 3; // RM
+  
+  if (totalWeight <= 0) return { shippingFee: 0, freeShipping: orderTotal >= FREE_SHIPPING_THRESHOLD, extraWeightCharge: 0 };
+  
+  const isFreeShipping = orderTotal >= FREE_SHIPPING_THRESHOLD;
+  const baseFee = isFreeShipping ? 0 : BASE_FEE_UNDER;
+  
+  if (totalWeight <= BASE_WEIGHT) {
+    return { shippingFee: baseFee, freeShipping: isFreeShipping, extraWeightCharge: 0 };
+  }
+  
+  const extraWeight = Math.ceil(totalWeight - BASE_WEIGHT);
+  const extraCharge = extraWeight * EXTRA_PER_KG;
+  return { shippingFee: baseFee + extraCharge, freeShipping: isFreeShipping, extraWeightCharge: extraCharge };
+}
+
+// ============================================================================
 // PACKING & SHIPPING MODULE (包货发货模块)
 // ============================================================================
 
@@ -4469,13 +4625,13 @@ export async function getDashboardV11Stats() {
   const paidStatuses = ['receipt_uploaded', 'packing', 'partial_shipped', 'shipped', 'completed'];
   const localSalesMonth = await db.select({ total: sql`COALESCE(SUM(totalAmount), 0)` }).from(orders)
     .where(and(
-      eq(orders.orderNature, 'normal'),
+      eq((orders as any).orderCategory, 'local'),
       gte(orders.createdAt, firstOfMonth),
       sql`${orders.physicalStatus} IN (${sql.join(paidStatuses.map(s => sql`${s}`), sql`,`)})`
     )) as any[];
   const importSalesMonth = await db.select({ total: sql`COALESCE(SUM(totalAmount), 0)` }).from(orders)
     .where(and(
-      eq(orders.orderNature, 'import_preorder'),
+      eq((orders as any).orderCategory, 'import'),
       gte(orders.createdAt, firstOfMonth),
       sql`${orders.physicalStatus} IN (${sql.join(paidStatuses.map(s => sql`${s}`), sql`,`)})`
     )) as any[];
@@ -5824,7 +5980,7 @@ export async function getImportPreorderStats() {
   const db = await getDb();
   if (!db) return { paidSales: 0, unpaidCount: 0, specialOrders: 0, activeBatches: 0 };
   // Get all import_preorder orders
-  const importOrders = await db.select().from(orders).where(eq(orders.orderNature, 'import_preorder' as any));
+  const importOrders = await db.select().from(orders).where(eq((orders as any).orderCategory, 'import' as any));
   const paidOrders = importOrders.filter(o => o.physicalStatus !== 'pending' && o.physicalStatus !== 'cancelled');
   const unpaidOrders = importOrders.filter(o => o.physicalStatus === 'pending');
   const specialOrders = importOrders.filter(o => o.isSpecialOrder);
@@ -5853,7 +6009,7 @@ export async function getImportPreorderProfitAnalysis(filters?: {
   const db = await getDb();
   if (!db) return null;
   // Get import orders
-  let importOrdersList = await db.select().from(orders).where(eq(orders.orderNature, 'import_preorder' as any));
+  let importOrdersList = await db.select().from(orders).where(eq((orders as any).orderCategory, 'import' as any));
   if (filters?.batchId) {
     importOrdersList = importOrdersList.filter(o => o.importBatchId === filters.batchId);
   }

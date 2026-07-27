@@ -47,6 +47,8 @@ import LiveAiFlows from "@/pages/LiveAiFlows";
 import ImportBatches from "@/pages/ImportBatches";
 import LossAnalysisReport from "@/pages/LossAnalysisReport";
 import InventoryLog from "@/pages/InventoryLog";
+import OrderCreatePage from "@/pages/OrderCreatePage";
+import OrderBrowsePage from "@/pages/OrderBrowsePage";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -75,6 +77,12 @@ function DashboardRoutes() {
       <Route path={"/products"} component={ProductsV2} />
       <Route path={"/categories"} component={Categories} />
       <Route path={"/orders"} component={Orders} />
+      <Route path={"/orders/local"} component={() => <Orders orderCategory="local" />} />
+      <Route path={"/orders/import"} component={() => <Orders orderCategory="import" />} />
+      <Route path={"/orders/search"} component={() => <Orders orderCategory="all" />} />
+      <Route path={"/orders/create"} component={() => <OrderCreatePage orderCategory="local" />} />
+      <Route path={"/orders/create/local"} component={() => <OrderCreatePage orderCategory="local" />} />
+      <Route path={"/orders/create/import"} component={() => <OrderCreatePage orderCategory="import" />} />
       <Route path={"/membership"} component={Membership} />
       <Route path={"/customers"} component={Customers} />
       <Route path={"/flows"} component={Flows} />
@@ -101,7 +109,8 @@ function DashboardRoutes() {
       <Route path={"/mall-settings"} component={MallSettings} />
       <Route path={"/packing"} component={Packing} />
       <Route path={"/packing/:id"} component={PackingDetail} />
-      <Route path={"/orders/:id"} component={({ params }: any) => <OrderDetail orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
+      <Route path={"/orders/browse/:id"} component={({ params }: any) => <OrderBrowsePage orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
+      <Route path={"/orders/:id"} component={({ params }: any) => <OrderBrowsePage orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
       <Route path={"/pay/:id"} component={({ params }: any) => <CustomerPayment orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />

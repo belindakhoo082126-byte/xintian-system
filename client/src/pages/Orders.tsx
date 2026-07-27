@@ -15,7 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
-import { useSearch } from "wouter";
+import { useSearch, useLocation } from "wouter";
 
 const PHYSICAL_STATUS = {
   pending: { label: "待付款", enLabel: "Pending Payment", variant: "outline" },
@@ -32,8 +32,7 @@ const PHYSICAL_STATUS = {
 } as const;
 
 const ORDER_NATURE = {
-  normal: { label: "本地", enLabel: "Local" },
-  import_preorder: { label: "中国代购", enLabel: "Import Pre-order" },
+  retail: { label: "零售", enLabel: "Retail" },
   wholesale: { label: "批发", enLabel: "Wholesale" },
   agent: { label: "代理", enLabel: "Agent" },
 } as const;
@@ -45,7 +44,6 @@ const ORDER_SOURCE = {
   messenger: { label: "Messenger", enLabel: "Messenger" },
   store: { label: "商城", enLabel: "Store" },
   manual: { label: "Admin手动", enLabel: "Admin Manual" },
-  walk_in: { label: "Walk-in", enLabel: "Walk-in" },
 } as const;
 
 const CANCEL_REASONS = [
@@ -70,9 +68,10 @@ interface ManualOrderItem {
   unitCost?: string;
 }
 
-export default function Orders() {
+export default function Orders({ orderCategory, ...rest }: { orderCategory?: "local" | "import" | "all" } & Record<string, any> = {}) {
   const { translate, lang } = useI18n();
   const searchParams = useSearch();
+  const [_, setLocation] = useLocation();
   const urlStatus = new URLSearchParams(searchParams).get("status");
   const urlToday = new URLSearchParams(searchParams).get("today");
   const urlNature = new URLSearchParams(searchParams).get("nature");
@@ -114,7 +113,7 @@ export default function Orders() {
     facebookName: "", facebookId: "", messengerId: "",
     name: "", phoneNumber: "", address: "", shippingMethod: "west_malaysia",
   });
-  const [orderNature, setOrderNature] = useState("normal");
+  const [orderNature, setOrderNature] = useState("retail");
   const [orderSource, setOrderSource] = useState("manual");
   const [isWalkIn, setIsWalkIn] = useState(false);
   const [productSearchQuery, setProductSearchQuery] = useState("");
@@ -136,6 +135,7 @@ export default function Orders() {
     physicalStatus: statusFilter !== "all" ? statusFilter : undefined,
     todayOnly: todayOnly || undefined,
     orderNature: natureFilter !== "all" ? natureFilter : undefined,
+    orderCategory: orderCategory && orderCategory !== "all" ? orderCategory : undefined,
     isSpecialOrder: specialOnly || undefined,
     salesChannel: channelFilter !== "all" ? channelFilter : undefined,
   } as any);
@@ -216,7 +216,7 @@ export default function Orders() {
         shippingAddress: customerForm.address || undefined,
         shippingMethod: customerForm.shippingMethod || undefined,
         orderNature,
-        orderSource: isWalkIn ? "walk_in" : orderSource,
+        orderSource: orderSource,
       });
     },
     onError: (e) => toast.error(translate("客户创建失败: {message}", "Customer creation failed: {message}", { message: e.message })),
@@ -232,7 +232,7 @@ export default function Orders() {
       setSelectedCustomerId(undefined);
       setCustomerSearchQuery("");
       setProductSearchQuery("");
-      setOrderNature("normal");
+      setOrderNature("retail");
       setOrderSource("manual");
       setIsWalkIn(false);
     },
@@ -360,9 +360,7 @@ export default function Orders() {
   }
 
   function openDetail(orderId: number) {
-    setDetailOrderId(orderId);
-    setDetailOpen(true);
-    setDetailTab("info");
+    setLocation(`/orders/browse/${orderId}`);
   }
 
   function handleShip() {
@@ -412,12 +410,22 @@ export default function Orders() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{translate("订单管理", "Order Management")}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{translate("完整订单处理流程", "Complete order processing workflow")}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {orderCategory === "import" ? translate("中国代购订单", "Import Orders") :
+             orderCategory === "local" ? translate("本地订单", "Local Orders") :
+             translate("订单查询", "Order Search")}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {orderCategory === "import" ? translate("中国代购订单管理与处理", "Import order management & processing") :
+             orderCategory === "local" ? translate("本地订单管理与处理", "Local order management & processing") :
+             translate("搜索与筛选所有订单", "Search and filter all orders")}
+          </p>
         </div>
-        <Button onClick={() => { setManualItems([]); setCreateOpen(true); }}>
-          <Plus className="h-4 w-4 mr-2" />{translate("手动建单", "Create Manual Order")}
-        </Button>
+        {orderCategory !== "all" && (
+          <Button onClick={() => setLocation(`/orders/create/${orderCategory === "import" ? "import" : "local"}`)}>
+            <Plus className="h-4 w-4 mr-2" />{translate("手动建单", "Create Manual Order")}
+          </Button>
+        )}
       </div>
 
       <div className="flex gap-4 items-center flex-wrap">
@@ -1148,19 +1156,13 @@ export default function Orders() {
                 <Select value={orderSource} onValueChange={setOrderSource} disabled={isWalkIn}>
                   <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(ORDER_SOURCE).filter(([k]) => k !== "walk_in").map(([k, v]) => (
+                    {Object.entries(ORDER_SOURCE).map(([k, v]) => (
                       <SelectItem key={k} value={k}>{translate(v.label, v.enLabel)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={isWalkIn} onChange={(e) => { setIsWalkIn(e.target.checked); if (e.target.checked) setOrderSource("walk_in"); }}
-                    className="rounded" />
-                  {translate("Walk-in 客户", "Walk-in Customer")}
-                </label>
-              </div>
+
             </div>
 
             {/* Customer info */}

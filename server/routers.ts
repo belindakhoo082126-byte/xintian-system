@@ -1037,6 +1037,7 @@ export const appRouter = router({
         search: z.string().optional(),
         todayOnly: z.boolean().optional(),
         orderNature: z.string().optional(),
+        orderCategory: z.string().optional(),
         isSpecialOrder: z.boolean().optional(),
         specialOrderStatus: z.string().optional(),
         salesChannel: z.string().optional(),
@@ -1080,8 +1081,27 @@ export const appRouter = router({
         salesChannel: z.string().optional(),
         orderNature: z.string().optional(),
         orderSource: z.string().optional(),
+        orderCategory: z.string().optional(),
         sourceName: z.string().optional(),
         liveRoomId: z.number().optional(),
+        // V2.2: Promotion / discount / extra charge / credit
+        promotionId: z.number().optional(),
+        promotionName: z.string().optional(),
+        promotionDiscount: z.string().optional(),
+        discountAmount: z.string().optional(),
+        discountReason: z.string().optional(),
+        extraCharge: z.string().optional(),
+        extraChargeDescription: z.string().optional(),
+        creditUsed: z.string().optional(),
+        // V2.2: Recipient info
+        recipientName: z.string().optional(),
+        recipientPhone: z.string().optional(),
+        addressLine1: z.string().optional(),
+        addressLine2: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        postcode: z.string().optional(),
+        country: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const result = await db.createOrderWithSplit(input);
@@ -1233,6 +1253,46 @@ export const appRouter = router({
         }
 
         return { success: true, quotes: results };
+      }),
+
+    // V2.2: AI Smart Parse customer address
+    aiSmartParse: adminProcedure
+      .input(z.object({ text: z.string() }))
+      .query(async ({ input }) => {
+        return await db.aiSmartParse(input.text);
+      }),
+
+    // V2.2: Use customer credit
+    useCredit: adminProcedure
+      .input(z.object({
+        customerId: z.number(),
+        amount: z.number(),
+        orderId: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.useCustomerCredit(input.customerId, input.amount, input.orderId);
+      }),
+
+    // V2.2: Refund customer credit
+    refundCredit: adminProcedure
+      .input(z.object({
+        customerId: z.number(),
+        amount: z.number(),
+        orderId: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.refundCustomerCredit(input.customerId, input.amount, input.orderId);
+      }),
+
+    // V2.2: Calculate West Malaysia shipping
+    calculateShipping: adminProcedure
+      .input(z.object({
+        totalWeight: z.number(),
+        orderTotal: z.number(),
+      }))
+      .query(async ({ input }) => {
+        const result = db.calculateWestMalaysiaShipping(input.totalWeight, input.orderTotal);
+        return { ...result, threshold: 150 };
       }),
   }),
   // ===========================================================================

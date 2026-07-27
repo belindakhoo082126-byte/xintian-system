@@ -41,6 +41,7 @@ vi.mock("./db", () => ({
   getOrderItems: vi.fn(() => Promise.resolve([])),
   createOrderWithSplit: vi.fn(() => Promise.resolve({ orderId: 1, orderNumber: "XT001", totalAmount: "65.00" })),
   updateOrderStatus: vi.fn(() => Promise.resolve()),
+  logOrderOperation: vi.fn(() => Promise.resolve()),
 
   // Membership reviews
   getMembershipReviews: vi.fn(() => Promise.resolve([])),
