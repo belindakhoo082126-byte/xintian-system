@@ -434,13 +434,15 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
           let unmatched: any[] = [];
           if (activeRoomId) {
             try {
-              const roomProducts = await getLiveRoomProducts(activeRoomId);
-              // Build keyword -> product map from live room products
+              const roomProductGroups = await getLiveRoomProducts(activeRoomId);
+              // Build keyword -> product map from live room products (now grouped by productId)
               const roomProductMap = new Map();
-              for (const rp of roomProducts) {
-                if (rp.status === 'paused') continue; // Skip paused products
-                if (rp.status === 'sold_out' && !rp.allowPreorder) continue; // Skip sold out unless preorder allowed
-                roomProductMap.set(rp.keyword.toUpperCase().replace(/\s+/g, ''), rp);
+              for (const group of roomProductGroups) {
+                for (const rp of group.variations || [group]) {
+                  if (rp.status === 'paused') continue; // Skip paused products
+                  if (rp.status === 'sold_out' && !rp.allowPreorder) continue; // Skip sold out unless preorder allowed
+                  roomProductMap.set(rp.keyword.toUpperCase().replace(/\s+/g, ''), rp);
+                }
               }
               for (const kw of keywords) {
                 const upperKw = kw.keyword.toUpperCase().replace(/\s+/g, '');
@@ -572,6 +574,50 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
     const status = value?.status;
     const liveVideoId = value?.id;
     console.log("[Facebook] Live video event:", liveVideoId, "status:", status);
+    
+    // Auto-end live room when Facebook Live ends
+    if (status === 'ended' || status === 'stopped') {
+      try {
+        const { getLiveRooms, updateLiveRoom, getLiveRoomOrders } = require("./db");
+        const allRooms = await getLiveRooms({ status: 'live' });
+        const matchingRoom = (allRooms || []).find((r: any) => 
+          r.facebookVideoId === String(liveVideoId) || 
+          (r.facebookLiveUrl && r.facebookLiveUrl.includes(String(liveVideoId)))
+        );
+        if (matchingRoom) {
+          // Set status to ended
+          await updateLiveRoom(matchingRoom.id, { status: 'ended' } as any);
+          console.log(`[Facebook] Auto-ended live room ${matchingRoom.id} (${matchingRoom.name})`);
+          
+          // Send settlement notifications to all customers with orders
+          try {
+            const orders = await getLiveRoomOrders(matchingRoom.id, 200);
+            const customerSet = new Set<number>();
+            for (const order of orders) {
+              if (order.customerId && !customerSet.has(order.customerId)) {
+                customerSet.add(order.customerId);
+                // Send settlement notification via Messenger
+                try {
+                  const { sendTextMessage } = require("./messenger");
+                  const msg = `直播已结束！\n\n您的订单 ${order.orderNumber} 已整理完毕。\n总额: RM ${order.totalAmount}\n\n请尽快完成付款哦~\n如需加单，欢迎到我们的商城继续选购！`;
+                  // Try to get customer's PSID for Messenger
+                  if (order.facebookId) {
+                    await sendTextMessage(order.facebookId, msg).catch(() => {});
+                  }
+                } catch (e) {
+                  console.log("[Facebook] Settlement notification failed:", (e as any)?.message);
+                }
+              }
+            }
+            console.log(`[Facebook] Sent settlement notifications to ${customerSet.size} customers`);
+          } catch (settleErr) {
+            console.log("[Facebook] Settlement notification error:", (settleErr as any)?.message);
+          }
+        }
+      } catch (endErr) {
+        console.log("[Facebook] Auto-end live room failed:", (endErr as any)?.message);
+      }
+    }
   }
 }
 

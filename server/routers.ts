@@ -3920,7 +3920,13 @@ export const appRouter = router({
     getOrders: adminProcedure
       .input(z.object({ liveRoomId: z.number(), limit: z.number().optional() }))
       .query(async ({ input }) => {
-        return await db.getLiveRoomOrders(input.liveRoomId, input.limit || 50);
+        return await db.getLiveRoomOrders(input.liveRoomId, input.limit || 100);
+      }),
+
+    getOrdersByProduct: adminProcedure
+      .input(z.object({ liveRoomId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getLiveRoomOrdersByProduct(input.liveRoomId);
       }),
 
     // --- Product Search & Batch Add ---

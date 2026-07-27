@@ -6761,9 +6761,37 @@ export async function getBundleProfitAnalysis(filters?: {
 export async function getLiveRoomProducts(liveRoomId: number) {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(liveRoomProducts)
+  const rows = await db.select().from(liveRoomProducts)
     .where(eq(liveRoomProducts.liveRoomId, liveRoomId))
     .orderBy(asc(liveRoomProducts.sortOrder));
+  // Fetch product-level info (name, cover image) for grouping
+  const productIds = Array.from(new Set(rows.map((r: any) => r.productId)));
+  const productInfos: Record<number, any> = {};
+  for (const pid of productIds) {
+    const pRows = await db.select({
+      id: products.id,
+      name: products.name,
+      coverImageUrl: products.coverImageUrl,
+      productMode: products.productMode,
+    }).from(products).where(eq(products.id, pid)).limit(1);
+    if (pRows.length > 0) productInfos[pid] = pRows[0];
+  }
+  // Group by productId: products with variants show multiple rows as variations
+  const grouped: Record<number, any> = {};
+  for (const row of rows) {
+    const pid = row.productId;
+    if (!grouped[pid]) {
+      grouped[pid] = {
+        productId: pid,
+        productName: productInfos[pid]?.name || row.displayName,
+        coverImageUrl: productInfos[pid]?.coverImageUrl || row.imageUrl,
+        productMode: productInfos[pid]?.productMode || 'simple',
+        variations: [] as any[],
+      };
+    }
+    grouped[pid].variations.push(row);
+  }
+  return Object.values(grouped);
 }
 
 // @realtime-broadcast: liveRooms
@@ -6968,50 +6996,82 @@ export async function generateKeywordCopyText(liveRoomProductId: number, liveCom
 }
 
 // Get live room orders (orders created from this live room's captures)
-export async function getLiveRoomOrders(liveRoomId: number, limit = 50) {
+export async function getLiveRoomOrders(liveRoomId: number, limit = 100) {
   const db = await getDb();
   if (!db) return [];
-  // Get captures linked to this live room via liveVideoId matching
-  const room = await db.select().from(liveRooms).where(eq(liveRooms.id, liveRoomId)).limit(1);
-  if (room.length === 0) return [];
-  const roomData = room[0];
-  // Get captures that have an orderId and match by liveVideoId if available
-  const captures = await db.select().from(liveOrderCaptures)
-    .where(eq(liveOrderCaptures.status, "order_created"))
-    .orderBy(desc(liveOrderCaptures.createdAt))
+  // Get orders directly linked to this live room
+  const orderRows = await db.select().from(orders)
+    .where(eq(orders.liveRoomId, liveRoomId))
+    .orderBy(desc(orders.createdAt))
     .limit(limit);
-  // Filter captures that have an orderId
-  const orderCaptures = captures.filter((c: any) => c.orderId != null);
-  // Fetch corresponding orders
   const result: any[] = [];
-  for (const capture of orderCaptures) {
-    const orderRows = await db.select().from(orders)
-      .where(eq(orders.id, capture.orderId as number)).limit(1);
-    if (orderRows.length > 0) {
-      const order = orderRows[0];
-      const customerRows = await db.select().from(customers)
-        .where(eq(customers.id, order.customerId)).limit(1);
-      const itemRows = await db.select().from(orderItems)
-        .where(eq(orderItems.orderId, order.id));
-      result.push({
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        customerName: customerRows[0]?.name || capture.commenterName,
-        facebookName: customerRows[0]?.facebookName || capture.commenterName,
-        items: itemRows.map((item: any) => ({
-          productName: item.productName,
-          quantity: item.quantity,
-          subtotal: Number(item.subtotal),
-        })),
-        totalAmount: Number(order.totalAmount),
-        physicalStatus: order.physicalStatus,
-        membershipStatus: order.membershipStatus,
-        captureMessage: capture.commentMessage,
-        captureTime: capture.createdAt,
-      });
-    }
+  for (const order of orderRows) {
+    const customerRows = await db.select().from(customers)
+      .where(eq(customers.id, order.customerId)).limit(1);
+    const itemRows = await db.select().from(orderItems)
+      .where(eq(orderItems.orderId, order.id));
+    result.push({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      customerId: order.customerId,
+      customerName: customerRows[0]?.name || '',
+      facebookName: customerRows[0]?.facebookName || '',
+      facebookId: customerRows[0]?.facebookId || '',
+      items: itemRows.map((item: any) => ({
+        productName: item.productName,
+        variationName: item.variationName,
+        quantity: item.quantity,
+        unitPrice: Number(item.unitPrice),
+        subtotal: Number(item.subtotal),
+      })),
+      totalAmount: Number(order.totalAmount),
+      physicalStatus: order.physicalStatus,
+      paymentStatus: (order as any).paymentStatus,
+      orderNature: (order as any).orderNature,
+      createdAt: order.createdAt,
+    });
   }
   return result;
+}
+
+// Group orders by product for the live control center order panel
+export async function getLiveRoomOrdersByProduct(liveRoomId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const orderRows = await db.select().from(orders)
+    .where(eq(orders.liveRoomId, liveRoomId))
+    .orderBy(desc(orders.createdAt));
+  // Build product → variation → orders mapping
+  const productMap: Record<string, any> = {};
+  for (const order of orderRows) {
+    const itemRows = await db.select().from(orderItems)
+      .where(eq(orderItems.orderId, order.id));
+    const customerRows = await db.select().from(customers)
+      .where(eq(customers.id, order.customerId)).limit(1);
+    const customerName = customerRows[0]?.name || '';
+    for (const item of itemRows) {
+      const key = `${item.productName}__${item.variationName || ''}`;
+      if (!productMap[key]) {
+        productMap[key] = {
+          productName: item.productName,
+          variationName: item.variationName || '',
+          orders: [] as any[],
+          totalQuantity: 0,
+        };
+      }
+      productMap[key].orders.push({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        customerName,
+        quantity: item.quantity,
+        unitPrice: Number(item.unitPrice),
+        physicalStatus: order.physicalStatus,
+        paymentStatus: (order as any).paymentStatus,
+      });
+      productMap[key].totalQuantity += item.quantity;
+    }
+  }
+  return Object.values(productMap);
 }
 
 // ============================================================================
@@ -7434,7 +7494,7 @@ export async function getLiveComments(liveRoomId: number, filters?: {
   const conditions: any[] = [eq(liveComments.liveRoomId, liveRoomId)];
   if (filters?.search) {
     const likePattern = `%${filters.search}%`;
-    conditions.push(sql`commenterName LIKE ${likePattern} OR commentMessage LIKE ${likePattern} OR parsedKeyword LIKE ${likePattern} OR orderNumber LIKE ${likePattern}`);
+    conditions.push(sql`(commenterName LIKE ${likePattern} OR commentMessage LIKE ${likePattern} OR parsedKeyword LIKE ${likePattern} OR orderNumber LIKE ${likePattern} OR EXISTS(SELECT 1 FROM ${liveRoomProducts} lrp WHERE lrp.id = ${liveComments}.matchedLiveRoomProductId AND lrp.displayName LIKE ${likePattern}))`);
   }
   if (filters?.matchResult && filters.matchResult !== "all") {
     conditions.push(eq(liveComments.matchResult, filters.matchResult as any));

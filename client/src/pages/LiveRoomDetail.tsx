@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { useI18n } from "@/contexts/I18nContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,16 +8,16 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ArrowLeft, Plus, Trash2, Pause, Play, XCircle, Copy, MessageSquare,
   Package, DollarSign, ShoppingCart, Boxes, ChevronUp, ChevronDown,
-  Search, Eye, Users, AlertCircle, Video, BarChart3, Send,
-  CheckCircle2, Clock, TrendingUp, ShoppingBag, User, Mail, Phone, Edit,
+  Search, AlertCircle, Video, BarChart3, Send,
+  CheckCircle2, TrendingUp, User, Edit, Radio, Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -57,6 +56,7 @@ const matchResultLabels: Record<string, string> = {
   duplicate: "重复留言",
   ignored: "已忽略",
   ai_replied: "AI回复",
+  order_merged: "已合单",
 };
 
 const matchResultColors: Record<string, string> = {
@@ -68,18 +68,10 @@ const matchResultColors: Record<string, string> = {
   duplicate: "bg-orange-100 text-orange-700",
   ignored: "bg-gray-100 text-gray-500",
   ai_replied: "bg-purple-100 text-purple-700",
-};
-
-const messengerStatusLabels: Record<string, string> = {
-  pending: "待发送",
-  sent: "已发送",
-  failed: "发送失败",
-  not_needed: "无需发送",
-  manually_handled: "已手动处理",
+  order_merged: "bg-teal-100 text-teal-700",
 };
 
 export default function LiveRoomDetail(props: any) {
-  const { translate } = useI18n();
   const roomId = props.roomId ?? (props.match?.params?.id ? parseInt(props.match.params.id) : 0);
   const onBack = props.onBack ?? (() => window.history.back());
   const queryClient = trpc.useUtils();
@@ -88,26 +80,27 @@ export default function LiveRoomDetail(props: any) {
   const roomQuery = trpc.liveRooms.getById.useQuery({ id: roomId });
   const productsQuery = trpc.liveRooms.getProducts.useQuery({ liveRoomId: roomId });
   const statsQuery = trpc.liveRooms.getStats.useQuery({ liveRoomId: roomId });
-  const liveOrdersQuery = trpc.liveRooms.getOrders.useQuery({ liveRoomId: roomId, limit: 50 });
+  const liveOrdersQuery = trpc.liveRooms.getOrders.useQuery({ liveRoomId: roomId, limit: 100 });
+  const ordersByProductQuery = trpc.liveRooms.getOrdersByProduct.useQuery({ liveRoomId: roomId });
   const commentsQuery = trpc.liveRooms.getComments.useQuery({
     liveRoomId: roomId,
     search: undefined,
     matchResult: undefined,
-    limit: 100,
+    limit: 200,
   });
   const commentStatsQuery = trpc.liveRooms.getCommentStats.useQuery({ liveRoomId: roomId });
   const reportQuery = trpc.liveRooms.getReport.useQuery({ liveRoomId: roomId });
 
   const room = roomQuery.data as any;
-  const liveProducts = (productsQuery.data || []) as any[];
+  const liveProductGroups = (productsQuery.data || []) as any[];
   const stats = (statsQuery.data || {}) as any;
   const liveOrders = (liveOrdersQuery.data || []) as any[];
+  const ordersByProduct = (ordersByProductQuery.data || []) as any[];
   const comments = (commentsQuery.data || []) as any[];
   const commentStats = (commentStatsQuery.data || {}) as any;
   const report = (reportQuery.data || {}) as any;
 
   // State
-  const [activeTab, setActiveTab] = useState("products");
   const [videoCollapsed, setVideoCollapsed] = useState(false);
   const [videoClosed, setVideoClosed] = useState(false);
   const [videoError, setVideoError] = useState(false);
@@ -115,7 +108,6 @@ export default function LiveRoomDetail(props: any) {
   const [stockDialogOpen, setStockDialogOpen] = useState(false);
   const [stockProductId, setStockProductId] = useState<number | null>(null);
   const [stockForm, setStockForm] = useState({ quantityChange: 0, reason: "other" });
-  const [searchKeyword, setSearchKeyword] = useState("");
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [commentSearch, setCommentSearch] = useState("");
   const [commentFilter, setCommentFilter] = useState("all");
@@ -124,21 +116,12 @@ export default function LiveRoomDetail(props: any) {
   const [batchSelectedIds, setBatchSelectedIds] = useState<number[]>([]);
   const [batchSelectedProducts, setBatchSelectedProducts] = useState<Record<number, any>>({});
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [batchAddMode, setBatchAddMode] = useState(false);
   const [batchAddKeyword, setBatchAddKeyword] = useState("");
   const [batchAddPriceMode, setBatchAddPriceMode] = useState<"original" | "custom">("original");
   const [batchAddPrice, setBatchAddPrice] = useState("");
   const [selectedComment, setSelectedComment] = useState<any | null>(null);
-
+  const [showReport, setShowReport] = useState(false);
   const [endLiveConfirmOpen, setEndLiveConfirmOpen] = useState(false);
-  const [newProduct, setNewProduct] = useState({
-    productId: "",
-    variationId: "",
-    keyword: "",
-    displayName: "",
-    price: "",
-    stock: 0,
-  });
 
   // Product search for batch add
   const productSearchResults = trpc.liveRooms.searchProducts.useQuery(
@@ -147,27 +130,7 @@ export default function LiveRoomDetail(props: any) {
   );
   const categoriesQuery = trpc.categories.list.useQuery({ activeOnly: true });
 
-  // Customer search (for comment customer panel)
-  const [customerSearchName, setCustomerSearchName] = useState("");
-  const customerSearchResults = trpc.customers.list.useQuery(
-    { search: customerSearchName },
-    { enabled: customerSearchName.length > 0 }
-  );
-
   // Mutations
-  const addProductMutation = trpc.liveRooms.addProduct.useMutation({
-    onSuccess: () => {
-      toast.success("商品已加入直播");
-      queryClient.liveRooms.getProducts.invalidate({ liveRoomId: roomId });
-      queryClient.liveRooms.getStats.invalidate({ liveRoomId: roomId });
-      queryClient.liveRooms.getStatsBatch.invalidate();
-      setAddDialogOpen(false);
-      setNewProduct({ productId: "", variationId: "", keyword: "", displayName: "", price: "", stock: 0 });
-      setProductSearchQuery("");
-    },
-    onError: (e: any) => toast.error("加入失败: " + e.message),
-  });
-
   const batchAddMutation = trpc.liveRooms.batchAddProducts.useMutation({
     onSuccess: (data: any) => {
       toast.success(`已批量加入 ${data?.count || 0} 个商品`);
@@ -176,7 +139,7 @@ export default function LiveRoomDetail(props: any) {
       queryClient.liveRooms.getStatsBatch.invalidate();
       setAddDialogOpen(false);
       setBatchSelectedIds([]);
-      setBatchAddMode(false);
+      setBatchSelectedProducts({});
       setBatchAddKeyword("");
       setProductSearchQuery("");
     },
@@ -210,12 +173,6 @@ export default function LiveRoomDetail(props: any) {
     onError: (e: any) => toast.error("调整失败: " + e.message),
   });
 
-  const reorderMutation = trpc.liveRooms.reorderProducts.useMutation({
-    onSuccess: () => {
-      queryClient.liveRooms.getProducts.invalidate({ liveRoomId: roomId });
-    },
-  });
-
   const togglePreorderMutation = trpc.liveRooms.togglePreorder.useMutation({
     onSuccess: () => {
       queryClient.liveRooms.getProducts.invalidate({ liveRoomId: roomId });
@@ -239,6 +196,8 @@ export default function LiveRoomDetail(props: any) {
       queryClient.liveRooms.list.invalidate();
       queryClient.liveRooms.getStats.invalidate({ liveRoomId: roomId });
       queryClient.liveRooms.getReport.invalidate({ liveRoomId: roomId });
+      queryClient.liveRooms.getOrders.invalidate({ liveRoomId: roomId });
+      queryClient.liveRooms.getOrdersByProduct.invalidate({ liveRoomId: roomId });
       setEndLiveConfirmOpen(false);
       toast.success("直播已结束，捉单已停止");
     },
@@ -251,7 +210,6 @@ export default function LiveRoomDetail(props: any) {
       queryClient.liveRooms.getCommentStats.invalidate({ liveRoomId: roomId });
       toast.success("留言已标记为已处理");
     },
-    onError: (e: any) => toast.error("操作失败: " + e.message),
   });
 
   // Filtered comments
@@ -280,7 +238,6 @@ export default function LiveRoomDetail(props: any) {
     return result;
   }, [comments, commentSearch, commentFilter, messengerFilter]);
 
-  // Comment stats derived
   const commentStatsMap = useMemo(() => {
     const map: Record<string, number> = {};
     if (commentStats?.matchResultStats) {
@@ -303,35 +260,8 @@ export default function LiveRoomDetail(props: any) {
     }
   }
 
-  function handleAddProduct() {
-    if (!newProduct.productId || !newProduct.keyword || !newProduct.displayName || !newProduct.price) {
-      toast.error("请填写完整信息");
-      return;
-    }
-    addProductMutation.mutate({
-      liveRoomId: roomId,
-      productId: Number(newProduct.productId),
-      variationId: newProduct.variationId ? Number(newProduct.variationId) : undefined,
-      keyword: newProduct.keyword,
-      displayName: newProduct.displayName,
-      price: newProduct.price,
-      stock: Number(newProduct.stock),
-    });
-  }
-
   function handleStatusChange(id: number, status: "active" | "paused" | "sold_out") {
     updateProductMutation.mutate({ id, status });
-  }
-
-  function handleReorder(index: number, direction: "up" | "down") {
-    const ordered = [...liveProducts];
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= ordered.length) return;
-    [ordered[index], ordered[targetIndex]] = [ordered[targetIndex], ordered[index]];
-    reorderMutation.mutate({
-      liveRoomId: roomId,
-      orderedIds: ordered.map((p: any) => p.id),
-    });
   }
 
   function openStockDialog(productId: number) {
@@ -340,34 +270,44 @@ export default function LiveRoomDetail(props: any) {
     setStockDialogOpen(true);
   }
 
-  function handleSearchAndAddProduct() {
-    // Use searchProducts API result to select a product
-    if (productSearchResults.data && productSearchResults.data.length > 0) {
-      const p = productSearchResults.data[0];
-      setNewProduct({
-        ...newProduct,
-        productId: String(p.id),
+  function handleBatchSubmit() {
+    const items = batchSelectedIds.map(id => {
+      const p = batchSelectedProducts[id];
+      if (!p) return null;
+      const price = batchAddPriceMode === "custom" && batchAddPrice ? Number(batchAddPrice) : Number(p.sellingPrice || 0);
+      return {
+        productId: p.id,
+        keyword: batchAddKeyword || p.keyword || p.name,
         displayName: p.name,
-        price: String(p.sellingPrice || ""),
+        price,
         stock: Number(p.stockQuantity || 0),
-        keyword: p.keyword || "",
-      });
+        imageUrl: p.coverImageUrl || undefined,
+      };
+    }).filter(Boolean);
+    if (items.length === 0) {
+      toast.error("请选择至少一个商品");
+      return;
     }
+    batchAddMutation.mutate({ liveRoomId: roomId, items: items as any });
   }
 
-  function openCommentCustomer(comment: any) {
-    setSelectedComment(comment);
-    setCustomerSearchName("");
-    // Auto-search customer by name
-    if (comment.commenterName) {
-      setCustomerSearchName(comment.commenterName);
-    }
+  function toggleBatchSelection(p: any) {
+    const id = p.id;
+    setBatchSelectedIds(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      return [...prev, id];
+    });
+    setBatchSelectedProducts(prev => {
+      const next = { ...prev };
+      if (next[id]) delete next[id];
+      else next[id] = p;
+      return next;
+    });
   }
 
   if (roomQuery.isLoading) {
     return <div className="p-8 text-center text-muted-foreground">加载中...</div>;
   }
-
   if (!room) {
     return <div className="p-8 text-center text-muted-foreground">直播房间不存在</div>;
   }
@@ -376,7 +316,7 @@ export default function LiveRoomDetail(props: any) {
   const isEnded = room.status === "ended" || room.status === "closed";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -385,1340 +325,462 @@ export default function LiveRoomDetail(props: any) {
             返回
           </Button>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">{room.name}</h1>
-            <div className="flex items-center gap-2 mt-1">
+            <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
+              <Radio className={`h-5 w-5 ${isLive ? "text-green-600 animate-pulse" : "text-muted-foreground"}`} />
+              {room.name}
+            </h1>
+            <div className="flex items-center gap-2 mt-0.5">
               {room.liveType === "import_preorder" ? (
-                <Badge className="bg-purple-100 text-purple-700">中国代购</Badge>
+                <Badge className="bg-purple-100 text-purple-700 text-xs">中国代购</Badge>
               ) : (
-                <Badge variant="secondary">本地直播</Badge>
+                <Badge variant="secondary" className="text-xs">本地直播</Badge>
               )}
               <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${roomStatusColors[room.status] || ""}`}>
                 {roomStatusLabels[room.status] || room.status}
               </span>
-              <span className="text-sm text-muted-foreground">
-                {room.liveDate ? new Date(room.liveDate).toLocaleDateString("zh-CN") : "-"}
-              </span>
               {room.streamerName && (
-                <span className="text-sm text-muted-foreground">主播: {room.streamerName}</span>
-              )}
-              {room.estimatedStartTime && (
-                <span className="text-sm text-muted-foreground">预计开始: {room.estimatedStartTime}</span>
-              )}
-              {room.facebookLiveUrl && (
-                <a href={room.facebookLiveUrl} target="_blank" rel="noopener noreferrer"
-                   className="text-blue-600 hover:underline text-sm">
-                  Facebook Live Link
-                </a>
+                <span className="text-xs text-muted-foreground">主播: {room.streamerName}</span>
               )}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {!isLive && !isEnded && (
-            <Button
-              variant="default"
-              className="gap-2"
+            <Button variant="default" size="sm" className="gap-2"
               onClick={() => updateRoomMutation.mutate({ id: roomId, status: "live" })}
-              disabled={updateRoomMutation.isPending}
-            >
-              <Play className="h-4 w-4" />
-              开始直播
+              disabled={updateRoomMutation.isPending}>
+              <Play className="h-4 w-4" /> 开始直播
             </Button>
           )}
           {isLive && (
-            <Button
-              variant="destructive"
-              className="gap-2"
-              onClick={() => setEndLiveConfirmOpen(true)}
-            >
-              <XCircle className="h-4 w-4" />
-              结束直播
+            <Button variant="destructive" size="sm" className="gap-2"
+              onClick={() => setEndLiveConfirmOpen(true)}>
+              <XCircle className="h-4 w-4" /> 结束直播
             </Button>
           )}
-          <Button onClick={() => setAddDialogOpen(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            加入商品
+          {isEnded && (
+            <Button variant="outline" size="sm" className="gap-2"
+              onClick={() => setShowReport(!showReport)}>
+              <BarChart3 className="h-4 w-4" /> {showReport ? "返回控制台" : "查看报告"}
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setAddDialogOpen(true)}>
+            <Plus className="h-4 w-4" /> 加入商品
           </Button>
         </div>
       </div>
 
-      {/* Stats summary */}
-      <div className="grid grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <Package className="h-8 w-8 text-blue-500" />
-            <div>
-              <p className="text-sm text-muted-foreground">商品数量</p>
-              <p className="text-xl font-bold">{stats.productCount || 0}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <ShoppingCart className="h-8 w-8 text-green-500" />
-            <div>
-              <p className="text-sm text-muted-foreground">喊单订单数</p>
-              <p className="text-xl font-bold">{stats.orderCount || 0}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <Boxes className="h-8 w-8 text-orange-500" />
-            <div>
-              <p className="text-sm text-muted-foreground">喊单商品数量</p>
-              <p className="text-xl font-bold">{stats.totalItems || 0}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <DollarSign className="h-8 w-8 text-emerald-500" />
-            <div>
-              <p className="text-sm text-muted-foreground">喊单业绩</p>
-              <p className="text-xl font-bold">RM{(Number(stats.totalRevenue) || 0).toFixed(2)}</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Report View (when ended and toggled) */}
+      {showReport && isEnded ? (
+        <ReportView report={report} />
+      ) : (
+        <>
+          {/* Four-Region Layout: Top = Video + Stats, Bottom = 3-column grid */}
+          {/* Region 1: Live Video (collapsible/closable) */}
+          {room.facebookVideoId && !videoClosed && (
+            <Collapsible open={!videoCollapsed} onOpenChange={(open) => setVideoCollapsed(!open)}>
+              <Card>
+                <CollapsibleTrigger asChild>
+                  <CardHeader className="pb-2 cursor-pointer hover:bg-muted/50 transition-colors py-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Video className="h-4 w-4" /> 直播画面
+                      </CardTitle>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" className="h-6 gap-1 text-xs" onClick={(e) => { e.stopPropagation(); setVideoClosed(true); }}>
+                          <XCircle className="h-3 w-3" /> 关闭
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-6 text-xs">
+                          {videoCollapsed ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0 pb-3">
+                    {videoError ? (
+                      <div className="w-full flex flex-col items-center justify-center py-8 text-muted-foreground">
+                        <AlertCircle className="h-6 w-6 mb-1 text-orange-500" />
+                        <p className="text-xs">直播画面加载失败，捉单功能不受影响</p>
+                        <Button variant="outline" size="sm" className="mt-1 text-xs gap-1" onClick={() => setVideoError(false)}>
+                          <Video className="h-3 w-3" /> 重试
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="relative w-full max-h-[300px]" style={{ paddingBottom: "33.75%" }}>
+                        <iframe
+                          src={`https://www.facebook.com/plugins/video.php?height=476&href=https://www.facebook.com/facebook/videos/${room.facebookVideoId}&show_text=false&width=560&t=0`}
+                          className="absolute top-0 left-0 w-full h-full rounded-lg border-0"
+                          scrolling="no" frameBorder="0" allowFullScreen
+                          allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+                          onError={() => setVideoError(true)}
+                        />
+                      </div>
+                    )}
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+          )}
+          {room.facebookVideoId && videoClosed && (
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => { setVideoClosed(false); setVideoError(false); }}>
+              <Video className="h-4 w-4" /> 显示直播画面
+            </Button>
+          )}
 
-      {/* Collapsible Facebook Video Player */}
-      {room.facebookVideoId && !videoClosed && (
-        <Collapsible open={!videoCollapsed} onOpenChange={(open) => setVideoCollapsed(!open)}>
-          <Card>
-            <CollapsibleTrigger asChild>
-              <CardHeader className="pb-3 cursor-pointer hover:bg-muted/50 transition-colors">
+          {/* Stats Bar */}
+          <div className="grid grid-cols-4 gap-2">
+            <Card className="py-2">
+              <CardContent className="flex items-center gap-2 p-2">
+                <Package className="h-6 w-6 text-blue-500" />
+                <div><p className="text-xs text-muted-foreground">商品</p><p className="text-base font-bold">{stats.productCount || 0}</p></div>
+              </CardContent>
+            </Card>
+            <Card className="py-2">
+              <CardContent className="flex items-center gap-2 p-2">
+                <ShoppingCart className="h-6 w-6 text-green-500" />
+                <div><p className="text-xs text-muted-foreground">订单</p><p className="text-base font-bold">{stats.orderCount || 0}</p></div>
+              </CardContent>
+            </Card>
+            <Card className="py-2">
+              <CardContent className="flex items-center gap-2 p-2">
+                <Boxes className="h-6 w-6 text-orange-500" />
+                <div><p className="text-xs text-muted-foreground">件数</p><p className="text-base font-bold">{stats.totalItems || 0}</p></div>
+              </CardContent>
+            </Card>
+            <Card className="py-2">
+              <CardContent className="flex items-center gap-2 p-2">
+                <DollarSign className="h-6 w-6 text-emerald-500" />
+                <div><p className="text-xs text-muted-foreground">业绩</p><p className="text-base font-bold">RM{(Number(stats.totalRevenue) || 0).toFixed(2)}</p></div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Three-Column Layout: Products | Comments | Orders */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3" style={{ minHeight: "500px" }}>
+            {/* Region 2: Products Area */}
+            <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
+              <CardHeader className="pb-2 py-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Video className="h-4 w-4" />
-                    直播画面
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Package className="h-4 w-4" /> 商品区
                   </CardTitle>
-                  <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="sm" className="h-7 gap-1" onClick={(e) => { e.stopPropagation(); setVideoClosed(true); }}>
-                      <XCircle className="h-4 w-4" />
-                      关闭
-                    </Button>
-                    <Button variant="ghost" size="sm" className="h-7 gap-1">
-                      {videoCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-                      {videoCollapsed ? "展开" : "收起"}
-                    </Button>
-                  </div>
+                  <Badge variant="secondary" className="text-xs">{liveProductGroups.length} 个</Badge>
                 </div>
               </CardHeader>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <CardContent className="pt-0">
-                {videoError ? (
-                  <div className="w-full flex flex-col items-center justify-center py-12 text-muted-foreground">
-                    <AlertCircle className="h-8 w-8 mb-2 text-orange-500" />
-                    <p className="text-sm">直播画面加载失败，捉单功能不受影响</p>
-                    <Button variant="outline" size="sm" className="mt-2 gap-1" onClick={() => setVideoError(false)}>
-                      <Video className="h-3 w-3" /> 重试
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
-                    <iframe
-                      src={`https://www.facebook.com/plugins/video.php?height=476&href=https://www.facebook.com/facebook/videos/${room.facebookVideoId}&show_text=false&width=560&t=0`}
-                      className="absolute top-0 left-0 w-full h-full rounded-lg border-0"
-                      scrolling="no"
-                      frameBorder="0"
-                      allowFullScreen
-                      allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-                      onError={() => setVideoError(true)}
-                    />
-                  </div>
-                )}
-              </CardContent>
-            </CollapsibleContent>
-          </Card>
-        </Collapsible>
-      )}
-      {room.facebookVideoId && videoClosed && (
-        <Button variant="outline" size="sm" className="gap-2" onClick={() => { setVideoClosed(false); setVideoError(false); }}>
-          <Video className="h-4 w-4" />
-          显示直播画面
-        </Button>
-      )}
-
-      {/* Main Tabs: Products / Comments / Orders / Report */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="products" className="gap-1">
-            <Package className="h-4 w-4" />
-            商品管理
-          </TabsTrigger>
-          <TabsTrigger value="comments" className="gap-1">
-            <MessageSquare className="h-4 w-4" />
-            实时留言
-            {commentStatsMap["matched"] > 0 && (
-              <Badge variant="secondary" className="text-xs ml-1">{commentStatsMap["matched"]}</Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="orders" className="gap-1">
-            <ShoppingCart className="h-4 w-4" />
-            直播订单
-          </TabsTrigger>
-          <TabsTrigger value="report" className="gap-1">
-            <BarChart3 className="h-4 w-4" />
-            直播报告
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Tab: Products Management */}
-        <TabsContent value="products">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">直播商品</h2>
-              <span className="text-sm text-muted-foreground">{liveProducts.length} 个商品</span>
-            </div>
-
-            {liveProducts.length === 0 ? (
-              <Card>
-                <CardContent className="p-8 text-center text-muted-foreground">
-                  <Package className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                  <p>暂无直播商品，点击右上角「加入商品」添加</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(() => {
-                  // Group products by productId to show variations together
-                  const grouped: Record<number, any[]> = {};
-                  liveProducts.forEach((p: any) => {
-                    const pid = p.productId;
-                    if (!grouped[pid]) grouped[pid] = [];
-                    grouped[pid].push(p);
-                  });
-                  const productIds = Object.keys(grouped).map(Number);
-                  let flatIndex = 0;
-                  return productIds.map(pid => {
-                    const variants = grouped[pid];
-                    const hasMultipleVariants = variants.length > 1;
-                    return (
-                      <Card key={pid} className="overflow-hidden">
-                        <CardContent className="p-4">
-                          {hasMultipleVariants && (
-                            <div className="mb-3 pb-2 border-b">
-                              <p className="text-xs font-medium text-muted-foreground">
-                                {variants[0].displayName.replace(/\s*[-–—]\s*.*/, "")} ({variants.length} 个规格)
-                              </p>
-                            </div>
-                          )}
-                          {variants.map((p: any) => {
-                            const index = flatIndex++;
-                            return (
-                              <div key={p.id} className={hasMultipleVariants ? "mb-3 last:mb-0" : ""}>
-                                <div className="flex items-start gap-3">
-                                  {/* Product/variation image */}
-                                  {p.imageUrl ? (
-                                    <img src={p.imageUrl} alt={p.displayName} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
-                                  ) : (
-                                    <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-                                      <Package className="h-6 w-6 text-muted-foreground" />
-                                    </div>
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div className="min-w-0">
-                                        <p className="font-medium truncate">{p.displayName}</p>
-                                        <p className="text-sm text-muted-foreground">RM{Number(p.price).toFixed(0)} · 关键词: {p.keyword}</p>
-                                      </div>
-                                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 ${productStatusColors[p.status] || ""}`}>
-                                        {productStatusLabels[p.status] || p.status}
-                                      </span>
-                                    </div>
-                                    {/* Stock info */}
-                                    <div className="flex items-center gap-3 mt-2 text-sm">
-                                      <span className="text-muted-foreground">
-                                        开始: <span className="font-medium">{p.startStock ?? p.stock ?? 0}</span>
-                                      </span>
-                                      <span className="text-muted-foreground">
-                                        可售: <span className={`font-medium ${(p.availableStock ?? p.stock ?? 0) <= 0 ? "text-red-600" : ""}`}>{p.availableStock ?? p.stock ?? 0}</span>
-                                      </span>
-                                      <span className="text-muted-foreground">
-                                        已喊单: <span className="font-medium text-blue-600">{p.orderedCount || 0}</span>
-                                      </span>
-                                      {p.allowPreorder && (
-                                        <span className="text-muted-foreground">
-                                          预购: <span className="font-medium text-purple-600">{p.preorderCount || 0}</span>
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Preorder toggle */}
-                                <div className="flex items-center gap-2 mt-2 pt-2 border-t">
-                                  <Switch
-                                    checked={!!p.allowPreorder}
-                                    onCheckedChange={(checked) => togglePreorderMutation.mutate({ id: p.id, allowPreorder: checked })}
-                                  />
-                                  <span className="text-xs text-muted-foreground">允许预购</span>
-                                </div>
-
-                                {/* Action buttons */}
-                                <div className="flex flex-wrap gap-1 mt-2">
-                                  {p.status === "active" && (
-                                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleStatusChange(p.id, "paused")}>
-                                      <Pause className="h-3 w-3" /> 暂停
-                                    </Button>
-                                  )}
-                                  {p.status === "paused" && (
-                                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleStatusChange(p.id, "active")}>
-                                      <Play className="h-3 w-3" /> 恢复
-                                    </Button>
-                                  )}
-                                  {p.status !== "sold_out" && (
-                                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-red-600" onClick={() => handleStatusChange(p.id, "sold_out")}>
-                                      <XCircle className="h-3 w-3" /> 售完
-                                    </Button>
-                                  )}
-                                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => openStockDialog(p.id)}>
-                                    <Package className="h-3 w-3" /> 库存
-                                  </Button>
-                                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleCopyKeyword(p.id)}>
-                                    <Copy className="h-3 w-3" /> 复制
-                                  </Button>
-                                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => {
-                                    const newKeyword = prompt("输入新关键词:", p.keyword);
-                                    if (newKeyword && newKeyword !== p.keyword) {
-                                      updateProductMutation.mutate({ id: p.id, keyword: newKeyword });
-                                      toast.success("关键词已更新");
-                                    }
-                                  }}>
-                                    <Search className="h-3 w-3" /> 关键词
-                                  </Button>
-                                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleReorder(index, "up")} disabled={index === 0}>
-                                    <ChevronUp className="h-3 w-3" />
-                                  </Button>
-                                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleReorder(index, "down")} disabled={index === liveProducts.length - 1}>
-                                    <ChevronDown className="h-3 w-3" />
-                                  </Button>
-                                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-destructive" onClick={() => {
-                                    if (confirm("确认移除此商品？")) deleteProductMutation.mutate({ id: p.id });
-                                  }}>
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </CardContent>
-                      </Card>
-                    );
-                  });
-                })()}
-              </div>
-            )}
-          </div>
-        </TabsContent>
-
-        {/* Tab: Live Comments */}
-        <TabsContent value="comments">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Left: Comments list (2/3) */}
-            <div className="lg:col-span-2 space-y-3">
-              {/* Comment stats overview */}
-              <div className="grid grid-cols-4 gap-2">
-                <Card>
-                  <CardContent className="p-3 text-center">
-                    <p className="text-xs text-muted-foreground">总留言</p>
-                    <p className="text-lg font-bold">{Object.values(commentStatsMap).reduce((a: number, b: any) => a + Number(b), 0)}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-3 text-center">
-                    <p className="text-xs text-muted-foreground">已捉单</p>
-                    <p className="text-lg font-bold text-green-600">{commentStatsMap["matched"] || 0}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-3 text-center">
-                    <p className="text-xs text-muted-foreground">未匹配</p>
-                    <p className="text-lg font-bold text-gray-500">{commentStatsMap["no_match"] || 0}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-3 text-center">
-                    <p className="text-xs text-muted-foreground">预购</p>
-                    <p className="text-lg font-bold text-blue-600">{commentStatsMap["preorder"] || 0}</p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Search and filter */}
-              <div className="flex items-center gap-2">
-                <Input
-                  value={commentSearch}
-                  onChange={(e) => setCommentSearch(e.target.value)}
-                  placeholder="搜索留言人、内容、关键词、订单号、商品名..."
-                  className="flex-1"
-                />
-                <Select value={commentFilter} onValueChange={setCommentFilter}>
-                  <SelectTrigger className="w-36">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部</SelectItem>
-                    <SelectItem value="matched">已捉单</SelectItem>
-                    <SelectItem value="no_match">未匹配</SelectItem>
-                    <SelectItem value="paused">商品暂停</SelectItem>
-                    <SelectItem value="sold_out">已售完</SelectItem>
-                    <SelectItem value="preorder">预购</SelectItem>
-                    <SelectItem value="duplicate">重复留言</SelectItem>
-                    <SelectItem value="ai_replied">AI回复</SelectItem>
-                    <SelectItem value="messenger_failed">私聊失败</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={messengerFilter} onValueChange={setMessengerFilter}>
-                  <SelectTrigger className="w-36">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">私聊全部</SelectItem>
-                    <SelectItem value="sent">已发送</SelectItem>
-                    <SelectItem value="failed">发送失败</SelectItem>
-                    <SelectItem value="pending">待发送</SelectItem>
-                    <SelectItem value="not_needed">无需发送</SelectItem>
-                    <SelectItem value="manually_handled">已手动处理</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Comments list */}
-              {filteredComments.length === 0 ? (
-                <Card>
-                  <CardContent className="p-8 text-center text-muted-foreground">
-                    <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                    <p>暂无留言记录</p>
-                    <p className="text-xs mt-1">客户在 Facebook 直播留言后，留言会实时出现在这里</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="space-y-2 max-h-[600px] overflow-y-auto">
-                  {filteredComments.map((c: any) => (
-                    <Card key={c.id} className={`overflow-hidden ${c.isHandled ? "opacity-60" : ""}`}>
-                      <CardContent className="p-3">
-                        <div className="flex items-start gap-3">
-                          {/* Avatar - clickable */}
-                          <Avatar
-                            className="cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all flex-shrink-0"
-                            onClick={() => openCommentCustomer(c)}
-                          >
-                            {c.commenterAvatarUrl ? (
-                              <AvatarImage src={c.commenterAvatarUrl} alt={c.commenterName} />
-                            ) : null}
-                            <AvatarFallback className="text-xs">
-                              {c.commenterName?.charAt(0)?.toUpperCase() || "?"}
-                            </AvatarFallback>
-                          </Avatar>
-
-                          <div className="flex-1 min-w-0">
-                            {/* Name + time + match result badge */}
-                            <div className="flex items-center gap-2 mb-1">
-                              <p className="font-medium text-sm truncate cursor-pointer hover:text-primary"
-                                 onClick={() => openCommentCustomer(c)}>
-                                {c.commenterName || "未知用户"}
-                              </p>
-                              <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0 ${matchResultColors[c.matchResult] || ""}`}>
-                                {matchResultLabels[c.matchResult] || c.matchResult}
-                              </span>
-                              {c.isHandled && (
-                                <Badge variant="outline" className="text-xs">已处理</Badge>
-                              )}
-                              <span className="text-xs text-muted-foreground ml-auto flex-shrink-0">
-                                {c.commentDate ? new Date(c.commentDate).toLocaleTimeString("zh-CN") :
-                                 c.createdAt ? new Date(c.createdAt).toLocaleTimeString("zh-CN") : ""}
-                              </span>
-                            </div>
-
-                            {/* Comment message */}
-                            <p className="text-sm text-foreground break-words">{c.commentMessage}</p>
-
-                            {/* Parsed info */}
-                            {(c.parsedKeyword || c.matchedProductName || c.orderNumber) && (
-                              <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                                {c.parsedKeyword && (
-                                  <span>关键词: <code className="bg-muted px-1 rounded">{c.parsedKeyword}</code></span>
-                                )}
-                                {c.parsedQuantity > 0 && <span>数量: {c.parsedQuantity}</span>}
-                                {c.matchedProductName && <span>商品: {c.matchedProductName}</span>}
-                                {c.orderNumber && (
-                                  <span className="text-blue-600">订单: {c.orderNumber}</span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Messenger status */}
-                            {c.messengerStatus && c.messengerStatus !== "not_needed" && (
-                              <div className="flex items-center gap-1 mt-1 text-xs">
-                                <Send className="h-3 w-3 text-muted-foreground" />
-                                <span className="text-muted-foreground">
-                                  Messenger: {messengerStatusLabels[c.messengerStatus] || c.messengerStatus}
-                                </span>
-                                {c.messengerError && (
-                                  <span className="text-red-500">({c.messengerError})</span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* AI reply */}
-                            {c.aiReplyContent && (
-                              <div className="mt-1 p-2 bg-purple-50 dark:bg-purple-950/20 rounded text-xs">
-                                <span className="text-purple-600 font-medium">AI回复: </span>
-                                <span>{c.aiReplyContent}</span>
-                              </div>
-                            )}
-
-                            {/* Actions */}
-                            {!c.isHandled && (
-                              <div className="flex gap-1 mt-2">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 text-xs gap-1"
-                                  onClick={() => markCommentHandledMutation.mutate({ commentId: c.id })}
-                                >
-                                  <CheckCircle2 className="h-3 w-3" /> 标记已处理
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Right: Customer action panel (1/3) */}
-            <div className="space-y-3">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <User className="h-5 w-5" />
-                客户信息
-              </h3>
-              {selectedComment ? (
-                <Card>
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="size-12">
-                        {selectedComment.commenterAvatarUrl ? (
-                          <AvatarImage src={selectedComment.commenterAvatarUrl} alt={selectedComment.commenterName} />
-                        ) : null}
-                        <AvatarFallback>
-                          {selectedComment.commenterName?.charAt(0)?.toUpperCase() || "?"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium">{selectedComment.commenterName || "未知用户"}</p>
-                        {selectedComment.commenterPsid && (
-                          <p className="text-xs text-muted-foreground font-mono">PSID: {selectedComment.commenterPsid}</p>
-                        )}
+              <CardContent className="flex-1 overflow-hidden p-0">
+                <ScrollArea className="h-full" style={{ height: "calc(100vh - 320px)" }}>
+                  <div className="p-3 space-y-2">
+                    {liveProductGroups.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Package className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-xs">暂无商品，点击「加入商品」</p>
                       </div>
-                    </div>
-                    <Separator />
-                    <div className="space-y-2 text-sm">
-                      <div>
-                        <p className="text-muted-foreground text-xs">留言内容</p>
-                        <p className="break-words">{selectedComment.commentMessage}</p>
-                      </div>
-                      {selectedComment.parsedKeyword && (
-                        <div>
-                          <p className="text-muted-foreground text-xs">解析关键词</p>
-                          <p><code className="bg-muted px-1 rounded">{selectedComment.parsedKeyword}</code> ×{selectedComment.parsedQuantity || 1}</p>
-                        </div>
-                      )}
-                      {selectedComment.matchedProductName && (
-                        <div>
-                          <p className="text-muted-foreground text-xs">匹配商品</p>
-                          <p>{selectedComment.matchedProductName}</p>
-                        </div>
-                      )}
-                      {selectedComment.orderNumber && (
-                        <div>
-                          <p className="text-muted-foreground text-xs">关联订单</p>
-                          <p className="text-blue-600 font-medium">{selectedComment.orderNumber}</p>
-                        </div>
-                      )}
-                    </div>
-                    <Separator />
-                    <div className="flex flex-col gap-2">
-                      {/* Customer search results */}
-                      {customerSearchName && customerSearchResults.data && customerSearchResults.data.length > 0 && (
-                        <div className="space-y-2">
-                          <p className="text-xs font-medium text-muted-foreground">匹配客户 ({customerSearchResults.data.length})</p>
-                          {customerSearchResults.data.slice(0, 3).map((c: any) => (
-                            <div key={c.id} className="p-3 border rounded-lg space-y-2 text-sm">
-                              <div className="flex items-center justify-between">
-                                <p className="font-medium">{c.name || c.facebookName || "客户 #" + c.id}</p>
-                                <Badge variant="outline" className="text-xs">{c.membershipLevel || "regular"}</Badge>
-                              </div>
-                              {c.phoneNumber && <p className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" />{c.phoneNumber}</p>}
-                              {c.email && <p className="text-xs text-muted-foreground flex items-center gap-1"><Mail className="h-3 w-3" />{c.email}</p>}
-                              <div className="flex gap-3 text-xs text-muted-foreground">
-                                <span>订单: {c.totalOrders || 0}</span>
-                                <span>消费: RM{c.totalSpent || "0"}</span>
-                                <span>积分: {c.pointsBalance || 0}</span>
-                              </div>
-                              {/* Action buttons for found customer */}
-                              <div className="flex flex-wrap gap-1 pt-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 text-xs gap-1"
-                                  onClick={() => {
-                                    // Navigate to customer detail page
-                                    window.open(`/customers?id=${c.id}`, "_blank");
-                                  }}
-                                >
-                                  <Eye className="h-3 w-3" /> 查看资料
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 text-xs gap-1"
-                                  onClick={() => {
-                                    // Navigate to orders filtered by customer
-                                    window.open(`/orders?customer=${c.id}`, "_blank");
-                                  }}
-                                >
-                                  <ShoppingBag className="h-3 w-3" /> 历史订单
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 text-xs gap-1"
-                                  onClick={() => {
-                                    // Navigate to manual order creation
-                                    window.open(`/orders?new=1&customer=${c.id}`, "_blank");
-                                  }}
-                                >
-                                  <Plus className="h-3 w-3" /> 帮客下单
-                                </Button>
-                                {c.messengerId && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 text-xs gap-1"
-                                    onClick={() => {
-                                      window.open(`https://m.me/${c.messengerId}`, "_blank");
-                                    }}
-                                  >
-                                    <Send className="h-3 w-3" /> 发Messenger
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {customerSearchName && customerSearchResults.data && customerSearchResults.data.length === 0 && (
-                        <div className="p-3 border border-orange-200 rounded-lg bg-orange-50/50 dark:bg-orange-950/20 text-center">
-                          <AlertCircle className="h-5 w-5 mx-auto mb-1 text-orange-500" />
-                          <p className="text-xs text-muted-foreground">未找到匹配客户，可能为新客户</p>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 text-xs gap-1 mt-1"
-                            onClick={() => {
-                              // Navigate to customer creation
-                              window.open(`/customers?new=1&fbName=${encodeURIComponent(selectedComment.commenterName || "")}`, "_blank");
-                            }}
-                          >
-                            <Plus className="h-3 w-3" /> 新建客户
-                          </Button>
-                        </div>
-                      )}
-                      <Separator />
-                      {/* General actions */}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                        onClick={() => {
-                          if (selectedComment.commenterName) {
-                            setCustomerSearchName(selectedComment.commenterName);
-                          }
-                        }}
-                      >
-                        <Search className="h-3 w-3" />
-                        搜索客户
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                        onClick={() => {
-                          if (selectedComment.commenterName) {
-                            navigator.clipboard.writeText(selectedComment.commenterName);
-                            toast.success("客户名称已复制");
-                          }
-                        }}
-                      >
-                        <Copy className="h-3 w-3" />
-                        复制名称
-                      </Button>
-                      {selectedComment.orderNumber && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-2"
-                          onClick={() => {
-                            navigator.clipboard.writeText(selectedComment.orderNumber);
-                            toast.success("订单号已复制");
-                          }}
-                        >
-                          <Copy className="h-3 w-3" />
-                          复制订单号
-                        </Button>
-                      )}
-                      {!selectedComment.isHandled && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-2"
-                          onClick={() => {
-                            markCommentHandledMutation.mutate({ commentId: selectedComment.id });
-                            setSelectedComment({ ...selectedComment, isHandled: true });
-                          }}
-                        >
-                          <CheckCircle2 className="h-3 w-3" />
-                          标记已处理
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardContent className="p-8 text-center text-muted-foreground">
-                    <User className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">点击留言头像查看客户信息</p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* Tab: Live Orders */}
-        <TabsContent value="orders">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                直播订单
-                {liveOrders.length > 0 && (
-                  <Badge variant="secondary" className="text-xs">{liveOrders.length}</Badge>
-                )}
-              </h2>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={orderViewMode === "byCustomer" ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setOrderViewMode("byCustomer")}
-                >
-                  按客户
-                </Button>
-                <Button
-                  variant={orderViewMode === "byProduct" ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setOrderViewMode("byProduct")}
-                >
-                  按商品
-                </Button>
-              </div>
-            </div>
-            {liveOrdersQuery.isLoading ? (
-              <Card><CardContent className="p-4 text-center text-muted-foreground">加载中...</CardContent></Card>
-            ) : liveOrders.length === 0 ? (
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-center py-8 text-muted-foreground">
-                    <ShoppingCart className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">暂无直播订单</p>
-                    <p className="text-xs mt-1">客户在 Facebook 直播留言后，捉单订单会即时出现在这里</p>
+                    ) : (
+                      liveProductGroups.map((group: any) => (
+                        <ProductGroupCard
+                          key={group.productId}
+                          group={group}
+                          isLive={isLive}
+                          onStatusChange={handleStatusChange}
+                          onTogglePreorder={(id: number, val: boolean) => togglePreorderMutation.mutate({ id, allowPreorder: val })}
+                          onAdjustStock={openStockDialog}
+                          onDelete={(id: number) => deleteProductMutation.mutate({ id })}
+                          onCopyKeyword={handleCopyKeyword}
+                        />
+                      ))
+                    )}
                   </div>
-                </CardContent>
-              </Card>
-            ) : orderViewMode === "byCustomer" ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {liveOrders.map((order: any, idx: number) => (
-                  <Card key={idx} className="overflow-hidden">
-                    <CardContent className="p-3">
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="min-w-0">
-                          <p className="font-medium text-sm truncate">{order.customerName || order.facebookName || "未知客户"}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {order.captureTime ? new Date(order.captureTime).toLocaleTimeString("zh-CN") : ""}
-                          </p>
-                        </div>
-                        <span className="text-sm font-bold text-green-600 flex-shrink-0">
-                          RM{Number(order.totalAmount || 0).toFixed(2)}
-                        </span>
-                      </div>
-                      <div className="space-y-1">
-                        {(order.items || []).map((item: any, i: number) => (
-                          <div key={i} className="flex justify-between text-xs text-muted-foreground">
-                            <span className="truncate">{item.productName} x{item.quantity}</span>
-                            <span className="flex-shrink-0">RM{Number(item.subtotal || 0).toFixed(2)}</span>
-                          </div>
-                        ))}
-                      </div>
-                      {order.captureMessage && (
-                        <p className="text-xs text-muted-foreground mt-2 pt-2 border-t italic">
-                          "{order.captureMessage}"
-                        </p>
-                      )}
-                      <div className="flex gap-1 mt-2 pt-2 border-t">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-xs gap-1"
-                          onClick={() => {
-                            window.open(`/orders/${order.id}`, "_blank");
-                          }}
-                        >
-                          <Eye className="h-3 w-3" /> 查看详情
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-xs gap-1"
-                          onClick={() => {
-                            window.open(`/orders/${order.id}`, "_blank");
-                          }}
-                        >
-                          <Edit className="h-3 w-3" /> 编辑
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              /* By Product view */
-              <div className="space-y-3">
-                {liveProducts.map((p: any) => {
-                  const productOrders = liveOrders.filter((o: any) =>
-                    (o.items || []).some((item: any) =>
-                      item.productName === p.displayName || item.productId === p.productId
-                    )
-                  );
-                  if (productOrders.length === 0) return null;
-                  return (
-                    <Card key={p.id}>
-                      <CardHeader className="pb-2">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-sm flex items-center gap-2">
-                            {p.imageUrl && <img src={p.imageUrl} alt="" className="w-6 h-6 rounded" />}
-                            {p.displayName}
-                            <Badge variant="outline" className="text-xs">{productOrders.length} 单</Badge>
-                          </CardTitle>
-                          <span className="text-sm font-bold text-green-600">
-                            {productOrders.reduce((sum: number, o: any) => {
-                              const item = (o.items || []).find((i: any) => i.productName === p.displayName || i.productId === p.productId);
-                              return sum + (item?.quantity || 0);
-                            }, 0)} 件
-                          </span>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="pt-0">
-                        <div className="space-y-1">
-                          {productOrders.map((o: any, i: number) => {
-                            const item = (o.items || []).find((i: any) => i.productName === p.displayName || i.productId === p.productId);
-                            return (
-                              <div key={i} className="flex items-center justify-between text-xs py-1 border-b last:border-b-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium">{o.customerName || o.facebookName || "未知"}</span>
-                                  <span className="text-muted-foreground">x{item?.quantity || 0}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground">{o.orderNumber}</span>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-5 text-xs"
-                                    onClick={() => window.open(`/orders/${o.id}`, "_blank")}
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </TabsContent>
-
-        {/* Tab: Live Report */}
-        <TabsContent value="report">
-          <div className="space-y-4">
-            {/* Report stats cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <MessageSquare className="h-4 w-4 text-blue-500" />
-                    <p className="text-sm text-muted-foreground">总留言数</p>
-                  </div>
-                  <p className="text-2xl font-bold">{report.totalComments || 0}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    <p className="text-sm text-muted-foreground">有效关键词数</p>
-                  </div>
-                  <p className="text-2xl font-bold text-green-600">{report.matchedComments || 0}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <ShoppingCart className="h-4 w-4 text-orange-500" />
-                    <p className="text-sm text-muted-foreground">捉单数</p>
-                  </div>
-                  <p className="text-2xl font-bold">{report.captureCount || 0}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <DollarSign className="h-4 w-4 text-emerald-500" />
-                    <p className="text-sm text-muted-foreground">销售额</p>
-                  </div>
-                  <p className="text-2xl font-bold text-emerald-600">RM{Number(report.totalRevenue || 0).toFixed(2)}</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Second row: orders + items */}
-            <div className="grid grid-cols-3 gap-3">
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <p className="text-sm text-muted-foreground">订单数</p>
-                  <p className="text-xl font-bold">{report.totalOrders || 0}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <p className="text-sm text-muted-foreground">商品件数</p>
-                  <p className="text-xl font-bold">{report.totalItems || 0}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <p className="text-sm text-muted-foreground">客单价</p>
-                  <p className="text-xl font-bold">{(report.totalOrders > 0) ? `RM${(Number(report.totalRevenue || 0) / report.totalOrders).toFixed(2)}` : "—"}</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Order status summary */}
-            <div className="grid grid-cols-3 gap-3">
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <p className="text-sm text-muted-foreground">已付款</p>
-                  <p className="text-xl font-bold text-green-600">{report.paidOrders || 0}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <p className="text-sm text-muted-foreground">已取消</p>
-                  <p className="text-xl font-bold text-red-600">{report.cancelledOrders || 0}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <p className="text-sm text-muted-foreground">已退款</p>
-                  <p className="text-xl font-bold text-orange-600">{report.refundedOrders || 0}</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Messenger stats */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Send className="h-4 w-4" />
-                  Messenger 发送统计
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-3 gap-4 text-center">
-                  <div>
-                    <p className="text-sm text-muted-foreground">已发送</p>
-                    <p className="text-xl font-bold text-green-600">{report.messengerSent || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">发送失败</p>
-                    <p className="text-xl font-bold text-red-600">{report.messengerFailed || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">成功率</p>
-                    <p className="text-xl font-bold">
-                      {((report.messengerSent || 0) + (report.messengerFailed || 0)) > 0
-                        ? `${Math.round((report.messengerSent / ((report.messengerSent || 0) + (report.messengerFailed || 0))) * 100)}%`
-                        : "—"}
-                    </p>
-                  </div>
-                </div>
+                </ScrollArea>
               </CardContent>
             </Card>
 
-            {/* New customers */}
-            <Card>
-              <CardContent className="p-4 flex items-center gap-3">
-                <Users className="h-8 w-8 text-blue-500" />
-                <div>
-                  <p className="text-sm text-muted-foreground">新客户数（首次在此直播下单）</p>
-                  <p className="text-xl font-bold">{report.newCustomers || 0}</p>
+            {/* Region 3: Comments Area */}
+            <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
+              <CardHeader className="pb-2 py-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4" /> 留言区
+                    {commentStatsMap["matched"] > 0 && (
+                      <Badge variant="secondary" className="text-xs">{commentStatsMap["matched"]}</Badge>
+                    )}
+                  </CardTitle>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Product sales ranking */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" />
-                  热卖商品排行
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {(report.productSales && report.productSales.length > 0) ? (
-                  <div className="space-y-2">
-                    {report.productSales.map((p: any, idx: number) => (
-                      <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <span className="text-lg font-bold text-muted-foreground w-6">#{idx + 1}</span>
-                          <div>
-                            <p className="font-medium text-sm">{p.productName}</p>
-                            <p className="text-xs text-muted-foreground">关键词: {p.keyword}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-sm">{p.orderedCount || 0} 件</p>
-                          <p className="text-xs text-green-600">RM{Number(p.revenue || 0).toFixed(2)}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-6 text-muted-foreground">
-                    <ShoppingBag className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">暂无销售数据</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      {/* Add Product Dialog */}
-      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>加入直播商品</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            {/* Mode toggle: single vs batch */}
-            <div className="flex items-center gap-2">
-              <Button
-                variant={!batchAddMode ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => { setBatchAddMode(false); setBatchSelectedIds([]); }}
-              >
-                单个添加
-              </Button>
-              <Button
-                variant={batchAddMode ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => { setBatchAddMode(true); setNewProduct({ productId: "", variationId: "", keyword: "", displayName: "", price: "", stock: 0 }); }}
-              >
-                批量添加
-              </Button>
-            </div>
-
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Input
-                  value={productSearchQuery}
-                  onChange={(e) => setProductSearchQuery(e.target.value)}
-                  placeholder="输入商品名称、SKU 或关键词搜索..."
-                  className="flex-1"
-                />
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger className="w-32"><SelectValue placeholder="分类" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部分类</SelectItem>
-                    {(categoriesQuery.data || []).map((c: any) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {productSearchQuery && productSearchResults.data && productSearchResults.data.length > 0 && (
-                <div className="border rounded-lg max-h-48 overflow-y-auto">
-                  {productSearchResults.data.map((p: any) => (
-                    <div
-                      key={p.id}
-                      className={`flex items-center justify-between p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 ${
-                        batchAddMode && batchSelectedIds.includes(p.id) ? "bg-primary/10" : ""
-                      }`}
-                      onClick={() => {
-                        if (batchAddMode) {
-                          // Toggle selection in batch mode
-                          if (batchSelectedIds.includes(p.id)) {
-                            setBatchSelectedIds(batchSelectedIds.filter(id => id !== p.id));
-                            const next = { ...batchSelectedProducts };
-                            delete next[p.id];
-                            setBatchSelectedProducts(next);
-                          } else {
-                            setBatchSelectedIds([...batchSelectedIds, p.id]);
-                            setBatchSelectedProducts({ ...batchSelectedProducts, [p.id]: p });
-                          }
-                        } else {
-                          setNewProduct({
-                            ...newProduct,
-                            productId: String(p.id),
-                            displayName: p.name,
-                            price: String(p.sellingPrice || ""),
-                            stock: Number(p.stockQuantity || 0),
-                            keyword: p.keyword || "",
-                          });
-                          setProductSearchQuery("");
-                        }
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        {batchAddMode && (
-                          <input
-                            type="checkbox"
-                            checked={batchSelectedIds.includes(p.id)}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              if (batchSelectedIds.includes(p.id)) {
-                                setBatchSelectedIds(batchSelectedIds.filter(id => id !== p.id));
-                                const next = { ...batchSelectedProducts };
-                                delete next[p.id];
-                                setBatchSelectedProducts(next);
-                              } else {
-                                setBatchSelectedIds([...batchSelectedIds, p.id]);
-                                setBatchSelectedProducts({ ...batchSelectedProducts, [p.id]: p });
-                              }
-                            }}
-                            className="h-4 w-4"
-                          />
-                        )}
-                        {p.coverImageUrl && (
-                          <img src={p.coverImageUrl} alt="" className="w-8 h-8 rounded object-cover" />
-                        )}
-                        <div>
-                          <p className="text-sm font-medium">{p.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            SKU: {p.sku} · {p.hasVariants ? "有规格" : "无规格"}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-sm font-medium">RM{Number(p.sellingPrice || 0).toFixed(0)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {productSearchQuery && productSearchResults.data && productSearchResults.data.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">未找到匹配的商品</p>
-              )}
-            </div>
-
-            {/* Batch mode: show selected count and batch options */}
-            {batchAddMode && batchSelectedIds.length > 0 && (
-              <div className="p-3 border rounded-lg bg-muted/30 space-y-3">
-                <p className="text-sm font-medium">已选择 {batchSelectedIds.length} 个商品</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>统一关键词前缀（可选）</Label>
+                {/* Search + Filter */}
+                <div className="space-y-1.5 mt-2">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                     <Input
-                      value={batchAddKeyword}
-                      onChange={(e) => setBatchAddKeyword(e.target.value.toUpperCase().replace(/\s+/g, ""))}
-                      placeholder="例如: PRR"
+                      placeholder="搜索客户/内容/关键词/商品..."
+                      value={commentSearch}
+                      onChange={e => setCommentSearch(e.target.value)}
+                      className="h-7 text-xs pl-7"
                     />
                   </div>
-                  <div>
-                    <Label>售价模式</Label>
-                    <Select value={batchAddPriceMode} onValueChange={(v) => setBatchAddPriceMode(v as any)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                  <div className="flex gap-1">
+                    <Select value={commentFilter} onValueChange={setCommentFilter}>
+                      <SelectTrigger className="h-6 text-xs flex-1"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="original">使用原价</SelectItem>
-                        <SelectItem value="custom">统一自定义价</SelectItem>
+                        <SelectItem value="all">全部状态</SelectItem>
+                        <SelectItem value="matched">已捉单</SelectItem>
+                        <SelectItem value="no_match">未匹配</SelectItem>
+                        <SelectItem value="sold_out">已售完</SelectItem>
+                        <SelectItem value="paused">暂停中</SelectItem>
+                        <SelectItem value="preorder">预购</SelectItem>
+                        <SelectItem value="order_merged">已合单</SelectItem>
+                        <SelectItem value="messenger_failed">私聊失败</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  {batchAddPriceMode === "custom" && (
-                    <div>
-                      <Label>统一售价</Label>
-                      <Input type="number" value={batchAddPrice} onChange={(e) => setBatchAddPrice(e.target.value)} placeholder="RM" />
-                    </div>
-                  )}
                 </div>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-hidden p-0">
+                <ScrollArea className="h-full" style={{ height: "calc(100vh - 380px)" }}>
+                  <div className="p-2 space-y-1">
+                    {filteredComments.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-xs">暂无留言</p>
+                      </div>
+                    ) : (
+                      filteredComments.map((comment: any) => (
+                        <CommentRow
+                          key={comment.id}
+                          comment={comment}
+                          onClick={() => setSelectedComment(comment)}
+                          onMarkHandled={() => markCommentHandledMutation.mutate({ commentId: comment.id })}
+                        />
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            {/* Region 4: Orders Area */}
+            <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
+              <CardHeader className="pb-2 py-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <ShoppingCart className="h-4 w-4" /> 订单区
+                  </CardTitle>
+                  <div className="flex gap-1">
+                    <Button
+                      variant={orderViewMode === "byCustomer" ? "default" : "outline"}
+                      size="sm" className="h-6 text-xs px-2"
+                      onClick={() => setOrderViewMode("byCustomer")}>
+                      按客户
+                    </Button>
+                    <Button
+                      variant={orderViewMode === "byProduct" ? "default" : "outline"}
+                      size="sm" className="h-6 text-xs px-2"
+                      onClick={() => setOrderViewMode("byProduct")}>
+                      按商品
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-hidden p-0">
+                <ScrollArea className="h-full" style={{ height: "calc(100vh - 320px)" }}>
+                  <div className="p-2 space-y-1.5">
+                    {orderViewMode === "byCustomer" ? (
+                      liveOrders.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                          <p className="text-xs">暂无订单</p>
+                        </div>
+                      ) : (
+                        liveOrders.map((order: any) => (
+                          <OrderRow key={order.orderId} order={order} />
+                        ))
+                      )
+                    ) : (
+                      ordersByProduct.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Layers className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                          <p className="text-xs">暂无商品订单</p>
+                        </div>
+                      ) : (
+                        ordersByProduct.map((item: any, idx: number) => (
+                          <ProductOrderRow key={idx} item={item} />
+                        ))
+                      )
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
+
+      {/* Add Products Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>加入商品到直播房</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-3">
+            {/* Search + Category Filter */}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="搜索商品名称/SKU/关键词..."
+                  value={productSearchQuery}
+                  onChange={e => setProductSearchQuery(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-40"><SelectValue placeholder="全部分类" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部分类</SelectItem>
+                  {(categoriesQuery.data || []).map((c: any) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  )) as any}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Batch settings */}
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <Label className="text-xs">关键词前缀（可选）</Label>
+                <Input
+                  placeholder="统一关键词前缀"
+                  value={batchAddKeyword}
+                  onChange={e => setBatchAddKeyword(e.target.value)}
+                  className="h-8"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">价格模式</Label>
+                <Select value={batchAddPriceMode} onValueChange={(v) => setBatchAddPriceMode(v as any)}>
+                  <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="original">原价</SelectItem>
+                    <SelectItem value="custom">自定义价</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {batchAddPriceMode === "custom" && (
+                <div>
+                  <Label className="text-xs">价格</Label>
+                  <Input
+                    type="number"
+                    placeholder="RM"
+                    value={batchAddPrice}
+                    onChange={e => setBatchAddPrice(e.target.value)}
+                    className="h-8 w-24"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Search results */}
+            {productSearchQuery.length > 0 && (
+              <div className="border rounded-lg max-h-[300px] overflow-y-auto">
+                {(productSearchResults.data || []).length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">未找到商品</div>
+                ) : (
+                  (productSearchResults.data || []).map((p: any) => (
+                    <div
+                      key={p.id}
+                      className={`flex items-center gap-3 p-2 border-b cursor-pointer hover:bg-muted/50 ${batchSelectedIds.includes(p.id) ? "bg-primary/5" : ""}`}
+                      onClick={() => toggleBatchSelection(p)}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={batchSelectedIds.includes(p.id)}
+                        onChange={() => {}}
+                        className="h-4 w-4"
+                      />
+                      {p.coverImageUrl && (
+                        <img src={p.coverImageUrl} alt="" className="h-10 w-10 rounded object-cover" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{p.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          SKU: {p.sku || "-"} · 库存: {p.stockQuantity || 0} · {p.hasVariants ? "有规格" : "无规格"}
+                        </p>
+                      </div>
+                      <span className="text-sm font-medium">RM{Number(p.sellingPrice || 0).toFixed(2)}</span>
+                    </div>
+                  ))
+                )}
               </div>
             )}
 
-            {/* Single mode: show selected product and form */}
-            {!batchAddMode && newProduct.productId && (
-              <div className="p-3 border rounded-lg bg-muted/30">
-                <p className="text-sm font-medium">已选择: {newProduct.displayName}</p>
+            {/* Selected products summary */}
+            {batchSelectedIds.length > 0 && (
+              <div className="text-sm text-muted-foreground">
+                已选 {batchSelectedIds.length} 个商品
               </div>
             )}
-            {!batchAddMode && newProduct.productId && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>关键词 *</Label>
-                  <Input value={newProduct.keyword} onChange={(e) => setNewProduct({ ...newProduct, keyword: e.target.value.toUpperCase().replace(/\s+/g, "") })} placeholder="例如: PRR" />
-                </div>
-                <div>
-                  <Label>显示名称 *</Label>
-                  <Input value={newProduct.displayName} onChange={(e) => setNewProduct({ ...newProduct, displayName: e.target.value })} placeholder="商品名称" />
-                </div>
-                <div>
-                  <Label>售价 *</Label>
-                  <Input type="number" value={newProduct.price} onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })} placeholder="RM" />
-                </div>
-                <div>
-                  <Label>库存</Label>
-                  <Input type="number" value={newProduct.stock} onChange={(e) => setNewProduct({ ...newProduct, stock: Number(e.target.value) })} />
-                </div>
-              </div>
-            )}
-            {newProduct.productId && (
-              <div className="p-3 border rounded-lg bg-muted/30">
-                <p className="text-sm font-medium">已选择: {newProduct.displayName}</p>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>关键词 *</Label>
-                <Input value={newProduct.keyword} onChange={(e) => setNewProduct({ ...newProduct, keyword: e.target.value.toUpperCase().replace(/\s+/g, "") })} placeholder="例如: PRR" />
-              </div>
-              <div>
-                <Label>显示名称 *</Label>
-                <Input value={newProduct.displayName} onChange={(e) => setNewProduct({ ...newProduct, displayName: e.target.value })} placeholder="商品名称" />
-              </div>
-              <div>
-                <Label>售价 *</Label>
-                <Input type="number" value={newProduct.price} onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })} placeholder="RM" />
-              </div>
-              <div>
-                <Label>库存</Label>
-                <Input type="number" value={newProduct.stock} onChange={(e) => setNewProduct({ ...newProduct, stock: Number(e.target.value) })} />
-              </div>
-            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setAddDialogOpen(false); setBatchAddMode(false); setBatchSelectedIds([]); }}>取消</Button>
-            {batchAddMode ? (
-              <Button
-                onClick={() => {
-                  if (batchSelectedIds.length === 0) {
-                    toast.error("请先选择商品");
-                    return;
-                  }
-                  const items = batchSelectedIds.map((pid, idx) => {
-                    const p = batchSelectedProducts[pid];
-                    if (!p) return null;
-                    return {
-                      productId: p.id,
-                      keyword: batchAddKeyword ? `${batchAddKeyword}${idx + 1}` : (p.keyword || `P${idx + 1}`),
-                      displayName: p.name,
-                      price: batchAddPriceMode === "custom" ? Number(batchAddPrice || 0) : Number(p.sellingPrice || 0),
-                      stock: Number(p.stockQuantity || 0),
-                      imageUrl: p.coverImageUrl || undefined,
-                    };
-                  }).filter(Boolean) as any[];
-                  if (items.length === 0) {
-                    toast.error("所选商品数据不完整");
-                    return;
-                  }
-                  batchAddMutation.mutate({ liveRoomId: roomId, items });
-                }}
-                disabled={batchAddMutation.isPending || batchSelectedIds.length === 0}
-              >
-                批量加入 ({batchSelectedIds.length})
-              </Button>
-            ) : (
-              <Button onClick={handleAddProduct} disabled={addProductMutation.isPending}>加入</Button>
-            )}
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>取消</Button>
+            <Button onClick={handleBatchSubmit} disabled={batchAddMutation.isPending || batchSelectedIds.length === 0}>
+              批量加入 ({batchSelectedIds.length})
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Stock Adjustment Dialog */}
       <Dialog open={stockDialogOpen} onOpenChange={setStockDialogOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>调整库存</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-3 py-3">
             <div>
               <Label>数量变化（正数增加，负数减少）</Label>
               <Input
                 type="number"
                 value={stockForm.quantityChange}
-                onChange={(e) => setStockForm({ ...stockForm, quantityChange: Number(e.target.value) })}
+                onChange={e => setStockForm({ ...stockForm, quantityChange: Number(e.target.value) })}
               />
             </div>
-            {stockForm.quantityChange < 0 && (
-              <div>
-                <Label>减少原因</Label>
-                <Select value={stockForm.reason} onValueChange={(v) => setStockForm({ ...stockForm, reason: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="plant_death">死亡</SelectItem>
-                    <SelectItem value="human_damage">损坏</SelectItem>
-                    <SelectItem value="quality_issue">展示品</SelectItem>
-                    <SelectItem value="other">其他</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div>
+              <Label>原因</Label>
+              <Select value={stockForm.reason} onValueChange={v => setStockForm({ ...stockForm, reason: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="other">其他</SelectItem>
+                  <SelectItem value="damaged">损坏</SelectItem>
+                  <SelectItem value="scrap">报废</SelectItem>
+                  <SelectItem value="restock">补货</SelectItem>
+                  <SelectItem value="correction">库存修正</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStockDialogOpen(false)}>取消</Button>
             <Button
-              onClick={() => stockProductId && adjustStockMutation.mutate({ id: stockProductId, ...stockForm })}
-              disabled={adjustStockMutation.isPending || stockForm.quantityChange === 0}
-            >
+              onClick={() => {
+                if (stockProductId && stockForm.quantityChange !== 0) {
+                  adjustStockMutation.mutate({ id: stockProductId, quantityChange: stockForm.quantityChange, reason: stockForm.reason });
+                }
+              }}
+              disabled={adjustStockMutation.isPending || stockForm.quantityChange === 0}>
               确认调整
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* End Live Confirmation Dialog */}
+      {/* End Live Confirmation */}
       <Dialog open={endLiveConfirmOpen} onOpenChange={setEndLiveConfirmOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>确认结束直播？</DialogTitle>
           </DialogHeader>
-          <div className="py-4 space-y-2 text-sm text-muted-foreground">
-            <p>结束直播后将停止捉单，不再自动匹配留言创建订单。</p>
-            <p>已创建的订单不受影响，可在订单管理中继续处理。</p>
-            <p>结束后可查看完整直播报告。</p>
+          <div className="py-3 text-sm text-muted-foreground">
+            结束后将停止捉单，所有订单将自动整理。客户将收到结单通知。
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEndLiveConfirmOpen(false)}>取消</Button>
@@ -1728,6 +790,289 @@ export default function LiveRoomDetail(props: any) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Comment Detail Dialog */}
+      {selectedComment && (
+        <Dialog open={!!selectedComment} onOpenChange={(open) => !open && setSelectedComment(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>留言详情</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-3">
+              <div className="flex items-center gap-2">
+                <Avatar className="h-8 w-8"><AvatarFallback className="text-xs">{(selectedComment.commenterName || "?").charAt(0)}</AvatarFallback></Avatar>
+                <div>
+                  <p className="text-sm font-medium">{selectedComment.commenterName}</p>
+                  <p className="text-xs text-muted-foreground">{new Date(selectedComment.createdAt).toLocaleString("zh-CN")}</p>
+                </div>
+              </div>
+              <div className="bg-muted/50 rounded p-2 text-sm">{selectedComment.commentMessage}</div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div><span className="text-muted-foreground">关键词:</span> {selectedComment.parsedKeyword || "-"}</div>
+                <div><span className="text-muted-foreground">数量:</span> {selectedComment.parsedQuantity || "-"}</div>
+                <div><span className="text-muted-foreground">匹配结果:</span>
+                  <span className={`ml-1 inline-flex px-1.5 py-0.5 rounded text-xs ${matchResultColors[selectedComment.matchResult] || ""}`}>
+                    {matchResultLabels[selectedComment.matchResult] || selectedComment.matchResult}
+                  </span>
+                </div>
+                <div><span className="text-muted-foreground">商品:</span> {selectedComment.matchedProductName || "-"}</div>
+                {selectedComment.orderNumber && (
+                  <div className="col-span-2"><span className="text-muted-foreground">订单号:</span> {selectedComment.orderNumber}</div>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              {!selectedComment.isHandled && (
+                <Button variant="outline" size="sm" className="gap-1"
+                  onClick={() => { markCommentHandledMutation.mutate({ commentId: selectedComment.id }); setSelectedComment(null); }}>
+                  <CheckCircle2 className="h-4 w-4" /> 标记已处理
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={() => setSelectedComment(null)}>关闭</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+// ============ Sub Components ============
+
+function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onAdjustStock, onDelete, onCopyKeyword }: any) {
+  const variations = group.variations || [];
+  const hasMultiple = variations.length > 1;
+  const totalOrdered = variations.reduce((sum: number, v: any) => sum + (v.orderedCount || 0), 0);
+  const totalAvailable = variations.reduce((sum: number, v: any) => sum + (v.availableStock || 0), 0);
+
+  return (
+    <Card className="overflow-hidden">
+      <CardContent className="p-2.5">
+        {/* Product header */}
+        <div className="flex items-start gap-2">
+          {(group.coverImageUrl || variations[0]?.imageUrl) && (
+            <img src={group.coverImageUrl || variations[0]?.imageUrl} alt="" className="h-12 w-12 rounded object-cover flex-shrink-0" />
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{group.productName}</p>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+              <span>已喊: {totalOrdered}</span>
+              <span>剩余: {totalAvailable}</span>
+              {hasMultiple && <Badge variant="outline" className="text-xs">{variations.length} 规格</Badge>}
+            </div>
+          </div>
+        </div>
+
+        <Separator className="my-2" />
+
+        {/* Variation rows */}
+        <div className="space-y-1.5">
+          {variations.map((v: any) => (
+            <div key={v.id} className="flex items-center gap-2 text-xs">
+              {/* Spec image */}
+              {v.specImage && (
+                <img src={v.specImage} alt="" className="h-8 w-8 rounded object-cover flex-shrink-0" />
+              )}
+              {/* Info */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1">
+                  <span className="font-medium truncate">{v.displayName}</span>
+                  <span className={`inline-flex px-1 py-0.5 rounded text-xs ${productStatusColors[v.status] || ""}`}>
+                    {productStatusLabels[v.status] || v.status}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-muted-foreground mt-0.5">
+                  <span>关键词: <code className="text-xs bg-muted px-1 rounded">{v.keyword}</code></span>
+                  <span>RM{Number(v.price || 0).toFixed(2)}</span>
+                  <span>库: {v.availableStock}</span>
+                  <span>喊: {v.orderedCount}</span>
+                  {v.allowPreorder && <Badge className="bg-blue-100 text-blue-700 text-xs">预购</Badge>}
+                  {v.preorderCount > 0 && <span className="text-blue-600">预:{v.preorderCount}</span>}
+                </div>
+              </div>
+              {/* Actions */}
+              <div className="flex items-center gap-0.5 flex-shrink-0">
+                {isLive && (
+                  <>
+                    {v.status === "active" && (
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="暂停捉单"
+                        onClick={() => onStatusChange(v.id, "paused")}>
+                        <Pause className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {v.status === "paused" && (
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="恢复捉单"
+                        onClick={() => onStatusChange(v.id, "active")}>
+                        <Play className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {v.status !== "sold_out" && (
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="标记售完"
+                        onClick={() => onStatusChange(v.id, "sold_out")}>
+                        <XCircle className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </>
+                )}
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="调整库存"
+                  onClick={() => onAdjustStock(v.id)}>
+                  <Edit className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="复制关键词文案"
+                  onClick={() => onCopyKeyword(v.id)}>
+                  <Copy className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="删除"
+                  onClick={() => onDelete(v.id)}>
+                  <Trash2 className="h-3 w-3 text-destructive" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Preorder toggle for single-variation products */}
+        {variations.length === 1 && (
+          <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+            <Switch
+              checked={variations[0].allowPreorder}
+              onCheckedChange={(val) => onTogglePreorder(variations[0].id, val)}
+              className="scale-75"
+            />
+            <span className="text-xs text-muted-foreground">允许预购（库存到0后可继续捉单）</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CommentRow({ comment, onClick, onMarkHandled }: any) {
+  return (
+    <div
+      className={`flex items-start gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer ${comment.isHandled ? "opacity-60" : ""}`}
+      onClick={onClick}
+    >
+      <Avatar className="h-6 w-6 flex-shrink-0">
+        <AvatarFallback className="text-xs">{(comment.commenterName || "?").charAt(0)}</AvatarFallback>
+      </Avatar>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1">
+          <span className="text-xs font-medium truncate">{comment.commenterName}</span>
+          <span className={`inline-flex px-1 py-0.5 rounded text-xs ${matchResultColors[comment.matchResult] || ""}`}>
+            {matchResultLabels[comment.matchResult] || comment.matchResult}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground truncate">{comment.commentMessage}</p>
+        {comment.matchedProductName && (
+          <p className="text-xs text-blue-600 truncate">→ {comment.matchedProductName} {comment.orderNumber && `· ${comment.orderNumber}`}</p>
+        )}
+      </div>
+      {!comment.isHandled && comment.matchResult === "matched" && (
+        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 flex-shrink-0" onClick={(e) => { e.stopPropagation(); onMarkHandled(); }}>
+          <CheckCircle2 className="h-3 w-3" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function OrderRow({ order }: any) {
+  return (
+    <div className="p-2 rounded border bg-card hover:bg-muted/50 transition-colors">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium">{order.orderNumber}</span>
+        <Badge variant="outline" className="text-xs">{order.physicalStatus}</Badge>
+      </div>
+      <div className="text-xs text-muted-foreground mt-0.5">
+        {order.customerName || order.facebookName || "未知客户"}
+      </div>
+      <div className="text-xs mt-0.5">
+        {order.items?.map((item: any, idx: number) => (
+          <span key={idx} className="text-muted-foreground">
+            {item.productName}{item.variationName ? ` (${item.variationName})` : ""} x{item.quantity}
+            {idx < order.items.length - 1 ? ", " : ""}
+          </span>
+        ))}
+      </div>
+      <div className="flex items-center justify-between mt-1">
+        <span className="text-xs font-medium">RM{Number(order.totalAmount || 0).toFixed(2)}</span>
+        {order.paymentStatus && (
+          <Badge variant={order.paymentStatus === "paid" ? "default" : "secondary"} className="text-xs">
+            {order.paymentStatus}
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProductOrderRow({ item }: any) {
+  return (
+    <div className="p-2 rounded border bg-card">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium truncate">{item.productName}</span>
+        <Badge variant="secondary" className="text-xs">x{item.totalQuantity}</Badge>
+      </div>
+      {item.variationName && (
+        <div className="text-xs text-muted-foreground">{item.variationName}</div>
+      )}
+      <div className="text-xs text-muted-foreground mt-0.5">
+        {item.orders.length} 笔订单 · {item.orders.filter((o: any) => o.paymentStatus === "paid").length} 已付
+      </div>
+    </div>
+  );
+}
+
+function ReportView({ report }: any) {
+  return (
+    <div className="space-y-3">
+      <h2 className="text-lg font-semibold flex items-center gap-2">
+        <BarChart3 className="h-5 w-5" /> 直播报告
+      </h2>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">总留言</p><p className="text-xl font-bold">{report.totalComments || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">有效关键词</p><p className="text-xl font-bold">{report.matchedComments || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">捉单数</p><p className="text-xl font-bold">{report.captureCount || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">订单数</p><p className="text-xl font-bold">{report.totalOrders || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">商品件数</p><p className="text-xl font-bold">{report.totalItems || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">销售额</p><p className="text-xl font-bold">RM{Number(report.totalRevenue || 0).toFixed(2)}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">已付款</p><p className="text-xl font-bold">{report.paidOrders || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">新客户</p><p className="text-xl font-bold">{report.newCustomers || 0}</p></CardContent></Card>
+      </div>
+
+      {/* Hot Products */}
+      {report.productSales && report.productSales.length > 0 && (
+        <Card>
+          <CardHeader className="py-2"><CardTitle className="text-sm flex items-center gap-2"><TrendingUp className="h-4 w-4" /> 热卖商品</CardTitle></CardHeader>
+          <CardContent className="p-2">
+            <div className="space-y-1">
+              {report.productSales.map((p: any, idx: number) => (
+                <div key={idx} className="flex items-center justify-between text-xs py-1 border-b last:border-0">
+                  <span className="font-medium">{idx + 1}. {p.productName} <code className="text-xs bg-muted px-1 rounded">{p.keyword}</code></span>
+                  <span className="text-muted-foreground">x{p.orderedCount} · RM{Number(p.revenue || 0).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Messenger Stats */}
+      <Card>
+        <CardHeader className="py-2"><CardTitle className="text-sm flex items-center gap-2"><Send className="h-4 w-4" /> Messenger 通知</CardTitle></CardHeader>
+        <CardContent className="p-3">
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div><p className="text-xs text-muted-foreground">已发送</p><p className="text-lg font-bold text-green-600">{report.messengerSent || 0}</p></div>
+            <div><p className="text-xs text-muted-foreground">发送失败</p><p className="text-lg font-bold text-red-600">{report.messengerFailed || 0}</p></div>
+            <div><p className="text-xs text-muted-foreground">成功率</p><p className="text-lg font-bold">
+              {report.messengerSent + report.messengerFailed > 0
+                ? Math.round((report.messengerSent / (report.messengerSent + report.messengerFailed)) * 100)
+                : 0}%
+            </p></div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
