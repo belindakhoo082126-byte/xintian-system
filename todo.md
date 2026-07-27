@@ -924,3 +924,9 @@
 - [x] Page 产品字段订阅：feed, live_videos, messages, messaging_postbacks, mention, message_deliveries, message_echoes, message_reads, messaging_optins, send_cart
 - [x] 修复 feed 分支评论处理：提取 processComment 共享函数，feed 字段 item=comment 时走评论捉单逻辑
 - [x] TypeScript 零错误 + 122 个测试全部通过
+
+## Dashboard Bug 修复 + UI 调整
+
+- [x] 修复 Dashboard 物流异常显示 1 但点击查询无数据 — getSpecialOrderFollowUpList 查询条件与 stats 不一致，将 incomplete_info 订单也纳入列表
+- [x] 修复 Dashboard 显示"暂无待跟进特别订单"但物流异常计数为 1 — 同一原因，修复后列表会显示客户资料不完整的订单
+- [x] 移除 Dashboard"最近备注记录"卡片（保留"订单备注（待处理）"）

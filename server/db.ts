@@ -6342,6 +6342,7 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
   const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
 
   // Get special orders that are pending, with customer info and last remark
+  // Also include orders with incomplete customer info (phone/address missing) that are not yet special orders
   const [rows] = await db.execute(sql`
     SELECT 
       o.id as order_id,
@@ -6367,9 +6368,16 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
        ORDER BY sa.createdAt DESC LIMIT 1) as last_handler
     FROM orders o
     LEFT JOIN customers c ON o.customerId = c.id
-    WHERE o.isSpecialOrder = 1
-      AND o.specialOrderStatus = 'pending'
-      AND o.physicalStatus != 'cancelled'
+    WHERE o.physicalStatus != 'cancelled'
+      AND (
+        -- Special orders that are pending
+        (o.isSpecialOrder = 1 AND o.specialOrderStatus = 'pending')
+        OR
+        -- Orders with incomplete customer info (counts as logistics error in stats)
+        (o.isSpecialOrder = 0 AND o.physicalStatus = 'pending'
+         AND (c.phoneNumber IS NULL OR c.phoneNumber = '' 
+              OR o.shippingAddress IS NULL OR o.shippingAddress = ''))
+      )
     ORDER BY o.createdAt ASC
     LIMIT ${limit}
   `);

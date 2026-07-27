@@ -5,7 +5,7 @@ import {
   Clock, Package, Truck, TrendingUp,
   ShoppingCart, Warehouse, Calendar, Bell,
   ShoppingBag, CheckCircle, XCircle, Ban,
-  MessageSquare, Bot, ArrowRight, AlertTriangle,
+  Bot, ArrowRight, AlertTriangle,
   Plane, Eye, Home, FileText, MessageCircle,
 } from "lucide-react";
 import { Link } from "wouter";
@@ -28,7 +28,7 @@ export default function Dashboard() {
   const { data: followUpList } = trpc.orders.followUpList.useQuery({ limit: 50 });
   const followUpDisplay = getFollowUpDisplayState(followUpStats, followUpList);
   const { data: pendingRemarks } = trpc.orderRemarks.pendingOrders.useQuery();
-  const { data: allRemarks } = trpc.orderRemarks.allWithOrder.useQuery({ limit: 50 });
+
 
   if (isLoading) {
     return (
@@ -99,7 +99,7 @@ export default function Dashboard() {
     { title: lang === "zh" ? "库存预警" : "Stock Alert", value: stats.row3.lowStock + stats.row3.outOfStock, icon: Warehouse, color: "text-red-500", link: "/products?stock=low" },
   ];
 
-  const recentRemarks = (stats as any).recentRemarks || [];
+
   const pendingNotifications = (stats as any).pendingNotifications || [];
   const pendingRemarkCount = (pendingRemarks as any)?.length || 0;
 
@@ -280,8 +280,8 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* AI Agent Pending Notifications + Recent Remarks side by side */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* AI Agent Pending Notifications */}
+      <div className="grid grid-cols-1 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center gap-2">
             <Bot className="h-5 w-5 text-orange-500" />
@@ -313,44 +313,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2">
-            <MessageSquare className="h-5 w-5 text-primary" />
-            <CardTitle className="text-base">{lang === "zh" ? "最近备注记录" : "Recent Remarks"}</CardTitle>
-            {recentRemarks.length > 0 && (
-              <Badge variant="secondary" className="ml-auto">{recentRemarks.length}</Badge>
-            )}
-          </CardHeader>
-          <CardContent className="space-y-2 max-h-[200px] overflow-y-auto">
-            {recentRemarks.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无备注记录" : "No recent remarks"}</p>
-            ) : (
-              recentRemarks.slice(0, 5).map((r: any) => {
-                const catInfo = REMARK_CATEGORY_LABELS[(r as any).remarkCategory] || null;
-                const typeLabel = catInfo
-                  ? (lang === "zh" ? catInfo.zh : catInfo.en)
-                  : (r.type === "live" ? (lang === "zh" ? "直播备注" : "Live") : r.type === "customer" ? (lang === "zh" ? "客户备注" : "Customer") : (lang === "zh" ? "内部备注" : "Internal"));
-                const typeColor = catInfo?.color || "bg-gray-100 text-gray-700";
-                return (
-                  <Link key={r.id} href={`/orders/${r.orderId}`}>
-                    <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
-                      <Badge className={`shrink-0 ${typeColor}`} variant="secondary">
-                        {typeLabel}
-                      </Badge>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm truncate">{r.content}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {r.orderNumber || `#${r.orderId}`} {r.facebookName ? `· ${r.facebookName}` : ""}
-                          {r.createdAt ? ` · ${new Date(r.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
-                        </p>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })
-            )}
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
