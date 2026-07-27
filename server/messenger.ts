@@ -350,225 +350,42 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
   console.log("[Facebook] Page feed event:", field);
 
   if (field === "feed") {
-    // New post on the page
+    // feed field covers posts, comments, shares, likes, reactions, etc.
+    // When item === "comment", the payload contains a comment event — process it as a comment
+    const item = value?.item;
     const postId = value?.post_id;
     const message = value?.message;
-    console.log("[Facebook] New post:", postId, message);
+
+    if (item === "comment") {
+      // Comment event delivered via feed field
+      // Normalize fields: feed payload uses slightly different field names than the legacy comments field
+      const commentId = value?.comment_id;
+      const commenterName = value?.from?.name;
+      const commenterPsid = value?.from?.id;
+      const commentMessage = value?.message;
+      console.log("[Facebook] New comment (via feed):", commenterName, ":", commentMessage, "on post:", postId);
+      await processComment({ commentId, commenterName, commenterPsid, commentMessage, postId });
+    } else {
+      // Other feed events (posts, shares, likes, etc.)
+      console.log("[Facebook] Feed event item:", item, "post:", postId, "message:", message);
+    }
   }
 
   if (field === "comments") {
-    // New comment on a post
+    // Legacy comments field (may still be delivered for some apps)
     const commentId = value?.comment_id;
     const commenterName = value?.from?.name;
     const commenterPsid = value?.from?.id; // Facebook sender ID
     const commentMessage = value?.message;
     const postId = value?.post_id;
 
-    console.log("[Facebook] New comment:", commenterName, ":", commentMessage, "on post:", postId);
+    console.log("[Facebook] New comment (via comments field):", commenterName, ":", commentMessage, "on post:", postId);
 
     // Auto-reply to comments + keyword matching for live order capture
     if (commentMessage) {
-      const lowerMsg = commentMessage.toLowerCase();
-
-      // Try AI Flow matching first (before keyword capture)
-      try {
-        const { matchLiveAiFlow } = require("./db");
-        const aiReply = await matchLiveAiFlow(commentMessage);
-        if (aiReply) {
-          // AI Flow matched — auto-reply and return (no order capture)
-          await replyToComment(commentId, aiReply);
-          console.log("[Facebook] AI Flow auto-reply sent for comment:", commentMessage);
-          return;
-        }
-      } catch (aiErr: any) {
-        console.log("[Facebook] AI Flow matching error:", aiErr?.message);
-      }
-
-      // Try keyword matching for live order capture (e.g. "ABS+2", "POT+1")
-      try {
-        const { parseCommentKeywords, matchKeywordsToProducts, createOrderFromLiveCapture, getLiveRooms, getLiveRoomProducts, recordLiveComment } = require("./db");
-        const keywords = parseCommentKeywords(commentMessage);
-        
-        if (keywords.length > 0) {
-          // Check if any live room is currently active (not closed)
-          // For import_preorder rooms, check if preorderEndDate has passed
-          let activeRoomId: number | null = null;
-          let activeRoom: any = null;
-          try {
-            const allRooms = await getLiveRooms({ status: 'live' });
-            const now = new Date();
-            const activeRooms = (allRooms || []).filter((r: any) => {
-              if (r.status === 'closed') return false;
-              if (r.status === 'ended') return false;
-              // For import_preorder, check preorder end date
-              if (r.liveType === 'import_preorder' && r.preorderEndDate) {
-                return new Date(r.preorderEndDate) > now;
-              }
-              return r.status === 'live';
-            });
-            if (activeRooms.length === 0) {
-              // No active live room — check preparing rooms (preparing = 准备中)
-              const preparingRooms = await getLiveRooms({ status: 'preparing' });
-              const activePreparing = (preparingRooms || []).filter((r: any) => {
-                if (r.liveType === 'import_preorder' && r.preorderEndDate) {
-                  return new Date(r.preorderEndDate) > now;
-                }
-                return true;
-              });
-              if (activePreparing.length === 0) {
-                console.log("[Facebook] No active live room, skipping capture");
-                return;
-              }
-              activeRoom = activePreparing[0];
-              activeRoomId = activePreparing[0].id;
-            } else {
-              activeRoom = activeRooms[0];
-              activeRoomId = activeRooms[0].id;
-            }
-          } catch (roomCheckErr: any) {
-            console.log("[Facebook] Live room check failed, continuing capture:", roomCheckErr?.message);
-          }
-          
-          // If we have an active live room, try to match only products in that room
-          let matched: any[] = [];
-          let unmatched: any[] = [];
-          if (activeRoomId) {
-            try {
-              const roomProductGroups = await getLiveRoomProducts(activeRoomId);
-              // Build keyword -> product map from live room products (now grouped by productId)
-              const roomProductMap = new Map();
-              for (const group of roomProductGroups) {
-                for (const rp of group.variations || [group]) {
-                  if (rp.status === 'paused') continue; // Skip paused products
-                  if (rp.status === 'sold_out' && !rp.allowPreorder) continue; // Skip sold out unless preorder allowed
-                  roomProductMap.set(rp.keyword.toUpperCase().replace(/\s+/g, ''), rp);
-                }
-              }
-              for (const kw of keywords) {
-                const upperKw = kw.keyword.toUpperCase().replace(/\s+/g, '');
-                const roomProduct = roomProductMap.get(upperKw);
-                if (roomProduct) {
-                  // Check stock
-                  if (roomProduct.availableStock <= 0 && !roomProduct.allowPreorder) {
-                    // Out of stock, don't create order
-                    unmatched.push({ keyword: kw.keyword, reason: 'sold_out' });
-                  } else {
-                    matched.push({
-                      keyword: kw.keyword,
-                      quantity: kw.quantity,
-                      productId: roomProduct.productId,
-                      productName: roomProduct.displayName,
-                      productSku: '',
-                      unitPrice: parseFloat(roomProduct.price),
-                      liveRoomProductId: roomProduct.id,
-                      isPreorder: roomProduct.availableStock <= 0 && roomProduct.allowPreorder,
-                    });
-                  }
-                } else {
-                  unmatched.push({ keyword: kw.keyword, reason: 'not_in_room' });
-                }
-              }
-              // Record live comment
-              try {
-                await recordLiveComment({
-                  liveRoomId: activeRoomId,
-                  commentId,
-                  commenterName,
-                  commenterPsid: commenterPsid || '',
-                  commentMessage,
-                  parsedKeyword: keywords.map((k: any) => k.keyword).join(', '),
-                  parsedQuantity: keywords.reduce((sum: number, k: any) => sum + k.quantity, 0),
-                  matchResult: matched.length > 0 ? 'matched' : (unmatched.some((u: any) => u.reason === 'sold_out') ? 'sold_out' : 'no_match'),
-                  matchedProductId: matched[0]?.productId,
-                  matchedProductName: matched[0]?.productName,
-                  matchedLiveRoomProductId: matched[0]?.liveRoomProductId,
-                  commentDate: new Date(),
-                });
-              } catch (recErr: any) {
-                console.log("[Facebook] Failed to record live comment:", recErr?.message);
-              }
-            } catch (roomProdErr: any) {
-              console.log("[Facebook] Failed to get live room products, falling back to global match:", roomProdErr?.message);
-              // Fall back to global keyword matching
-              const result = await matchKeywordsToProducts(keywords);
-              matched = result.matched;
-              unmatched = result.unmatched;
-            }
-          } else {
-            // No active room found, use global keyword matching (for non-live channels)
-            const result = await matchKeywordsToProducts(keywords);
-            matched = result.matched;
-            unmatched = result.unmatched;
-          }
-          
-          if (matched.length > 0) {
-            // Create order from matched products
-            const orderResult = await createOrderFromLiveCapture({
-              commenterName,
-              commentMessage,
-              commentId,
-              postId,
-              matchedProducts: matched.map((m: any) => ({
-                keyword: m.keyword,
-                quantity: m.quantity,
-                productId: m.productId,
-                productName: m.productName,
-                productSku: m.productSku,
-                unitPrice: m.unitPrice,
-              })),
-              sourceName: "Facebook Live",
-            });
-            
-            // Reply with order confirmation
-            const itemList = matched.map((m: any) => `${m.keyword}+${m.quantity}`).join(", ");
-            await replyToComment(
-              commentId,
-              `${commenterName} 您好！已自动建单 ✅\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请私信我们提供收货地址和付款方式哦~`
-            );
-            
-            // Also try to send Messenger message — layered notification strategy
-            try {
-              const isMerged = (orderResult as any).merged;
-              if (isMerged) {
-                // Subsequent capture: brief notification (high-frequency merge)
-                await sendTextMessage(commenterPsid || '', `${commenterName} 您好！已追加到订单 ${orderResult.orderNumber}\n新增: ${itemList}\n当前总额: RM ${orderResult.totalAmount}`);
-              } else {
-                // First capture: full notification with details
-                await sendTextMessage(commenterPsid || '', `您好 ${commenterName}！\n\n您的直播订单已创建：\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请提供以下信息完成订单：\n1. 收货地址\n2. 联系电话\n3. 付款方式`);
-              }
-            } catch (msgErr) {
-              console.log("[Facebook] Could not send Messenger message (expected if no PSID)");
-            }
-            
-            return; // Order created, skip generic replies
-          } else if (unmatched.length > 0) {
-            // Keywords found but no product match — do NOT reply for sold_out or no_match
-            // Per spec: 缺货留言不建单/不通知/不回复，后台保留未成立记录
-            const allSoldOut = unmatched.every((u: any) => u.reason === 'sold_out');
-            if (allSoldOut) {
-              // All sold out — silent, no reply
-              return;
-            }
-            // For other unmatched (not in room), also silent — record is already saved in live_comments
-            return;
-          }
-        }
-      } catch (kwError: any) {
-        console.error("[Facebook] Keyword matching error:", kwError?.message);
-        // Continue to generic replies
-      }
-
-      // Generic auto-replies (only if no keyword match was attempted)
-      if (lowerMsg.includes("要") || lowerMsg.includes("买") || lowerMsg.includes("下单")) {
-        await replyToComment(commentId, `${commenterName} 您好！已收到您的订单意向，请私信我们完成下单哦~`);
-      } else if (lowerMsg.includes("多少钱") || lowerMsg.includes("价格") || lowerMsg.includes("price")) {
-        await replyToComment(commentId, `${commenterName} 您好！请私信我们获取详细价格信息~`);
-      } else if (lowerMsg.includes("有货") || lowerMsg.includes("stock")) {
-        await replyToComment(commentId, `${commenterName} 您好！请私信我们确认库存情况~`);
-      }
+      await processComment({ commentId, commenterName, commenterPsid, commentMessage, postId });
     }
   }
-
   if (field === "live_videos") {
     // Live video status change
     const status = value?.status;
@@ -618,6 +435,196 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
         console.log("[Facebook] Auto-end live room failed:", (endErr as any)?.message);
       }
     }
+  }
+}
+
+/**
+ * Process a comment event — shared by feed (item=comment) and legacy comments field.
+ * Handles AI Flow matching, keyword capture for live orders, and generic auto-replies.
+ */
+async function processComment(params: {
+  commentId: string;
+  commenterName: string;
+  commenterPsid: string;
+  commentMessage: string;
+  postId: string;
+}): Promise<void> {
+  const { commentId, commenterName, commenterPsid, commentMessage, postId } = params;
+  const lowerMsg = commentMessage.toLowerCase();
+
+  // Try AI Flow matching first (before keyword capture)
+  try {
+    const { matchLiveAiFlow } = require("./db");
+    const aiReply = await matchLiveAiFlow(commentMessage);
+    if (aiReply) {
+      // AI Flow matched — auto-reply and return (no order capture)
+      await replyToComment(commentId, aiReply);
+      console.log("[Facebook] AI Flow auto-reply sent for comment:", commentMessage);
+      return;
+    }
+  } catch (aiErr: any) {
+    console.log("[Facebook] AI Flow matching error:", aiErr?.message);
+  }
+
+  // Try keyword matching for live order capture (e.g. "ABS+2", "POT+1")
+  try {
+    const { parseCommentKeywords, matchKeywordsToProducts, createOrderFromLiveCapture, getLiveRooms, getLiveRoomProducts, recordLiveComment } = require("./db");
+    const keywords = parseCommentKeywords(commentMessage);
+
+    if (keywords.length > 0) {
+      // Check if any live room is currently active (not closed)
+      let activeRoomId: number | null = null;
+      let activeRoom: any = null;
+      try {
+        const allRooms = await getLiveRooms({ status: 'live' });
+        const now = new Date();
+        const activeRooms = (allRooms || []).filter((r: any) => {
+          if (r.status === 'closed') return false;
+          if (r.status === 'ended') return false;
+          if (r.liveType === 'import_preorder' && r.preorderEndDate) {
+            return new Date(r.preorderEndDate) > now;
+          }
+          return r.status === 'live';
+        });
+        if (activeRooms.length === 0) {
+          const preparingRooms = await getLiveRooms({ status: 'preparing' });
+          const activePreparing = (preparingRooms || []).filter((r: any) => {
+            if (r.liveType === 'import_preorder' && r.preorderEndDate) {
+              return new Date(r.preorderEndDate) > now;
+            }
+            return true;
+          });
+          if (activePreparing.length === 0) {
+            console.log("[Facebook] No active live room, skipping capture");
+            return;
+          }
+          activeRoom = activePreparing[0];
+          activeRoomId = activePreparing[0].id;
+        } else {
+          activeRoom = activeRooms[0];
+          activeRoomId = activeRooms[0].id;
+        }
+      } catch (roomCheckErr: any) {
+        console.log("[Facebook] Live room check failed, continuing capture:", roomCheckErr?.message);
+      }
+
+      // If we have an active live room, try to match only products in that room
+      let matched: any[] = [];
+      let unmatched: any[] = [];
+      if (activeRoomId) {
+        try {
+          const roomProductGroups = await getLiveRoomProducts(activeRoomId);
+          const roomProductMap = new Map();
+          for (const group of roomProductGroups) {
+            for (const rp of group.variations || [group]) {
+              if (rp.status === 'paused') continue;
+              if (rp.status === 'sold_out' && !rp.allowPreorder) continue;
+              roomProductMap.set(rp.keyword.toUpperCase().replace(/\s+/g, ''), rp);
+            }
+          }
+          for (const kw of keywords) {
+            const upperKw = kw.keyword.toUpperCase().replace(/\s+/g, '');
+            const roomProduct = roomProductMap.get(upperKw);
+            if (roomProduct) {
+              if (roomProduct.availableStock <= 0 && !roomProduct.allowPreorder) {
+                unmatched.push({ keyword: kw.keyword, reason: 'sold_out' });
+              } else {
+                matched.push({
+                  keyword: kw.keyword,
+                  quantity: kw.quantity,
+                  productId: roomProduct.productId,
+                  productName: roomProduct.displayName,
+                  productSku: '',
+                  unitPrice: parseFloat(roomProduct.price),
+                  liveRoomProductId: roomProduct.id,
+                  isPreorder: roomProduct.availableStock <= 0 && roomProduct.allowPreorder,
+                });
+              }
+            } else {
+              unmatched.push({ keyword: kw.keyword, reason: 'not_in_room' });
+            }
+          }
+          try {
+            await recordLiveComment({
+              liveRoomId: activeRoomId,
+              commentId,
+              commenterName,
+              commenterPsid: commenterPsid || '',
+              commentMessage,
+              parsedKeyword: keywords.map((k: any) => k.keyword).join(', '),
+              parsedQuantity: keywords.reduce((sum: number, k: any) => sum + k.quantity, 0),
+              matchResult: matched.length > 0 ? 'matched' : (unmatched.some((u: any) => u.reason === 'sold_out') ? 'sold_out' : 'no_match'),
+              matchedProductId: matched[0]?.productId,
+              matchedProductName: matched[0]?.productName,
+              matchedLiveRoomProductId: matched[0]?.liveRoomProductId,
+              commentDate: new Date(),
+            });
+          } catch (recErr: any) {
+            console.log("[Facebook] Failed to record live comment:", recErr?.message);
+          }
+        } catch (roomProdErr: any) {
+          console.log("[Facebook] Failed to get live room products, falling back to global match:", roomProdErr?.message);
+          const result = await matchKeywordsToProducts(keywords);
+          matched = result.matched;
+          unmatched = result.unmatched;
+        }
+      } else {
+        const result = await matchKeywordsToProducts(keywords);
+        matched = result.matched;
+        unmatched = result.unmatched;
+      }
+
+      if (matched.length > 0) {
+        const orderResult = await createOrderFromLiveCapture({
+          commenterName,
+          commentMessage,
+          commentId,
+          postId,
+          matchedProducts: matched.map((m: any) => ({
+            keyword: m.keyword,
+            quantity: m.quantity,
+            productId: m.productId,
+            productName: m.productName,
+            productSku: m.productSku,
+            unitPrice: m.unitPrice,
+          })),
+          sourceName: "Facebook Live",
+        });
+        const itemList = matched.map((m: any) => `${m.keyword}+${m.quantity}`).join(", ");
+        await replyToComment(
+          commentId,
+          `${commenterName} 您好！已自动建单 ✅\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请私信我们提供收货地址和付款方式哦~`
+        );
+        try {
+          const isMerged = (orderResult as any).merged;
+          if (isMerged) {
+            await sendTextMessage(commenterPsid || '', `${commenterName} 您好！已追加到订单 ${orderResult.orderNumber}\n新增: ${itemList}\n当前总额: RM ${orderResult.totalAmount}`);
+          } else {
+            await sendTextMessage(commenterPsid || '', `您好 ${commenterName}！\n\n您的直播订单已创建：\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请提供以下信息完成订单：\n1. 收货地址\n2. 联系电话\n3. 付款方式`);
+          }
+        } catch (msgErr) {
+          console.log("[Facebook] Could not send Messenger message (expected if no PSID)");
+        }
+        return;
+      } else if (unmatched.length > 0) {
+        const allSoldOut = unmatched.every((u: any) => u.reason === 'sold_out');
+        if (allSoldOut) {
+          return;
+        }
+        return;
+      }
+    }
+  } catch (kwError: any) {
+    console.error("[Facebook] Keyword matching error:", kwError?.message);
+  }
+
+  // Generic auto-replies (only if no keyword match was attempted)
+  if (lowerMsg.includes("要") || lowerMsg.includes("买") || lowerMsg.includes("下单")) {
+    await replyToComment(commentId, `${commenterName} 您好！已收到您的订单意向，请私信我们完成下单哦~`);
+  } else if (lowerMsg.includes("多少钱") || lowerMsg.includes("价格") || lowerMsg.includes("price")) {
+    await replyToComment(commentId, `${commenterName} 您好！请私信我们获取详细价格信息~`);
+  } else if (lowerMsg.includes("有货") || lowerMsg.includes("stock")) {
+    await replyToComment(commentId, `${commenterName} 您好！请私信我们确认库存情况~`);
   }
 }
 

@@ -917,3 +917,10 @@
 - [x] ImportOrders 列表页 + 筛选栏（中国代购专属状态）
 - [x] OrderSearch 跨全部订单搜索页
 - [x] 订单列表列增强：编号/客户/类型/性质/来源/配送/已付/总金额/余额/状态/特别处理标签
+
+## Facebook Webhook 配置修复
+
+- [x] Webhook Callback URL 配置验证成功（Meta App Dashboard）
+- [x] Page 产品字段订阅：feed, live_videos, messages, messaging_postbacks, mention, message_deliveries, message_echoes, message_reads, messaging_optins, send_cart
+- [x] 修复 feed 分支评论处理：提取 processComment 共享函数，feed 字段 item=comment 时走评论捉单逻辑
+- [x] TypeScript 零错误 + 122 个测试全部通过
