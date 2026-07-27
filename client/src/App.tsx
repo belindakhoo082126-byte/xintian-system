@@ -49,6 +49,7 @@ import LossAnalysisReport from "@/pages/LossAnalysisReport";
 import InventoryLog from "@/pages/InventoryLog";
 import OrderCreatePage from "@/pages/OrderCreatePage";
 import OrderBrowsePage from "@/pages/OrderBrowsePage";
+import OrderEditPage from "@/pages/OrderEditPage";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -110,6 +111,7 @@ function DashboardRoutes() {
       <Route path={"/packing"} component={Packing} />
       <Route path={"/packing/:id"} component={PackingDetail} />
       <Route path={"/orders/browse/:id"} component={({ params }: any) => <OrderBrowsePage orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
+      <Route path={"/orders/:id/edit"} component={({ params }: any) => <OrderEditPage orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
       <Route path={"/orders/:id"} component={({ params }: any) => <OrderBrowsePage orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
       <Route path={"/pay/:id"} component={({ params }: any) => <CustomerPayment orderId={parseInt(params.id)} onBack={() => window.history.back()} />} />
       <Route path={"/404"} component={NotFound} />

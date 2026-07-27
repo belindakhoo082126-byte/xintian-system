@@ -611,6 +611,59 @@ export async function updateOrderStatus(id: number, data: {
 }
 
 // ============================================================================
+// V2.2: Update order details (for OrderEditPage)
+// ============================================================================
+
+export async function updateOrderDetails(id: number, data: {
+  shippingAddress?: string;
+  shippingMethod?: string;
+  orderNature?: string;
+  orderSource?: string;
+  orderCategory?: string;
+  recipientName?: string;
+  recipientPhone?: string;
+  discountAmount?: string;
+  discountReason?: string;
+  extraCharge?: string;
+  extraChargeDescription?: string;
+  creditUsed?: string;
+  promotionId?: number;
+  promotionName?: string;
+  promotionDiscount?: string;
+  shippingFee?: string;
+  totalAmount?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const updateData: any = {};
+  if (data.shippingAddress !== undefined) updateData.shippingAddress = data.shippingAddress;
+  if (data.shippingMethod !== undefined) updateData.shippingMethod = data.shippingMethod;
+  if (data.orderNature !== undefined) updateData.orderNature = data.orderNature;
+  if (data.orderSource !== undefined) updateData.orderSource = data.orderSource;
+  if (data.orderCategory !== undefined) updateData.orderCategory = data.orderCategory;
+  if (data.recipientName !== undefined) updateData.recipientName = data.recipientName;
+  if (data.recipientPhone !== undefined) updateData.recipientPhone = data.recipientPhone;
+  if (data.discountAmount !== undefined) updateData.discountAmount = data.discountAmount;
+  if (data.discountReason !== undefined) updateData.discountReason = data.discountReason;
+  if (data.extraCharge !== undefined) updateData.extraCharge = data.extraCharge;
+  if (data.extraChargeDescription !== undefined) updateData.extraChargeDescription = data.extraChargeDescription;
+  if (data.creditUsed !== undefined) updateData.creditUsed = data.creditUsed;
+  if (data.promotionId !== undefined) updateData.promotionId = data.promotionId;
+  if (data.promotionName !== undefined) updateData.promotionName = data.promotionName;
+  if (data.promotionDiscount !== undefined) updateData.promotionDiscount = data.promotionDiscount;
+  if (data.shippingFee !== undefined) updateData.shippingFee = data.shippingFee;
+  if (data.totalAmount !== undefined) updateData.totalAmount = data.totalAmount;
+
+  if (Object.keys(updateData).length > 0) {
+    await db.update(orders).set(updateData).where(eq(orders.id, id));
+    await logOrderOperation(id, "edit", `Order details updated by admin`, null, null);
+  }
+
+  broadcastChanges(["orders", "dashboard"]);
+  return { success: true };
+}
+
+// ============================================================================
 // Order Operation Log helpers
 // ============================================================================
 

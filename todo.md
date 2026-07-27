@@ -912,7 +912,7 @@
 - [x] 商品搜索修复：显示图片/规格/价格/库存/预购状态
 - [x] 促销选择/折扣处理/额外收费 UI
 - [x] OrderBrowsePage 大页面浏览（9个区域完整显示）
-- [ ] OrderEditPage 大页面编辑（待后续迭代）
+- [x] OrderEditPage 大页面编辑
 - [x] LocalOrders 列表页 + 筛选栏（状态/性质/来源/配送/备注与特别处理）
 - [x] ImportOrders 列表页 + 筛选栏（中国代购专属状态）
 - [x] OrderSearch 跨全部订单搜索页

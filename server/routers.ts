@@ -1127,6 +1127,35 @@ export const appRouter = router({
         await db.updateOrderStatus(id, data);
         return { success: true };
       }),
+
+    // V2.2: Update order details (for OrderEditPage)
+    updateDetails: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        shippingAddress: z.string().optional(),
+        shippingMethod: z.string().optional(),
+        orderNature: z.string().optional(),
+        orderSource: z.string().optional(),
+        orderCategory: z.string().optional(),
+        recipientName: z.string().optional(),
+        recipientPhone: z.string().optional(),
+        discountAmount: z.string().optional(),
+        discountReason: z.string().optional(),
+        extraCharge: z.string().optional(),
+        extraChargeDescription: z.string().optional(),
+        creditUsed: z.string().optional(),
+        promotionId: z.number().optional(),
+        promotionName: z.string().optional(),
+        promotionDiscount: z.string().optional(),
+        shippingFee: z.string().optional(),
+        totalAmount: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+        await db.updateOrderDetails(id, data);
+        await db.logOrderOperation(id, "edit", `Order details updated by ${ctx.user?.name || "admin"}`, null, ctx.user?.name || "admin");
+        return { success: true };
+      }),
     // V2.2: Special order follow-up stats
     followUpStats: adminProcedure.query(async () => {
       return await db.getSpecialOrderFollowUpStats();
