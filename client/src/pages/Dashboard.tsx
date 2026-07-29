@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Clock, Package, Truck, TrendingUp,
-  ShoppingCart, Warehouse, Calendar, Bell,
+  ShoppingCart, Warehouse, Calendar,
   ShoppingBag, CheckCircle, XCircle, Ban,
   Bot, ArrowRight, AlertTriangle,
   Plane, Eye, Home, FileText, MessageCircle,
@@ -39,20 +39,6 @@ export default function Dashboard() {
   }
 
   if (!stats) return null;
-
-  const alerts: { label: string; count: number; link: string; color: string }[] = [];
-  if (stats.alerts.pendingPayment > 0) {
-    alerts.push({ label: t("dashboard.pendingPayment"), count: stats.alerts.pendingPayment, link: "/orders?status=receipt_uploaded", color: "bg-orange-500" });
-  }
-  if (stats.alerts.repotOrders > 0) {
-    alerts.push({ label: t("dashboard.repotOrders"), count: stats.alerts.repotOrders, link: "/packing", color: "bg-blue-500" });
-  }
-  if (stats.alerts.scheduledToday > 0) {
-    alerts.push({ label: t("dashboard.scheduledToday"), count: stats.alerts.scheduledToday, link: "/packing?tab=scheduled", color: "bg-purple-500" });
-  }
-  if (stats.alerts.holdExpiring > 0) {
-    alerts.push({ label: t("dashboard.holdOrders"), count: stats.alerts.holdExpiring, link: "/orders?status=hold_order", color: "bg-yellow-500" });
-  }
 
   // V2.3 Row 1: Sales (营业额) — 3 cards
   const salesRow = [
@@ -110,24 +96,6 @@ export default function Dashboard() {
         <span className="text-sm text-muted-foreground">{new Date().toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}</span>
       </div>
 
-      {/* Order Alerts Banner */}
-      {alerts.length > 0 && (
-        <div className="flex items-center gap-3 flex-wrap p-4 rounded-lg border bg-muted/50">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Bell className="h-4 w-4 text-primary" />
-            <span>{t("dashboard.orderAlerts")}</span>
-          </div>
-          {alerts.map((alert, i) => (
-            <Link key={i} href={alert.link}>
-              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-white text-sm cursor-pointer hover:opacity-90 transition-opacity ${alert.color}`}>
-                <span>{alert.label}</span>
-                <span className="font-bold">{alert.count}</span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-
       {/* V2.3 Row 1: Sales (营业额) — 3 cards */}
       <div>
         <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "营业额（本月）" : "Sales (This Month)"}</h2>
@@ -180,30 +148,42 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            <div className="rounded-lg border border-orange-100 bg-background/70 p-3 dark:border-orange-900/50">
-              <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待补运费" : "Pending Shipping"}</p>
-              <p className="mt-1 text-2xl font-bold text-orange-600">{followUpDisplay.pendingShippingCount}</p>
-            </div>
-            <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50">
-              <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待退款" : "Pending Refund"}</p>
-              <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.pendingRefundCount}</p>
-            </div>
-            <div className="rounded-lg border border-yellow-100 bg-background/70 p-3 dark:border-yellow-900/50">
-              <p className="text-xs text-muted-foreground">{lang === "zh" ? "物流异常" : "Logistics Error"}</p>
-              <p className="mt-1 text-2xl font-bold text-yellow-600">{followUpDisplay.logisticsErrorCount}</p>
-            </div>
-            <div className="rounded-lg border border-purple-100 bg-background/70 p-3 dark:border-purple-900/50">
-              <p className="text-xs text-muted-foreground">{lang === "zh" ? "自动通知失败" : "Notification Failed"}</p>
-              <p className="mt-1 text-2xl font-bold text-purple-600">{followUpDisplay.notificationFailedCount}</p>
-            </div>
-            <div className="rounded-lg border border-amber-100 bg-background/70 p-3 dark:border-amber-900/50">
-              <p className="text-xs text-muted-foreground">{lang === "zh" ? "库存异常" : "Stock Exception"}</p>
-              <p className="mt-1 text-2xl font-bold text-amber-600">{followUpDisplay.stockExceptionCount}</p>
-            </div>
-            <div className={`rounded-lg border bg-background/70 p-3 ${followUpDisplay.overdueCount > 0 ? "border-red-300" : "border-slate-200 dark:border-slate-800"}`}>
-              <p className="text-xs text-muted-foreground">{lang === "zh" ? "超 24 小时未处理" : "Overdue >24h"}</p>
-              <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.overdueCount}</p>
-            </div>
+            <Link href="/orders?special=1&type=pending_shipping">
+              <div className="rounded-lg border border-orange-100 bg-background/70 p-3 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors cursor-pointer">
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待补运费" : "Pending Shipping"}</p>
+                <p className="mt-1 text-2xl font-bold text-orange-600">{followUpDisplay.pendingShippingCount}</p>
+              </div>
+            </Link>
+            <Link href="/orders?special=1&type=pending_refund">
+              <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer">
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待退款" : "Pending Refund"}</p>
+                <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.pendingRefundCount}</p>
+              </div>
+            </Link>
+            <Link href="/orders?special=1&type=logistics_error">
+              <div className="rounded-lg border border-yellow-100 bg-background/70 p-3 dark:border-yellow-900/50 hover:bg-yellow-50 dark:hover:bg-yellow-950/20 transition-colors cursor-pointer">
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "物流异常" : "Logistics Error"}</p>
+                <p className="mt-1 text-2xl font-bold text-yellow-600">{followUpDisplay.logisticsErrorCount}</p>
+              </div>
+            </Link>
+            <Link href="/orders?special=1&type=notification_failed">
+              <div className="rounded-lg border border-purple-100 bg-background/70 p-3 dark:border-purple-900/50 hover:bg-purple-50 dark:hover:bg-purple-950/20 transition-colors cursor-pointer">
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "自动通知失败" : "Notification Failed"}</p>
+                <p className="mt-1 text-2xl font-bold text-purple-600">{followUpDisplay.notificationFailedCount}</p>
+              </div>
+            </Link>
+            <Link href="/orders?special=1&type=stock_exception">
+              <div className="rounded-lg border border-amber-100 bg-background/70 p-3 dark:border-amber-900/50 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors cursor-pointer">
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "库存异常" : "Stock Exception"}</p>
+                <p className="mt-1 text-2xl font-bold text-amber-600">{followUpDisplay.stockExceptionCount}</p>
+              </div>
+            </Link>
+            <Link href="/orders?special=1&type=overdue">
+              <div className={`rounded-lg border bg-background/70 p-3 ${followUpDisplay.overdueCount > 0 ? "border-red-300" : "border-slate-200 dark:border-slate-800"} hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer`}>
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "超 24 小时未处理" : "Overdue >24h"}</p>
+                <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.overdueCount}</p>
+              </div>
+            </Link>
           </div>
 
           <div className="border-t border-orange-100 pt-3 dark:border-orange-900/60">
@@ -234,7 +214,7 @@ export default function Dashboard() {
             )}
           </div>
 
-          <Link href="/orders?special=1">
+          <Link href="/orders?special=1&type=all">
             <div className="flex cursor-pointer items-center justify-end gap-1 text-sm font-medium text-orange-700 transition-colors hover:text-orange-800 dark:text-orange-400">
               <span>{lang === "zh" ? "查看全部特别状态订单" : "View all special-status orders"}</span>
               <ArrowRight className="h-4 w-4" />

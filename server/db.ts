@@ -371,6 +371,7 @@ export async function getOrders(filters?: {
   orderCategory?: string;
   isSpecialOrder?: boolean;
   specialOrderStatus?: string;
+  specialOrderType?: string;
   salesChannel?: string;
 }) {
   const db = await getDb();
@@ -384,6 +385,7 @@ export async function getOrders(filters?: {
   if (filters?.orderCategory) conditions.push(eq((orders as any).orderCategory, filters.orderCategory as any));
   if (filters?.isSpecialOrder !== undefined) conditions.push(eq((orders as any).isSpecialOrder, filters.isSpecialOrder ? 1 : 0));
   if (filters?.specialOrderStatus) conditions.push(eq((orders as any).specialOrderStatus, filters.specialOrderStatus as any));
+  if (filters?.specialOrderType && filters.specialOrderType !== "all") conditions.push(eq((orders as any).specialOrderType, filters.specialOrderType as any));
   if (filters?.salesChannel) conditions.push(eq((orders as any).salesChannel, filters.salesChannel as any));
   if (filters?.todayOnly) {
     const today = new Date();

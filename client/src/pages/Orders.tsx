@@ -76,12 +76,14 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const urlToday = new URLSearchParams(searchParams).get("today");
   const urlNature = new URLSearchParams(searchParams).get("nature");
   const urlSpecial = new URLSearchParams(searchParams).get("special");
+  const urlSpecialType = new URLSearchParams(searchParams).get("type");
   const urlChannel = new URLSearchParams(searchParams).get("channel");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(urlStatus || "all");
   const [todayOnly, setTodayOnly] = useState(urlToday === "1");
   const [natureFilter, setNatureFilter] = useState(urlNature || "all");
   const [specialOnly, setSpecialOnly] = useState(urlSpecial === "1");
+  const [specialType, setSpecialType] = useState(urlSpecialType || "");
   const [channelFilter, setChannelFilter] = useState(urlChannel || "all");
   const [sourceFilter, setSourceFilter] = useState("all");
 
@@ -92,11 +94,13 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       const newToday = params.get('today');
       const newNature = params.get('nature');
       const newSpecial = params.get('special');
+      const newSpecialType = params.get('type');
       const newChannel = params.get('channel');
       if (newStatus !== null) setStatusFilter(newStatus);
       if (newToday !== null) setTodayOnly(newToday === '1');
       if (newNature !== null) setNatureFilter(newNature);
       if (newSpecial !== null) setSpecialOnly(newSpecial === '1');
+      if (newSpecialType !== null) setSpecialType(newSpecialType);
       if (newChannel !== null) setChannelFilter(newChannel);
     };
     window.addEventListener('popstate', handlePopState);
@@ -137,6 +141,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     orderNature: natureFilter !== "all" ? natureFilter : undefined,
     orderCategory: orderCategory && orderCategory !== "all" ? orderCategory : undefined,
     isSpecialOrder: specialOnly || undefined,
+    specialOrderType: (specialOnly && specialType && specialType !== "all") ? specialType : undefined,
     salesChannel: channelFilter !== "all" ? channelFilter : undefined,
   } as any);
 

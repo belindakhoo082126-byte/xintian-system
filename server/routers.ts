@@ -1040,6 +1040,7 @@ export const appRouter = router({
         orderCategory: z.string().optional(),
         isSpecialOrder: z.boolean().optional(),
         specialOrderStatus: z.string().optional(),
+        specialOrderType: z.string().optional(),
         salesChannel: z.string().optional(),
       }).optional())
       .query(async ({ input }) => {
