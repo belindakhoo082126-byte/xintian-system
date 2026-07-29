@@ -939,3 +939,21 @@
 - [x] 修复「特别状态订单」6 个统计数字与点击后查询结果不一致
 - [x] 特别状态订单每个统计项可点击，直接进入对应筛选订单列表
 - [x] 特别状态订单新增「超 24 小时未处理」可点击筛选
+
+## 运费规则统一更新（RM200 → RM150 + 10kg 规则）
+
+- [x] Messenger 自动回复运费文案更新（server/messenger.ts）：RM200 → RM150 + 详细规则
+- [x] MallCheckout.tsx 运费计算逻辑更新：未满RM150时超过10kg部分加收RM3/kg
+- [x] MallCheckout.tsx 西马配送文案更新
+- [x] MallProductDetail.tsx 运费文案更新
+- [x] db.ts createOrderWithSplit 运费计算修复（第3552行）：未满RM150时超过10kg加收RM3/kg
+- [x] db.ts recalculateOrderShipping 运费计算修复（第3602行）：同上修复
+- [x] db.ts calculateWestMalaysiaShipping 函数确认正确（第3879行）
+- [x] db.ts calculateNormalShippingFee 函数确认正确（第5526行）
+- [x] db.ts createOrder 函数确认正确（第499行，使用 calculateWestMalaysiaShipping）
+- [x] shipping_rules 表数据确认正确（freeShippingThreshold=150, freeShippingMaxWeight=10, additionalKgPrice=3）
+- [x] live_ai_flows 表确认无运费相关条目（空表，无需更新）
+- [x] OrderCreatePage.tsx 确认使用后端 calculateShipping API，无需修改
+- [x] SystemSettings.tsx 确认无运费文案
+- [x] TypeScript 零错误
+- [x] 122 个测试全部通过

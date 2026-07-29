@@ -73,7 +73,13 @@ export default function MallCheckout() {
   let shippingFee = 0;
   let standaloneShippingFee = 0;
   if (form.shippingMethod === "west_malaysia") {
-    shippingFee = normalSubtotal >= 150 ? (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3) : 15;
+    if (normalSubtotal >= 150) {
+      // 满 RM150：10kg 以内免邮，超过 10kg 每公斤 RM3
+      shippingFee = totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3;
+    } else {
+      // 未满 RM150：10kg 以内 RM15，超过 10kg 每公斤 RM3
+      shippingFee = 15 + (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3);
+    }
   } else if (form.shippingMethod === "east_malaysia") {
     shippingFee = 15;
   }
@@ -343,7 +349,7 @@ export default function MallCheckout() {
               <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2">
                 <div className="flex items-center gap-3">
                   <RadioGroupItem value="west_malaysia" />
-                  <div><p className="font-medium text-sm">西马配送</p><p className="text-xs text-muted-foreground">满RM150免邮，首10kg免运费</p></div>
+                  <div><p className="font-medium text-sm">西马配送</p><p className="text-xs text-muted-foreground">满RM150首10kg免邮，未满RM15起，续重RM3/kg</p></div>
                 </div>
                 <span className="font-semibold">{shippingFee === 0 ? "免邮" : `RM ${shippingFee}`}</span>
               </label>

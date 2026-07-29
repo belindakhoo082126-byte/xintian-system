@@ -283,7 +283,7 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
     if (lowerText.includes("运费") || lowerText.includes("shipping")) {
       await sendTextMessage(
         psid,
-        "运费根据商品重量计算。购买满 RM200 可享受免邮优惠（仅限西马）。"
+        "西马运费规则：\n\n订单满 RM150：\n- 10kg 以内免邮\n- 超过 10kg 的部分，每公斤加收 RM3\n\n订单未满 RM150：\n- 10kg 以内运费 RM15\n- 超过 10kg 的部分，每公斤加收 RM3\n\n东马配送请私询客服。"
       );
       return;
     }

@@ -3549,7 +3549,13 @@ export async function mallCheckout(data: {
   // Calculate shipping fee based on method
   let shippingFee = 0;
   if (data.shippingMethod === "west_malaysia") {
-    shippingFee = subtotal >= 150 ? (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3) : 15;
+    if (subtotal >= 150) {
+      // 满 RM150：10kg 以内免邮，超过 10kg 每公斤 RM3
+      shippingFee = totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3;
+    } else {
+      // 未满 RM150：10kg 以内 RM15，超过 10kg 每公斤 RM3
+      shippingFee = 15 + (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3);
+    }
   } else if (data.shippingMethod === "east_malaysia") {
     shippingFee = totalWeight <= 2 ? 15 : 15; // Base fee, remaining via Shopee
   } else if (data.shippingMethod === "self_pickup") {
@@ -3593,7 +3599,11 @@ export async function mallCheckout(data: {
     const existingOrder = await getOrderById(data.mergeIntoOrderId);
     const method = existingOrder?.shippingMethod || data.shippingMethod;
     if (method === "west_malaysia") {
-      newShippingFee = newSubtotal >= 150 ? (newWeight <= 10 ? 0 : Math.ceil(newWeight - 10) * 3) : 15;
+      if (newSubtotal >= 150) {
+        newShippingFee = newWeight <= 10 ? 0 : Math.ceil(newWeight - 10) * 3;
+      } else {
+        newShippingFee = 15 + (newWeight <= 10 ? 0 : Math.ceil(newWeight - 10) * 3);
+      }
     }
     const newTotal = newSubtotal + newShippingFee;
     const paidAmount = parseFloat((existingOrder as any)?.paidAmount || "0");

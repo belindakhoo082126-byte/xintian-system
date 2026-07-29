@@ -208,7 +208,7 @@ export default function MallProductDetail() {
 
             {/* Trust badges */}
             <div className="flex gap-4 pt-4 border-t">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Truck className="h-4 w-4" />{t("西马满RM150免邮", "Free shipping over RM150 (West Malaysia)")}</div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Truck className="h-4 w-4" />{t("西马满RM150首10kg免邮，续重RM3/kg", "West Malaysia: Free 10kg over RM150, RM3/kg after")}</div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground"><Shield className="h-4 w-4" />{t("7天保留", "7-day reservation")}</div>
             </div>
           </div>
