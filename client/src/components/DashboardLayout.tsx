@@ -44,9 +44,9 @@ import { Button } from "./ui/button";
 type MenuChild = {
   icon: any;
   label: string | { zh: string; en: string };
-  path: string;
+  path?: string;
+  children?: MenuChild[];
 };
-
 type MenuGroup = {
   icon: any;
   label: string | { zh: string; en: string };
@@ -109,9 +109,15 @@ const menuStructure: MenuEntry[] = [
     children: [
       { icon: MessageSquare, label: { zh: "Chat 客服", en: "Chat" }, path: "/chat" },
       { icon: AlertCircle, label: { zh: "AI 转人工通知", en: "AI Handover" }, path: "/ai-handover" },
-      { icon: MessageSquare, label: { zh: "固定回复规则", en: "Reply Rules" }, path: "/reply-rules" },
-      { icon: Bot, label: { zh: "AI 知识库", en: "AI Knowledge" }, path: "/ai-knowledge" },
-      { icon: Bot, label: { zh: "AI Agent", en: "AI Agent" }, path: "/flows" },
+      {
+        icon: Bot,
+        label: { zh: "AI 大脑", en: "AI Brain" },
+        children: [
+          { icon: MessageSquare, label: { zh: "固定回复规则", en: "Reply Rules" }, path: "/reply-rules" },
+          { icon: Bot, label: { zh: "AI 知识库", en: "AI Knowledge" }, path: "/ai-knowledge" },
+        ],
+      },
+      { icon: Bot, label: { zh: "Flow 管理", en: "Flow Management" }, path: "/flows" },
       { icon: Video, label: { zh: "直播 AI 客服", en: "Live AI Agent" }, path: "/live-ai-flows" },
     ],
   },
@@ -169,9 +175,13 @@ const ALL_PATHS = new Set<string>();
 const SHIPPING_STAFF_MENU_PATHS = new Set(["/packing", "/order-tracking"]);
 menuStructure.forEach(item => {
   if (isGroup(item)) {
-    item.children.forEach(child => ALL_PATHS.add(child.path));
+    item.children.forEach(child => {
+      if (child.path) ALL_PATHS.add(child.path);
+      if (child.children) child.children.forEach(sub => { if (sub.path) ALL_PATHS.add(sub.path); });
+    });
   } else {
-    ALL_PATHS.add((item as MenuChild).path);
+    const p = (item as MenuChild).path;
+    if (p) ALL_PATHS.add(p);
   }
 });
 
@@ -261,9 +271,9 @@ function DashboardLayoutContent({
   const visibleMenu = isShippingStaff
     ? menuStructure.filter(item => {
         if (isGroup(item)) {
-          return item.children.some(child => SHIPPING_STAFF_MENU_PATHS.has(child.path));
+          return item.children.some(child => child.path && SHIPPING_STAFF_MENU_PATHS.has(child.path));
         }
-        return SHIPPING_STAFF_MENU_PATHS.has((item as MenuChild).path);
+        return (item as MenuChild).path ? SHIPPING_STAFF_MENU_PATHS.has((item as MenuChild).path!) : false;
       })
     : menuStructure;
 
@@ -275,14 +285,14 @@ function DashboardLayoutContent({
   for (const item of visibleMenu) {
     if (isGroup(item)) {
       for (const child of item.children) {
-        if (location.startsWith(child.path.split('?')[0]) && child.path !== '/') {
+        if (child.path && location.startsWith(child.path.split('?')[0]) && child.path !== '/') {
           activeLabel = resolveLabel(child.label);
           break;
         }
       }
     } else {
       const itemPath = (item as MenuChild).path;
-      if (location === itemPath) {
+      if (itemPath && location === itemPath) {
         activeLabel = resolveLabel(item.label);
         break;
       }
@@ -336,6 +346,7 @@ function DashboardLayoutContent({
   // Check if a group has an active child
   const isGroupActive = (group: MenuGroup): boolean => {
     return group.children.some(child => {
+      if (!child.path) return false;
       const childPath = child.path.split('?')[0];
       return childPath !== '/' && location.startsWith(childPath);
     });
@@ -392,12 +403,12 @@ function DashboardLayoutContent({
                   );
                 } else {
                   const child = item as MenuChild;
-                  const isActive = location === child.path;
+                  const isActive = child.path ? location === child.path : false;
                   return (
-                    <SidebarMenuItem key={child.path}>
+                    <SidebarMenuItem key={child.path || `item-${idx}`}>
                       <SidebarMenuButton
                         isActive={isActive}
-                        onClick={() => setLocation(child.path)}
+                        onClick={() => child.path && setLocation(child.path)}
                         tooltip={resolveLabel(child.label)}
                         className="h-10 transition-all font-normal"
                       >
@@ -569,8 +580,28 @@ function CollapsibleMenuGroup({
       {open && (
         <SidebarMenuSub className="ml-4">
           {children.map((child, ci) => {
-            const childPath = child.path.split('?')[0];
-            const childActive = childPath !== '/' && location.startsWith(childPath);
+            const childPath = (child.path || '').split('?')[0];
+            const childActive = childPath !== '/' && childPath !== '' && location.startsWith(childPath);
+            // If this child has its own children (nested submenu like AI大脑)
+            if (child.children && child.children.length > 0) {
+              return (
+                <SidebarMenuSubItem key={`child-${ci}`}>
+                  <CollapsibleMenuGroup
+                    icon={child.icon}
+                    label={resolveLabel(child.label)}
+                    isActive={child.children.some(sub => {
+                      const subPath = (sub.path || '').split('?')[0];
+                      return subPath !== '/' && subPath !== '' && location.startsWith(subPath);
+                    })}
+                    isCollapsed={false}
+                    children={child.children}
+                    location={location}
+                    setLocation={setLocation}
+                    resolveLabel={resolveLabel}
+                  />
+                </SidebarMenuSubItem>
+              );
+            }
             return (
               <SidebarMenuSubItem key={`child-${ci}`}>
                 <SidebarMenuSubButton
@@ -580,12 +611,10 @@ function CollapsibleMenuGroup({
                 >
                   <button
                     onClick={() => {
-                      if (child.path.includes('?')) {
-                        // wouter's setLocation may not trigger re-render for same path with different query
-                        // Use history API + popstate event to force navigation
+                      if (child.path && child.path.includes('?')) {
                         window.history.pushState({}, '', child.path);
                         window.dispatchEvent(new PopStateEvent('popstate'));
-                      } else {
+                      } else if (child.path) {
                         setLocation(child.path);
                       }
                     }}

@@ -8261,11 +8261,12 @@ export async function storeIncomingMessengerMessage(psid: string, text: string, 
         content: att.title || att.type,
         mediaUrl: att.payload?.url,
         status: "delivered",
-      });
+            });
     }
   }
+  // Broadcast chat change for real-time SSE push
+  broadcastChange("chat" as any);
 }
-
 // ===========================================================================
 // AI Engine — Reply Rules CRUD
 // ===========================================================================

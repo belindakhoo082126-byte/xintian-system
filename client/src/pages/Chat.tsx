@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -21,13 +22,84 @@ type ConversationFilter = "all" | "unread" | "messenger" | "whatsapp" | "needsHu
 
 export default function Chat() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [location] = useLocation();
   const [selectedConvId, setSelectedConvId] = useState<number | null>(null);
   const [filter, setFilter] = useState<ConversationFilter>("all");
   const [search, setSearch] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [searchDebounced, setSearchDebounced] = useState("");
+  const [sseConnected, setSseConnected] = useState(true);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const sseRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const processedMessageIds = useRef<Set<number>>(new Set());
+
+  // SSE real-time connection for chat updates
+  useEffect(() => {
+    let mounted = true;
+
+    const connectSSE = () => {
+      if (!mounted) return;
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
+
+      const es = new EventSource("/api/sync");
+      sseRef.current = es;
+
+      es.onopen = () => {
+        if (mounted) setSseConnected(true);
+        // On reconnect, invalidate all chat queries to get fresh data
+        queryClient.invalidateQueries({ queryKey: ["chat"] });
+        queryClient.invalidateQueries({ queryKey: ["aiHandover"] });
+      };
+
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (!data || !data.category) return;
+
+          if (data.category === "chat" || data.category === "all" || data.type === "connected") {
+            // Invalidate chat queries to trigger refetch
+            queryClient.invalidateQueries({ queryKey: ["chat"] });
+            if (data.category === "all") {
+              queryClient.invalidateQueries({ queryKey: ["aiHandover"] });
+            }
+            if (mounted) setLastSyncTime(new Date());
+          }
+        } catch {
+          // Ignore parse errors (e.g. heartbeat comments)
+        }
+      };
+
+      es.onerror = () => {
+        if (mounted) setSseConnected(false);
+        es.close();
+        sseRef.current = null;
+        if (mounted) {
+          reconnectTimerRef.current = setTimeout(connectSSE, 3000);
+        }
+      };
+    };
+
+    connectSSE();
+
+    return () => {
+      mounted = false;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
+    };
+  }, [queryClient]);
 
   // Parse URL param ?conv=ID to auto-select conversation
   useEffect(() => {
@@ -57,10 +129,13 @@ export default function Chat() {
     return input;
   }, [filter, searchDebounced]);
 
-  const { data: conversations, isLoading: convsLoading } = trpc.chat.listConversations.useQuery(queryInput);
+  const { data: conversations, isLoading: convsLoading } = trpc.chat.listConversations.useQuery(queryInput, {
+    staleTime: 0, // Always refetch when invalidated by SSE
+    refetchOnWindowFocus: true,
+  });
   const { data: messages } = trpc.chat.getMessages.useQuery(
     { conversationId: selectedConvId || 0 },
-    { enabled: !!selectedConvId }
+    { enabled: !!selectedConvId, staleTime: 0, refetchOnWindowFocus: true }
   );
 
   const selectedConv = conversations?.find((c: any) => c.id === selectedConvId);
@@ -90,8 +165,19 @@ export default function Chat() {
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
-    if (scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [messages]);
+
+  // Track processed message IDs to prevent duplicates
+  useEffect(() => {
+    if (messages) {
+      for (const msg of messages) {
+        if (!processedMessageIds.current.has(msg.id)) {
+          processedMessageIds.current.add(msg.id);
+        }
+      }
     }
   }, [messages]);
 
@@ -156,10 +242,18 @@ export default function Chat() {
       {/* Left Column — Conversation List */}
       <div className="w-80 border-r flex flex-col shrink-0">
         <div className="p-3 border-b space-y-2">
-          <h2 className="text-sm font-semibold flex items-center gap-2">
-            <MessageSquare className="h-4 w-4" />
-            客服对话
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              客服对话
+            </h2>
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${sseConnected ? "bg-green-500" : "bg-red-500"}`} />
+              <span className="text-[10px] text-muted-foreground">
+                {sseConnected ? (lastSyncTime ? `同步 ${lastSyncTime.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "已连接") : "重连中..."}
+              </span>
+            </div>
+          </div>
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -362,6 +456,7 @@ export default function Chat() {
                   ))
                 )}
               </div>
+              <div ref={messagesEndRef} />
             </ScrollArea>
 
             <div className="p-3 border-t flex gap-2">
