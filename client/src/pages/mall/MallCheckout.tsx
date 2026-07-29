@@ -60,20 +60,23 @@ export default function MallCheckout() {
   }, []);
 
   const subtotal = cart.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
-  const totalWeight = cart.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
   
   // Split items into normal and standalone shipping
   const normalItems = cart.filter(i => !i.isStandalone);
   const standaloneItems = cart.filter(i => i.isStandalone);
+  // Weight for shipping calculation: only normal (non-standalone) items
+  const totalWeight = normalItems.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
   const normalSubtotal = normalItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
   const specialItems = cart.filter(i => i.isSpecial);
   const specialSubtotal = specialItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+  // Free shipping threshold excludes special-price items (V2.1 rule)
+  const thresholdSubtotal = normalSubtotal - specialSubtotal;
   const regularSubtotal = subtotal - specialSubtotal;
   
   let shippingFee = 0;
   let standaloneShippingFee = 0;
   if (form.shippingMethod === "west_malaysia") {
-    if (normalSubtotal >= 150) {
+    if (thresholdSubtotal >= 150) {
       // 满 RM150：10kg 以内免邮，超过 10kg 每公斤 RM3
       shippingFee = totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3;
     } else {
@@ -140,6 +143,8 @@ export default function MallCheckout() {
         quantity: i.quantity,
         unitPrice: i.unitPrice,
         subtotal: i.subtotal,
+        isSpecial: i.isSpecial || false,
+        isStandalone: i.isStandalone || false,
       })),
       paymentMethodId,
       paymentMethodName: selectedPayment?.name,

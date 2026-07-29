@@ -957,3 +957,29 @@
 - [x] SystemSettings.tsx 确认无运费文案
 - [x] TypeScript 零错误
 - [x] 122 个测试全部通过
+
+## V2.2 运费规则全面统一更新（第二轮 — 用户要求全系统检查）
+
+- [x] 后端 db.ts createOrderWithSplit 运费计算（已修复，确认）
+- [x] 后端 db.ts recalculateOrderShipping 运费计算（已修复，确认）
+- [x] 后端 db.ts calculateWestMalaysiaShipping 函数（已正确，确认）
+- [x] 后端 db.ts calculateNormalShippingFee 函数（已正确，确认）
+- [x] 后端 db.ts createOrder 函数（已正确，确认）
+- [x] 后端 db.ts processActualWeight 函数（已正确，确认）
+- [x] Messenger 自动回复运费文案（已更新，确认）
+- [x] Messenger 直播订单通知模板（不含运费明细，无需修改）
+- [x] Messenger 直播结单通知模板（不含运费明细，无需修改）
+- [x] MallCheckout.tsx 运费计算逻辑（已修复 + 排除特价商品门槛 + standalone重量分离）
+- [x] MallCheckout.tsx 西马配送文案（已更新，确认）
+- [x] MallProductDetail.tsx 运费文案（已更新，确认）
+- [x] mall_settings 表 shippingPolicy（已更新为 V2.2 完整规则）
+- [x] mall_notices 表运费公告（已更新为 V2.2 简版）
+- [x] shipping_rules 表数据（已正确，确认）
+- [x] live_ai_flows 表（空表，无需更新）
+- [x] OrderCreatePage.tsx（使用后端 API，无需修改）
+- [x] PackingDetail.tsx（显示运费金额，无规则文案，无需修改）
+- [x] SystemSettings.tsx（无运费文案，无需修改）
+- [x] Telegram bot ai_utils.py（运费自付文案，非配送运费规则，无需修改）
+- [x] TypeScript 零错误
+- [x] 测试全部通过（122/122）
+- [x] 保存检查点

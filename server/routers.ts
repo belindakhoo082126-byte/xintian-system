@@ -2904,6 +2904,8 @@ export const appRouter = router({
         unitPrice: z.string(),
         subtotal: z.string(),
         discount: z.string().optional(),
+        isSpecial: z.boolean().optional(),
+        isStandalone: z.boolean().optional(),
       })),
       paymentMethodId: z.number().optional(),
       paymentMethodName: z.string().optional(),

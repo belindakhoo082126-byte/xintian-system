@@ -3518,6 +3518,8 @@ export async function mallCheckout(data: {
     unitPrice: string;
     subtotal: string;
     discount?: string;
+    isSpecial?: boolean;
+    isStandalone?: boolean;
   }>;
   paymentMethodId?: number;
   paymentMethodName?: string;
@@ -3540,16 +3542,22 @@ export async function mallCheckout(data: {
     `${data.postcode} ${data.city}`,
     data.state,
     data.area,
-  ].filter(Boolean).join(", ");
-
+    ].filter(Boolean).join(", ");
   // Calculate totals
   const subtotal = data.items.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
-  const totalWeight = data.items.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
-
+  // V2.2: Exclude standalone items from normal shipping calculation
+  const normalItems = data.items.filter(i => !i.isStandalone);
+  const standaloneItems = data.items.filter(i => i.isStandalone);
+  // Weight for shipping: only normal (non-standalone) items
+  const totalWeight = normalItems.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
+  // V2.1: Free shipping threshold excludes special-price items
+  const specialSubtotal = data.items.filter(i => i.isSpecial).reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+  const normalSubtotal = normalItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+  const thresholdSubtotal = normalSubtotal - specialSubtotal;
   // Calculate shipping fee based on method
   let shippingFee = 0;
   if (data.shippingMethod === "west_malaysia") {
-    if (subtotal >= 150) {
+    if (thresholdSubtotal >= 150) {
       // 满 RM150：10kg 以内免邮，超过 10kg 每公斤 RM3
       shippingFee = totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3;
     } else {
@@ -3595,11 +3603,14 @@ export async function mallCheckout(data: {
     const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, data.mergeIntoOrderId));
     const newSubtotal = allItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
     const newWeight = allItems.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
+    // V2.1: Free shipping threshold excludes special-price items (priceType === "special")
+    const specialSubtotal = allItems.filter(i => i.priceType === "special").reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+    const thresholdSubtotal = newSubtotal - specialSubtotal;
     let newShippingFee = 0;
     const existingOrder = await getOrderById(data.mergeIntoOrderId);
     const method = existingOrder?.shippingMethod || data.shippingMethod;
     if (method === "west_malaysia") {
-      if (newSubtotal >= 150) {
+      if (thresholdSubtotal >= 150) {
         newShippingFee = newWeight <= 10 ? 0 : Math.ceil(newWeight - 10) * 3;
       } else {
         newShippingFee = 15 + (newWeight <= 10 ? 0 : Math.ceil(newWeight - 10) * 3);
