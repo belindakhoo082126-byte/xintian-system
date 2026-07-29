@@ -1130,3 +1130,30 @@
 - [x] TypeScript 零错误
 - [x] 测试全部通过（122/122）
 - [x] 保存检查点
+
+## AI客服架构重构（Task 1 修正）
+
+### 架构设计
+- [x] 设计三引擎独立架构：Flow Engine / Knowledge Engine / Reply Rule Engine
+- [x] 数据库表：reply_rules（固定回复规则，Admin可维护）
+- [x] 数据库表：ai_knowledge（AI知识库，独立于Live Flow）
+- [x] 确保Flow Engine只处理FB直播/贴文/Reel绑定Flow的消息
+- [x] 确保Messenger/WhatsApp私聊走独立客服AI流程
+
+### 引擎实现
+- [x] Flow Engine — 处理已绑定Flow的FB直播/贴文/Reel消息
+- [x] Knowledge Engine — 独立AI知识库匹配（非matchLiveAiFlow）
+- [x] Reply Rule Engine — 固定回复规则（替代硬编码，Admin可维护）
+- [x] 移除messenger.ts中的硬编码关键词回复（改为数据库可维护的Reply Rules）
+
+### 客服AI回复流程
+- [x] 收到消息 → 检查AI开启 → 检查人工接手 → 下单关键词 → 商品资料 → 固定回复 → AI知识库 → 转人工
+
+### 后台管理
+- [x] 固定回复规则管理页面（CRUD）
+- [x] AI知识库管理页面（CRUD）
+
+### 测试
+- [x] TypeScript 零错误
+- [x] 测试全部通过（122/122）
+- [x] 保存检查点

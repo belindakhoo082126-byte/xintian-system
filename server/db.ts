@@ -8266,3 +8266,120 @@ export async function storeIncomingMessengerMessage(psid: string, text: string, 
   }
 }
 
+// ===========================================================================
+// AI Engine — Reply Rules CRUD
+// ===========================================================================
+
+export async function getAllReplyRules() {
+  const database = await getDb();
+  if (!database) return [];
+  const { replyRules } = await import("../drizzle/schema");
+  const rows = await database.select().from(replyRules).orderBy(replyRules.priority);
+  return rows;
+}
+
+export async function createReplyRule(data: {
+  name: string;
+  triggerKeywords: string;
+  replyContent: string;
+  priority?: number;
+  channels?: string;
+  isEnabled?: boolean;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const { replyRules } = await import("../drizzle/schema");
+  const [row] = await database.insert(replyRules).values({
+    name: data.name,
+    triggerKeywords: data.triggerKeywords,
+    replyContent: data.replyContent,
+    priority: data.priority ?? 100,
+    channels: data.channels ?? '["messenger","whatsapp"]',
+    isEnabled: data.isEnabled ?? true,
+  });
+  return row;
+}
+
+export async function updateReplyRule(id: number, data: {
+  name?: string;
+  triggerKeywords?: string;
+  replyContent?: string;
+  priority?: number;
+  channels?: string;
+  isEnabled?: boolean;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const { replyRules } = await import("../drizzle/schema");
+  await database.update(replyRules).set(data).where(eq(replyRules.id, id));
+  return { success: true };
+}
+
+export async function deleteReplyRule(id: number) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const { replyRules } = await import("../drizzle/schema");
+  await database.delete(replyRules).where(eq(replyRules.id, id));
+  return { success: true };
+}
+
+// ===========================================================================
+// AI Engine — Knowledge Base CRUD
+// ===========================================================================
+
+export async function getAllAiKnowledge() {
+  const database = await getDb();
+  if (!database) return [];
+  const { aiKnowledge } = await import("../drizzle/schema");
+  const rows = await database.select().from(aiKnowledge).orderBy(aiKnowledge.priority);
+  return rows;
+}
+
+export async function createAiKnowledge(data: {
+  category: string;
+  topic: string;
+  triggerKeywords: string;
+  content: string;
+  priority?: number;
+  useLLM?: boolean;
+  isEnabled?: boolean;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const { aiKnowledge } = await import("../drizzle/schema");
+  const [row] = await database.insert(aiKnowledge).values({
+    category: data.category,
+    topic: data.topic,
+    triggerKeywords: data.triggerKeywords,
+    content: data.content,
+    priority: data.priority ?? 100,
+    useLLM: data.useLLM ?? false,
+    isEnabled: data.isEnabled ?? true,
+  });
+  return row;
+}
+
+export async function updateAiKnowledge(id: number, data: {
+  category?: string;
+  topic?: string;
+  triggerKeywords?: string;
+  content?: string;
+  priority?: number;
+  useLLM?: boolean;
+  isEnabled?: boolean;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const { aiKnowledge } = await import("../drizzle/schema");
+  await database.update(aiKnowledge).set(data).where(eq(aiKnowledge.id, id));
+  return { success: true };
+}
+
+export async function deleteAiKnowledge(id: number) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const { aiKnowledge } = await import("../drizzle/schema");
+  await database.delete(aiKnowledge).where(eq(aiKnowledge.id, id));
+  return { success: true };
+}
+

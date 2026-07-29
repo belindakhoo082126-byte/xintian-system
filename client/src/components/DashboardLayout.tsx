@@ -109,6 +109,8 @@ const menuStructure: MenuEntry[] = [
     children: [
       { icon: MessageSquare, label: { zh: "Chat 客服", en: "Chat" }, path: "/chat" },
       { icon: AlertCircle, label: { zh: "AI 转人工通知", en: "AI Handover" }, path: "/ai-handover" },
+      { icon: MessageSquare, label: { zh: "固定回复规则", en: "Reply Rules" }, path: "/reply-rules" },
+      { icon: Bot, label: { zh: "AI 知识库", en: "AI Knowledge" }, path: "/ai-knowledge" },
       { icon: Bot, label: { zh: "AI Agent", en: "AI Agent" }, path: "/flows" },
       { icon: Video, label: { zh: "直播 AI 客服", en: "Live AI Agent" }, path: "/live-ai-flows" },
     ],

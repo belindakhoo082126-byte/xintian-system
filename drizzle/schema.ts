@@ -1970,3 +1970,59 @@ export const aiHandoverRequests = mysqlTable("ai_handover_requests", {
 
 export type AiHandoverRequest = typeof aiHandoverRequests.$inferSelect;
 export type InsertAiHandoverRequest = typeof aiHandoverRequests.$inferInsert;
+
+// ============================================================================
+// AI Engine — Independent modules for customer service AI
+// ============================================================================
+
+// Reply Rules — Fixed reply rules (replaces hardcoded keyword replies)
+// Admin can maintain via backend UI. Used by Reply Rule Engine.
+export const replyRules = mysqlTable("reply_rules", {
+  id: int("id").autoincrement().primaryKey(),
+  // Rule name (for admin identification)
+  name: varchar("name", { length: 255 }).notNull(),
+  // Trigger keywords (JSON array of strings, case-insensitive match)
+  triggerKeywords: text("triggerKeywords").notNull(),
+  // Reply content (text sent to customer)
+  replyContent: text("replyContent").notNull(),
+  // Whether to also send a button/template after the text
+  actionType: mysqlEnum("actionType", ["text_only", "button", "template"]).default("text_only").notNull(),
+  actionData: text("actionData"), // JSON: button config or template config
+  // Priority (lower = higher priority, checked first)
+  priority: int("priority").default(100).notNull(),
+  // Channel scope: which platforms this rule applies to
+  channels: text("channels").notNull().default('["messenger","whatsapp"]'), // JSON array
+  // Enabled toggle
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ReplyRule = typeof replyRules.$inferSelect;
+export type InsertReplyRule = typeof replyRules.$inferInsert;
+
+// AI Knowledge Base — Independent knowledge entries for AI matching
+// Separate from live_ai_flows (which are for FB Live/Post/Reel only)
+// Used by Knowledge Engine for Messenger/WhatsApp private chat
+export const aiKnowledge = mysqlTable("ai_knowledge", {
+  id: int("id").autoincrement().primaryKey(),
+  // Category for grouping (e.g., "shipping", "membership", "product", "faq")
+  category: varchar("category", { length: 100 }).notNull(),
+  // Topic/title for admin identification
+  topic: varchar("topic", { length: 255 }).notNull(),
+  // Trigger keywords (JSON array, case-insensitive)
+  triggerKeywords: text("triggerKeywords").notNull(),
+  // Knowledge content (the reply text sent to customer)
+  content: text("content").notNull(),
+  // Priority (lower = checked first)
+  priority: int("priority").default(100).notNull(),
+  // Whether this knowledge requires AI LLM processing (true) or is a direct reply (false)
+  useLLM: boolean("useLLM").default(false).notNull(),
+  // Enabled toggle
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiKnowledge = typeof aiKnowledge.$inferSelect;
+export type InsertAiKnowledge = typeof aiKnowledge.$inferInsert;

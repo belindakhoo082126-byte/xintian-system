@@ -4613,5 +4613,75 @@ export const appRouter = router({
         return { success: true };
       }),
   }),
+
+  // =========================================================================
+  // AI Engine — Reply Rules Management (Admin-maintained fixed replies)
+  // =========================================================================
+  replyRules: router({
+    list: protectedProcedure.query(async () => {
+      return await db.getAllReplyRules();
+    }),
+    create: protectedProcedure.input(z.object({
+      name: z.string(),
+      triggerKeywords: z.string(),
+      replyContent: z.string(),
+      priority: z.number().optional(),
+      channels: z.string().optional(),
+      isEnabled: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      return await db.createReplyRule(input);
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      triggerKeywords: z.string().optional(),
+      replyContent: z.string().optional(),
+      priority: z.number().optional(),
+      channels: z.string().optional(),
+      isEnabled: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      return await db.updateReplyRule(id, data);
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      return await db.deleteReplyRule(input.id);
+    }),
+  }),
+
+  // =========================================================================
+  // AI Engine — Knowledge Base Management (Admin-maintained AI knowledge)
+  // =========================================================================
+  aiKnowledge: router({
+    list: protectedProcedure.query(async () => {
+      return await db.getAllAiKnowledge();
+    }),
+    create: protectedProcedure.input(z.object({
+      category: z.string(),
+      topic: z.string(),
+      triggerKeywords: z.string(),
+      content: z.string(),
+      priority: z.number().optional(),
+      useLLM: z.boolean().optional(),
+      isEnabled: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      return await db.createAiKnowledge(input);
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      category: z.string().optional(),
+      topic: z.string().optional(),
+      triggerKeywords: z.string().optional(),
+      content: z.string().optional(),
+      priority: z.number().optional(),
+      useLLM: z.boolean().optional(),
+      isEnabled: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      return await db.updateAiKnowledge(id, data);
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      return await db.deleteAiKnowledge(input.id);
+    }),
+  }),
 });
 export type AppRouter = typeof appRouter;
