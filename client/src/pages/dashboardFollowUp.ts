@@ -2,6 +2,7 @@ export type FollowUpStats = {
   pendingShippingCount?: number;
   pendingRefundCount?: number;
   logisticsErrorCount?: number;
+  incompleteInfoCount?: number;
   notificationFailedCount?: number;
   stockExceptionCount?: number;
   overdueCount?: number;
@@ -19,6 +20,7 @@ export function getFollowUpDisplayState(
     pendingShippingCount: stats?.pendingShippingCount ?? 0,
     pendingRefundCount: stats?.pendingRefundCount ?? 0,
     logisticsErrorCount: stats?.logisticsErrorCount ?? 0,
+    incompleteInfoCount: stats?.incompleteInfoCount ?? 0,
     notificationFailedCount: stats?.notificationFailedCount ?? 0,
     stockExceptionCount: stats?.stockExceptionCount ?? 0,
     overdueCount: stats?.overdueCount ?? 0,

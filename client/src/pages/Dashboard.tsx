@@ -71,7 +71,8 @@ export default function Dashboard() {
     },
   ];
 
-  // V2.1: 10 fixed work status cards — always visible even at 0
+  // V2.1: 9 fixed work status cards — always visible even at 0
+  // Removed "订单备注" from work status (kept as independent section below)
   const workCards = [
     { title: lang === "zh" ? "待审核付款" : "Pending Payment Review", value: stats.row1.pendingPayment, icon: Clock, color: "text-orange-500", link: "/orders?status=receipt_uploaded" },
     { title: lang === "zh" ? "待包货" : "Pending Packing", value: stats.row1.pendingShipment, icon: Package, color: "text-blue-500", link: "/packing?tab=packing" },
@@ -80,9 +81,8 @@ export default function Dashboard() {
     { title: lang === "zh" ? "部分发货" : "Partial Shipped", value: stats.row1.partialShipped, icon: Truck, color: "text-indigo-500", link: "/packing?tab=partial_shipped" },
     { title: lang === "zh" ? "保留订单" : "Hold Orders", value: stats.row2.holdOrders, icon: Ban, color: "text-yellow-500", link: "/orders?status=hold_order" },
     { title: lang === "zh" ? "今日预约发货" : "Today Scheduled", value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "/packing?tab=scheduled" },
-    { title: lang === "zh" ? "订单备注" : "Order Remarks", value: (pendingRemarks as any)?.length || 0, icon: FileText, color: "text-amber-500", link: "/orders?tab=remarks" },
     { title: lang === "zh" ? "未读 Messenger" : "Unread Messenger", value: 0, icon: MessageCircle, color: "text-pink-500", link: "/messenger" },
-    { title: lang === "zh" ? "库存预警" : "Stock Alert", value: stats.row3.lowStock + stats.row3.outOfStock, icon: Warehouse, color: "text-red-500", link: "/products?stock=low" },
+    { title: lang === "zh" ? "库存预警" : "Stock Alert", value: stats.row3.lowStock + stats.row3.outOfStock, icon: Warehouse, color: "text-red-500", link: "/products-v2?stock=low" },
   ];
 
 
@@ -119,10 +119,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* V2.1: 10 Fixed Work Status Cards — always visible */}
+      {/* V2.1: 9 Fixed Work Status Cards — always visible */}
       <div>
         <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "工作状态" : "Work Status"}</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        <div className="grid grid-cols-3 sm:grid-cols-9 gap-4">
           {workCards.map((card, i) => (
             <Link key={i} href={card.link}>
               <Card className="hover:shadow-md transition-shadow cursor-pointer">
@@ -147,16 +147,16 @@ export default function Dashboard() {
           <Badge variant="secondary" className="ml-auto">{followUpDisplay.itemCount}</Badge>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <Link href="/orders?special=1&type=pending_shipping">
               <div className="rounded-lg border border-orange-100 bg-background/70 p-3 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors cursor-pointer">
-                <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待补运费" : "Pending Shipping"}</p>
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "待补运费" : "Pending Shipping"}</p>
                 <p className="mt-1 text-2xl font-bold text-orange-600">{followUpDisplay.pendingShippingCount}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=pending_refund">
               <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer">
-                <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待退款" : "Pending Refund"}</p>
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "待退款" : "Pending Refund"}</p>
                 <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.pendingRefundCount}</p>
               </div>
             </Link>
@@ -164,6 +164,12 @@ export default function Dashboard() {
               <div className="rounded-lg border border-yellow-100 bg-background/70 p-3 dark:border-yellow-900/50 hover:bg-yellow-50 dark:hover:bg-yellow-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "物流异常" : "Logistics Error"}</p>
                 <p className="mt-1 text-2xl font-bold text-yellow-600">{followUpDisplay.logisticsErrorCount}</p>
+              </div>
+            </Link>
+            <Link href="/orders?special=1&type=incomplete_info">
+              <div className="rounded-lg border border-blue-100 bg-background/70 p-3 dark:border-blue-900/50 hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-colors cursor-pointer">
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "客户资料不完整" : "Incomplete Info"}</p>
+                <p className="mt-1 text-2xl font-bold text-blue-600">{followUpDisplay.incompleteInfoCount}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=notification_failed">

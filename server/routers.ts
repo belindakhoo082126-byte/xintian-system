@@ -1208,6 +1208,27 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    // V3.2: Update special status (set / remove)
+    updateSpecialStatus: adminProcedure
+      .input(z.object({
+        orderId: z.number(),
+        action: z.enum(["set", "remove"]),
+        specialOrderType: z.string().optional(),
+        reason: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const adminName = ctx.user?.name || "admin";
+        const { sql } = await import("drizzle-orm");
+        if (input.action === "remove") {
+          await db.executeRaw(sql`UPDATE orders SET isSpecialOrder = 0, specialOrderStatus = 'resolved', specialOrderReason = ${input.reason || ''}, specialOrderBy = ${adminName}, specialOrderUpdatedAt = NOW() WHERE id = ${input.orderId}`);
+        } else {
+          if (!input.specialOrderType) throw new Error("specialOrderType is required for set action");
+          await db.executeRaw(sql`UPDATE orders SET isSpecialOrder = 1, specialOrderType = ${input.specialOrderType}, specialOrderStatus = 'pending', specialOrderSource = 'manual', specialOrderReason = ${input.reason || ''}, specialOrderBy = ${adminName}, specialOrderUpdatedAt = NOW() WHERE id = ${input.orderId}`);
+        }
+        await db.logOrderOperation(input.orderId, "special_status", `Special status ${input.action === "set" ? "set to " + input.specialOrderType : "removed"} by ${adminName}${input.reason ? ": " + input.reason : ""}`, null, adminName);
+        return { success: true };
+      }),
+
     // V2.1: Order operation logs
     getOperationLogs: adminProcedure
       .input(z.object({ orderId: z.number() }))

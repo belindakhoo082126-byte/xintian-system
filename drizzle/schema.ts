@@ -561,8 +561,16 @@ export const orders = mysqlTable("orders", {
   shippingLoss: decimal("shippingLoss", { precision: 10, scale: 2 }),
   // V1.2: Special order flag
   isSpecialOrder: boolean("isSpecialOrder").default(false).notNull(),
-  specialOrderType: mysqlEnum("specialOrderType", ["pending_shipping", "pending_refund", "company_bear"]),
+  specialOrderType: mysqlEnum("specialOrderType", ["pending_shipping", "pending_refund", "company_bear", "logistics_error", "incomplete_info", "notification_failed", "stock_exception", "overdue"]),
   specialOrderStatus: mysqlEnum("specialOrderStatus", ["pending", "resolved", "cancelled"]).default("pending"),
+  // V3.2: Special status source (system auto vs manual)
+  specialOrderSource: mysqlEnum("specialOrderSource", ["system", "manual"]).default("manual"),
+  // V3.2: Special status reason (why it was set/modified)
+  specialOrderReason: text("specialOrderReason"),
+  // V3.2: Who set/modified the special status
+  specialOrderBy: varchar("specialOrderBy", { length: 255 }),
+  // V3.2: When the special status was last modified
+  specialOrderUpdatedAt: timestamp("specialOrderUpdatedAt"),
   // V1.2: Parent order for split orders
   parentOrderId: int("parentOrderId"),
   // V2.2: Order category (订单分类: local=本地 / import=中国代购)

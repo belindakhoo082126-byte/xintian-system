@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { ArrowLeft, Package, Truck, CheckCircle, Clock, AlertCircle, PauseCircle, Bell, History, FileText, MessageSquare, User, Lock, Trash2, Plus, Sprout, Calendar } from "lucide-react";
+import { ArrowLeft, Package, Truck, CheckCircle, Clock, AlertCircle, PauseCircle, Bell, History, FileText, MessageSquare, User, Lock, Trash2, Plus, Sprout, Calendar, AlertTriangle } from "lucide-react";
 
 const HOLD_TYPE_LABELS_RAW: Record<string, { zh: string; en: string }> = {
   wait_next_live: { zh: "等待下次直播", en: "Wait for next live" },
@@ -59,6 +59,8 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
   });
   const [targetStatus, setTargetStatus] = useState("");
   const [transitionNotes, setTransitionNotes] = useState("");
+  const [specialStatusOpen, setSpecialStatusOpen] = useState(false);
+  const [specialStatusForm, setSpecialStatusForm] = useState({ type: "", reason: "" });
   const utils = trpc.useUtils();
 
   const { data: orderData, isLoading } = trpc.orders.getById.useQuery({ id: orderId });
@@ -147,6 +149,18 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
     onSuccess: () => {
       utils.orders.invalidate();
       toast.success(scheduledDate ? translate("预约发货日期已设置", "Scheduled shipping date set") : translate("预约发货日期已取消", "Scheduled shipping date cancelled"));
+    },
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
+  });
+
+  const updateSpecialStatusMutation = trpc.orders.updateSpecialStatus.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      utils.orders.followUpStats.invalidate();
+      utils.orders.followUpList.invalidate();
+      toast.success(translate("特别状态已更新", "Special status updated"));
+      setSpecialStatusOpen(false);
+      setSpecialStatusForm({ type: "", reason: "" });
     },
     onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
   });
@@ -498,6 +512,72 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
         </div>
       </div>
 
+      {/* V3.2: Special Status Section */}
+      <Card className={order?.isSpecialOrder ? "border-orange-200 bg-orange-50/30 dark:border-orange-900/60 dark:bg-orange-950/10" : ""}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-orange-500" />
+            {translate("特别状态", "Special Status")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {order?.isSpecialOrder && order?.specialOrderStatus === "pending" ? (
+            <>
+              <div className="flex items-center gap-2">
+                <Badge className={
+                  order.specialOrderType === "pending_shipping" ? "bg-orange-100 text-orange-700" :
+                  order.specialOrderType === "pending_refund" ? "bg-red-100 text-red-700" :
+                  order.specialOrderType === "logistics_error" ? "bg-yellow-100 text-yellow-700" :
+                  order.specialOrderType === "incomplete_info" ? "bg-blue-100 text-blue-700" :
+                  order.specialOrderType === "notification_failed" ? "bg-purple-100 text-purple-700" :
+                  order.specialOrderType === "stock_exception" ? "bg-amber-100 text-amber-700" :
+                  order.specialOrderType === "overdue" ? "bg-red-100 text-red-700" :
+                  "bg-gray-100 text-gray-700"
+                } variant="secondary">
+                  {order.specialOrderType === "pending_shipping" ? translate("待补运费", "Pending Shipping") :
+                   order.specialOrderType === "pending_refund" ? translate("待退款", "Pending Refund") :
+                   order.specialOrderType === "logistics_error" ? translate("物流异常", "Logistics Error") :
+                   order.specialOrderType === "incomplete_info" ? translate("客户资料不完整", "Incomplete Info") :
+                   order.specialOrderType === "notification_failed" ? translate("自动通知失败", "Notification Failed") :
+                   order.specialOrderType === "stock_exception" ? translate("库存异常", "Stock Exception") :
+                   order.specialOrderType === "overdue" ? translate("超过24小时未处理", "Overdue >24h") :
+                   translate("其他", "Other")}
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {order.specialOrderSource === "system" ? translate("系统自动", "System Auto") : translate("人工设置", "Manual")}
+                </Badge>
+              </div>
+              {order.specialOrderReason && (
+                <p className="text-sm text-muted-foreground">{order.specialOrderReason}</p>
+              )}
+              {order.specialOrderBy && (
+                <p className="text-xs text-muted-foreground">
+                  {translate("操作人", "Operator")}: {order.specialOrderBy}
+                  {order.specialOrderUpdatedAt && ` · ${new Date(order.specialOrderUpdatedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}`}
+                </p>
+              )}
+              <div className="flex gap-2 pt-2">
+                <Button size="sm" variant="outline" onClick={() => setSpecialStatusOpen(true)}>
+                  {translate("修改特别状态", "Edit Special Status")}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => {
+                  updateSpecialStatusMutation.mutate({ orderId, action: "remove", reason: translate("管理员手动移除特别状态", "Admin manually removed special status") });
+                }}>
+                  {translate("移除特别状态", "Remove Special Status")}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => setSpecialStatusOpen(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                {translate("设置特别状态", "Set Special Status")}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* V1.1: Remarks Section */}
       <Card>
         <CardHeader>
@@ -743,6 +823,55 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
               disabled={!repotForm.orderItemId || !repotForm.potProductId || createRepotMutation.isPending}
             >
               {translate("确认换盆", "Confirm Repot")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* V3.2: Special Status Dialog */}
+      <Dialog open={specialStatusOpen} onOpenChange={setSpecialStatusOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("设置/修改特别状态", "Set/Edit Special Status")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("特别状态类型", "Special Status Type")}</Label>
+              <Select value={specialStatusForm.type} onValueChange={(v) => setSpecialStatusForm((p) => ({ ...p, type: v }))}>
+                <SelectTrigger><SelectValue placeholder={translate("选择特别状态", "Select Special Status")} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending_shipping">{translate("待补运费", "Pending Shipping")}</SelectItem>
+                  <SelectItem value="pending_refund">{translate("待退款", "Pending Refund")}</SelectItem>
+                  <SelectItem value="logistics_error">{translate("物流异常", "Logistics Error")}</SelectItem>
+                  <SelectItem value="incomplete_info">{translate("客户资料不完整", "Incomplete Info")}</SelectItem>
+                  <SelectItem value="notification_failed">{translate("自动通知失败", "Notification Failed")}</SelectItem>
+                  <SelectItem value="stock_exception">{translate("库存异常", "Stock Exception")}</SelectItem>
+                  <SelectItem value="overdue">{translate("超过24小时未处理", "Overdue >24h")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{translate("修改原因", "Reason")}</Label>
+              <Textarea
+                value={specialStatusForm.reason}
+                onChange={(e) => setSpecialStatusForm((p) => ({ ...p, reason: e.target.value }))}
+                placeholder={translate("请填写修改原因...", "Enter reason for change...")}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSpecialStatusOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button
+              onClick={() => updateSpecialStatusMutation.mutate({
+                orderId,
+                action: "set",
+                specialOrderType: specialStatusForm.type,
+                reason: specialStatusForm.reason,
+              })}
+              disabled={!specialStatusForm.type || updateSpecialStatusMutation.isPending}
+            >
+              {translate("确认", "Confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

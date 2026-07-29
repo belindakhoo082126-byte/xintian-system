@@ -39,6 +39,12 @@ import { broadcastChange, broadcastChanges } from './_core/realtime';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+export async function executeRaw(query: any) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  return await db.execute(query);
+}
+
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -4682,7 +4688,7 @@ export async function getDashboardV11Stats() {
 
   // Row 3: Inventory
   const lowStock = await db.select({ count: sql`COUNT(*)` }).from(products)
-    .where(and(eq(products.type, 'physical'), lte(products.stockQuantity, 5), gt(products.stockQuantity, 0))) as any[];
+    .where(and(eq(products.type, 'physical'), lte(products.stockQuantity, 10), gt(products.stockQuantity, 0))) as any[];
   const outOfStock = await db.select({ count: sql`COUNT(*)` }).from(products)
     .where(and(eq(products.type, 'physical'), eq(products.stockQuantity, 0))) as any[];
 
@@ -6265,16 +6271,13 @@ export async function getSpecialOrderFollowUpStats() {
     pendingShippingCount: 0,
     pendingRefundCount: 0,
     logisticsErrorCount: 0,
+    incompleteInfoCount: 0,
     notificationFailedCount: 0,
     stockExceptionCount: 0,
     overdueCount: 0,
     totalPending: 0,
   };
-
-  const now = Date.now();
-  const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
-
-  // Count special orders by type that are still pending
+  // V3.2: Read directly from orders.specialOrderType — single source of truth
   const [rows] = await db.execute(sql`
     SELECT 
       specialOrderType,
@@ -6285,71 +6288,23 @@ export async function getSpecialOrderFollowUpStats() {
       AND physicalStatus != 'cancelled'
     GROUP BY specialOrderType
   `);
-
   const typeCounts: Record<string, number> = {};
   (rows as unknown as any[]).forEach((r: any) => {
     typeCounts[r.specialOrderType] = Number(r.cnt) || 0;
   });
-
-  // Count overdue (>24h since creation, still pending)
-  const [overdueRows] = await db.execute(sql`
-    SELECT COUNT(*) as cnt
-    FROM orders
-    WHERE isSpecialOrder = 1
-      AND specialOrderStatus = 'pending'
-      AND physicalStatus != 'cancelled'
-      AND createdAt <= ${twentyFourHoursAgo}
-  `);
-
-  const overdueCount = Number((overdueRows as unknown as any[])[0]?.cnt) || 0;
-
-  // Count logistics errors (orders with tracking issues - no AWB but status is ready_to_ship)
-  const [logisticsRows] = await db.execute(sql`
-    SELECT COUNT(*) as cnt
-    FROM order_sub_orders
-    WHERE status = 'ready_to_ship'
-      AND (awbNumber IS NULL OR awbNumber = '')
-  `);
-
-  const logisticsErrorCount = Number((logisticsRows as unknown as any[])[0]?.cnt) || 0;
-
-  // Count orders with incomplete customer info
-  const [incompleteRows] = await db.execute(sql`
-    SELECT COUNT(*) as cnt
-    FROM orders o
-    INNER JOIN customers c ON o.customerId = c.id
-    WHERE o.isSpecialOrder = 0
-      AND o.physicalStatus = 'pending'
-      AND (c.phoneNumber IS NULL OR c.phoneNumber = '' 
-           OR o.shippingAddress IS NULL OR o.shippingAddress = '')
-  `);
-
-  const incompleteInfoCount = Number((incompleteRows as unknown as any[])[0]?.cnt) || 0;
-
-  // Count failed notifications (messenger/whatsapp/email) that need manual retry
-  const [notificationFailedRows] = await db.execute(sql`
-    SELECT COUNT(*) as cnt
-    FROM notification_logs
-    WHERE status = 'failed'
-  `);
-  const notificationFailedCount = Number((notificationFailedRows as unknown as any[])[0]?.cnt) || 0;
-
-  // Count open stock exceptions (out_of_stock and other unresolved exceptions)
-  const [stockExceptionRows] = await db.execute(sql`
-    SELECT COUNT(*) as cnt
-    FROM order_exceptions
-    WHERE status = 'open'
-  `);
-  const stockExceptionCount = Number((stockExceptionRows as unknown as any[])[0]?.cnt) || 0;
-
   const pendingShippingCount = typeCounts['pending_shipping'] || 0;
   const pendingRefundCount = typeCounts['pending_refund'] || 0;
-  const totalPending = pendingShippingCount + pendingRefundCount + (typeCounts['company_bear'] || 0);
-
+  const logisticsErrorCount = typeCounts['logistics_error'] || 0;
+  const incompleteInfoCount = typeCounts['incomplete_info'] || 0;
+  const notificationFailedCount = typeCounts['notification_failed'] || 0;
+  const stockExceptionCount = typeCounts['stock_exception'] || 0;
+  const overdueCount = typeCounts['overdue'] || 0;
+  const totalPending = Object.values(typeCounts).reduce((a, b) => a + b, 0);
   return {
     pendingShippingCount,
     pendingRefundCount,
-    logisticsErrorCount: logisticsErrorCount + incompleteInfoCount,
+    logisticsErrorCount,
+    incompleteInfoCount,
     notificationFailedCount,
     stockExceptionCount,
     overdueCount,
@@ -6360,12 +6315,8 @@ export async function getSpecialOrderFollowUpStats() {
 export async function getSpecialOrderFollowUpList(limit = 50) {
   const db = await getDb();
   if (!db) return [];
-
   const now = Date.now();
-  const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
-
-  // Get special orders that are pending, with customer info and last remark
-  // Also include orders with incomplete customer info (phone/address missing) that are not yet special orders
+  // V3.2: Read directly from orders table — single source of truth
   const [rows] = await db.execute(sql`
     SELECT 
       o.id as order_id,
@@ -6373,6 +6324,8 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
       o.parentOrderId,
       o.specialOrderType,
       o.specialOrderStatus,
+      o.specialOrderSource,
+      o.specialOrderReason,
       o.shippingDifference,
       o.customerPaidShipping,
       o.actualShippingFee,
@@ -6392,15 +6345,8 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
     FROM orders o
     LEFT JOIN customers c ON o.customerId = c.id
     WHERE o.physicalStatus != 'cancelled'
-      AND (
-        -- Special orders that are pending
-        (o.isSpecialOrder = 1 AND o.specialOrderStatus = 'pending')
-        OR
-        -- Orders with incomplete customer info (counts as logistics error in stats)
-        (o.isSpecialOrder = 0 AND o.physicalStatus = 'pending'
-         AND (c.phoneNumber IS NULL OR c.phoneNumber = '' 
-              OR o.shippingAddress IS NULL OR o.shippingAddress = ''))
-      )
+      AND o.isSpecialOrder = 1
+      AND o.specialOrderStatus = 'pending'
     ORDER BY o.createdAt ASC
     LIMIT ${limit}
   `);
@@ -6432,7 +6378,7 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
       }));
     }
 
-    // Determine special type label
+        // V3.2: Determine special type label — all 7 unified types
     let specialTypeLabel = '';
     let specialTypeColor = '';
     switch (item.specialOrderType) {
@@ -6448,16 +6394,29 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
         specialTypeLabel = '公司承担';
         specialTypeColor = 'blue';
         break;
+      case 'logistics_error':
+        specialTypeLabel = '物流异常';
+        specialTypeColor = 'yellow';
+        break;
+      case 'incomplete_info':
+        specialTypeLabel = '客户资料不完整';
+        specialTypeColor = 'blue';
+        break;
+      case 'notification_failed':
+        specialTypeLabel = '自动通知失败';
+        specialTypeColor = 'purple';
+        break;
+      case 'stock_exception':
+        specialTypeLabel = '库存异常';
+        specialTypeColor = 'amber';
+        break;
+      case 'overdue':
+        specialTypeLabel = '超过24小时未处理';
+        specialTypeColor = 'red';
+        break;
       default:
         specialTypeLabel = '其他特别处理';
         specialTypeColor = 'gray';
-    }
-
-    // Check for incomplete customer info
-    const hasIncompleteInfo = !item.customer_phone || !item.shippingAddress;
-    if (hasIncompleteInfo && !item.specialOrderType) {
-      specialTypeLabel = '客户资料不完整';
-      specialTypeColor = 'yellow';
     }
 
     // Calculate amount
@@ -6471,7 +6430,9 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
       parentOrderId: item.parentOrderId,
       customerName: item.customer_name || item.facebook_name || '未知',
       customerPhone: item.customer_phone || '',
-      specialType: item.specialOrderType || (hasIncompleteInfo ? 'incomplete_info' : 'other'),
+      specialType: item.specialOrderType || 'other',
+      specialOrderSource: item.specialOrderSource || 'manual',
+      specialOrderReason: item.specialOrderReason || '',
       specialTypeLabel,
       specialTypeColor,
       amount: amount.toFixed(2),

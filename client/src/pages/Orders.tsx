@@ -498,10 +498,27 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           </SelectContent>
         </Select>
         {specialOnly && (
-          <Badge variant="secondary" className="gap-1 bg-orange-100 text-orange-700">
-            {translate("特别状态订单", "Special Status Orders")}
-            <button onClick={() => setSpecialOnly(false)} className="ml-1 rounded-full hover:bg-orange-200">×</button>
-          </Badge>
+          <>
+            <Badge variant="secondary" className="gap-1 bg-orange-100 text-orange-700">
+              {translate("特别状态订单", "Special Status Orders")}
+              <button onClick={() => { setSpecialOnly(false); setSpecialType(""); }} className="ml-1 rounded-full hover:bg-orange-200">×</button>
+            </Badge>
+            <Select value={specialType || "all"} onValueChange={(v) => setSpecialType(v)}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder={translate("全部特别状态", "All Special Types")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{translate("全部特别状态", "All Special Types")}</SelectItem>
+                <SelectItem value="pending_shipping">{translate("待补运费", "Pending Shipping")}</SelectItem>
+                <SelectItem value="pending_refund">{translate("待退款", "Pending Refund")}</SelectItem>
+                <SelectItem value="logistics_error">{translate("物流异常", "Logistics Error")}</SelectItem>
+                <SelectItem value="incomplete_info">{translate("客户资料不完整", "Incomplete Info")}</SelectItem>
+                <SelectItem value="notification_failed">{translate("自动通知失败", "Notification Failed")}</SelectItem>
+                <SelectItem value="stock_exception">{translate("库存异常", "Stock Exception")}</SelectItem>
+                <SelectItem value="overdue">{translate("超过24小时未处理", "Overdue >24h")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
         )}
       </div>
 
