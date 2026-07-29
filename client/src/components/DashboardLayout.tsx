@@ -34,7 +34,7 @@ import {
   MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook,
   FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings,
   Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle, AlertCircle,
-  ClipboardList, Video, Plane, ChevronDown, Bot, Home, FileText, Receipt,
+  ClipboardList, Video, Plane, ChevronDown, Bot, Home, FileText, Receipt, Brain,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -109,14 +109,7 @@ const menuStructure: MenuEntry[] = [
     children: [
       { icon: MessageSquare, label: { zh: "Chat 客服", en: "Chat" }, path: "/chat" },
       { icon: AlertCircle, label: { zh: "AI 转人工通知", en: "AI Handover" }, path: "/ai-handover" },
-      {
-        icon: Bot,
-        label: { zh: "AI 大脑", en: "AI Brain" },
-        children: [
-          { icon: MessageSquare, label: { zh: "固定回复规则", en: "Reply Rules" }, path: "/reply-rules" },
-          { icon: Bot, label: { zh: "AI 知识库", en: "AI Knowledge" }, path: "/ai-knowledge" },
-        ],
-      },
+      { icon: Brain, label: { zh: "AI 大脑", en: "AI Brain" }, path: "/ai-brain" },
       { icon: Bot, label: { zh: "Flow 管理", en: "Flow Management" }, path: "/flows" },
       { icon: Video, label: { zh: "直播 AI 客服", en: "Live AI Agent" }, path: "/live-ai-flows" },
     ],

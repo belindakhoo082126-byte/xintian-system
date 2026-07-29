@@ -2026,3 +2026,43 @@ export const aiKnowledge = mysqlTable("ai_knowledge", {
 });
 export type AiKnowledge = typeof aiKnowledge.$inferSelect;
 export type InsertAiKnowledge = typeof aiKnowledge.$inferInsert;
+
+// ============================================================================
+// AI Persona — AI personality/branding settings for AI Brain
+// ============================================================================
+export const aiPersona = mysqlTable("ai_persona", {
+  id: int("id").autoincrement().primaryKey(),
+  // AI display name
+  aiName: varchar("aiName", { length: 100 }).default("小田").notNull(),
+  // Brand name
+  brandName: varchar("brandName", { length: 200 }).default("心田 Xintian").notNull(),
+  // How AI refers to itself
+  aiSelfReference: varchar("aiSelfReference", { length: 50 }).default("小田").notNull(),
+  // How AI addresses the customer
+  customerAddress: varchar("customerAddress", { length: 50 }).default("亲爱的").notNull(),
+  // Reply tone: friendly, professional, casual, warm
+  replyTone: varchar("replyTone", { length: 50 }).default("warm").notNull(),
+  // Default language
+  defaultLanguage: varchar("defaultLanguage", { length: 20 }).default("zh").notNull(),
+  // Supported languages (JSON array)
+  supportedLanguages: text("supportedLanguages").default('["zh","en","ms"]').notNull(),
+  // Emoji usage level: none, low, medium, high
+  emojiLevel: varchar("emojiLevel", { length: 20 }).default("low").notNull(),
+  // Reply length: short, medium, long
+  replyLength: varchar("replyLength", { length: 20 }).default("medium").notNull(),
+  // Whether to proactively recommend products
+  proactiveRecommend: boolean("proactiveRecommend").default(true).notNull(),
+  // Whether to proactively ask about customer needs
+  proactiveInquire: boolean("proactiveInquire").default(true).notNull(),
+  // Whether to add CTA at end of replies
+  enableCTA: boolean("enableCTA").default(true).notNull(),
+  // CTA text template
+  ctaTemplate: text("ctaTemplate").default("还有什么小田可以帮到你的吗？😊"),
+  // Custom system prompt additions (optional, for advanced users)
+  customPrompt: text("customPrompt"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiPersona = typeof aiPersona.$inferSelect;
+export type InsertAiPersona = typeof aiPersona.$inferInsert;

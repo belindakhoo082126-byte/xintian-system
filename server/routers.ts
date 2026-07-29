@@ -4683,5 +4683,108 @@ export const appRouter = router({
       return await db.deleteAiKnowledge(input.id);
     }),
   }),
+
+  // =========================================================================
+  // AI Brain — Central management hub for all AI features
+  // =========================================================================
+  aiBrain: router({
+    getStatus: adminProcedure.query(async () => {
+      return await db.getAiBrainStatus();
+    }),
+
+    getStats: adminProcedure.query(async () => {
+      return await db.getAiBrainStats();
+    }),
+
+    getAlerts: adminProcedure.query(async () => {
+      return await db.getAiBrainAlerts();
+    }),
+
+    getPersona: adminProcedure.query(async () => {
+      return await db.getAiPersona();
+    }),
+
+    updatePersona: adminProcedure.input(z.object({
+      aiName: z.string().optional(),
+      brandName: z.string().optional(),
+      aiSelfReference: z.string().optional(),
+      customerAddress: z.string().optional(),
+      replyTone: z.string().optional(),
+      defaultLanguage: z.string().optional(),
+      supportedLanguages: z.string().optional(),
+      emojiLevel: z.string().optional(),
+      replyLength: z.string().optional(),
+      proactiveRecommend: z.boolean().optional(),
+      proactiveInquire: z.boolean().optional(),
+      enableCTA: z.boolean().optional(),
+      ctaTemplate: z.string().optional(),
+      customPrompt: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      return await db.updateAiPersona(input);
+    }),
+
+    previewReply: adminProcedure
+      .input(z.object({
+        userMessage: z.string().min(1),
+      }))
+      .mutation(async ({ input }) => {
+        const persona = await db.getAiPersona();
+        if (!persona) {
+          return { reply: "请先设置 AI 人设后再进行预览。" };
+        }
+
+        // Build system prompt from persona settings
+        const toneMap: Record<string, string> = {
+          warm: "温暖亲切",
+          friendly: "友善轻松",
+          professional: "专业正式",
+          casual: "随性自然",
+        };
+        const lengthMap: Record<string, string> = {
+          short: "简短（1-2句话）",
+          medium: "适中（3-5句话）",
+          long: "详细（5句以上）",
+        };
+        const emojiMap: Record<string, string> = {
+          none: "不使用 emoji",
+          low: "少量 emoji",
+          medium: "适度 emoji",
+          high: "多使用 emoji",
+        };
+
+        const supportedLangs = (() => {
+          try { return JSON.parse(persona.supportedLanguages || '[]') as string[]; } catch { return ['zh']; }
+        })();
+
+        const systemPrompt = `你是${persona.aiName}，${persona.brandName}的AI客服助手。
+
+人设要求：
+- 自称：${persona.aiSelfReference}
+- 称呼客户：${persona.customerAddress}
+- 语气：${toneMap[persona.replyTone] || persona.replyTone}
+- 回复长度：${lengthMap[persona.replyLength] || persona.replyLength}
+- Emoji 使用：${emojiMap[persona.emojiLevel] || persona.emojiLevel}
+- 默认语言：${persona.defaultLanguage === 'zh' ? '中文' : persona.defaultLanguage === 'en' ? 'English' : persona.defaultLanguage}
+- 支持语言：${supportedLangs.join(', ')}
+${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.proactiveInquire ? '- 主动询问客户需求\n' : ''}${persona.enableCTA && persona.ctaTemplate ? `- 回复结尾加入：${persona.ctaTemplate}\n` : ''}${persona.customPrompt ? `\n额外要求：\n${persona.customPrompt}\n` : ''}
+注意：这是模拟预览，不要提及你是AI模型或ChatGPT。直接以${persona.aiName}的身份回复。`;
+
+        try {
+          const { invokeLLM } = await import("./_core/llm");
+          const result = await invokeLLM({
+            model: "gpt-5-mini",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: input.userMessage },
+            ],
+            maxTokens: 500,
+          });
+          const reply = result.choices?.[0]?.message?.content || "（无回复内容）";
+          return { reply };
+        } catch (err: any) {
+          return { reply: `预览生成失败：${err.message || "未知错误"}` };
+        }
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;

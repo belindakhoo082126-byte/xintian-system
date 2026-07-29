@@ -20,6 +20,7 @@ import Chat from "@/pages/Chat";
 import AiHandover from "@/pages/AiHandover";
 import ReplyRules from "@/pages/ReplyRules";
 import AiKnowledge from "@/pages/AiKnowledge";
+import AiBrain from "@/pages/AiBrain";
 import Suppliers from "@/pages/Suppliers";
 import PurchaseOrders from "@/pages/PurchaseOrders";
 import BusinessReport from "@/pages/BusinessReport";
@@ -92,6 +93,7 @@ function DashboardRoutes() {
       <Route path={"/customers"} component={Customers} />
       <Route path={"/chat"} component={Chat} />
       <Route path={"/ai-handover"} component={AiHandover} />
+      <Route path={"/ai-brain"} component={AiBrain} />
       <Route path={"/reply-rules"} component={ReplyRules} />
       <Route path={"/ai-knowledge"} component={AiKnowledge} />
       <Route path={"/flows"} component={Flows} />

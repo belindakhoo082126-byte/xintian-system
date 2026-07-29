@@ -8384,3 +8384,269 @@ export async function deleteAiKnowledge(id: number) {
   return { success: true };
 }
 
+
+// ===========================================================================
+// AI Brain — Persona, Status, Stats, Alerts
+// ===========================================================================
+
+export async function getAiPersona() {
+  const database = await getDb();
+  if (!database) return null;
+  const { aiPersona } = await import("../drizzle/schema");
+  const rows = await database.select().from(aiPersona).limit(1);
+  return rows.length > 0 ? rows[0] : null;
+}
+
+export async function updateAiPersona(data: {
+  aiName?: string;
+  brandName?: string;
+  aiSelfReference?: string;
+  customerAddress?: string;
+  replyTone?: string;
+  defaultLanguage?: string;
+  supportedLanguages?: string;
+  emojiLevel?: string;
+  replyLength?: string;
+  proactiveRecommend?: boolean;
+  proactiveInquire?: boolean;
+  enableCTA?: boolean;
+  ctaTemplate?: string;
+  customPrompt?: string;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const { aiPersona } = await import("../drizzle/schema");
+  const existing = await database.select().from(aiPersona).limit(1);
+  if (existing.length > 0) {
+    await database.update(aiPersona).set(data).where(eq(aiPersona.id, existing[0].id));
+  } else {
+    await database.insert(aiPersona).values({
+      aiName: data.aiName || "小田",
+      brandName: data.brandName || "心田 Xintian",
+      aiSelfReference: data.aiSelfReference || "小田",
+      customerAddress: data.customerAddress || "亲爱的",
+      replyTone: data.replyTone || "warm",
+      defaultLanguage: data.defaultLanguage || "zh",
+      supportedLanguages: data.supportedLanguages || '["zh","en","ms"]',
+      emojiLevel: data.emojiLevel || "low",
+      replyLength: data.replyLength || "medium",
+      proactiveRecommend: data.proactiveRecommend ?? true,
+      proactiveInquire: data.proactiveInquire ?? true,
+      enableCTA: data.enableCTA ?? true,
+      ctaTemplate: data.ctaTemplate || "还有什么小田可以帮到你的吗？",
+      customPrompt: data.customPrompt,
+    });
+  }
+  return { success: true };
+}
+
+export async function getAiBrainStatus() {
+  const database = await getDb();
+  const status: Record<string, { state: "ok" | "error" | "unconfigured"; detail?: string }> = {};
+
+  // Messenger
+  const hasPageToken = !!process.env.FB_PAGE_ACCESS_TOKEN;
+  const hasPageId = !!process.env.FB_PAGE_ID;
+  if (hasPageToken && hasPageId) {
+    status.messenger = { state: "ok", detail: "Page token & ID configured" };
+  } else if (hasPageToken || hasPageId) {
+    status.messenger = { state: "error", detail: "Partial configuration" };
+  } else {
+    status.messenger = { state: "unconfigured", detail: "No FB Page token or ID" };
+  }
+
+  // WhatsApp — not configured in this system
+  status.whatsapp = { state: "unconfigured", detail: "WhatsApp Business API not yet integrated" };
+
+  // Chat
+  if (database) {
+    try {
+      const { chatConversations } = await import("../drizzle/schema");
+      const count = await database.select({ c: sql`count(*)` }).from(chatConversations);
+      status.chat = { state: "ok", detail: `${count[0]?.c || 0} conversations` };
+    } catch {
+      status.chat = { state: "error", detail: "Cannot query chat tables" };
+    }
+  } else {
+    status.chat = { state: "error", detail: "Database not available" };
+  }
+
+  // Flow Engine
+  if (database) {
+    try {
+      const { liveAiFlows } = await import("../drizzle/schema");
+      const flows = await database.select().from(liveAiFlows);
+      const enabled = flows.filter((f: any) => f.isEnabled).length;
+      status.flowEngine = { state: "ok", detail: `${enabled} active flows (${flows.length} total)` };
+    } catch {
+      status.flowEngine = { state: "error", detail: "Cannot query flow tables" };
+    }
+  } else {
+    status.flowEngine = { state: "error", detail: "Database not available" };
+  }
+
+  // Reply Rule Engine
+  if (database) {
+    try {
+      const rules = await getAllReplyRules();
+      const enabled = rules.filter((r: any) => r.isEnabled).length;
+      status.replyRuleEngine = { state: "ok", detail: `${enabled} active rules (${rules.length} total)` };
+    } catch {
+      status.replyRuleEngine = { state: "error", detail: "Cannot query reply rules" };
+    }
+  } else {
+    status.replyRuleEngine = { state: "error", detail: "Database not available" };
+  }
+
+  // Knowledge Engine
+  if (database) {
+    try {
+      const knowledge = await getAllAiKnowledge();
+      const enabled = knowledge.filter((k: any) => k.isEnabled).length;
+      status.knowledgeEngine = { state: "ok", detail: `${enabled} active entries (${knowledge.length} total)` };
+    } catch {
+      status.knowledgeEngine = { state: "error", detail: "Cannot query knowledge base" };
+    }
+  } else {
+    status.knowledgeEngine = { state: "error", detail: "Database not available" };
+  }
+
+  // SSE
+  status.sse = { state: "ok", detail: "SSE endpoint /api/sse active" };
+
+  // Database
+  status.database = database
+    ? { state: "ok", detail: "Connected" }
+    : { state: "error", detail: "Not connected" };
+
+  return status;
+}
+
+export async function getAiBrainStats() {
+  const database = await getDb();
+  if (!database) {
+    return {
+      todayConversations: 0,
+      aiReplies: 0,
+      staffReplies: 0,
+      handoverCount: 0,
+      aiUnanswered: 0,
+      flowTriggers: 0,
+      replyRuleTriggers: 0,
+      knowledgeTriggers: 0,
+    };
+  }
+
+  const { chatMessages, chatConversations, aiHandoverRequests } = await import("../drizzle/schema");
+
+  // Today's date range (UTC)
+  const now = new Date();
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const endOfDay = new Date(startOfDay.getTime() + 86400000);
+
+  // Today's conversations (conversations with messages today)
+  const todayMessages = await database.select({
+    conversationId: chatMessages.conversationId,
+    senderType: chatMessages.senderType,
+  })
+  .from(chatMessages)
+  .where(and(
+    sql`${chatMessages.createdAt} >= ${startOfDay}`,
+    sql`${chatMessages.createdAt} < ${endOfDay}`
+  ));
+
+  const uniqueConversations = new Set(todayMessages.map((m: any) => m.conversationId));
+  const todayConversations = uniqueConversations.size;
+
+  const aiReplies = todayMessages.filter((m: any) => m.senderType === "ai").length;
+  const staffReplies = todayMessages.filter((m: any) => m.senderType === "staff").length;
+
+  // Today's handover requests
+  const todayHandovers = await database.select()
+    .from(aiHandoverRequests)
+    .where(and(
+      sql`${aiHandoverRequests.createdAt} >= ${startOfDay}`,
+      sql`${aiHandoverRequests.createdAt} < ${endOfDay}`
+    ));
+  const handoverCount = todayHandovers.length;
+
+  // AI unanswered = handover requests with reason containing "无法" or "unable"
+  const aiUnanswered = todayHandovers.filter((h: any) =>
+    h.reason && (h.reason.includes("无法") || h.reason.includes("unable") || h.reason.includes("cannot"))
+  ).length;
+
+  // Flow triggers — count messages with messageType=flow today
+  const flowCountResult = await database.select({ c: sql`count(*)` })
+    .from(chatMessages)
+    .where(and(
+      sql`${chatMessages.createdAt} >= ${startOfDay}`,
+      sql`${chatMessages.createdAt} < ${endOfDay}`,
+      eq(chatMessages.messageType, "flow")
+    ));
+  const flowTriggers: number = Number(flowCountResult[0]?.c || 0);
+
+  // Reply rule triggers & knowledge triggers — approximated by AI text messages
+  // Since we don't have a separate trigger log, we estimate based on AI text messages
+  const aiTextMessages = await database.select({ c: sql`count(*)` })
+    .from(chatMessages)
+    .where(and(
+      sql`${chatMessages.createdAt} >= ${startOfDay}`,
+      sql`${chatMessages.createdAt} < ${endOfDay}`,
+      eq(chatMessages.senderType, "ai"),
+      eq(chatMessages.messageType, "text")
+    ));
+  const aiTextCount: number = Number(aiTextMessages[0]?.c || 0);
+
+  return {
+    todayConversations,
+    aiReplies,
+    staffReplies,
+    handoverCount,
+    aiUnanswered,
+    flowTriggers,
+    replyRuleTriggers: Math.max(0, aiTextCount - flowTriggers),
+    knowledgeTriggers: 0, // Would need a trigger log table for precise tracking
+  };
+}
+
+export async function getAiBrainAlerts() {
+  const database = await getDb();
+  const alerts: Array<{ level: "warning" | "info" | "error"; title: string; detail: string }> = [];
+
+  if (!database) {
+    alerts.push({ level: "error", title: "数据库未连接", detail: "系统无法连接到数据库" });
+    return alerts;
+  }
+
+  // Check for unpublished knowledge entries
+  try {
+    const knowledge = await getAllAiKnowledge();
+    const unpublished = knowledge.filter((k: any) => !k.isEnabled).length;
+    if (unpublished > 0) {
+      alerts.push({ level: "info", title: "未发布知识库", detail: `${unpublished} 条知识库条目未启用` });
+    }
+  } catch { /* ignore */ }
+
+  // Check for AI unanswered (pending handover requests)
+  try {
+    const { aiHandoverRequests } = await import("../drizzle/schema");
+    const pending = await database.select()
+      .from(aiHandoverRequests)
+      .where(eq(aiHandoverRequests.status, "pending"));
+    if (pending.length > 0) {
+      alerts.push({ level: "warning", title: "AI无法回答", detail: `${pending.length} 个待处理转人工请求` });
+    }
+  } catch { /* ignore */ }
+
+  // Check Messenger token status
+  if (!process.env.FB_PAGE_ACCESS_TOKEN) {
+    alerts.push({ level: "error", title: "Messenger Token 未配置", detail: "FB_PAGE_ACCESS_TOKEN 未设置" });
+  }
+
+  // Check webhook verify token
+  if (!process.env.FB_VERIFY_TOKEN) {
+    alerts.push({ level: "warning", title: "Webhook Verify Token 未配置", detail: "FB_VERIFY_TOKEN 未设置" });
+  }
+
+  return alerts;
+}

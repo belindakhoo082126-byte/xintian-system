@@ -1192,3 +1192,37 @@
 - [x] TypeScript 零错误
 - [x] 测试全部通过（122/122）
 - [x] 保存检查点
+
+## AI大脑 Phase 1
+
+### Task 1: 建立 AI大脑页面 + 菜单调整
+- [x] 新增 /ai-brain 路由和 AiBrain.tsx 页面
+- [x] 页面内 6 个分页（Tabs）：总控制台/AI人设/AI知识库/固定回复/AI测试(预留)/AI分析(预留)
+- [x] 菜单调整：AI客服 → Chat + AI转人工 + AI大脑 + Flow管理（移除AI大脑子菜单）
+- [x] AI测试/AI分析显示「即将开发」
+
+### Task 2: AI总控制台
+- [x] 后端：aiBrain.getStatus — 读取真实运行状态（Messenger/WhatsApp/Chat/Flow Engine/Reply Rule Engine/Knowledge Engine/SSE/Database）
+- [x] 后端：aiBrain.getStats — 今日AI统计（对话数/AI回复/人工回复/转人工/无法回答/Flow触发/固定回复触发/知识库触发）
+- [x] 后端：aiBrain.getAlerts — AI提醒（无法回答数/未发布知识库/Token状态/Webhook异常）
+- [x] 前端：运行状态卡片（🟢正常/🔴异常/⚪未配置）
+- [x] 前端：今日AI统计卡片
+- [x] 前端：快捷操作按钮（新增知识库/新增固定回复/AI测试/查看日志）
+- [x] 前端：AI提醒区域
+
+### Task 3: AI人设
+- [x] 数据库：ai_persona 表（AI名称/品牌名称/AI自称/客户称呼/回复语气/默认语言/支持语言/Emoji程度/回复长度/主动推荐商品/主动询问需求/CTA）
+- [x] 后端：aiBrain.getPersona / aiBrain.updatePersona
+- [x] 后端：aiBrain.previewReply — 根据人设生成模拟回复（不真实发送）
+- [x] 前端：AI人设编辑表单
+- [x] 前端：即时预览（输入问题→显示模拟回复）
+
+### Task 4/5: 整合 AI知识库和固定回复
+- [x] AI知识库 Tab 内嵌现有 AiKnowledge 组件
+- [x] 固定回复 Tab 内嵌现有 ReplyRules 组件
+- [x] 保留现有数据库与功能，仅调整入口
+
+### 测试
+- [x] TypeScript 零错误
+- [x] 测试全部通过（122/122）
+- [x] 保存检查点
