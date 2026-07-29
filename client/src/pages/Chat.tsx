@@ -15,18 +15,29 @@ import {
   ShoppingBag, AlertCircle, CheckCircle2, Clock, Zap, Search,
   Package, MapPin, CreditCard, FileText, ArrowRight
 } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 
 type ConversationFilter = "all" | "unread" | "messenger" | "whatsapp" | "needsHuman" | "aiDisabled" | "hasOrder";
 
 export default function Chat() {
   const { user } = useAuth();
+  const [location] = useLocation();
   const [selectedConvId, setSelectedConvId] = useState<number | null>(null);
   const [filter, setFilter] = useState<ConversationFilter>("all");
   const [search, setSearch] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [searchDebounced, setSearchDebounced] = useState("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  // Parse URL param ?conv=ID to auto-select conversation
+  useEffect(() => {
+    const params = new URLSearchParams(location.split("?")[1] || "");
+    const convId = params.get("conv");
+    if (convId) {
+      const id = parseInt(convId, 10);
+      if (!isNaN(id)) setSelectedConvId(id);
+    }
+  }, [location]);
 
   // Debounce search
   useEffect(() => {
@@ -68,6 +79,7 @@ export default function Chat() {
   const markReadMut = trpc.chat.markRead.useMutation();
   const toggleAIMut = trpc.chat.toggleAI.useMutation();
   const handoverMut = trpc.chat.handover.useMutation();
+  const resumeAIMut = trpc.chat.resumeAI.useMutation();
 
   // Mark as read when selecting a conversation
   useEffect(() => {
@@ -99,6 +111,11 @@ export default function Chat() {
   const handleHandover = () => {
     if (!selectedConvId) return;
     handoverMut.mutate({ conversationId: selectedConvId });
+  };
+
+  const handleResumeAI = () => {
+    if (!selectedConvId) return;
+    resumeAIMut.mutate({ conversationId: selectedConvId });
   };
 
   const getSenderIcon = (senderType: string) => {
@@ -251,6 +268,11 @@ export default function Chat() {
                       已接手: {selectedConv.handoverClaimedBy}
                     </Badge>
                   )}
+                  {selectedConv.aiToggledBy && (
+                    <span className="text-[10px] text-muted-foreground">
+                      AI由{selectedConv.aiToggledBy}于{selectedConv.aiToggledAt ? new Date(selectedConv.aiToggledAt).toLocaleString("zh-CN") : ""}切换
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -268,6 +290,11 @@ export default function Chat() {
                 {selectedConv.handoverStatus === "pending" && (
                   <Button size="sm" variant="default" onClick={handleHandover} disabled={handoverMut.isPending}>
                     人工接手
+                  </Button>
+                )}
+                {selectedConv.handoverStatus === "claimed" && (
+                  <Button size="sm" variant="outline" onClick={handleResumeAI} disabled={resumeAIMut.isPending}>
+                    <Bot className="h-3 w-3 mr-1" /> 恢复AI
                   </Button>
                 )}
               </div>
@@ -429,14 +456,36 @@ export default function Chat() {
                 <div className="space-y-2">
                   {customerInfo.recentOrders.map((order: any) => (
                     <Link key={order.id} href={`/orders/${order.id}`}>
-                      <div className="flex items-center justify-between p-2 rounded hover:bg-muted/50 cursor-pointer text-sm">
-                        <div>
+                      <div className="p-2 rounded hover:bg-muted/50 cursor-pointer text-sm space-y-1">
+                        <div className="flex items-center justify-between">
                           <p className="font-medium">{order.orderNumber}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(order.createdAt).toLocaleDateString("zh-CN")} · RM {order.totalAmount}
-                          </p>
+                          <Badge variant="outline" className="text-xs">{order.customerStatus}</Badge>
                         </div>
-                        <Badge variant="outline" className="text-xs">{order.customerStatus}</Badge>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(order.createdAt).toLocaleDateString("zh-CN")} · RM {order.totalAmount}
+                        </p>
+                        {order.specialOrderType && (
+                          <Badge variant="secondary" className="text-[10px] h-4 bg-orange-100 text-orange-700">
+                            {order.specialOrderType === "pending_shipping" ? "待补运费" :
+                             order.specialOrderType === "pending_refund" ? "待退款" :
+                             order.specialOrderType === "logistics_error" ? "物流异常" :
+                             order.specialOrderType === "incomplete_info" ? "客户资料不完整" :
+                             order.specialOrderType === "notification_failed" ? "自动通知失败" :
+                             order.specialOrderType === "stock_exception" ? "库存异常" :
+                             order.specialOrderType === "overdue" ? "超过24小时未处理" : order.specialOrderType}
+                          </Badge>
+                        )}
+                        {order.remarks && order.remarks.length > 0 && (
+                          <div className="space-y-0.5">
+                            {order.remarks.map((r: any) => (
+                              <div key={r.id} className="text-[10px] bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">
+                                {r.remarkCategory === "repotting" ? "🪴 换盆" :
+                                 r.remarkCategory === "desired_delivery_date" ? "📅 希望收货日期" :
+                                 "📝 " + (r.content || "其他")}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </Link>
                   ))}
@@ -482,6 +531,16 @@ export default function Chat() {
                     onClick={handleHandover}
                   >
                     <User className="h-4 w-4 mr-2" /> 人工接手
+                  </Button>
+                )}
+                {selectedConv.handoverStatus === "claimed" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={handleResumeAI}
+                  >
+                    <Bot className="h-4 w-4 mr-2" /> 恢复AI回复
                   </Button>
                 )}
               </div>

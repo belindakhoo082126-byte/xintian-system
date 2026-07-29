@@ -257,58 +257,105 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
   console.log("[Messenger] Message from PSID:", psid, "Text:", text);
 
   // Store incoming message in chat system
+  let conversation: any = null;
   try {
-    const { storeIncomingMessengerMessage } = require("./db");
+    const { storeIncomingMessengerMessage, getOrCreateConversation } = require("./db");
     await storeIncomingMessengerMessage(psid, text, attachments);
+    // Get conversation to check AI status
+    conversation = await getOrCreateConversation(null, "messenger", psid);
   } catch (err) {
     console.error("[Messenger] Failed to store chat message:", err);
   }
 
-  if (text) {
-    // Auto-reply for common queries
+  // Check if AI reply is enabled for this conversation
+  const aiEnabled = conversation?.aiReplyEnabled !== false;
+  const handoverClaimed = conversation?.handoverStatus === "claimed";
+
+  if (text && aiEnabled && !handoverClaimed) {
+    // Try AI Flow matching first
+    let aiReply: string | null = null;
+    try {
+      const { matchLiveAiFlow } = require("./db");
+      aiReply = await matchLiveAiFlow(text);
+    } catch (err) {
+      console.error("[Messenger] AI Flow match failed:", err);
+    }
+
+    if (aiReply) {
+      // Send AI knowledge base reply
+      await sendTextMessage(psid, aiReply);
+      // Store AI reply in chat system
+      try {
+        const { addChatMessage } = require("./db");
+        await addChatMessage({
+          conversationId: conversation.id,
+          senderType: "ai",
+          senderName: "AI客服",
+          messageType: "text",
+          content: aiReply,
+          status: "sent",
+        });
+      } catch (err) {
+        console.error("[Messenger] Failed to store AI reply:", err);
+      }
+      return;
+    }
+
+    // Fallback: hardcoded keyword replies
     const lowerText = text.toLowerCase().trim();
 
-    // Check for order-related keywords
-    if (lowerText.includes("下单") || lowerText.includes("order") || lowerText.includes("买")) {
-      await sendTextMessage(
-        psid,
-        "您好！感谢您对心田的支持！请告诉我您想购买的商品，我会帮您处理订单。"
-      );
-      return;
-    }
-
-    if (lowerText.includes("会员") || lowerText.includes("member")) {
-      await sendTextMessage(
-        psid,
-        "您好！心田会员可以享受更多专属福利。请点击以下链接了解会员详情："
-      );
-      await sendButtonMessage(psid, "心田会员专区", [
-        { title: "了解会员", url: `https://m.me/${getPageId()}` },
-      ]);
-      return;
-    }
-
     if (lowerText.includes("运费") || lowerText.includes("shipping")) {
-      await sendTextMessage(
-        psid,
-        "西马运费规则：\n\n订单满 RM150：\n- 10kg 以内免邮\n- 超过 10kg 的部分，每公斤加收 RM3\n\n订单未满 RM150：\n- 10kg 以内运费 RM15\n- 超过 10kg 的部分，每公斤加收 RM3\n\n东马配送请私询客服。"
-      );
+      const shippingReply = "西马运费规则：\n\n订单满 RM150：\n- 10kg 以内免邮\n- 超过 10kg 的部分，每公斤加收 RM3\n\n订单未满 RM150：\n- 10kg 以内运费 RM15\n- 超过 10kg 的部分，每公斤加收 RM3\n\n东马配送请私询客服。";
+      await sendTextMessage(psid, shippingReply);
+      try {
+        const { addChatMessage } = require("./db");
+        await addChatMessage({ conversationId: conversation.id, senderType: "ai", senderName: "AI客服", messageType: "text", content: shippingReply, status: "sent" });
+      } catch {}
       return;
     }
 
     if (lowerText.includes("你好") || lowerText.includes("hi") || lowerText.includes("hello")) {
-      await sendTextMessage(
-        psid,
-        "您好！欢迎来到心田 🌿 有什么可以帮到您的吗？"
-      );
+      const greetingReply = "您好！欢迎来到心田 🌿 有什么可以帮到您的吗？";
+      await sendTextMessage(psid, greetingReply);
+      try {
+        const { addChatMessage } = require("./db");
+        await addChatMessage({ conversationId: conversation.id, senderType: "ai", senderName: "AI客服", messageType: "text", content: greetingReply, status: "sent" });
+      } catch {}
+      return;
+    }
+
+    if (lowerText.includes("下单") || lowerText.includes("order") || lowerText.includes("买")) {
+      const orderReply = "您好！感谢您对心田的支持！请告诉我您想购买的商品，我会帮您处理订单。";
+      await sendTextMessage(psid, orderReply);
+      try {
+        const { addChatMessage } = require("./db");
+        await addChatMessage({ conversationId: conversation.id, senderType: "ai", senderName: "AI客服", messageType: "text", content: orderReply, status: "sent" });
+      } catch {}
+      return;
+    }
+
+    if (lowerText.includes("会员") || lowerText.includes("member")) {
+      const memberReply = "您好！心田会员可以享受更多专属福利。请点击以下链接了解会员详情：";
+      await sendTextMessage(psid, memberReply);
+      await sendButtonMessage(psid, "心田会员专区", [
+        { title: "了解会员", url: `https://m.me/${getPageId()}` },
+      ]);
+      try {
+        const { addChatMessage } = require("./db");
+        await addChatMessage({ conversationId: conversation.id, senderType: "ai", senderName: "AI客服", messageType: "text", content: memberReply, status: "sent" });
+      } catch {}
       return;
     }
 
     // Default auto-reply
-    await sendTextMessage(
-      psid,
-      "感谢您的留言！我们的客服会尽快回复您。如果您需要下单，请直接告诉我们商品名称和数量。"
-    );
+    const defaultReply = "感谢您的留言！我们的客服会尽快回复您。如果您需要下单，请直接告诉我们商品名称和数量。";
+    await sendTextMessage(psid, defaultReply);
+    try {
+      const { addChatMessage } = require("./db");
+      await addChatMessage({ conversationId: conversation.id, senderType: "ai", senderName: "AI客服", messageType: "text", content: defaultReply, status: "sent" });
+    } catch {}
+  } else if (text && !aiEnabled) {
+    console.log("[Messenger] AI reply disabled for PSID:", psid, "— skipping auto-reply");
   }
 
   if (attachments) {

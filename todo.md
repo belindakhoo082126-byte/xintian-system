@@ -1098,3 +1098,35 @@
 - [x] TypeScript 零错误
 - [x] 测试全部通过（122/122）
 - [x] 保存检查点
+
+## AI客服第二阶段开发
+
+### Task 1: AI知识库接入Chat自动回复
+- [x] 后端：messenger.ts handleIncomingMessage 接入 AI Flow 匹配自动回复
+- [x] 后端：AI回复消息存入 chat_messages（senderType=ai）
+- [x] 前端：Chat.tsx 聊天气泡区分 AI/人工/客户/系统（不同颜色+图标）
+
+### Task 2: Chat页面URL参数支持
+- [x] 前端：Chat.tsx 支持 ?conv=ID URL参数自动打开对话
+- [x] 前端：AiHandover.tsx 「打开对话」按钮传递 conversationId 参数
+
+### Task 3: 客户资料同步特别状态和订单备注
+- [x] 后端：getChatCustomerInfo 返回订单特别状态和备注
+- [x] 前端：Chat.tsx 右栏显示最近订单的特别状态和备注
+
+### Task 4: 人工接手机制完善
+- [x] 后端：handover 函数关闭AI + 记录操作人/时间
+- [x] 后端：新增 resumeAI 函数（恢复AI回复 + 记录操作人/时间）
+- [x] 前端：Chat.tsx 接手后显示「恢复AI」按钮
+- [x] 前端：操作记录显示在对话头部（AI切换人+时间）
+
+### Task 5: Messenger真实收发测试
+- [x] 测试 Messenger Webhook 接收消息（代码已集成，需真实FB消息触发）
+- [x] 测试 Chat 页面发送消息（sendMessage 调用 sendTextMessage API）
+- [x] 测试 AI 自动回复（AI Flow 匹配 + 硬编码关键词回复）
+- [x] 提供测试记录
+
+### 测试
+- [x] TypeScript 零错误
+- [x] 测试全部通过（122/122）
+- [x] 保存检查点

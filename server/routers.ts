@@ -4570,6 +4570,14 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    resumeAI: adminProcedure
+      .input(z.object({ conversationId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const operatorName = ctx.user?.name || "Staff";
+        await db.resumeConversationAI(input.conversationId, operatorName);
+        return { success: true };
+      }),
+
     getCustomerInfo: adminProcedure
       .input(z.object({ customerId: z.number() }))
       .query(async ({ input }) => {

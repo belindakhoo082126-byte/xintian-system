@@ -8014,6 +8014,25 @@ export async function toggleConversationAI(conversationId: number, enabled: bool
   broadcastChange("chat" as any);
 }
 
+// Resume AI reply for a conversation (after human handover)
+export async function resumeConversationAI(conversationId: number, operatorName: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(chatConversations)
+    .set({
+      handoverStatus: "none",
+      handoverClaimedBy: null,
+      handoverClaimedAt: null,
+      aiReplyEnabled: true,
+      aiToggledBy: operatorName,
+      aiToggledAt: new Date(),
+    })
+    .where(eq(chatConversations.id, conversationId));
+  
+  broadcastChange("chat" as any);
+}
+
 // Human handover — claim a conversation
 export async function claimHandover(conversationId: number, operatorName: string): Promise<void> {
   const db = await getDb();
@@ -8157,22 +8176,48 @@ export async function getChatCustomerInfo(customerId: number): Promise<any> {
   
   if (customer.length === 0) return null;
   
-  // Get recent orders
+  // Get recent orders with special status
   const recentOrders = await db.select({
     id: orders.id,
     orderNumber: orders.orderNumber,
     totalAmount: orders.totalAmount,
     customerStatus: orders.physicalStatus,
     createdAt: orders.createdAt,
+    specialOrderType: orders.specialOrderType,
+    specialOrderReason: orders.specialOrderReason,
   })
   .from(orders)
   .where(eq(orders.customerId, customerId))
   .orderBy(desc(orders.createdAt))
   .limit(5);
-  
+
+  // Get remarks for these orders
+  const orderIds = recentOrders.map((o: any) => o.id);
+  let orderRemarks: any[] = [];
+  if (orderIds.length > 0) {
+    const { orderRemarks: orderRemarksTable } = require("../drizzle/schema");
+    const { inArray } = require("drizzle-orm");
+    orderRemarks = await db.select().from(orderRemarksTable)
+      .where(inArray(orderRemarksTable.orderId, orderIds))
+      .orderBy(desc(orderRemarksTable.createdAt));
+  }
+
+  // Group remarks by orderId
+  const remarksByOrder: Record<number, any[]> = {};
+  for (const r of orderRemarks) {
+    if (!remarksByOrder[r.orderId]) remarksByOrder[r.orderId] = [];
+    remarksByOrder[r.orderId].push(r);
+  }
+
+  // Attach remarks to orders
+  const ordersWithRemarks = recentOrders.map((o: any) => ({
+    ...o,
+    remarks: remarksByOrder[o.id] || [],
+  }));
+
   return {
     ...customer[0],
-    recentOrders,
+    recentOrders: ordersWithRemarks,
   };
 }
 
