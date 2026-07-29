@@ -1038,3 +1038,63 @@
 - [x] TypeScript 零错误
 - [x] 测试全部通过（122/122）
 - [x] 保存检查点
+
+## AI客服第一阶段开发
+
+### 菜单与路由
+- [x] DashboardLayout 新增「Chat」子菜单（/chat）
+- [x] DashboardLayout 新增「AI转人工通知」子菜单（/ai-handover）
+- [x] App.tsx 注册 /chat 和 /ai-handover 路由
+- [x] 预留后续 Flow管理/AI回复规则/回复模板/通知记录 菜单位置
+
+### 数据库 Schema
+- [x] chat_conversations 表（客户对话：customerId, platform, lastMessage, unreadCount, aiEnabled, handoverStatus）
+- [x] chat_messages 表（消息记录：conversationId, senderType, content, messageType, platformMessageId, status）
+- [x] ai_handover_requests 表（转人工记录：customerId, conversationId, reason, priority, aiSummary, status）
+- [x] customers 表新增 aiReplyEnabled 字段（默认 true）
+- [x] 执行迁移 SQL
+
+### 后端 API
+- [x] chat.listConversations — 对话列表（筛选：全部/未读/WhatsApp/Messenger/需要人工/AI已关闭/有订单）
+- [x] chat.getMessages — 获取聊天记录
+- [x] chat.sendMessage — 发送消息（通过 Messenger API 真实发送）
+- [x] chat.toggleAI — 开启/关闭客户AI回复（记录操作人/时间）
+- [x] chat.handover — 人工接手（关闭AI + 标记接手人 + 移除转人工列表）
+- [x] chat.getCustomerInfo — 右栏客户资料
+- [x] aiHandover.list — 转人工通知列表
+- [x] aiHandover.getStats — 转人工统计（等待数量/最久等待）
+- [x] 更新 messenger.ts handleIncomingMessage 存储消息到 chat_messages
+- [x] 添加 "chat" 到 SyncCategory 和 useRealtimeSync
+
+### 前端 Chat 页面（三栏）
+- [x] 左栏：客户对话列表（头像/名称/平台/最近消息/时间/未读/AI状态/人工状态/有订单）
+- [x] 左栏：筛选 tabs（全部/未读/需要人工/AI已关闭）
+- [x] 左栏：搜索框（客户姓名/电话/Messenger ID）
+- [x] 中栏：聊天记录（客户/AI/工作人员/系统，支持文本/图片）
+- [x] 中栏：每条消息显示（时间/发送者/发送状态）
+- [x] 中栏：消息输入框 + 发送按钮
+- [x] 中栏：AI开关 toggle
+- [x] 右栏：客户资料（姓名/电话/WhatsApp/FB名称/Messenger ID/类型/Credit/收件地址/最近订单）
+- [x] 右栏：快捷操作（建立订单/查看客户/AI开关/人工接手）
+
+### 前端 AI转人工通知页面
+- [x] 通知列表（客户名称/来源平台/Messenger ID/转人工原因/AI Summary/Priority/时间/接手+打开对话按钮）
+- [x] WhatsApp 客户格式：Customer/Channel/WhatsApp/Reason/Priority/AI Summary/打开对话
+- [x] Messenger 客户格式：Customer/Channel/Messenger ID/Reason/Priority/AI Summary/打开对话
+- [x] 点击「打开对话」跳转到 Chat 页面该客户对话
+
+### Dashboard 调整
+- [x] AI Agent 卡片显示：等待人工客户数量 + 跳转 /ai-handover
+- [x] 点击 Dashboard AI Agent → 跳转到 /ai-handover
+
+### 真实 API 连接检查
+- [x] Messenger: Page Access Token 有效性（已配置在 secrets）
+- [x] Messenger: Webhook 接收真实信息（handleIncomingMessage 已集成 chat 存储）
+- [x] Messenger: 系统回复发送（chat.sendMessage 调用 sendTextMessage）
+- [x] WhatsApp: API 状态报告（尚未配置，显示提示消息）
+- [x] 图片/语音/视频/文件支持状态（图片已支持，其他后续扩展）
+
+### 测试
+- [x] TypeScript 零错误
+- [x] 测试全部通过（122/122）
+- [x] 保存检查点

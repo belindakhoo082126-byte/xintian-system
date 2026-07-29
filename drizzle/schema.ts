@@ -1878,3 +1878,95 @@ export const orderOperationLogs = mysqlTable("order_operation_logs", {
 
 export type OrderOperationLog = typeof orderOperationLogs.$inferSelect;
 export type InsertOrderOperationLog = typeof orderOperationLogs.$inferInsert;
+
+// ============================================================================
+// V4.0: AI Customer Service — Chat & Handover
+// ============================================================================
+
+// Chat Conversations — one per customer per platform
+export const chatConversations = mysqlTable("chat_conversations", {
+  id: int("id").autoincrement().primaryKey(),
+  customerId: int("customerId"),
+  // Platform: messenger, whatsapp
+  platform: mysqlEnum("platform", ["messenger", "whatsapp"]).notNull(),
+  // Platform-specific ID (PSID for Messenger, phone number for WhatsApp)
+  platformId: varchar("platformId", { length: 255 }),
+  // Last message preview
+  lastMessagePreview: text("lastMessagePreview"),
+  lastMessageAt: timestamp("lastMessageAt"),
+  // Unread count (messages from customer not yet seen by staff)
+  unreadCount: int("unreadCount").default(0).notNull(),
+  // AI auto-reply enabled for this customer
+  aiReplyEnabled: boolean("aiReplyEnabled").default(true).notNull(),
+  // Who toggled AI and when
+  aiToggledBy: varchar("aiToggledBy", { length: 255 }),
+  aiToggledAt: timestamp("aiToggledAt"),
+  // Handover status: none, pending, claimed
+  handoverStatus: mysqlEnum("handoverStatus", ["none", "pending", "claimed"]).default("none").notNull(),
+  handoverClaimedBy: varchar("handoverClaimedBy", { length: 255 }),
+  handoverClaimedAt: timestamp("handoverClaimedAt"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ChatConversation = typeof chatConversations.$inferSelect;
+export type InsertChatConversation = typeof chatConversations.$inferInsert;
+
+// Chat Messages — individual messages in a conversation
+export const chatMessages = mysqlTable("chat_messages", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  // Sender type: customer, ai, staff, system
+  senderType: mysqlEnum("senderType", ["customer", "ai", "staff", "system"]).notNull(),
+  // Sender name (staff name or "AI")
+  senderName: varchar("senderName", { length: 255 }),
+  // Message type: text, image, audio, video, file, flow, order_action, handover
+  messageType: mysqlEnum("messageType", ["text", "image", "audio", "video", "file", "flow", "order_action", "handover"]).default("text").notNull(),
+  // Message content (text or caption)
+  content: text("content"),
+  // Media URL (for image/audio/video/file)
+  mediaUrl: text("mediaUrl"),
+  // Platform message ID (for dedup and status tracking)
+  platformMessageId: varchar("platformMessageId", { length: 255 }),
+  // Delivery status: sent, delivered, read, failed
+  status: mysqlEnum("status", ["sent", "delivered", "read", "failed"]).default("sent").notNull(),
+  // Error message if failed
+  errorMessage: text("errorMessage"),
+  // Timestamp
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type InsertChatMessage = typeof chatMessages.$inferInsert;
+
+// AI Handover Requests — when AI determines a customer needs human assistance
+export const aiHandoverRequests = mysqlTable("ai_handover_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId"),
+  customerId: int("customerId"),
+  // Platform
+  platform: mysqlEnum("platform", ["messenger", "whatsapp"]).notNull(),
+  // Platform ID (PSID or phone)
+  platformId: varchar("platformId", { length: 255 }),
+  // Customer name (snapshot)
+  customerName: varchar("customerName", { length: 255 }),
+  // Reason for handover
+  reason: text("reason").notNull(),
+  // AI-generated summary
+  aiSummary: text("aiSummary"),
+  // Priority: low, medium, high
+  priority: mysqlEnum("priority", ["low", "medium", "high"]).default("medium").notNull(),
+  // Status: pending, claimed
+  status: mysqlEnum("status", ["pending", "claimed"]).default("pending").notNull(),
+  claimedBy: varchar("claimedBy", { length: 255 }),
+  claimedAt: timestamp("claimedAt"),
+  // Last message time (for calculating wait time)
+  lastMessageAt: timestamp("lastMessageAt"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AiHandoverRequest = typeof aiHandoverRequests.$inferSelect;
+export type InsertAiHandoverRequest = typeof aiHandoverRequests.$inferInsert;

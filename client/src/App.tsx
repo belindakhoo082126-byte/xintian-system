@@ -16,6 +16,8 @@ import Orders from "./pages/Orders";
 import Membership from "./pages/Membership";
 import Customers from "./pages/Customers";
 import Flows from "@/pages/Flows";
+import Chat from "@/pages/Chat";
+import AiHandover from "@/pages/AiHandover";
 import Suppliers from "@/pages/Suppliers";
 import PurchaseOrders from "@/pages/PurchaseOrders";
 import BusinessReport from "@/pages/BusinessReport";
@@ -86,6 +88,8 @@ function DashboardRoutes() {
       <Route path={"/orders/create/import"} component={() => <OrderCreatePage orderCategory="import" />} />
       <Route path={"/membership"} component={Membership} />
       <Route path={"/customers"} component={Customers} />
+      <Route path={"/chat"} component={Chat} />
+      <Route path={"/ai-handover"} component={AiHandover} />
       <Route path={"/flows"} component={Flows} />
       <Route path={"/suppliers"} component={Suppliers} />
       <Route path={"/purchase-orders"} component={PurchaseOrders} />

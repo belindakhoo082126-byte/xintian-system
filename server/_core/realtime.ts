@@ -34,6 +34,7 @@ export type SyncCategory =
   | "specialOrders"
   | "membership"
   | "liveAiFlows"
+  | "chat"
   | "all";
 
 interface SyncEvent {

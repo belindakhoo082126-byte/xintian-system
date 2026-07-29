@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Clock, Package, Truck, TrendingUp,
   ShoppingCart, Warehouse, Calendar,
@@ -266,17 +267,17 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* AI Agent Pending Notifications */}
+      {/* AI Agent Pending Notifications & Handover */}
       <div className="grid grid-cols-1 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center gap-2">
             <Bot className="h-5 w-5 text-orange-500" />
-            <CardTitle className="text-base">{lang === "zh" ? "AI Agent 待人工通知" : "AI Agent Pending Notifications"}</CardTitle>
+            <CardTitle className="text-base">{lang === "zh" ? "AI 转人工通知" : "AI Handover Notifications"}</CardTitle>
             <Badge variant="secondary" className="ml-auto">{pendingNotifications.length}</Badge>
           </CardHeader>
           <CardContent className="space-y-2 max-h-[200px] overflow-y-auto">
             {pendingNotifications.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无待人工通知记录" : "No pending notifications"}</p>
+              <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无转人工通知" : "No handover notifications"}</p>
             ) : (
               pendingNotifications.slice(0, 5).map((n: any) => (
                 <Link key={n.id} href={n.orderId ? `/orders/${n.orderId}` : "/orders"}>
@@ -296,6 +297,11 @@ export default function Dashboard() {
                 </Link>
               ))
             )}
+            <Link href="/ai-handover" className="block">
+              <Button variant="outline" size="sm" className="w-full mt-2">
+                查看全部转人工通知 <ArrowRight className="h-3 w-3 ml-1" />
+              </Button>
+            </Link>
           </CardContent>
         </Card>
 

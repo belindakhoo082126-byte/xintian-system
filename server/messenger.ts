@@ -256,6 +256,14 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
 
   console.log("[Messenger] Message from PSID:", psid, "Text:", text);
 
+  // Store incoming message in chat system
+  try {
+    const { storeIncomingMessengerMessage } = require("./db");
+    await storeIncomingMessengerMessage(psid, text, attachments);
+  } catch (err) {
+    console.error("[Messenger] Failed to store chat message:", err);
+  }
+
   if (text) {
     // Auto-reply for common queries
     const lowerText = text.toLowerCase().trim();

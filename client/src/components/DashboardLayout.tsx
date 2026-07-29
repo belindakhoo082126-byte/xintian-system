@@ -33,7 +33,7 @@ import {
   LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users,
   MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook,
   FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings,
-  Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle,
+  Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle, AlertCircle,
   ClipboardList, Video, Plane, ChevronDown, Bot, Home, FileText, Receipt,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
@@ -107,8 +107,9 @@ const menuStructure: MenuEntry[] = [
     icon: Bot,
     label: { zh: "AI 客服", en: "AI Customer Service" },
     children: [
+      { icon: MessageSquare, label: { zh: "Chat 客服", en: "Chat" }, path: "/chat" },
+      { icon: AlertCircle, label: { zh: "AI 转人工通知", en: "AI Handover" }, path: "/ai-handover" },
       { icon: Bot, label: { zh: "AI Agent", en: "AI Agent" }, path: "/flows" },
-      { icon: MessageSquare, label: { zh: "Flow 编辑器", en: "Flow Editor" }, path: "/flows" },
       { icon: Video, label: { zh: "直播 AI 客服", en: "Live AI Agent" }, path: "/live-ai-flows" },
     ],
   },

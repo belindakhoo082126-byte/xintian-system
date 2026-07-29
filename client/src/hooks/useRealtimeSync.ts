@@ -27,6 +27,7 @@ const CATEGORY_TO_QUERY_KEYS: Record<string, string[]> = {
   orderExceptions: ["orderExceptions", "orders"],
   specialOrders: ["specialOrders", "orders", "followUp"],
   membership: ["membership", "membershipReviews"],
+  chat: ["chat", "aiHandover"],
   all: [], // Empty = invalidate everything
 };
 

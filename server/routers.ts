@@ -4459,5 +4459,151 @@ export const appRouter = router({
         return { matched: reply !== null, reply };
       }),
   }),
+
+  // ===========================================================================
+  // V4.0: AI Customer Service — Chat & Handover
+  // ===========================================================================
+  chat: router({
+    listConversations: adminProcedure
+      .input(z.object({
+        platform: z.string().optional(),
+        unreadOnly: z.boolean().optional(),
+        needsHuman: z.boolean().optional(),
+        aiDisabled: z.boolean().optional(),
+        hasOrder: z.boolean().optional(),
+        search: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await db.listChatConversations(input);
+      }),
+
+    getMessages: adminProcedure
+      .input(z.object({
+        conversationId: z.number(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await db.getChatMessages(input.conversationId, input.limit || 100, input.offset || 0);
+      }),
+
+    sendMessage: adminProcedure
+      .input(z.object({
+        conversationId: z.number(),
+        content: z.string(),
+        messageType: z.enum(["text", "image", "file"]).default("text"),
+        mediaUrl: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const operatorName = ctx.user?.name || "Staff";
+
+        // Store message in DB
+        await db.addChatMessage({
+          conversationId: input.conversationId,
+          senderType: "staff",
+          senderName: operatorName,
+          messageType: input.messageType,
+          content: input.content,
+          mediaUrl: input.mediaUrl,
+          status: "sent",
+        });
+
+        // Get conversation to find platform info
+        const allConvs = await db.listChatConversations({ limit: 500 });
+        const conv = allConvs.find((c: any) => c.id === input.conversationId);
+        if (!conv) throw new Error("Conversation not found");
+
+        // Send via Messenger API if platform is messenger
+        if (conv.platform === "messenger" && conv.platformId) {
+          try {
+            await sendTextMessage(conv.platformId, input.content);
+          } catch (err: any) {
+            await db.addChatMessage({
+              conversationId: input.conversationId,
+              senderType: "system",
+              messageType: "text",
+              content: `[Send failed: ${err.message}]`,
+              status: "failed",
+              errorMessage: err.message,
+            });
+            throw new Error(`Failed to send via Messenger: ${err.message}`);
+          }
+        } else if (conv.platform === "whatsapp") {
+          await db.addChatMessage({
+            conversationId: input.conversationId,
+            senderType: "system",
+            messageType: "text",
+            content: "[WhatsApp API not yet configured — message stored in system only]",
+            status: "failed",
+            errorMessage: "WhatsApp API not configured",
+          });
+        }
+
+        return { success: true };
+      }),
+
+    markRead: adminProcedure
+      .input(z.object({ conversationId: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.markConversationRead(input.conversationId);
+        return { success: true };
+      }),
+
+    toggleAI: adminProcedure
+      .input(z.object({
+        conversationId: z.number(),
+        enabled: z.boolean(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const operatorName = ctx.user?.name || "Staff";
+        await db.toggleConversationAI(input.conversationId, input.enabled, operatorName);
+        return { success: true };
+      }),
+
+    handover: adminProcedure
+      .input(z.object({ conversationId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const operatorName = ctx.user?.name || "Staff";
+        await db.claimHandover(input.conversationId, operatorName);
+        return { success: true };
+      }),
+
+    getCustomerInfo: adminProcedure
+      .input(z.object({ customerId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getChatCustomerInfo(input.customerId);
+      }),
+  }),
+
+  aiHandover: router({
+    list: adminProcedure
+      .input(z.object({
+        status: z.enum(["pending", "claimed", "all"]).default("pending"),
+      }))
+      .query(async ({ input }) => {
+        const status = input.status === "all" ? undefined : input.status;
+        return await db.listHandoverRequests(status);
+      }),
+
+    getStats: adminProcedure
+      .query(async () => {
+        return await db.getHandoverStats();
+      }),
+
+    claim: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const operatorName = ctx.user?.name || "Staff";
+        const requests = await db.listHandoverRequests("pending");
+        const req = requests.find((r: any) => r.id === input.id);
+        if (!req) throw new Error("Handover request not found");
+        if (req.conversationId) {
+          await db.claimHandover(req.conversationId, operatorName);
+        }
+        return { success: true };
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;

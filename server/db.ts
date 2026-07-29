@@ -33,6 +33,8 @@ import {
   productBundles, productBundleItems, bundleStockLogs,
   // V2.1 imports - Order Payments & Operation Logs
   orderPayments, orderOperationLogs,
+  // V4.0 imports - AI Customer Service (Chat & Handover)
+  chatConversations, chatMessages, aiHandoverRequests,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -7815,3 +7817,407 @@ export async function getLiveRoomReport(liveRoomId: number) {
     messengerFailed: Number(messengerFailed[0]?.count || 0),
   };
 }
+
+// ============================================================================
+// V4.0: AI Customer Service — Chat & Handover DB Helpers
+// ============================================================================
+
+// Get or create conversation for a customer on a platform
+export async function getOrCreateConversation(customerId: number | null, platform: string, platformId: string): Promise<any> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Try to find existing conversation
+  const existing = await db.select().from(chatConversations)
+    .where(and(
+      eq(chatConversations.platform, platform as any),
+      eq(chatConversations.platformId, platformId)
+    ))
+    .limit(1);
+  
+  if (existing.length > 0) return existing[0];
+  
+  // Create new conversation
+  await db.insert(chatConversations).values({
+    customerId,
+    platform: platform as any,
+    platformId,
+    aiReplyEnabled: true,
+    unreadCount: 0,
+    handoverStatus: "none",
+  });
+  
+  const created = await db.select().from(chatConversations)
+    .where(and(
+      eq(chatConversations.platform, platform as any),
+      eq(chatConversations.platformId, platformId)
+    ))
+    .limit(1);
+  
+  return created[0];
+}
+
+// List conversations with filters
+export async function listChatConversations(filters: {
+  platform?: string;
+  unreadOnly?: boolean;
+  needsHuman?: boolean;
+  aiDisabled?: boolean;
+  hasOrder?: boolean;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  let query = db.select({
+    id: chatConversations.id,
+    customerId: chatConversations.customerId,
+    platform: chatConversations.platform,
+    platformId: chatConversations.platformId,
+    lastMessagePreview: chatConversations.lastMessagePreview,
+    lastMessageAt: chatConversations.lastMessageAt,
+    unreadCount: chatConversations.unreadCount,
+    aiReplyEnabled: chatConversations.aiReplyEnabled,
+    handoverStatus: chatConversations.handoverStatus,
+    handoverClaimedBy: chatConversations.handoverClaimedBy,
+    createdAt: chatConversations.createdAt,
+    // Customer info
+    customerName: customers.name,
+    customerPhone: customers.phoneNumber,
+    whatsappPhone: customers.whatsappPhone,
+    facebookName: customers.facebookName,
+    messengerId: customers.messengerId,
+    customerType: customers.customerType,
+    creditBalance: customers.creditBalance,
+  })
+  .from(chatConversations)
+  .leftJoin(customers, eq(chatConversations.customerId, customers.id))
+  .$dynamic();
+  
+  const conditions: any[] = [];
+  
+  if (filters.platform && filters.platform !== "all") {
+    conditions.push(eq(chatConversations.platform, filters.platform as any));
+  }
+  if (filters.unreadOnly) {
+    conditions.push(sql`${chatConversations.unreadCount} > 0`);
+  }
+  if (filters.needsHuman) {
+    conditions.push(eq(chatConversations.handoverStatus, "pending"));
+  }
+  if (filters.aiDisabled) {
+    conditions.push(eq(chatConversations.aiReplyEnabled, false));
+  }
+  if (filters.search) {
+    conditions.push(or(
+      like(customers.name, `%${filters.search}%`),
+      like(customers.whatsappPhone, `%${filters.search}%`),
+      like(customers.facebookName, `%${filters.search}%`),
+      like(customers.messengerId, `%${filters.search}%`),
+      like(chatConversations.platformId, `%${filters.search}%`)
+    ));
+  }
+  
+  if (conditions.length > 0) {
+    query = query.where(and(...conditions));
+  }
+  
+  const limit = filters.limit || 50;
+  const offset = filters.offset || 0;
+  
+  return await query
+    .orderBy(desc(chatConversations.lastMessageAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+// Get messages for a conversation
+export async function getChatMessages(conversationId: number, limit: number = 100, offset: number = 0): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return await db.select().from(chatMessages)
+    .where(eq(chatMessages.conversationId, conversationId))
+    .orderBy(asc(chatMessages.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+// Add a message to a conversation
+export async function addChatMessage(data: {
+  conversationId: number;
+  senderType: string;
+  senderName?: string;
+  messageType?: string;
+  content?: string;
+  mediaUrl?: string;
+  platformMessageId?: string;
+  status?: string;
+  errorMessage?: string;
+}): Promise<any> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.insert(chatMessages).values({
+    conversationId: data.conversationId,
+    senderType: data.senderType as any,
+    senderName: data.senderName,
+    messageType: (data.messageType || "text") as any,
+    content: data.content,
+    mediaUrl: data.mediaUrl,
+    platformMessageId: data.platformMessageId,
+    status: (data.status || "sent") as any,
+    errorMessage: data.errorMessage,
+  });
+  
+  // Update conversation's last message preview
+  const preview = (data.content || "").substring(0, 100);
+  await db.update(chatConversations)
+    .set({
+      lastMessagePreview: preview,
+      lastMessageAt: new Date(),
+      unreadCount: data.senderType === "customer" ? sql`${chatConversations.unreadCount} + 1` : sql`${chatConversations.unreadCount}`,
+    })
+    .where(eq(chatConversations.id, data.conversationId));
+  
+  broadcastChange("chat" as any);
+  return { success: true };
+}
+
+// Mark conversation messages as read (reset unread count)
+export async function markConversationRead(conversationId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(chatConversations)
+    .set({ unreadCount: 0 })
+    .where(eq(chatConversations.id, conversationId));
+  
+  broadcastChange("chat" as any);
+}
+
+// Toggle AI reply for a conversation
+export async function toggleConversationAI(conversationId: number, enabled: boolean, operatorName: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(chatConversations)
+    .set({
+      aiReplyEnabled: enabled,
+      aiToggledBy: operatorName,
+      aiToggledAt: new Date(),
+    })
+    .where(eq(chatConversations.id, conversationId));
+  
+  broadcastChange("chat" as any);
+}
+
+// Human handover — claim a conversation
+export async function claimHandover(conversationId: number, operatorName: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  
+  // Update conversation
+  await db.update(chatConversations)
+    .set({
+      handoverStatus: "claimed",
+      handoverClaimedBy: operatorName,
+      handoverClaimedAt: new Date(),
+      aiReplyEnabled: false,
+      aiToggledBy: operatorName,
+      aiToggledAt: new Date(),
+      unreadCount: 0,
+    })
+    .where(eq(chatConversations.id, conversationId));
+  
+  // Update handover requests
+  await db.update(aiHandoverRequests)
+    .set({
+      status: "claimed",
+      claimedBy: operatorName,
+      claimedAt: new Date(),
+    })
+    .where(and(
+      eq(aiHandoverRequests.conversationId, conversationId),
+      eq(aiHandoverRequests.status, "pending")
+    ));
+  
+  broadcastChange("chat" as any);
+}
+
+// Create AI handover request
+export async function createHandoverRequest(data: {
+  conversationId: number;
+  customerId: number | null;
+  platform: string;
+  platformId: string;
+  customerName: string;
+  reason: string;
+  aiSummary?: string;
+  priority?: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  
+  // Check if there's already a pending handover for this conversation
+  const existing = await db.select().from(aiHandoverRequests)
+    .where(and(
+      eq(aiHandoverRequests.conversationId, data.conversationId),
+      eq(aiHandoverRequests.status, "pending")
+    ))
+    .limit(1);
+  
+  if (existing.length > 0) return; // Already pending
+  
+  await db.insert(aiHandoverRequests).values({
+    conversationId: data.conversationId,
+    customerId: data.customerId,
+    platform: data.platform as any,
+    platformId: data.platformId,
+    customerName: data.customerName,
+    reason: data.reason,
+    aiSummary: data.aiSummary,
+    priority: (data.priority || "medium") as any,
+    status: "pending",
+    lastMessageAt: new Date(),
+  });
+  
+  // Update conversation handover status
+  await db.update(chatConversations)
+    .set({ handoverStatus: "pending" })
+    .where(eq(chatConversations.id, data.conversationId));
+  
+  broadcastChange("chat" as any);
+}
+
+// List handover requests
+export async function listHandoverRequests(status?: string): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  let query = db.select().from(aiHandoverRequests).$dynamic();
+  
+  if (status) {
+    query = query.where(eq(aiHandoverRequests.status, status as any));
+  }
+  
+  return await query
+    .orderBy(desc(aiHandoverRequests.createdAt))
+    .limit(100);
+}
+
+// Get handover stats for Dashboard
+export async function getHandoverStats(): Promise<any> {
+  const db = await getDb();
+  if (!db) return { pendingCount: 0, oldestWaitMinutes: 0, recentHandovers: [] };
+  
+  const pending = await db.select().from(aiHandoverRequests)
+    .where(eq(aiHandoverRequests.status, "pending"))
+    .orderBy(desc(aiHandoverRequests.createdAt));
+  
+  const pendingCount = pending.length;
+  
+  // Calculate oldest wait time
+  let oldestWaitMinutes = 0;
+  if (pending.length > 0) {
+    const oldest = pending[pending.length - 1];
+    const diffMs = Date.now() - new Date(oldest.createdAt).getTime();
+    oldestWaitMinutes = Math.floor(diffMs / 60000);
+  }
+  
+  return {
+    pendingCount,
+    oldestWaitMinutes,
+    recentHandovers: pending.slice(0, 5),
+  };
+}
+
+// Get customer info for chat right panel
+export async function getChatCustomerInfo(customerId: number): Promise<any> {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const customer = await db.select({
+    id: customers.id,
+    name: customers.name,
+    phone: customers.phoneNumber,
+    whatsappPhone: customers.whatsappPhone,
+    facebookName: customers.facebookName,
+    facebookId: customers.facebookId,
+    messengerId: customers.messengerId,
+    customerType: customers.customerType,
+    creditBalance: customers.creditBalance,
+    shippingAddress: customers.address,
+  })
+  .from(customers)
+  .where(eq(customers.id, customerId))
+  .limit(1);
+  
+  if (customer.length === 0) return null;
+  
+  // Get recent orders
+  const recentOrders = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    totalAmount: orders.totalAmount,
+    customerStatus: orders.physicalStatus,
+    createdAt: orders.createdAt,
+  })
+  .from(orders)
+  .where(eq(orders.customerId, customerId))
+  .orderBy(desc(orders.createdAt))
+  .limit(5);
+  
+  return {
+    ...customer[0],
+    recentOrders,
+  };
+}
+
+// Store incoming Messenger message to chat
+export async function storeIncomingMessengerMessage(psid: string, text: string, attachments?: any[]): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  
+  // Find customer by messengerId
+  const customer = await db.select().from(customers)
+    .where(eq(customers.messengerId, psid))
+    .limit(1);
+  
+  const customerId = customer.length > 0 ? customer[0].id : null;
+  
+  // Get or create conversation
+  const conversation = await getOrCreateConversation(customerId, "messenger", psid);
+  
+  // Add text message
+  if (text) {
+    await addChatMessage({
+      conversationId: conversation.id,
+      senderType: "customer",
+      messageType: "text",
+      content: text,
+      status: "delivered",
+    });
+  }
+  
+  // Add attachment messages
+  if (attachments) {
+    for (const att of attachments) {
+      const msgType = att.type === "image" ? "image" :
+                     att.type === "audio" ? "audio" :
+                     att.type === "video" ? "video" :
+                     att.type === "file" ? "file" : "text";
+      await addChatMessage({
+        conversationId: conversation.id,
+        senderType: "customer",
+        messageType: msgType,
+        content: att.title || att.type,
+        mediaUrl: att.payload?.url,
+        status: "delivered",
+      });
+    }
+  }
+}
+
