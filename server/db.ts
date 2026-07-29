@@ -3708,7 +3708,7 @@ export async function mallCheckout(data: {
       orderId,
       type: "customer",
       content: (data as any).customerRemark,
-      remarkCategory: "customer_other",
+      remarkCategory: "other",
       createdBy: data.customerName,
     });
   }
@@ -4078,12 +4078,8 @@ export async function getPackingSlipData(orderId: number) {
   else if (detail.shippingMethod === "east_malaysia_shopee") specialLabel = "东马 SHOPEE";
   else if (detail.shippingMethod === "east_malaysia_poslaju") specialLabel = "东马 POSLAJU";
   
-  // V1.1: Fetch customer remarks (only customer type for A5 slip)
+  // V3.0: Fetch all order remarks for A5 slip (unified: repotting, desired_delivery_date, other)
   const allRemarks = await getOrderRemarks(orderId);
-  const customerRemarks = allRemarks.filter((r: any) => r.type === "customer");
-
-  // V1.1: Fetch repots for A5 slip
-  const repots = await getOrderItemRepots(orderId);
 
   return {
     orderNumber: detail.orderNumber,
@@ -4093,8 +4089,7 @@ export async function getPackingSlipData(orderId: number) {
     paymentConfirmedAt: detail.paymentConfirmedAt,
     items: detail.items,
     giftItems,
-    customerRemarks,
-    repots,
+    remarks: allRemarks,
     summary: {
       itemTypes: detail.items.length,
       regularTotal: regularTotal.toFixed(2),
@@ -4358,6 +4353,11 @@ export async function getCustomerOrderTracking(orderNumber: string, contactNumbe
   // Get packages
   const pkgs = await getOrderPackages(order[0].id);
   
+  // Get order remarks (customer-visible: repotting, desired_delivery_date, other)
+  const remarks = await db.select().from(orderRemarks)
+    .where(eq(orderRemarks.orderId, order[0].id))
+    .orderBy(desc(orderRemarks.createdAt));
+  
   // Map status to customer-friendly labels
   const statusMap: Record<string, string> = {
     "pending": "等待付款",
@@ -4376,6 +4376,7 @@ export async function getCustomerOrderTracking(orderNumber: string, contactNumbe
     customerStatus: statusMap[order[0].physicalStatus || ""] || order[0].physicalStatus || "unknown",
     items: enrichedItems,
     packages: pkgs,
+    remarks: remarks,
   };
 }
 
@@ -4856,9 +4857,9 @@ export async function createOrderRemark(data: {
   content: string;
   createdBy?: string;
   remarkCategory?: string;
-  scheduledShippingDate?: string;
+  desiredDeliveryDate?: string;
+  desiredDeliveryReason?: string;
   repottingData?: string;
-  selectTreeData?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -4868,57 +4869,56 @@ export async function createOrderRemark(data: {
     content: data.content,
     createdBy: data.createdBy || null,
     remarkCategory: (data.remarkCategory as any) || null,
-    scheduledShippingDate: data.scheduledShippingDate ? new Date(data.scheduledShippingDate) : null,
+    desiredDeliveryDate: data.desiredDeliveryDate ? new Date(data.desiredDeliveryDate) : null,
+    desiredDeliveryReason: data.desiredDeliveryReason || null,
     repottingData: data.repottingData || null,
-    selectTreeData: data.selectTreeData || null,
   });
 
-  // If scheduled shipping date is set, update order status to scheduled
-  if (data.remarkCategory === "scheduled_shipping" && data.scheduledShippingDate) {
-    await db.update(orders).set({
-      physicalStatus: "scheduled" as any,
-    }).where(eq(orders.id, data.orderId));
-    broadcastChanges(["orders", "dashboard"]);
-  }
-
   broadcastChanges(["orders", "dashboard"]);
 }
 
-// V2.1: Process order remark (mark as processed)
-export async function processOrderRemark(id: number, processedBy: string) {
+// V3.0: Update order remark (Admin can modify content)
+export async function updateOrderRemark(id: number, data: {
+  content?: string;
+  remarkCategory?: string;
+  desiredDeliveryDate?: string;
+  desiredDeliveryReason?: string;
+  repottingData?: string;
+}) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(orderRemarks).set({
-    processingStatus: "processed",
-    processedBy,
-    processedAt: new Date(),
-  }).where(eq(orderRemarks.id, id));
+  const updateData: any = {};
+  if (data.content !== undefined) updateData.content = data.content;
+  if (data.remarkCategory !== undefined) updateData.remarkCategory = data.remarkCategory as any;
+  if (data.desiredDeliveryDate !== undefined) updateData.desiredDeliveryDate = data.desiredDeliveryDate ? new Date(data.desiredDeliveryDate) : null;
+  if (data.desiredDeliveryReason !== undefined) updateData.desiredDeliveryReason = data.desiredDeliveryReason || null;
+  if (data.repottingData !== undefined) updateData.repottingData = data.repottingData || null;
+  await db.update(orderRemarks).set(updateData).where(eq(orderRemarks.id, id));
   broadcastChanges(["orders", "dashboard"]);
 }
 
-// V2.1: Get pending remark orders for Dashboard
-export async function getPendingRemarkOrders() {
+// V3.0: Get orders with remarks for Dashboard (no status filter — all orders with remarks)
+export async function getOrdersWithRemarks() {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.select({
     remarkId: orderRemarks.id,
     orderId: orderRemarks.orderId,
     orderNumber: orders.orderNumber,
+    customerName: customers.name,
     facebookName: orders.facebookName,
+    orderSource: orders.orderSource,
     physicalStatus: orders.physicalStatus,
     remarkCategory: orderRemarks.remarkCategory,
     content: orderRemarks.content,
     repottingData: orderRemarks.repottingData,
-    selectTreeData: orderRemarks.selectTreeData,
-    scheduledShippingDate: orderRemarks.scheduledShippingDate,
-    processingStatus: orderRemarks.processingStatus,
+    desiredDeliveryDate: orderRemarks.desiredDeliveryDate,
+    desiredDeliveryReason: orderRemarks.desiredDeliveryReason,
     createdBy: orderRemarks.createdBy,
     createdAt: orderRemarks.createdAt,
-    processedBy: orderRemarks.processedBy,
-    processedAt: orderRemarks.processedAt,
   }).from(orderRemarks)
     .leftJoin(orders, eq(orderRemarks.orderId, orders.id))
-    .where(eq(orderRemarks.processingStatus, "pending"))
+    .leftJoin(customers, eq(orders.customerId, customers.id))
     .orderBy(desc(orderRemarks.createdAt));
   // Deduplicate by orderId (same order with multiple remarks counts as 1)
   const seen = new Set<number>();
@@ -4929,7 +4929,7 @@ export async function getPendingRemarkOrders() {
   });
 }
 
-// V2.1: Get all remarks with order info (for remark list page)
+// V3.0: Get all remarks with order info (for remark list page)
 export async function getAllRemarksWithOrder(limit?: number) {
   const db = await getDb();
   if (!db) return [];
@@ -4937,21 +4937,21 @@ export async function getAllRemarksWithOrder(limit?: number) {
     remarkId: orderRemarks.id,
     orderId: orderRemarks.orderId,
     orderNumber: orders.orderNumber,
+    customerName: customers.name,
     facebookName: orders.facebookName,
+    orderSource: orders.orderSource,
     physicalStatus: orders.physicalStatus,
     type: orderRemarks.type,
     remarkCategory: orderRemarks.remarkCategory,
     content: orderRemarks.content,
     repottingData: orderRemarks.repottingData,
-    selectTreeData: orderRemarks.selectTreeData,
-    scheduledShippingDate: orderRemarks.scheduledShippingDate,
-    processingStatus: orderRemarks.processingStatus,
+    desiredDeliveryDate: orderRemarks.desiredDeliveryDate,
+    desiredDeliveryReason: orderRemarks.desiredDeliveryReason,
     createdBy: orderRemarks.createdBy,
     createdAt: orderRemarks.createdAt,
-    processedBy: orderRemarks.processedBy,
-    processedAt: orderRemarks.processedAt,
   }).from(orderRemarks)
     .leftJoin(orders, eq(orderRemarks.orderId, orders.id))
+    .leftJoin(customers, eq(orders.customerId, customers.id))
     .orderBy(desc(orderRemarks.createdAt));
   if (limit) {
     return await query.limit(limit);
@@ -4959,16 +4959,15 @@ export async function getAllRemarksWithOrder(limit?: number) {
   return await query;
 }
 
-// V2.1: Get today's scheduled shipping count for Dashboard
+// V3.0: Get today's desired delivery count for Dashboard
 export async function getTodayScheduledShippingCount() {
   const db = await getDb();
   if (!db) return 0;
   const today = new Date().toISOString().split('T')[0];
   const rows = await db.select({ count: sql`COUNT(*)` }).from(orderRemarks)
     .where(and(
-      eq(orderRemarks.remarkCategory, "scheduled_shipping"),
-      eq(orderRemarks.processingStatus, "pending"),
-      eq(orderRemarks.scheduledShippingDate, today as any),
+      eq(orderRemarks.remarkCategory, "desired_delivery_date"),
+      eq(orderRemarks.desiredDeliveryDate, today as any),
     ));
   return Number(rows[0]?.count || 0);
 }

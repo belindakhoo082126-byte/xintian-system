@@ -985,23 +985,32 @@ export default function PackingDetail() {
           )}
         </div>
 
-        {/* V1.1: Customer Remarks on A5 Slip */}
-        {data.customerRemarks && data.customerRemarks.length > 0 && (
-          <div style={{ marginBottom: "8px" }}>
-            <div style={{ fontWeight: "bold", fontSize: "11px", marginBottom: "2px" }}>{translate("客户备注:", "Customer Remarks:")}</div>
-            {data.customerRemarks.map((r: any, i: number) => (
-              <div key={i} style={{ fontSize: "11px", marginLeft: "8px" }}>• {r.content}</div>
-            ))}
-          </div>
-        )}
-
-        {/* V1.1: Repot on A5 Slip */}
-        {data.repots && data.repots.length > 0 && (
+        {/* V3.0: Order Remarks on A5 Slip — repotting, desired_delivery_date, other */}
+        {data.remarks && data.remarks.length > 0 && (
           <div style={{ marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
-            <div style={{ fontWeight: "bold", fontSize: "12px", marginBottom: "2px" }}>⚠ {translate("换盆安排:", "Repotting Arrangement:")}</div>
-            {data.repots.map((r: any, i: number) => (
-              <div key={i} style={{ fontSize: "11px", marginLeft: "8px" }}>
-                • {r.productName} → {r.potProductName} (×{r.quantity})
+            {data.remarks.map((r: any, i: number) => (
+              <div key={i} style={{ marginBottom: "4px" }}>
+                {r.remarkCategory === "repotting" && (
+                  <>
+                    <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("换盆", "Repotting")}</div>
+                    <div style={{ fontSize: "11px", marginLeft: "8px" }}>{r.content}</div>
+                  </>
+                )}
+                {r.remarkCategory === "desired_delivery_date" && (
+                  <>
+                    <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("希望收货日期", "Desired Delivery Date")}</div>
+                    <div style={{ fontSize: "11px", marginLeft: "8px" }}>
+                      {r.desiredDeliveryDate ? new Date(r.desiredDeliveryDate).toLocaleDateString() : ""}
+                      {r.desiredDeliveryReason && <span> — {r.desiredDeliveryReason}</span>}
+                    </div>
+                  </>
+                )}
+                {r.remarkCategory === "other" && (
+                  <>
+                    <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("其他备注", "Other Remark")}</div>
+                    <div style={{ fontSize: "11px", marginLeft: "8px" }}>{r.content}</div>
+                  </>
+                )}
               </div>
             ))}
           </div>

@@ -1259,26 +1259,21 @@ export const orderRemarks = mysqlTable("order_remarks", {
   orderId: int("orderId").notNull(),
   // Type: live (直播备注), customer (客户备注), internal (内部备注)
   type: mysqlEnum("type", ["live", "customer", "internal"]).notNull(),
-  // V2.1: Remark category (备注类别: repotting/customer_other/scheduled_shipping/select_tree/internal_repotting/internal_other)
+  // V3.0: Remark category (备注类别: repotting/desired_delivery_date/other)
   remarkCategory: mysqlEnum("remarkCategory", [
-    "repotting",          // 客户换盆
-    "customer_other",     // 客户其他备注
-    "scheduled_shipping", // 后台发货日期
-    "internal_repotting", // 后台换盆
-    "select_tree",        // 后台选树身
-    "internal_other",     // 后台其他备注
+    "repotting",              // 换盆
+    "desired_delivery_date",  // 希望收货日期
+    "other",                  // 其他
   ]),
   content: text("content").notNull(),
-  // V2.1: Processing status (处理状态: pending/processed)
-  processingStatus: mysqlEnum("processingStatus", ["pending", "processed"]).default("pending"),
-  processedBy: varchar("processedBy", { length: 255 }),
-  processedAt: timestamp("processedAt"),
-  // V2.1: Scheduled shipping date (预约发货日期, for scheduled_shipping category)
+  // V3.0: Scheduled shipping date (legacy field, kept for backward compat)
   scheduledShippingDate: date("scheduledShippingDate"),
-  // V2.1: Repotting data (换盆关联: JSON array of {plantProductId, plantName, potProductId, potName, quantity})
+  // V3.0: Desired delivery date (希望收货日期)
+  desiredDeliveryDate: date("desiredDeliveryDate"),
+  // V3.0: Desired delivery reason (希望收货日期原因)
+  desiredDeliveryReason: varchar("desiredDeliveryReason", { length: 255 }),
+  // V3.0: Repotting data (换盆关联: JSON array of {plantProductId, plantName, potProductId, potName, quantity})
   repottingData: text("repottingData"),
-  // V2.1: Select tree data (选树身: JSON array of {productId, productName})
-  selectTreeData: text("selectTreeData"),
   // Who created this remark
   createdBy: varchar("createdBy", { length: 255 }),
   // Timestamps

@@ -27,7 +27,7 @@ export default function Dashboard() {
   const { data: followUpStats } = trpc.orders.followUpStats.useQuery();
   const { data: followUpList } = trpc.orders.followUpList.useQuery({ limit: 50 });
   const followUpDisplay = getFollowUpDisplayState(followUpStats, followUpList);
-  const { data: pendingRemarks } = trpc.orderRemarks.pendingOrders.useQuery();
+  const { data: ordersWithRemarks } = trpc.orderRemarks.ordersWithRemarks.useQuery();
 
 
   if (isLoading) {
@@ -87,7 +87,7 @@ export default function Dashboard() {
 
 
   const pendingNotifications = (stats as any).pendingNotifications || [];
-  const pendingRemarkCount = (pendingRemarks as any)?.length || 0;
+  const pendingRemarkCount = (ordersWithRemarks as any)?.length || 0;
 
   return (
     <div className="space-y-6">
@@ -233,14 +233,14 @@ export default function Dashboard() {
       <Card>
         <CardHeader className="flex flex-row items-center gap-2">
           <FileText className="h-5 w-5 text-amber-500" />
-          <CardTitle className="text-base">{lang === "zh" ? "订单备注（待处理）" : "Order Remarks (Pending)"}</CardTitle>
+          <CardTitle className="text-base">{lang === "zh" ? "订单备注" : "Order Remarks"}</CardTitle>
           <Badge variant="secondary" className="ml-auto">{pendingRemarkCount}</Badge>
         </CardHeader>
         <CardContent className="space-y-2 max-h-[300px] overflow-y-auto">
           {pendingRemarkCount === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无待处理备注" : "No pending remarks"}</p>
+            <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无备注订单" : "No orders with remarks"}</p>
           ) : (
-            (pendingRemarks as any).slice(0, 10).map((r: any) => {
+            (ordersWithRemarks as any).slice(0, 10).map((r: any) => {
               const catInfo = REMARK_CATEGORY_LABELS[r.remarkCategory] || null;
               return (
                 <Link key={r.remarkId} href={`/orders/${r.orderId}`}>

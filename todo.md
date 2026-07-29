@@ -1011,3 +1011,30 @@
 - [x] TypeScript 零错误
 - [x] 测试全部通过（122/122）
 - [x] 保存检查点
+
+## 订单备注最终需求（简化版）
+
+### 后端简化
+- [x] 移除 processingStatus/processedBy/processedAt 状态流程（不再需要待处理/已处理）
+- [x] 调整 getPendingRemarkOrders → 改为 getOrdersWithRemarks（统计有备注的订单，不按状态筛选）
+- [x] 移除 processOrderRemark 函数和 process 路由
+- [x] 新增 updateOrderRemark 函数和路由（Admin 可修改备注内容）
+- [x] 调整 remarkCategory 枚举为：repotting / desired_delivery_date / other
+- [x] getCustomerOrderTracking 返回备注数据（换盆/希望收货日期/其他）
+
+### 前端调整
+- [x] Orders.tsx 移除「标记已处理」按钮和 processingStatus 显示
+- [x] Orders.tsx 调整备注类型为：换盆/希望收货日期/其他
+- [x] Orders.tsx 新增备注编辑功能（Admin 可修改内容）
+- [x] Dashboard 备注统计改为统计有备注的订单数量（不再按 pending 筛选）
+- [x] Dashboard 点击进入有备注订单列表页（显示订单号/客户/来源/备注类型/内容/时间/查看）
+- [x] Dashboard 备注卡片直接显示前 10 条备注订单（跳转订单详情）
+- [x] PackingDetail.tsx 确保显示所有备注类型（换盆/希望收货日期/其他）
+- [x] CustomerOrderTracking.tsx 新增备注显示区域
+- [x] OrderBrowsePage.tsx 更新备注显示为新 3 类别模型
+- [x] getPackingSlipData 返回统一 remarks（替代 customerRemarks + repots）
+
+### 测试
+- [x] TypeScript 零错误
+- [x] 测试全部通过（122/122）
+- [x] 保存检查点

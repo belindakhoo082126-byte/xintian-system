@@ -171,6 +171,41 @@ export default function CustomerOrderTracking() {
               </CardContent>
             </Card>
 
+            {/* V3.0: Order Remarks (换盆/希望收货日期/其他) */}
+            {(order as any).remarks && (order as any).remarks.length > 0 && (
+              <Card>
+                <CardHeader><CardTitle className="text-base">{translate("订单备注", "Order Remarks")}</CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                  {(order as any).remarks.map((r: any, i: number) => (
+                    <div key={i} className="border rounded-lg p-3 space-y-1">
+                      {r.remarkCategory === "repotting" && (
+                        <>
+                          <div className="font-medium text-sm">{translate("换盆服务", "Repotting Service")}</div>
+                          <div className="text-sm text-muted-foreground whitespace-pre-wrap">{r.content}</div>
+                        </>
+                      )}
+                      {r.remarkCategory === "desired_delivery_date" && (
+                        <>
+                          <div className="font-medium text-sm">{translate("希望收货日期", "Desired Delivery Date")}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {r.desiredDeliveryDate ? new Date(r.desiredDeliveryDate).toLocaleDateString() : ""}
+                            {r.desiredDeliveryReason && <span className="ml-2">— {r.desiredDeliveryReason}</span>}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{translate("（不保证当天送达，我们会尽量安排）", "(Not guaranteed to arrive on that day, we will try our best)")}</div>
+                        </>
+                      )}
+                      {r.remarkCategory === "other" && (
+                        <>
+                          <div className="font-medium text-sm">{translate("其他备注", "Other Remark")}</div>
+                          <div className="text-sm text-muted-foreground whitespace-pre-wrap">{r.content}</div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Packages / Tracking */}
             {(order as any).packages && (order as any).packages.length > 0 && (
               <Card>

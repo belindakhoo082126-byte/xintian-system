@@ -3398,10 +3398,10 @@ export const appRouter = router({
       type: z.enum(["live", "customer", "internal"]),
       content: z.string().min(1),
       createdBy: z.string().optional(),
-      remarkCategory: z.enum(["repotting","customer_other","scheduled_shipping","internal_repotting","select_tree","internal_other"]).optional(),
-      scheduledShippingDate: z.string().optional(),
+      remarkCategory: z.enum(["repotting", "desired_delivery_date", "other"]).optional(),
+      desiredDeliveryDate: z.string().optional(),
+      desiredDeliveryReason: z.string().optional(),
       repottingData: z.string().optional(),
-      selectTreeData: z.string().optional(),
     })).mutation(async ({ input, ctx }) => {
       await db.createOrderRemark({
         orderId: input.orderId,
@@ -3409,9 +3409,26 @@ export const appRouter = router({
         content: input.content,
         createdBy: input.createdBy || ctx.user?.name || undefined,
         remarkCategory: input.remarkCategory,
-        scheduledShippingDate: input.scheduledShippingDate,
+        desiredDeliveryDate: input.desiredDeliveryDate,
+        desiredDeliveryReason: input.desiredDeliveryReason,
         repottingData: input.repottingData,
-        selectTreeData: input.selectTreeData,
+      });
+      return { success: true };
+    }),
+    update: adminProcedure.input(z.object({
+      id: z.number(),
+      content: z.string().optional(),
+      remarkCategory: z.enum(["repotting", "desired_delivery_date", "other"]).optional(),
+      desiredDeliveryDate: z.string().optional(),
+      desiredDeliveryReason: z.string().optional(),
+      repottingData: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      await db.updateOrderRemark(input.id, {
+        content: input.content,
+        remarkCategory: input.remarkCategory,
+        desiredDeliveryDate: input.desiredDeliveryDate,
+        desiredDeliveryReason: input.desiredDeliveryReason,
+        repottingData: input.repottingData,
       });
       return { success: true };
     }),
@@ -3419,16 +3436,11 @@ export const appRouter = router({
       await db.deleteOrderRemark(input.id);
       return { success: true };
     }),
-    // V2.1: Process remark (mark as processed)
-    process: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
-      await db.processOrderRemark(input.id, ctx.user?.name || "admin");
-      return { success: true };
+    // V3.0: Get orders with remarks for Dashboard
+    ordersWithRemarks: adminProcedure.query(async () => {
+      return await db.getOrdersWithRemarks();
     }),
-    // V2.1: Get pending remark orders for Dashboard
-    pendingOrders: adminProcedure.query(async () => {
-      return await db.getPendingRemarkOrders();
-    }),
-    // V2.1: Get all remarks with order info
+    // V3.0: Get all remarks with order info
     allWithOrder: adminProcedure.input(z.object({ limit: z.number().optional() })).query(async ({ input }) => {
       return await db.getAllRemarksWithOrder(input.limit);
     }),

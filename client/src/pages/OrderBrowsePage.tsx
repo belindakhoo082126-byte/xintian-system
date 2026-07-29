@@ -325,23 +325,20 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
               <div key={idx} className="border rounded-lg p-3 space-y-1">
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs">
-                    {r.remarkCategory === "scheduled_shipping" ? translate("预约发货", "Scheduled Shipping") :
-                     r.remarkCategory === "repotting" ? translate("换盆", "Repotting") :
-                     r.remarkCategory === "select_tree" ? translate("选树身", "Select Tree") :
-                     r.remarkCategory === "customer_other" ? translate("客户其他备注", "Customer Other") :
-                     r.remarkCategory === "internal_other" ? translate("内部其他备注", "Internal Other") :
-                     translate("普通备注", "General Remark")}
+                    {r.remarkCategory === "repotting" ? translate("换盆", "Repotting") :
+                     r.remarkCategory === "desired_delivery_date" ? translate("希望收货日期", "Desired Delivery Date") :
+                     translate("其他", "Other")}
                   </Badge>
-                  {!r.isProcessed && <Badge variant="secondary" className="text-xs">{translate("待处理", "Pending")}</Badge>}
+                  <span className="text-xs text-muted-foreground ml-auto">{new Date(r.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</span>
                 </div>
-                <p className="text-sm">{r.content}</p>
-                {r.scheduledShippingDate && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
-                    {translate("预约日期", "Scheduled Date")}: {new Date(r.scheduledShippingDate).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US")}
+                {r.remarkCategory === "desired_delivery_date" ? (
+                  <p className="text-sm text-muted-foreground">
+                    {r.desiredDeliveryDate ? new Date(r.desiredDeliveryDate).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US") : ""}
+                    {r.desiredDeliveryReason && <span className="ml-2">— {r.desiredDeliveryReason}</span>}
                   </p>
+                ) : (
+                  <p className="text-sm">{r.content}</p>
                 )}
-                <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</p>
               </div>
             ))
           )}
