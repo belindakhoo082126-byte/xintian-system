@@ -4822,5 +4822,54 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         }
       }),
   }),
+
+  // ============================================================================
+  // AI Log Center — Phase 2 Task 1
+  // ============================================================================
+  aiLog: router({
+    list: adminProcedure
+      .input(z.object({
+        page: z.number().min(1).default(1),
+        pageSize: z.number().min(1).max(100).default(20),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        customerName: z.string().optional(),
+        platform: z.string().optional(),
+        finalSource: z.string().optional(),
+        sendStatus: z.string().optional(),
+        isHandover: z.boolean().optional(),
+        errorStage: z.string().optional(),
+        keyword: z.string().optional(),
+      }))
+      .query(async ({ input }) => {
+        return db.getAiLogs(input);
+      }),
+
+    getDetail: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const detail = await db.getAiLogDetail(input.id);
+        if (!detail) throw new TRPCError({ code: "NOT_FOUND", message: "日志不存在" });
+        return detail;
+      }),
+
+    getStats: adminProcedure
+      .input(z.object({ days: z.number().min(1).max(365).default(1) }))
+      .query(async ({ input }) => {
+        return db.getAiLogStats(input.days);
+      }),
+
+    getCleanupPreview: adminProcedure
+      .query(async () => {
+        const stats = await db.getAiLogStats(9999);
+        const retentionDays = (await import('./_core/env')).ENV.aiLogRetentionDays;
+        return {
+          totalLogs: stats.total,
+          retentionDays,
+          message: `当前保留 ${retentionDays} 天，超过的日志将被自动清理`,
+        };
+      }),
+  }),
 });
+
 export type AppRouter = typeof appRouter;

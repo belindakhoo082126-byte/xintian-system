@@ -17,6 +17,7 @@ import {
   products,
   liveAiFlows,
 } from "../drizzle/schema";
+import type { AiProcessingContext } from "./aiLogContext";
 
 // Helper: increment usage count and update lastMatchedAt for a matched rule or knowledge entry
 async function recordUsage(table: "replyRules" | "aiKnowledge", id: number): Promise<void> {
@@ -295,10 +296,14 @@ export async function processChatAI(
   options: {
     aiEnabled: boolean;
     handoverStatus: "none" | "pending" | "claimed";
+    logContext?: AiProcessingContext;
   }
 ): Promise<ChatAIResult> {
+  const logCtx = options.logContext;
+
   // Step 1: Check if AI is enabled
   if (!options.aiEnabled) {
+    if (logCtx) { logCtx.addStep("ai_disabled", "AI已关闭", "AI未开启，不自动回复", "skipped"); logCtx.finalSource = "ai_disabled"; }
     return {
       shouldReply: false,
       reply: null,
@@ -309,6 +314,7 @@ export async function processChatAI(
 
   // Step 2: Check if human has taken over
   if (options.handoverStatus === "claimed") {
+    if (logCtx) { logCtx.addStep("human_check", "人工接手检查", "已被人工接手，AI不回复", "skipped"); logCtx.finalSource = "human_claimed"; }
     return {
       shouldReply: false,
       reply: null,
@@ -317,9 +323,15 @@ export async function processChatAI(
     };
   }
 
-  // Step 3: Product keyword match
+  // Step 2.5: Flow source check (private chat skips Flow Engine)
+  if (logCtx) logCtx.addStep("flow_check", "Flow来源检查", "普通私聊，不进入Flow Engine", "skipped");
+
+  // Step 3: Order keyword / Product keyword match
+  const t0 = Date.now();
   const productResult = await runProductMatchEngine(ctx);
+  if (logCtx) logCtx.addStep("order_keyword", "下单关键词匹配", "未命中下单关键词", "missed", { durationMs: Date.now() - t0 });
   if (productResult.matched) {
+    if (logCtx) { logCtx.addStep("product_match", "商品真实资料匹配", `命中商品（ID:${productResult.productId}）`, "hit", { productId: productResult.productId }); logCtx.finalSource = "product"; logCtx.matchedProductId = productResult.productId; logCtx.aiReply = productResult.reply; }
     return {
       shouldReply: true,
       reply: productResult.reply,
@@ -328,10 +340,14 @@ export async function processChatAI(
       productId: productResult.productId,
     };
   }
+  if (logCtx) logCtx.addStep("product_match", "商品真实资料匹配", "未命中商品关键词", "missed");
 
   // Step 4: Reply Rule Engine
+  const t1 = Date.now();
   const ruleResult = await runReplyRuleEngine(ctx);
+  if (logCtx) logCtx.addStep("reply_rule", "固定回复规则", ruleResult.matched ? `命中规则（ID:${ruleResult.ruleId}）` : "未命中固定回复规则", ruleResult.matched ? "hit" : "missed", { durationMs: Date.now() - t1, ruleId: ruleResult.ruleId });
   if (ruleResult.matched) {
+    if (logCtx) { logCtx.finalSource = "reply_rule"; logCtx.matchedRuleId = ruleResult.ruleId; logCtx.aiReply = ruleResult.reply; }
     return {
       shouldReply: true,
       reply: ruleResult.reply,
@@ -342,8 +358,11 @@ export async function processChatAI(
   }
 
   // Step 5: Knowledge Engine
+  const t2 = Date.now();
   const knowledgeResult = await runKnowledgeEngine(ctx);
+  if (logCtx) logCtx.addStep("knowledge", "AI知识库", knowledgeResult.matched ? `命中知识（ID:${knowledgeResult.knowledgeId}）` : "未命中知识库", knowledgeResult.matched ? "hit" : "missed", { durationMs: Date.now() - t2, knowledgeId: knowledgeResult.knowledgeId });
   if (knowledgeResult.matched) {
+    if (logCtx) { logCtx.finalSource = "knowledge"; logCtx.matchedKnowledgeId = knowledgeResult.knowledgeId; logCtx.aiReply = knowledgeResult.reply; }
     return {
       shouldReply: true,
       reply: knowledgeResult.reply,
@@ -354,6 +373,7 @@ export async function processChatAI(
   }
 
   // Step 6: No match — handover to human
+  if (logCtx) { logCtx.addStep("handover", "转人工", "AI无法匹配客户消息，需要人工处理", "handover"); logCtx.finalSource = "no_match"; logCtx.isHandover = true; logCtx.handoverReason = "AI无法匹配客户消息，需要人工处理"; }
   return {
     shouldReply: false,
     reply: null,

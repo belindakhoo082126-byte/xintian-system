@@ -20,4 +20,6 @@ export const ENV = {
   fbPageId: process.env.FB_PAGE_ID ?? "",
   fbPageAccessToken: process.env.FB_PAGE_ACCESS_TOKEN ?? "",
   fbVerifyToken: process.env.FB_VERIFY_TOKEN ?? "",
+  // AI Log retention period in days (default 90)
+  aiLogRetentionDays: parseInt(process.env.AI_LOG_RETENTION_DAYS ?? "90", 10),
 };

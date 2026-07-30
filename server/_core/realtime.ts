@@ -35,6 +35,7 @@ export type SyncCategory =
   | "membership"
   | "liveAiFlows"
   | "chat"
+  | "aiLog"
   | "all";
 
 interface SyncEvent {

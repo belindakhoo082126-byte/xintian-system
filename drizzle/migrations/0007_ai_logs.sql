@@ -1,0 +1,60 @@
+-- AI Log Center tables (Phase 2 Task 1)
+-- ai_logs: Main AI processing log records
+-- ai_log_delivery_attempts: Send attempt records (including retries)
+
+CREATE TABLE IF NOT EXISTS `ai_logs` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `conversationId` INT,
+  `customerId` INT,
+  `customerName` VARCHAR(255),
+  `platform` ENUM('messenger','whatsapp','other') NOT NULL,
+  `sourceType` ENUM('private_chat','facebook_live','facebook_post','facebook_reel') NOT NULL DEFAULT 'private_chat',
+  `sourceEventId` VARCHAR(255),
+  `sourceBindingId` INT,
+  `customerMessageId` INT,
+  `aiReplyMessageId` INT,
+  `customerMessage` TEXT,
+  `receivedAt` TIMESTAMP NOT NULL,
+  `aiEnabled` BOOLEAN NOT NULL,
+  `handoverStatus` ENUM('none','pending','claimed') NOT NULL,
+  `processingSteps` JSON,
+  `finalSource` ENUM('order_keyword','product','reply_rule','knowledge','llm','flow','human_handover','no_match','error','ai_disabled','human_claimed') NOT NULL,
+  `matchedRuleId` INT,
+  `matchedKnowledgeId` INT,
+  `matchedProductId` INT,
+  `matchedFlowId` INT,
+  `aiReply` TEXT,
+  `sendStatus` ENUM('sent','failed','not_sent','pending') NOT NULL DEFAULT 'not_sent',
+  `platformMessageId` VARCHAR(255),
+  `retryCount` INT NOT NULL DEFAULT 0,
+  `lastRetryAt` TIMESTAMP NULL,
+  `errorCode` VARCHAR(50),
+  `errorStage` VARCHAR(50),
+  `errorMessage` TEXT,
+  `isHandover` BOOLEAN NOT NULL DEFAULT FALSE,
+  `handoverReason` TEXT,
+  `processingTimeMs` INT,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_ai_logs_conversation` (`conversationId`),
+  INDEX `idx_ai_logs_customer` (`customerId`),
+  INDEX `idx_ai_logs_customer_msg` (`customerMessageId`),
+  INDEX `idx_ai_logs_created` (`createdAt`),
+  INDEX `idx_ai_logs_source` (`finalSource`),
+  INDEX `idx_ai_logs_send_status` (`sendStatus`),
+  INDEX `idx_ai_logs_platform` (`platform`),
+  INDEX `idx_ai_logs_error_stage` (`errorStage`)
+);
+
+CREATE TABLE IF NOT EXISTS `ai_log_delivery_attempts` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `aiLogId` INT NOT NULL,
+  `attemptNumber` INT NOT NULL,
+  `sendStatus` ENUM('sent','failed','pending') NOT NULL,
+  `platformMessageId` VARCHAR(255),
+  `errorCode` VARCHAR(50),
+  `errorMessage` TEXT,
+  `attemptedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_delivery_ai_log` (`aiLogId`),
+  INDEX `idx_delivery_status` (`sendStatus`),
+  CONSTRAINT `fk_delivery_ai_log` FOREIGN KEY (`aiLogId`) REFERENCES `ai_logs` (`id`) ON DELETE CASCADE
+);

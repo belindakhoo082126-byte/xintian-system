@@ -69,6 +69,59 @@
 
 ---
 
+## V1.1 — AI大脑 Phase 2 Task 1: AI日志（AI Log Center）
+
+**发布日期：** 2026-07-30  
+**开发阶段：** AI大脑 Phase 2 Task 1
+
+### Added
+
+- 新增 `ai_logs` 数据表，记录每条 AI处理的主日志（客户消息、回复来源、发送状态、转人工、处理时间、错误信息等）
+- 新增 `ai_log_delivery_attempts` 子表，记录每次发送尝试（平台消息ID、发送状态、错误信息），与主日志 CASCADE DELETE
+- 新增 `AiProcessingContext` 类（`server/aiLogContext.ts`），统一收集 AI处理轨迹，`finalize()` 产生结构化日志记录
+- 新增 `db.ts` AI日志辅助函数：`createAiLog`、`updateAiLogAfterSend`、`addDeliveryAttempt`、`updateDeliveryAttempt`、`getAiLogs`（分页+7种筛选）、`getAiLogDetail`、`getAiLogStats`、`cleanupOldAiLogs`
+- 新增 tRPC `aiLog` router：`list`、`getDetail`、`getStats`、`getCleanupPreview`（均为 adminProcedure）
+- 新增 SSE `SyncCategory` 中 `"aiLog"` 类型，支持日志实时推送
+- 新增 `/api/scheduled/ai-log-cleanup` 定时清理端点，通过 `AI_LOG_RETENTION_DAYS` 环境变量控制保留期限（默认90天）
+- 新增 `AiBrainLog.tsx` 前端页面：统计摘要、7种筛选器、分页列表、展开处理轨迹、发送尝试记录、跳转 Chat
+- 新增 AI大脑第5个 Tab「AI日志」，位于固定回复与 AI测试之间
+- 新增 `AI_LOG_RETENTION_DAYS` 环境变量注册（`server/_core/env.ts`）
+
+### Changed
+
+- `processChatAI` 新增可选 `logContext?: AiProcessingContext` 参数，各引擎步骤调用 `logCtx.addStep()` 记录处理轨迹，不改变原有返回结构
+- `messenger.ts` `handleIncomingMessage` 集成完整 AI日志写入生命周期（pending → delivery attempt → sent/failed → update）
+- `addChatMessage` 返回值改为 `{ success, messageId }`
+- `storeIncomingMessengerMessage` 返回值改为 `{ conversationId, customerMessageId, customerId, customerName }`
+- `AiBrain.tsx` TabsList 从 `grid-cols-6` 改为 `grid-cols-7`，新增 AI日志 Tab
+- `AiBrainDashboard.tsx`「查看AI日志」按钮从 disabled 改为可点击，跳转到 AI日志 Tab
+
+### Fixed
+
+- 
+
+### Removed
+
+- 
+
+### Database
+
+- 新增 `ai_logs` 表（id, conversationId, sourceType, sourceEventId, sourceBindingId, platform, customerMessage, customerMessageId, customerId, customerName, aiEnabled, isHandover, handoverReason, processingSteps JSON, finalSource, matchedRuleId, matchedKnowledgeId, aiReply, aiReplyMessageId, sendStatus, platformMessageId, processingTimeMs, errorCode, errorStage, errorMessage, createdAt）
+- 新增 `ai_log_delivery_attempts` 表（id, aiLogId FK CASCADE, attemptNumber, platformMessageId, sendStatus, errorMessage, createdAt）
+- 迁移文件：`drizzle/migrations/0007_ai_logs.sql`
+
+### Notes
+
+- AI日志仅 Admin 可查看，包货员不可进入
+- 日志写入失败不可影响客户消息收发（try/catch 隔离）
+- 同一客户消息只建立一条主日志，重试使用 `ai_log_delivery_attempts` 子表记录
+- 所有统计使用主日志计算，不把重试误算为新处理次数
+- 普通私聊不进入 Flow Engine，Flow 日志列为后续扩充
+- AI测试和 AI分析继续保持「即将开发」状态
+- 本阶段不开发 AI日志以外的 Phase 2 功能
+
+---
+
 ## 后续记录模板
 
 ```md

@@ -1,12 +1,13 @@
 import { useState, lazy, Suspense } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Brain, LayoutDashboard, User, BookOpen, MessageSquare, FlaskConical, BarChart3 } from "lucide-react";
+import { Brain, LayoutDashboard, User, BookOpen, MessageSquare, FlaskConical, BarChart3, FileText } from "lucide-react";
 import AiBrainDashboard from "./AiBrainDashboard";
 import AiBrainPersona from "./AiBrainPersona";
 
 // Lazy load the embedded components to keep initial bundle smaller
 const AiKnowledge = lazy(() => import("./AiKnowledge"));
 const ReplyRules = lazy(() => import("./ReplyRules"));
+const AiBrainLog = lazy(() => import("./AiBrainLog"));
 
 export default function AiBrain() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -24,7 +25,7 @@ export default function AiBrain() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 md:grid-cols-6 mb-6 h-auto">
+        <TabsList className="grid w-full grid-cols-3 md:grid-cols-7 mb-6 h-auto">
           <TabsTrigger value="dashboard" className="flex flex-col items-center gap-1 py-2">
             <LayoutDashboard className="w-4 h-4" />
             <span className="text-xs">总控制台</span>
@@ -40,6 +41,10 @@ export default function AiBrain() {
           <TabsTrigger value="reply-rules" className="flex flex-col items-center gap-1 py-2">
             <MessageSquare className="w-4 h-4" />
             <span className="text-xs">固定回复</span>
+          </TabsTrigger>
+          <TabsTrigger value="log" className="flex flex-col items-center gap-1 py-2">
+            <FileText className="w-4 h-4" />
+            <span className="text-xs">AI 日志</span>
           </TabsTrigger>
           <TabsTrigger value="test" className="flex flex-col items-center gap-1 py-2" disabled>
             <FlaskConical className="w-4 h-4" />
@@ -68,6 +73,12 @@ export default function AiBrain() {
         <TabsContent value="reply-rules">
           <Suspense fallback={<div className="py-12 text-center text-muted-foreground">加载中...</div>}>
             <ReplyRules />
+          </Suspense>
+        </TabsContent>
+
+        <TabsContent value="log">
+          <Suspense fallback={<div className="py-12 text-center text-muted-foreground">加载中...</div>}>
+            <AiBrainLog />
           </Suspense>
         </TabsContent>
 

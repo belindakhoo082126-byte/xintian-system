@@ -258,9 +258,10 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
 
   // Store incoming message in chat system
   let conversation: any = null;
+  let storeResult: { conversationId: number; customerMessageId: number | null; customerId: number | null; customerName: string | null } | null = null;
   try {
     const { storeIncomingMessengerMessage, getOrCreateConversation } = require("./db");
-    await storeIncomingMessengerMessage(psid, text, attachments);
+    storeResult = await storeIncomingMessengerMessage(psid, text, attachments);
     // Get conversation to check AI status
     conversation = await getOrCreateConversation(null, "messenger", psid);
   } catch (err) {
@@ -272,6 +273,19 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
   const handoverStatus = conversation?.handoverStatus || "none";
 
   if (text && aiEnabled && handoverStatus !== "claimed") {
+    // Create AiProcessingContext for logging
+    const { AiProcessingContext } = require("./aiLogContext");
+    const logCtx = new AiProcessingContext(
+      conversation?.id ?? null,
+      storeResult?.customerId ?? null,
+      storeResult?.customerName ?? null,
+      "messenger",
+      storeResult?.customerMessageId ?? null,
+      text,
+      true,
+      handoverStatus,
+    );
+
     // Use the new independent AI engine pipeline for private chat
     // Engines: Product Match → Reply Rule → Knowledge → Handover (no hardcoded replies)
     try {
@@ -286,26 +300,73 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
         {
           aiEnabled: true,
           handoverStatus,
+          logContext: logCtx,
         }
       );
 
       if (result.shouldReply && result.reply) {
+        // Create main AI log (pending status)
+        const { createAiLog, addDeliveryAttempt, updateAiLogAfterSend } = require("./db");
+        const aiLogId = await createAiLog(logCtx.finalize());
+
         // Send AI reply via Messenger API
-        await sendTextMessage(psid, result.reply);
+        let sendOk = false;
+        let platformMsgId: string | undefined;
+        let errorCode: string | undefined;
+        let errorMessage: string | undefined;
+        try {
+          const sendResult = await sendTextMessage(psid, result.reply);
+          sendOk = true;
+          platformMsgId = sendResult?.message_id;
+        } catch (sendErr: any) {
+          errorCode = String(sendErr?.code ?? sendErr?.statusCode ?? "send_error");
+          errorMessage = (sendErr?.message ?? String(sendErr)).slice(0, 500);
+          console.error("[Messenger] Failed to send AI reply:", sendErr);
+        }
+
+        // Record delivery attempt
+        if (aiLogId) {
+          await addDeliveryAttempt(aiLogId, 1, sendOk ? "sent" : "failed", {
+            platformMessageId: platformMsgId,
+            errorCode,
+            errorMessage,
+          });
+        }
+
         // Store AI reply in chat system
+        let aiReplyMessageId: number | null = null;
         try {
           const { addChatMessage } = require("./db");
-          await addChatMessage({
+          const aiMsgResult = await addChatMessage({
             conversationId: conversation.id,
             senderType: "ai",
             senderName: "AI客服",
             messageType: "text",
             content: result.reply,
-            status: "sent",
+            status: sendOk ? "sent" : "failed",
             aiResponseSource: result.source,
           });
+          aiReplyMessageId = aiMsgResult?.messageId ?? null;
         } catch (err) {
           console.error("[Messenger] Failed to store AI reply:", err);
+        }
+
+        // Update main AI log with send result
+        if (aiLogId) {
+          logCtx.sendStatus = sendOk ? "sent" : "failed";
+          logCtx.platformMessageId = platformMsgId;
+          logCtx.aiReplyMessageId = aiReplyMessageId ?? undefined;
+          logCtx.errorCode = errorCode;
+          logCtx.errorStage = sendOk ? undefined : "messenger_send";
+          logCtx.errorMessage = errorMessage;
+          await updateAiLogAfterSend(aiLogId, {
+            sendStatus: sendOk ? "sent" : "failed",
+            platformMessageId: platformMsgId,
+            aiReplyMessageId: aiReplyMessageId ?? undefined,
+            errorCode,
+            errorStage: sendOk ? undefined : "messenger_send",
+            errorMessage,
+          });
         }
         return;
       }
@@ -326,13 +387,70 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
         } catch (err) {
           console.error("[Messenger] Failed to create handover request:", err);
         }
+        // Create AI log for handover
+        try {
+          const { createAiLog } = require("./db");
+          logCtx.sendStatus = "not_sent";
+          await createAiLog(logCtx.finalize());
+        } catch (err) {
+          console.error("[Messenger] Failed to create handover AI log:", err);
+        }
         return;
       }
     } catch (err) {
       console.error("[Messenger] AI engine error:", err);
+      // Create error AI log
+      try {
+        const { createAiLog } = require("./db");
+        logCtx.finalSource = "error";
+        logCtx.sendStatus = "failed";
+        logCtx.errorCode = "engine_error";
+        logCtx.errorStage = "process_chat_ai";
+        logCtx.errorMessage = (err as any)?.message?.slice(0, 500) ?? String(err);
+        await createAiLog(logCtx.finalize());
+      } catch { /* ignore log error */ }
     }
   } else if (text && !aiEnabled) {
     console.log("[Messenger] AI reply disabled for PSID:", psid, "— skipping auto-reply");
+    // Create AI log for disabled AI
+    try {
+      const { AiProcessingContext } = require("./aiLogContext");
+      const { createAiLog } = require("./db");
+      const logCtx = new AiProcessingContext(
+        conversation?.id ?? null,
+        storeResult?.customerId ?? null,
+        storeResult?.customerName ?? null,
+        "messenger",
+        storeResult?.customerMessageId ?? null,
+        text,
+        false,
+        handoverStatus,
+      );
+      logCtx.addStep("ai_disabled", "AI已关闭", "AI未开启，不自动回复", "skipped");
+      logCtx.finalSource = "ai_disabled";
+      logCtx.sendStatus = "not_sent";
+      await createAiLog(logCtx.finalize());
+    } catch { /* ignore log error */ }
+  } else if (text && handoverStatus === "claimed") {
+    // Human has claimed — create AI log
+    try {
+      const { AiProcessingContext } = require("./aiLogContext");
+      const { createAiLog } = require("./db");
+      const logCtx = new AiProcessingContext(
+        conversation?.id ?? null,
+        storeResult?.customerId ?? null,
+        storeResult?.customerName ?? null,
+        "messenger",
+        storeResult?.customerMessageId ?? null,
+        text,
+        true,
+        handoverStatus,
+      );
+      logCtx.addStep("human_check", "人工接手检查", "已被人工接手，AI不回复", "skipped");
+      logCtx.finalSource = "human_claimed";
+      logCtx.sendStatus = "not_sent";
+      await createAiLog(logCtx.finalize());
+    } catch { /* ignore log error */ }
   }
 
   if (attachments) {

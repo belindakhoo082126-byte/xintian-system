@@ -2076,3 +2076,79 @@ export const aiPersona = mysqlTable("ai_persona", {
 });
 export type AiPersona = typeof aiPersona.$inferSelect;
 export type InsertAiPersona = typeof aiPersona.$inferInsert;
+
+/**
+ * AI Log Center - records every AI processing event for audit and analytics.
+ */
+export const aiLogs = mysqlTable("ai_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  // Association (conversationId is nullable for future Flow events that may not have a chat conversation)
+  conversationId: int("conversationId"),
+  customerId: int("customerId"),
+  customerName: varchar("customerName", { length: 255 }),
+  platform: mysqlEnum("platform", ["messenger", "whatsapp", "other"]).notNull(),
+  // Source type for future Flow event support (Phase 2 only uses private_chat)
+  sourceType: mysqlEnum("sourceType", ["private_chat", "facebook_live", "facebook_post", "facebook_reel"]).default("private_chat").notNull(),
+  sourceEventId: varchar("sourceEventId", { length: 255 }),
+  sourceBindingId: int("sourceBindingId"),
+  // Message ID precise association to chat_messages.id
+  customerMessageId: int("customerMessageId"),
+  aiReplyMessageId: int("aiReplyMessageId"),
+  // Customer original message (truncated to 200 chars)
+  customerMessage: text("customerMessage"),
+  receivedAt: timestamp("receivedAt").notNull(),
+  // AI status at time of message
+  aiEnabled: boolean("aiEnabled").notNull(),
+  handoverStatus: mysqlEnum("handoverStatus", ["none", "pending", "claimed"]).notNull(),
+  // Complete processing trail (JSON array of steps, no hard step limit)
+  processingSteps: json("processingSteps"),
+  // Final matched source
+  finalSource: mysqlEnum("finalSource", [
+    "order_keyword", "product", "reply_rule", "knowledge", "llm",
+    "flow", "human_handover", "no_match", "error", "ai_disabled", "human_claimed",
+  ]).notNull(),
+  matchedRuleId: int("matchedRuleId"),
+  matchedKnowledgeId: int("matchedKnowledgeId"),
+  matchedProductId: int("matchedProductId"),
+  matchedFlowId: int("matchedFlowId"),
+  // AI reply content
+  aiReply: text("aiReply"),
+  // Send status
+  sendStatus: mysqlEnum("sendStatus", ["sent", "failed", "not_sent", "pending"]).default("not_sent").notNull(),
+  platformMessageId: varchar("platformMessageId", { length: 255 }),
+  // Retry tracking (main log level)
+  retryCount: int("retryCount").default(0).notNull(),
+  lastRetryAt: timestamp("lastRetryAt"),
+  // Structured error
+  errorCode: varchar("errorCode", { length: 50 }),
+  errorStage: varchar("errorStage", { length: 50 }),
+  errorMessage: text("errorMessage"),
+  // Handover
+  isHandover: boolean("isHandover").default(false).notNull(),
+  handoverReason: text("handoverReason"),
+  // Performance
+  processingTimeMs: int("processingTimeMs"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AiLog = typeof aiLogs.$inferSelect;
+export type InsertAiLog = typeof aiLogs.$inferInsert;
+
+/**
+ * AI Log Delivery Attempts - records each send attempt (including retries).
+ * aiLogId has ON DELETE CASCADE via migration SQL.
+ */
+export const aiLogDeliveryAttempts = mysqlTable("ai_log_delivery_attempts", {
+  id: int("id").autoincrement().primaryKey(),
+  aiLogId: int("aiLogId").notNull(),
+  attemptNumber: int("attemptNumber").notNull(),
+  sendStatus: mysqlEnum("sendStatus", ["sent", "failed", "pending"]).notNull(),
+  platformMessageId: varchar("platformMessageId", { length: 255 }),
+  errorCode: varchar("errorCode", { length: 50 }),
+  errorMessage: text("errorMessage"),
+  attemptedAt: timestamp("attemptedAt").defaultNow().notNull(),
+});
+
+export type AiLogDeliveryAttempt = typeof aiLogDeliveryAttempts.$inferSelect;
+export type InsertAiLogDeliveryAttempt = typeof aiLogDeliveryAttempts.$inferInsert;

@@ -156,7 +156,7 @@ export default function AiBrainDashboard({ onNavigate }: { onNavigate: (tab: str
               <FlaskConical className="w-5 h-5" />
               <span className="text-sm">AI 测试</span>
             </Button>
-            <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 opacity-50 cursor-not-allowed" disabled>
+            <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2" onClick={() => onNavigate("log")}>
               <FileText className="w-5 h-5" />
               <span className="text-sm">查看 AI 日志</span>
             </Button>

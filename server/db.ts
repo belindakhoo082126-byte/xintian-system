@@ -1,4 +1,4 @@
-import { eq, ne, and, or, desc, asc, sql, gte, lte, isNull, like, inArray } from "drizzle-orm";
+import { eq, ne, and, or, desc, asc, sql, gte, lte, lt, isNull, like, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -35,6 +35,8 @@ import {
   orderPayments, orderOperationLogs,
   // V4.0 imports - AI Customer Service (Chat & Handover)
   chatConversations, chatMessages, aiHandoverRequests,
+  // V4.1 imports - AI Brain Phase 2 (AI Logs)
+  aiLogs, aiLogDeliveryAttempts,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -7961,7 +7963,7 @@ export async function addChatMessage(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  await db.insert(chatMessages).values({
+  const [insertResult] = await db.insert(chatMessages).values({
     conversationId: data.conversationId,
     senderType: data.senderType as any,
     senderName: data.senderName,
@@ -7973,6 +7975,7 @@ export async function addChatMessage(data: {
     errorMessage: data.errorMessage,
     aiResponseSource: data.aiResponseSource,
   });
+  const messageId = (insertResult as any).insertId ?? null;
   
   // Update conversation's last message preview
   const preview = (data.content || "").substring(0, 100);
@@ -7985,7 +7988,7 @@ export async function addChatMessage(data: {
     .where(eq(chatConversations.id, data.conversationId));
   
   broadcastChange("chat" as any);
-  return { success: true };
+  return { success: true, messageId };
 }
 
 // Mark conversation messages as read (reset unread count)
@@ -8224,9 +8227,9 @@ export async function getChatCustomerInfo(customerId: number): Promise<any> {
 }
 
 // Store incoming Messenger message to chat
-export async function storeIncomingMessengerMessage(psid: string, text: string, attachments?: any[]): Promise<void> {
+export async function storeIncomingMessengerMessage(psid: string, text: string, attachments?: any[]): Promise<{ conversationId: number; customerMessageId: number | null; customerId: number | null; customerName: string | null }> {
   const db = await getDb();
-  if (!db) return;
+  if (!db) return { conversationId: 0, customerMessageId: null, customerId: null, customerName: null };
   
   // Find customer by messengerId
   const customer = await db.select().from(customers)
@@ -8238,15 +8241,17 @@ export async function storeIncomingMessengerMessage(psid: string, text: string, 
   // Get or create conversation
   const conversation = await getOrCreateConversation(customerId, "messenger", psid);
   
+  let customerMessageId: number | null = null;
   // Add text message
   if (text) {
-    await addChatMessage({
+    const msgResult = await addChatMessage({
       conversationId: conversation.id,
       senderType: "customer",
       messageType: "text",
       content: text,
       status: "delivered",
     });
+    customerMessageId = msgResult?.messageId ?? null;
   }
   
   // Add attachment messages
@@ -8268,6 +8273,12 @@ export async function storeIncomingMessengerMessage(psid: string, text: string, 
   }
   // Broadcast chat change for real-time SSE push
   broadcastChange("chat" as any);
+  return {
+    conversationId: conversation.id,
+    customerMessageId,
+    customerId,
+    customerName: customer.length > 0 ? (customer[0] as any).name ?? null : null,
+  };
 }
 // ===========================================================================
 // AI Engine — Reply Rules CRUD
@@ -8702,4 +8713,322 @@ export async function getAiBrainAlerts() {
   }
 
   return alerts;
+}
+
+// ============================================================
+// AI Log Center - Phase 2 Task 1
+// ============================================================
+
+import type { AiLogRecord } from "./aiLogContext";
+
+/** Create a main AI log record. Returns the inserted id. */
+export async function createAiLog(record: AiLogRecord): Promise<number | null> {
+  try {
+    const db = await getDb();
+    if (!db) return null;
+    const [result] = await db.insert(aiLogs).values({
+      conversationId: record.conversationId,
+      customerId: record.customerId,
+      customerName: record.customerName,
+      platform: record.platform as any,
+      sourceType: record.sourceType as any,
+      customerMessageId: record.customerMessageId,
+      aiReplyMessageId: record.aiReplyMessageId,
+      customerMessage: record.customerMessage,
+      receivedAt: record.receivedAt,
+      aiEnabled: record.aiEnabled,
+      handoverStatus: record.handoverStatus as any,
+      processingSteps: record.processingSteps,
+      finalSource: record.finalSource as any,
+      matchedRuleId: record.matchedRuleId,
+      matchedKnowledgeId: record.matchedKnowledgeId,
+      matchedProductId: record.matchedProductId,
+      matchedFlowId: record.matchedFlowId,
+      aiReply: record.aiReply,
+      sendStatus: record.sendStatus as any,
+      platformMessageId: record.platformMessageId,
+      retryCount: record.retryCount,
+      errorCode: record.errorCode,
+      errorStage: record.errorStage,
+      errorMessage: record.errorMessage,
+      isHandover: record.isHandover,
+      handoverReason: record.handoverReason,
+      processingTimeMs: record.processingTimeMs,
+    });
+    const insertResult = result as any;
+    const aiLogId = insertResult.insertId ?? null;
+    if (aiLogId) {
+      broadcastChange("aiLog");
+    }
+    return aiLogId;
+  } catch (err) {
+    console.error("[AI Log] Failed to create AI log:", err);
+    return null;
+  }
+}
+
+/** Update an AI log record after send attempt completes. */
+export async function updateAiLogAfterSend(
+  aiLogId: number,
+  updates: {
+    sendStatus: string;
+    platformMessageId?: string;
+    aiReplyMessageId?: number;
+    errorCode?: string;
+    errorStage?: string;
+    errorMessage?: string;
+    retryCount?: number;
+    lastRetryAt?: Date;
+  },
+): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    const updateData: any = { sendStatus: updates.sendStatus };
+    if (updates.platformMessageId !== undefined) updateData.platformMessageId = updates.platformMessageId;
+    if (updates.aiReplyMessageId !== undefined) updateData.aiReplyMessageId = updates.aiReplyMessageId;
+    if (updates.errorCode !== undefined) updateData.errorCode = updates.errorCode;
+    if (updates.errorStage !== undefined) updateData.errorStage = updates.errorStage;
+    if (updates.errorMessage !== undefined) updateData.errorMessage = updates.errorMessage;
+    if (updates.retryCount !== undefined) updateData.retryCount = updates.retryCount;
+    if (updates.lastRetryAt !== undefined) updateData.lastRetryAt = updates.lastRetryAt;
+    await db.update(aiLogs).set(updateData).where(eq(aiLogs.id, aiLogId));
+    broadcastChange("aiLog");
+  } catch (err) {
+    console.error("[AI Log] Failed to update AI log:", err);
+  }
+}
+
+/** Add a delivery attempt record. */
+export async function addDeliveryAttempt(
+  aiLogId: number,
+  attemptNumber: number,
+  sendStatus: string,
+  extra?: { platformMessageId?: string; errorCode?: string; errorMessage?: string },
+): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await db.insert(aiLogDeliveryAttempts).values({
+      aiLogId,
+      attemptNumber,
+      sendStatus: sendStatus as any,
+      platformMessageId: extra?.platformMessageId,
+      errorCode: extra?.errorCode,
+      errorMessage: extra?.errorMessage,
+    });
+    broadcastChange("aiLog");
+  } catch (err) {
+    console.error("[AI Log] Failed to add delivery attempt:", err);
+  }
+}
+
+/** Update a delivery attempt record after send result is known. */
+export async function updateDeliveryAttempt(
+  attemptId: number,
+  updates: {
+    sendStatus: string;
+    platformMessageId?: string;
+    errorCode?: string;
+    errorMessage?: string;
+  },
+): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    const updateData: any = { sendStatus: updates.sendStatus };
+    if (updates.platformMessageId !== undefined) updateData.platformMessageId = updates.platformMessageId;
+    if (updates.errorCode !== undefined) updateData.errorCode = updates.errorCode;
+    if (updates.errorMessage !== undefined) updateData.errorMessage = updates.errorMessage;
+    await db.update(aiLogDeliveryAttempts).set(updateData).where(eq(aiLogDeliveryAttempts.id, attemptId));
+  } catch (err) {
+    console.error("[AI Log] Failed to update delivery attempt:", err);
+  }
+}
+
+/** Get AI logs with filtering and pagination. */
+export async function getAiLogs(params: {
+  page: number;
+  pageSize: number;
+  dateFrom?: string;
+  dateTo?: string;
+  customerName?: string;
+  platform?: string;
+  finalSource?: string;
+  sendStatus?: string;
+  isHandover?: boolean;
+  errorStage?: string;
+  keyword?: string;
+}): Promise<{ items: any[]; total: number; page: number; pageSize: number }> {
+  const db = await getDb();
+  if (!db) return { items: [], total: 0, page: params.page, pageSize: params.pageSize };
+
+  const conditions: any[] = [];
+
+  if (params.dateFrom) {
+    conditions.push(gte(aiLogs.createdAt, new Date(params.dateFrom)));
+  }
+  if (params.dateTo) {
+    const endOfDay = new Date(params.dateTo);
+    endOfDay.setHours(23, 59, 59, 999);
+    conditions.push(lte(aiLogs.createdAt, endOfDay));
+  }
+  if (params.customerName) {
+    conditions.push(like(aiLogs.customerName, `%${params.customerName}%`));
+  }
+  if (params.platform && params.platform !== "all") {
+    conditions.push(eq(aiLogs.platform, params.platform as any));
+  }
+  if (params.finalSource && params.finalSource !== "all") {
+    conditions.push(eq(aiLogs.finalSource, params.finalSource as any));
+  }
+  if (params.sendStatus && params.sendStatus !== "all") {
+    conditions.push(eq(aiLogs.sendStatus, params.sendStatus as any));
+  }
+  if (params.isHandover !== undefined) {
+    conditions.push(eq(aiLogs.isHandover, params.isHandover));
+  }
+  if (params.errorStage && params.errorStage !== "all") {
+    conditions.push(eq(aiLogs.errorStage, params.errorStage));
+  }
+  if (params.keyword) {
+    conditions.push(
+      or(
+        like(aiLogs.customerMessage, `%${params.keyword}%`),
+        like(aiLogs.aiReply, `%${params.keyword}%`),
+      ),
+    );
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const offset = (params.page - 1) * params.pageSize;
+
+  const [items, countResult] = await Promise.all([
+    db.select({
+      id: aiLogs.id,
+      conversationId: aiLogs.conversationId,
+      customerId: aiLogs.customerId,
+      customerName: aiLogs.customerName,
+      platform: aiLogs.platform,
+      customerMessage: aiLogs.customerMessage,
+      finalSource: aiLogs.finalSource,
+      sendStatus: aiLogs.sendStatus,
+      retryCount: aiLogs.retryCount,
+      isHandover: aiLogs.isHandover,
+      errorCode: aiLogs.errorCode,
+      errorStage: aiLogs.errorStage,
+      processingTimeMs: aiLogs.processingTimeMs,
+      createdAt: aiLogs.createdAt,
+    })
+    .from(aiLogs)
+    .where(whereClause)
+    .orderBy(desc(aiLogs.createdAt))
+    .limit(params.pageSize)
+    .offset(offset),
+    db.select({ count: sql`COUNT(*)` }).from(aiLogs).where(whereClause),
+  ]);
+
+  return {
+    items,
+    total: (countResult[0] as any)?.count ?? 0,
+    page: params.page,
+    pageSize: params.pageSize,
+  };
+}
+
+/** Get a single AI log with full detail including processing steps. */
+export async function getAiLogDetail(id: number): Promise<any | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [log] = await db.select().from(aiLogs).where(eq(aiLogs.id, id));
+  if (!log) return null;
+
+  const attempts = await db.select()
+    .from(aiLogDeliveryAttempts)
+    .where(eq(aiLogDeliveryAttempts.aiLogId, id))
+    .orderBy(aiLogDeliveryAttempts.attemptNumber);
+
+  return { ...log, deliveryAttempts: attempts };
+}
+
+/** Get AI log statistics for the dashboard. */
+export async function getAiLogStats(days: number = 1): Promise<{
+  total: number;
+  sent: number;
+  failed: number;
+  handover: number;
+  bySource: Record<string, number>;
+  avgProcessingMs: number;
+  errorByStage: Record<string, number>;
+}> {
+  const db = await getDb();
+  if (!db) return { total: 0, sent: 0, failed: 0, handover: 0, bySource: {}, avgProcessingMs: 0, errorByStage: {} };
+
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  since.setHours(0, 0, 0, 0);
+
+  const allLogs = await db.select({
+    finalSource: aiLogs.finalSource,
+    sendStatus: aiLogs.sendStatus,
+    isHandover: aiLogs.isHandover,
+    processingTimeMs: aiLogs.processingTimeMs,
+    errorStage: aiLogs.errorStage,
+  })
+  .from(aiLogs)
+  .where(gte(aiLogs.createdAt, since));
+
+  const bySource: Record<string, number> = {};
+  const errorByStage: Record<string, number> = {};
+  let sent = 0, failed = 0, handover = 0, totalProcessingMs = 0;
+
+  for (const log of allLogs) {
+    bySource[log.finalSource] = (bySource[log.finalSource] ?? 0) + 1;
+    if (log.sendStatus === "sent") sent++;
+    if (log.sendStatus === "failed") failed++;
+    if (log.isHandover) handover++;
+    if (log.processingTimeMs) totalProcessingMs += log.processingTimeMs;
+    if (log.errorStage) errorByStage[log.errorStage] = (errorByStage[log.errorStage] ?? 0) + 1;
+  }
+
+  return {
+    total: allLogs.length,
+    sent,
+    failed,
+    handover,
+    bySource,
+    avgProcessingMs: allLogs.length > 0 ? Math.round(totalProcessingMs / allLogs.length) : 0,
+    errorByStage,
+  };
+}
+
+/** Cleanup old AI logs based on retention days. Returns count of deleted records. */
+export async function cleanupOldAiLogs(): Promise<number> {
+  try {
+    const db = await getDb();
+    if (!db) return 0;
+    const retentionDays = ENV.aiLogRetentionDays;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - retentionDays);
+
+    // Delete delivery attempts first (though CASCADE should handle it)
+    const oldLogIds = await db.select({ id: aiLogs.id })
+      .from(aiLogs)
+      .where(lt(aiLogs.createdAt, cutoff));
+
+    if (oldLogIds.length === 0) return 0;
+
+    const oldIds = oldLogIds.map((r: any) => r.id);
+
+    // Delete main logs (CASCADE will remove delivery attempts)
+    await db.delete(aiLogs).where(inArray(aiLogs.id, oldIds));
+
+    console.log(`[AI Log] Cleaned up ${oldIds.length} logs older than ${retentionDays} days`);
+    return oldIds.length;
+  } catch (err) {
+    console.error("[AI Log] Cleanup failed:", err);
+    return 0;
+  }
 }

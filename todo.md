@@ -1274,3 +1274,55 @@
 
 - [x] 建立根目录 CHANGELOG.md 并登记 AI大脑 Phase 1 正式版本 V1.0
 - [x] 写入 Major / Minor / Patch 版本规则与后续记录模板
+
+## AI大脑 Phase 2 Task 1: AI日志规划
+
+- [x] 检查现有数据结构与 AI处理链路数据覆盖
+- [x] 设计 ai_logs 表字段与 processingSteps JSON 结构
+- [x] 绘制 AI日志处理流程图
+- [x] 规划后端接口（aiLog.list / getDetail / getStats / getCleanupPreview）
+- [x] 规划前端页面结构与交互功能
+- [x] 制定日志保存及清理策略（90天自动清理、敏感资料处理、索引优化）
+- [x] 确认与现有 Chat/Flow/Reply Rule/Knowledge 的兼容方式
+- [x] 评估风险并提供解决方法
+- [x] 编写开发步骤与验收标准
+- [x] 交付规划文档 docs/ai-log-plan.md（v1）
+- [x] 修正 Flow Engine 适用范围：普通私聊不进入 Flow，仅限已绑定来源
+- [x] 新增 customerMessageId / aiReplyMessageId 精确关联 chat_messages.id
+- [x] 确认不复制电话/地址等敏感资料，processingSteps.detail 不重复保存客户原文
+- [x] processingSteps 不硬性截断步数，前端默认显示前 15 步
+- [x] 采用 AiProcessingContext 统一收集轨迹，日志逻辑不散落在引擎中
+- [x] 发送重试采用方案B（ai_log_delivery_attempts 子表），不产生新主日志
+- [x] 保留期限通过 AI_LOG_RETENTION_DAYS 环境变量统一配置
+- [x] 新增 errorCode / errorStage 结构化错误字段
+- [x] AI日志新增为第5个 Tab，保留 AI测试和 AI分析 Tab
+- [x] 交付修正版规划文档 docs/ai-log-plan.md（v2）
+
+## AI大脑 Phase 2 Task 1: AI日志开发
+
+### 数据库
+- [x] 创建 ai_logs 表 schema（conversationId 可空 + sourceType/sourceEventId/sourceBindingId）
+- [x] 创建 ai_log_delivery_attempts 表 schema（aiLogId ON DELETE CASCADE）
+- [x] 注册 AI_LOG_RETENTION_DAYS 环境变量
+- [x] 执行数据库迁移 SQL
+
+### 后端
+- [x] 创建 AiProcessingContext 类（server/aiLogContext.ts）
+- [x] db.ts: createAiLog / getAiLogs / getAiLogDetail / getAiLogStats / addDeliveryAttempt / updateDeliveryAttempt / cleanupOldAiLogs
+- [x] processChatAI 增加可选 context?: AiProcessingContext 参数
+- [x] messenger.ts 集成 AiProcessingContext 写入日志
+- [x] routers.ts: aiLog.list / getDetail / getStats / getDeliveryAttempts
+- [x] SSE SyncCategory 新增 "aiLog"
+- [x] Heartbeat 定时清理任务
+
+### 前端
+- [x] AiBrainLog.tsx 页面（筛选/统计/列表/展开轨迹/发送尝试/跳转Chat）
+- [x] AiBrain.tsx 新增第5个 Tab「AI日志」
+- [x] Dashboard「查看AI日志」按钮跳转
+
+### 测试与验收
+- [x] Vitest 测试覆盖 createAiLog / aiLog.list / AiProcessingContext
+- [x] TypeScript 零错误
+- [x] CHANGELOG 更新
+- [ ] 保存检查点
+- [ ] 截图验证与最终交付报告
