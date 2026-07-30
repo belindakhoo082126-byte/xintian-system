@@ -1348,3 +1348,33 @@
 - [x] 撰写最终验收报告并封版（不启动 Task 2）
 - [x] 修正 AI日志发送记录 attemptedAt 时间戳显示为 Invalid Date 的问题，并补充回归测试
 - [x] 实现 AI日志发送失败后的同主日志重试：新增发送尝试、递增 retryCount，并在成功后更新为 sent
+
+## AI大脑 Phase 2 Task 2：AI测试中心开发
+
+### 数据库
+- [x] 新增 ai_test_runs 表 schema（含 LLM 追踪字段、人设快照、previousRunId）
+- [x] 扩展 ai_knowledge 表（status/sourceAiTestRunId/sourceNote）
+- [x] 执行数据库迁移 SQL
+
+### 后端
+- [x] 引擎 dryRun 改造：runReplyRuleEngine / runKnowledgeEngine / processChatAI 增加 dryRun 参数
+- [x] 知识库查询增加 status='published' 条件
+- [x] SideEffectPolicy 统一副作用拦截层
+- [x] aiTestRunner.ts 测试运行服务
+- [x] db.ts: getTestRuns / getTestRunDetail / deleteTestRun / batchDeleteTestRuns / cleanupOldTestRuns / createKnowledgeDraft / checkDuplicateKnowledge
+- [x] routers.ts: aiTest.run / list / getDetail / delete / batchDelete / compare / rerun / convertToDraft
+- [x] Heartbeat 定时清理任务
+
+### 前端
+- [x] AiBrainTest.tsx 页面（配置面板 + 结果面板 + 历史表格 + 比较弹窗 + 转草稿弹窗）
+- [x] 模拟测试标识固定顶部显示
+- [x] 模拟会员/订单选项设为禁用状态（标注"尚未接入，未来开放"）
+- [x] AiBrain.tsx 启用 test Tab，替换 ComingSoon
+
+### 测试与验收
+- [x] 单元测试：SideEffectPolicy 9类禁止操作抛错 + violation 日志、草稿隔离、finalSource 枚举覆盖
+- [x] TypeScript 零错误
+- [x] Vitest 全部通过（160/161，唯一失败为既有外部API超时）
+- [x] CHANGELOG 更新
+- [x] 保存检查点
+- [ ] 18项验收资料

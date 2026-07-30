@@ -130,6 +130,56 @@
 
 ---
 
+## V1.2 — AI大脑 Phase 2 Task 2：AI测试中心
+
+**发布日期：** 2026-07-30  
+**开发阶段：** AI大脑 Phase 2 Task 2 正式封版
+
+### Added
+
+- 新增 `ai_test_runs` 数据表，独立保存 AI测试记录（测试问题、配置、处理轨迹、命中来源、回复、转人工、LLM追踪、人设快照、测试人、备注），与 `ai_logs` 完全物理隔离
+- 新增 `SideEffectPolicy` 统一副作用拦截层（`server/aiTestRunner.ts`），在 dry_run 模式下对发送、建对话、建消息、建转人工、递增使用次数、写 AI日志、建订单、发通知、触发 Flow 共 9 类操作抛出错误并记录 violation 日志
+- 新增 `aiTestRunner.ts` 测试运行服务：复用正式 `processChatAI` 引擎（dryRun=true），收集完整处理轨迹，不产生任何正式副作用
+- 新增 `db.ts` AI测试辅助函数：`getTestRuns`、`getTestRunDetail`、`deleteTestRun`、`batchDeleteTestRuns`、`cleanupOldTestRuns`（180天保留）、`checkDuplicateKnowledge`、`createKnowledgeDraft`
+- 新增 tRPC `aiTest` router：`run`、`list`、`getDetail`、`delete`、`batchDelete`、`rerun`、`compare`、`convertToDraft`（均为 adminProcedure）
+- 新增 `/api/scheduled/ai-test-cleanup` 定时清理端点（180天保留）
+- 新增 `AiBrainTest.tsx` 前端页面：左侧配置面板（渠道/语言/AI/LLM/人工状态/模拟客户名）、右侧结果面板（来源Badge/回复/LLM追踪/处理轨迹/错误信息）、底部历史记录表格（展开轨迹/重新运行/转草稿/删除/比较）
+- 新增 AI大脑第6个 Tab「AI测试」，替换原 ComingSoon 占位
+- 新增「转为知识库草稿」功能：Admin 确认后创建 `status=draft`、`isEnabled=false` 的知识条目，自动查重，保存 `sourceAiTestRunId`，不参与正式引擎匹配
+- 新增模拟测试标识固定顶部显示：「模拟测试 — 不会发送给客户 · 不会建立对话 · 不影响正式统计」
+
+### Changed
+
+- `processChatAI` 及各引擎函数新增可选 `dryRun` 参数，正式处理路径行为不变
+- `ai_knowledge` 表新增 `status`（enum: published/draft，默认 published）、`sourceAiTestRunId`（int nullable）、`sourceNote`（varchar nullable）字段
+- 知识库查询增加 `status='published'` 过滤条件，草稿不参与正式引擎匹配
+- `AiBrain.tsx` 的 `AI_BRAIN_TABS` 新增 `test`，test Tab 从 disabled 改为 enabled
+
+### Fixed
+
+- 无
+
+### Removed
+
+- 无
+
+### Database
+
+- 新增 `ai_test_runs` 表（id, testRunId, testedBy, platform, language, aiEnabled, handoverStatus, enableLLM, simulatedCustomerName, isMember, hasOrder, testMessage, finalSource, matchedRuleId, matchedKnowledgeId, matchedProductId, aiReply, shouldHandover, handoverReason, processingTimeMs, processingSteps JSON, errorCode, errorStage, errorMessage, llmCalled, llmModel, llmProcessingTimeMs, llmSuccess, llmErrorStage, llmErrorCode, llmTimedOut, llmInputTokens, llmOutputTokens, personaSnapshot JSON, previousRunId, createdAt）
+- 扩展 `ai_knowledge` 表：新增 `status`、`sourceAiTestRunId`、`sourceNote` 字段
+- 迁移文件：`drizzle/migrations/0008_ai_test_runs.sql`
+
+### Notes
+
+- AI测试中心仅 Admin 可使用
+- 测试运行不发送 Messenger/WhatsApp 消息、不建立 Chat 对话/消息、不创建转人工请求、不递增规则/知识库使用次数、不写入 `ai_logs`、不触发订单/通知/Flow
+- 模拟会员/订单选项设为禁用状态，标注「尚未接入，未来开放」
+- AI测试记录与正式 AI日志物理隔离，Dashboard/AI日志/AI分析统计默认排除测试记录
+- 知识库草稿创建后需在知识库页面发布后才参与正式引擎匹配
+- 历史比较使用已保存的快照（含人设快照），不重新运行旧测试；重新运行建立新记录并通过 `previousRunId` 关联
+
+---
+
 ## 后续记录模板
 
 ```md

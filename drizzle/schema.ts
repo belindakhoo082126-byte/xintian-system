@@ -2028,6 +2028,11 @@ export const aiKnowledge = mysqlTable("ai_knowledge", {
   // Real usage metrics, incremented by the Knowledge Engine after a match
   usageCount: int("usageCount").default(0).notNull(),
   lastMatchedAt: timestamp("lastMatchedAt"),
+  // Draft/published status — draft entries are excluded from engine matching
+  status: mysqlEnum("status", ["draft", "published"]).default("published").notNull(),
+  // Source tracking: if this knowledge was created from an AI test run
+  sourceAiTestRunId: int("sourceAiTestRunId"),
+  sourceNote: text("sourceNote"),
   // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -2152,3 +2157,60 @@ export const aiLogDeliveryAttempts = mysqlTable("ai_log_delivery_attempts", {
 
 export type AiLogDeliveryAttempt = typeof aiLogDeliveryAttempts.$inferSelect;
 export type InsertAiLogDeliveryAttempt = typeof aiLogDeliveryAttempts.$inferInsert;
+
+/**
+ * AI Test Runs — Admin test execution records, completely isolated from ai_logs.
+ * Test runs never send messages, create conversations, or affect production stats.
+ */
+export const aiTestRuns = mysqlTable("ai_test_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  // Test configuration
+  platform: mysqlEnum("platform", ["messenger", "whatsapp"]).notNull(),
+  language: varchar("language", { length: 20 }).default("auto").notNull(),
+  aiEnabled: boolean("aiEnabled").default(true).notNull(),
+  handoverStatus: mysqlEnum("handoverStatus", ["none", "pending", "claimed"]).default("none").notNull(),
+  enableLLM: boolean("enableLLM").default(true).notNull(),
+  // Simulated customer scenario (reserved — not yet wired to engines)
+  simulatedCustomerName: varchar("simulatedCustomerName", { length: 255 }),
+  isMember: boolean("isMember").default(false).notNull(),
+  hasOrder: boolean("hasOrder").default(false).notNull(),
+  // Test input
+  testMessage: text("testMessage").notNull(),
+  // Processing results
+  processingSteps: json("processingSteps"),
+  finalSource: mysqlEnum("finalSource", [
+    "order_keyword", "product", "reply_rule", "knowledge", "llm",
+    "no_match", "error", "ai_disabled", "human_claimed",
+  ]).notNull(),
+  matchedRuleId: int("matchedRuleId"),
+  matchedKnowledgeId: int("matchedKnowledgeId"),
+  matchedProductId: int("matchedProductId"),
+  aiReply: text("aiReply"),
+  shouldHandover: boolean("shouldHandover").default(false).notNull(),
+  handoverReason: text("handoverReason"),
+  processingTimeMs: int("processingTimeMs"),
+  errorCode: varchar("errorCode", { length: 50 }),
+  errorStage: varchar("errorStage", { length: 50 }),
+  errorMessage: text("errorMessage"),
+  // LLM tracking
+  llmCalled: boolean("llmCalled").default(false).notNull(),
+  llmModel: varchar("llmModel", { length: 100 }),
+  llmProcessingTimeMs: int("llmProcessingTimeMs"),
+  llmSuccess: boolean("llmSuccess"),
+  llmErrorStage: varchar("llmErrorStage", { length: 50 }),
+  llmErrorCode: varchar("llmErrorCode", { length: 50 }),
+  llmTimedOut: boolean("llmTimedOut").default(false).notNull(),
+  llmInputTokens: int("llmInputTokens"),
+  llmOutputTokens: int("llmOutputTokens"),
+  // AI persona snapshot at time of test
+  personaSnapshot: json("personaSnapshot"),
+  // Admin management
+  testedBy: varchar("testedBy", { length: 255 }).notNull(),
+  notes: text("notes"),
+  previousRunId: int("previousRunId"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AiTestRun = typeof aiTestRuns.$inferSelect;
+export type InsertAiTestRun = typeof aiTestRuns.$inferInsert;

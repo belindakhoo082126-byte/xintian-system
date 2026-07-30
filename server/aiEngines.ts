@@ -122,7 +122,10 @@ export async function runFlowEngine(ctx: MessageContext): Promise<EngineResult> 
 //    Replaces all hardcoded keyword replies.
 // ---------------------------------------------------------------------------
 
-export async function runReplyRuleEngine(ctx: MessageContext): Promise<EngineResult> {
+export async function runReplyRuleEngine(
+  ctx: MessageContext,
+  options?: { dryRun?: boolean }
+): Promise<EngineResult> {
   const database = await getDb();
   if (!database) return { matched: false, reply: null, source: "reply_rule" };
 
@@ -161,7 +164,7 @@ export async function runReplyRuleEngine(ctx: MessageContext): Promise<EngineRes
     );
 
     if (matched) {
-      await recordUsage("replyRules", rule.id);
+      if (!options?.dryRun) await recordUsage("replyRules", rule.id);
       return {
         matched: true,
         reply: rule.replyContent,
@@ -180,15 +183,19 @@ export async function runReplyRuleEngine(ctx: MessageContext): Promise<EngineRes
 //    Used for Messenger/WhatsApp private chat when Reply Rules don't match.
 // ---------------------------------------------------------------------------
 
-export async function runKnowledgeEngine(ctx: MessageContext): Promise<EngineResult> {
+export async function runKnowledgeEngine(
+  ctx: MessageContext,
+  options?: { dryRun?: boolean }
+): Promise<EngineResult> {
   const database = await getDb();
   if (!database) return { matched: false, reply: null, source: "knowledge" };
 
-  // Get all enabled knowledge entries sorted by priority
+  // Get all enabled, published knowledge entries sorted by priority
+  // Draft entries (status='draft') are excluded from engine matching
   const knowledgeEntries = await database
     .select()
     .from(aiKnowledge)
-    .where(eq(aiKnowledge.isEnabled, true))
+    .where(and(eq(aiKnowledge.isEnabled, true), eq(aiKnowledge.status, "published")))
     .orderBy(aiKnowledge.priority);
 
   const textLower = ctx.text.toLowerCase().trim();
@@ -208,7 +215,7 @@ export async function runKnowledgeEngine(ctx: MessageContext): Promise<EngineRes
     );
 
     if (matched) {
-      await recordUsage("aiKnowledge", entry.id);
+      if (!options?.dryRun) await recordUsage("aiKnowledge", entry.id);
       return {
         matched: true,
         reply: entry.content,
@@ -297,6 +304,7 @@ export async function processChatAI(
     aiEnabled: boolean;
     handoverStatus: "none" | "pending" | "claimed";
     logContext?: AiProcessingContext;
+    dryRun?: boolean;
   }
 ): Promise<ChatAIResult> {
   const logCtx = options.logContext;
@@ -344,7 +352,7 @@ export async function processChatAI(
 
   // Step 4: Reply Rule Engine
   const t1 = Date.now();
-  const ruleResult = await runReplyRuleEngine(ctx);
+  const ruleResult = await runReplyRuleEngine(ctx, { dryRun: options.dryRun });
   if (logCtx) logCtx.addStep("reply_rule", "固定回复规则", ruleResult.matched ? `命中规则（ID:${ruleResult.ruleId}）` : "未命中固定回复规则", ruleResult.matched ? "hit" : "missed", { durationMs: Date.now() - t1, ruleId: ruleResult.ruleId });
   if (ruleResult.matched) {
     if (logCtx) { logCtx.finalSource = "reply_rule"; logCtx.matchedRuleId = ruleResult.ruleId; logCtx.aiReply = ruleResult.reply; }
@@ -359,7 +367,7 @@ export async function processChatAI(
 
   // Step 5: Knowledge Engine
   const t2 = Date.now();
-  const knowledgeResult = await runKnowledgeEngine(ctx);
+  const knowledgeResult = await runKnowledgeEngine(ctx, { dryRun: options.dryRun });
   if (logCtx) logCtx.addStep("knowledge", "AI知识库", knowledgeResult.matched ? `命中知识（ID:${knowledgeResult.knowledgeId}）` : "未命中知识库", knowledgeResult.matched ? "hit" : "missed", { durationMs: Date.now() - t2, knowledgeId: knowledgeResult.knowledgeId });
   if (knowledgeResult.matched) {
     if (logCtx) { logCtx.finalSource = "knowledge"; logCtx.matchedKnowledgeId = knowledgeResult.knowledgeId; logCtx.aiReply = knowledgeResult.reply; }

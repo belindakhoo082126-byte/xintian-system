@@ -1,0 +1,48 @@
+-- AI Test Runs table (completely isolated from ai_logs)
+CREATE TABLE IF NOT EXISTS `ai_test_runs` (
+  `id` int AUTO_INCREMENT PRIMARY KEY,
+  `platform` enum('messenger','whatsapp') NOT NULL,
+  `language` varchar(20) DEFAULT 'auto' NOT NULL,
+  `aiEnabled` boolean DEFAULT true NOT NULL,
+  `handoverStatus` enum('none','pending','claimed') DEFAULT 'none' NOT NULL,
+  `enableLLM` boolean DEFAULT true NOT NULL,
+  `simulatedCustomerName` varchar(255),
+  `isMember` boolean DEFAULT false NOT NULL,
+  `hasOrder` boolean DEFAULT false NOT NULL,
+  `testMessage` text NOT NULL,
+  `processingSteps` json,
+  `finalSource` enum('order_keyword','product','reply_rule','knowledge','llm','no_match','error','ai_disabled','human_claimed') NOT NULL,
+  `matchedRuleId` int,
+  `matchedKnowledgeId` int,
+  `matchedProductId` int,
+  `aiReply` text,
+  `shouldHandover` boolean DEFAULT false NOT NULL,
+  `handoverReason` text,
+  `processingTimeMs` int,
+  `errorCode` varchar(50),
+  `errorStage` varchar(50),
+  `errorMessage` text,
+  `llmCalled` boolean DEFAULT false NOT NULL,
+  `llmModel` varchar(100),
+  `llmProcessingTimeMs` int,
+  `llmSuccess` boolean,
+  `llmErrorStage` varchar(50),
+  `llmErrorCode` varchar(50),
+  `llmTimedOut` boolean DEFAULT false NOT NULL,
+  `llmInputTokens` int,
+  `llmOutputTokens` int,
+  `personaSnapshot` json,
+  `testedBy` varchar(255) NOT NULL,
+  `notes` text,
+  `previousRunId` int,
+  `createdAt` timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  FOREIGN KEY (`matchedRuleId`) REFERENCES `reply_rules`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`matchedKnowledgeId`) REFERENCES `ai_knowledge`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`matchedProductId`) REFERENCES `products`(`id`) ON DELETE SET NULL
+);
+
+-- Extend ai_knowledge table with draft/published status and source tracking
+ALTER TABLE `ai_knowledge`
+  ADD COLUMN `status` enum('draft','published') DEFAULT 'published' NOT NULL,
+  ADD COLUMN `sourceAiTestRunId` int NULL,
+  ADD COLUMN `sourceNote` text NULL;

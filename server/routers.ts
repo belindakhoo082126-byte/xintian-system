@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { variants } from "../drizzle/schema";
 import { sendTelegramJoinFlow, sendMembershipFlow, getUserProfile, sendTextMessage } from "./messenger";
 import { retryFailedAiLogDelivery } from "./aiLogRetry";
+import { runTest, rerunTest } from "./aiTestRunner";
 import * as parceldaily from "./parceldaily";
 import * as parcelking from "./parcelking";
 import { ParcelKingError } from "./parcelking";
@@ -4883,6 +4884,127 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
           retentionDays,
           message: `当前保留 ${retentionDays} 天，超过的日志将被自动清理`,
         };
+      }),
+  }),
+
+  // ===========================================================================
+  // AI Test Center — Admin-only test execution, completely isolated from ai_logs
+  // ===========================================================================
+  aiTest: router({
+    // Run a test — executes production engines in dry_run mode
+    run: adminProcedure
+      .input(z.object({
+        platform: z.enum(["messenger", "whatsapp"]),
+        language: z.string().default("auto"),
+        aiEnabled: z.boolean().default(true),
+        handoverStatus: z.enum(["none", "pending", "claimed"]).default("none"),
+        enableLLM: z.boolean().default(true),
+        simulatedCustomerName: z.string().optional(),
+        isMember: z.boolean().default(false),
+        hasOrder: z.boolean().default(false),
+        testMessage: z.string().min(1).max(2000),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const testedBy = ctx.user?.name || ctx.user?.email || "admin";
+        const result = await runTest(input, testedBy);
+        return result;
+      }),
+
+    // List test runs with filtering
+    list: adminProcedure
+      .input(z.object({
+        page: z.number().default(1),
+        pageSize: z.number().default(20),
+        finalSource: z.string().optional(),
+        platform: z.string().optional(),
+        testedBy: z.string().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await db.getTestRuns(input);
+      }),
+
+    // Get test run detail
+    getDetail: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const detail = await db.getTestRunDetail(input.id);
+        if (!detail) throw new TRPCError({ code: "NOT_FOUND" });
+        return detail;
+      }),
+
+    // Delete a single test run
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const ok = await db.deleteTestRun(input.id);
+        if (!ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        return { success: true };
+      }),
+
+    // Batch delete test runs
+    batchDelete: adminProcedure
+      .input(z.object({ ids: z.array(z.number()) }))
+      .mutation(async ({ input }) => {
+        const count = await db.batchDeleteTestRuns(input.ids);
+        return { deleted: count };
+      }),
+
+    // Rerun a test (creates new record linked via previousRunId)
+    rerun: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const testedBy = ctx.user?.name || ctx.user?.email || "admin";
+        const result = await rerunTest(input.id, testedBy);
+        if (!result) throw new TRPCError({ code: "NOT_FOUND" });
+        return result;
+      }),
+
+    // Compare two test runs
+    compare: adminProcedure
+      .input(z.object({ runIdA: z.number(), runIdB: z.number() }))
+      .query(async ({ input }) => {
+        const [a, b] = await Promise.all([
+          db.getTestRunDetail(input.runIdA),
+          db.getTestRunDetail(input.runIdB),
+        ]);
+        if (!a || !b) throw new TRPCError({ code: "NOT_FOUND" });
+        return { runA: a, runB: b };
+      }),
+
+    // Convert test result to knowledge draft
+    convertToDraft: adminProcedure
+      .input(z.object({
+        testRunId: z.number(),
+        category: z.string().default("faq"),
+        topic: z.string().min(1),
+        triggerKeywords: z.string().min(1),
+        content: z.string().min(1),
+        sourceNote: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        // Check for duplicates
+        const dupCheck = await db.checkDuplicateKnowledge(
+          input.triggerKeywords,
+          input.content
+        );
+        if (dupCheck.isDuplicate) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `关键词与已有知识条目重复（ID: ${dupCheck.existingId}, 主题: ${dupCheck.existingTopic}）`,
+          });
+        }
+
+        const draftId = await db.createKnowledgeDraft({
+          category: input.category,
+          topic: input.topic,
+          triggerKeywords: input.triggerKeywords,
+          content: input.content,
+          sourceAiTestRunId: input.testRunId,
+          sourceNote: input.sourceNote,
+        });
+
+        if (!draftId) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        return { draftId };
       }),
   }),
 });

@@ -8,8 +8,9 @@ import AiBrainPersona from "./AiBrainPersona";
 const AiKnowledge = lazy(() => import("./AiKnowledge"));
 const ReplyRules = lazy(() => import("./ReplyRules"));
 const AiBrainLog = lazy(() => import("./AiBrainLog"));
+const AiBrainTest = lazy(() => import("./AiBrainTest"));
 
-const AI_BRAIN_TABS = new Set(["dashboard", "persona", "knowledge", "reply-rules", "log"]);
+const AI_BRAIN_TABS = new Set(["dashboard", "persona", "knowledge", "reply-rules", "log", "test"]);
 
 export function getAiBrainInitialTab(search: string): string {
   const requestedTab = new URLSearchParams(search).get("tab");
@@ -55,7 +56,7 @@ export default function AiBrain() {
             <FileText className="w-4 h-4" />
             <span className="text-xs">AI 日志</span>
           </TabsTrigger>
-          <TabsTrigger value="test" className="flex flex-col items-center gap-1 py-2" disabled>
+          <TabsTrigger value="test" className="flex flex-col items-center gap-1 py-2">
             <FlaskConical className="w-4 h-4" />
             <span className="text-xs">AI 测试</span>
           </TabsTrigger>
@@ -92,7 +93,9 @@ export default function AiBrain() {
         </TabsContent>
 
         <TabsContent value="test">
-          <ComingSoon title="AI 测试" description="未来可在此测试 AI 回复效果、模拟对话流程、验证知识库匹配准确度。" />
+          <Suspense fallback={<div className="py-12 text-center text-muted-foreground">加载中...</div>}>
+            <AiBrainTest />
+          </Suspense>
         </TabsContent>
 
         <TabsContent value="analytics">

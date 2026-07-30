@@ -37,6 +37,8 @@ import {
   chatConversations, chatMessages, aiHandoverRequests,
   // V4.1 imports - AI Brain Phase 2 (AI Logs)
   aiLogs, aiLogDeliveryAttempts,
+  // V4.2 imports - AI Brain Phase 2 Task 2 (AI Test Center)
+  aiTestRuns, aiKnowledge,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -9076,5 +9078,184 @@ export async function cleanupOldAiLogs(): Promise<number> {
   } catch (err) {
     console.error("[AI Log] Cleanup failed:", err);
     return 0;
+  }
+}
+
+// ============================================================================
+// AI Test Center — Database helpers (completely isolated from ai_logs)
+// ============================================================================
+
+export async function getTestRuns(params: {
+  page?: number;
+  pageSize?: number;
+  finalSource?: string;
+  platform?: string;
+  testedBy?: string;
+}): Promise<{ items: any[]; total: number }> {
+  try {
+    const db = await getDb();
+    if (!db) return { items: [], total: 0 };
+    const page = params.page || 1;
+    const pageSize = params.pageSize || 20;
+    const offset = (page - 1) * pageSize;
+
+    let query = db.select().from(aiTestRuns).$dynamic();
+    const conditions: any[] = [];
+
+    if (params.finalSource) {
+      conditions.push(eq(aiTestRuns.finalSource, params.finalSource as any));
+    }
+    if (params.platform) {
+      conditions.push(eq(aiTestRuns.platform, params.platform as any));
+    }
+    if (params.testedBy) {
+      conditions.push(eq(aiTestRuns.testedBy, params.testedBy));
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+
+    const items = await query
+      .orderBy(desc(aiTestRuns.createdAt))
+      .limit(pageSize)
+      .offset(offset);
+
+    // Get total count
+    let countQuery = db.select({ count: sql`count(*)` }).from(aiTestRuns).$dynamic();
+    if (conditions.length > 0) {
+      countQuery = countQuery.where(and(...conditions));
+    }
+    const [{ count }] = await countQuery;
+
+    return { items, total: Number(count) };
+  } catch (err) {
+    console.error("[AI Test] getTestRuns failed:", err);
+    return { items: [], total: 0 };
+  }
+}
+
+export async function getTestRunDetail(id: number): Promise<any | null> {
+  try {
+    const db = await getDb();
+    if (!db) return null;
+    const [row] = await db.select().from(aiTestRuns).where(eq(aiTestRuns.id, id)).limit(1);
+    return row || null;
+  } catch (err) {
+    console.error("[AI Test] getTestRunDetail failed:", err);
+    return null;
+  }
+}
+
+export async function deleteTestRun(id: number): Promise<boolean> {
+  try {
+    const db = await getDb();
+    if (!db) return false;
+    await db.delete(aiTestRuns).where(eq(aiTestRuns.id, id));
+    return true;
+  } catch (err) {
+    console.error("[AI Test] deleteTestRun failed:", err);
+    return false;
+  }
+}
+
+export async function batchDeleteTestRuns(ids: number[]): Promise<number> {
+  try {
+    const db = await getDb();
+    if (!db) return 0;
+    const result = await db.delete(aiTestRuns).where(inArray(aiTestRuns.id, ids));
+    return (result as any)?.affectedRows || ids.length;
+  } catch (err) {
+    console.error("[AI Test] batchDeleteTestRuns failed:", err);
+    return 0;
+  }
+}
+
+export async function cleanupOldTestRuns(): Promise<number> {
+  try {
+    const db = await getDb();
+    if (!db) return 0;
+    const retentionDays = 180; // Test records retained for 180 days
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - retentionDays);
+
+    const oldRuns = await db.select({ id: aiTestRuns.id })
+      .from(aiTestRuns)
+      .where(lt(aiTestRuns.createdAt, cutoff));
+
+    if (oldRuns.length === 0) return 0;
+
+    const oldIds = oldRuns.map((r: any) => r.id);
+    await db.delete(aiTestRuns).where(inArray(aiTestRuns.id, oldIds));
+
+    console.log(`[AI Test] Cleaned up ${oldIds.length} test runs older than ${retentionDays} days`);
+    return oldIds.length;
+  } catch (err) {
+    console.error("[AI Test] Cleanup failed:", err);
+    return 0;
+  }
+}
+
+export async function checkDuplicateKnowledge(
+  triggerKeywords: string,
+  content: string
+): Promise<{ isDuplicate: boolean; existingId?: number; existingTopic?: string }> {
+  try {
+    const db = await getDb();
+    if (!db) return { isDuplicate: false };
+
+    // Check by trigger keywords overlap
+    const entries = await db.select().from(aiKnowledge);
+    const newKeywords = triggerKeywords.toLowerCase().split(",").map((k: string) => k.trim()).filter(Boolean);
+
+    for (const entry of entries) {
+      const existingKeywords = (entry.triggerKeywords || "")
+        .toLowerCase()
+        .split(",")
+        .map((k: string) => k.trim())
+        .filter(Boolean);
+
+      const hasOverlap = newKeywords.some((kw: string) => existingKeywords.includes(kw));
+      if (hasOverlap) {
+        return { isDuplicate: true, existingId: entry.id, existingTopic: entry.topic };
+      }
+    }
+
+    return { isDuplicate: false };
+  } catch (err) {
+    console.error("[AI Test] checkDuplicateKnowledge failed:", err);
+    return { isDuplicate: false };
+  }
+}
+
+export async function createKnowledgeDraft(data: {
+  category: string;
+  topic: string;
+  triggerKeywords: string;
+  content: string;
+  sourceAiTestRunId: number;
+  sourceNote?: string;
+}): Promise<number | null> {
+  try {
+    const db = await getDb();
+    if (!db) return null;
+
+    const [row] = await db.insert(aiKnowledge).values({
+      category: data.category,
+      topic: data.topic,
+      triggerKeywords: data.triggerKeywords,
+      content: data.content,
+      priority: 100,
+      useLLM: false,
+      isEnabled: false, // Draft is disabled by default
+      status: "draft",
+      sourceAiTestRunId: data.sourceAiTestRunId,
+      sourceNote: data.sourceNote || null,
+    });
+
+    return (row as any)?.insertId || null;
+  } catch (err) {
+    console.error("[AI Test] createKnowledgeDraft failed:", err);
+    return null;
   }
 }

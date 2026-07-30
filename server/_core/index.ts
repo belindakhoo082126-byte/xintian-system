@@ -165,6 +165,18 @@ async function startServer() {
     }
   });
 
+  // AI Test run auto-cleanup (daily cron, 180-day retention)
+  app.post("/api/scheduled/ai-test-cleanup", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (!user.isCron) return res.status(403).json({ error: "cron-only" });
+      const deleted = await db.cleanupOldTestRuns();
+      res.json({ ok: true, deleted, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, timestamp: new Date().toISOString() });
+    }
+  });
+
   // Real-time sync: Server-Sent Events endpoint
   app.get("/api/sync", (req, res) => {
     const cleanup = addSSEClient(res);
