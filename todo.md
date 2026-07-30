@@ -1405,3 +1405,16 @@
 - [x] Vitest 全部通过
 - [x] CHANGELOG 更新
 - [x] 保存检查点
+
+## AI大脑 Phase 2 Task 4：AI Replay（AI日志回放）
+
+- [x] db.ts: getAiLogForReplay（获取日志完整数据用于回放）
+- [x] aiTestRunner.ts: replayFromAiLog（从 AI日志执行回放）
+- [x] routers.ts: aiLog.replay 路由（Admin-only mutation）
+- [x] AiBrainLog.tsx: 添加 Replay 按钮
+- [x] AiBrainLog.tsx: Replay 对话框（历史 vs 当前结果对比）
+- [x] 单元测试：ai-replay.test.ts
+- [x] TypeScript 零错误
+- [x] Vitest 全部通过
+- [x] CHANGELOG 更新
+- [x] 保存检查点

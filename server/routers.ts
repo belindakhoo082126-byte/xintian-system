@@ -4885,6 +4885,17 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
           message: `当前保留 ${retentionDays} 天，超过的日志将被自动清理`,
         };
       }),
+
+    // Replay an AI log entry through the test engine (dry run, no side effects)
+    replay: adminProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => {
+        const testedBy = ctx.user?.name || ctx.user?.email || "admin";
+        const { replayFromAiLog } = await import("./aiTestRunner");
+        const result = await replayFromAiLog(input.id, testedBy);
+        if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "AI日志不存在" });
+        return result;
+      }),
   }),
 
   // ===========================================================================

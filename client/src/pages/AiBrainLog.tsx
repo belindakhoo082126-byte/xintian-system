@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronDown, ChevronRight, ExternalLink, Search, Filter, AlertCircle, CheckCircle, XCircle, Clock, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Search, Filter, AlertCircle, CheckCircle, XCircle, Clock, RefreshCw, RotateCw } from "lucide-react";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 const SOURCE_LABELS: Record<string, string> = {
   order_keyword: "订单关键词",
@@ -71,7 +72,27 @@ export default function AiBrainLog() {
   const [isHandover, setIsHandover] = useState<string>("all");
   const [keyword, setKeyword] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [replayDialogOpen, setReplayDialogOpen] = useState(false);
+  const [replayLogId, setReplayLogId] = useState<number | null>(null);
+  const [replayResult, setReplayResult] = useState<any>(null);
   const utils = trpc.useUtils();
+
+  const replayMutation = trpc.aiLog.replay.useMutation({
+    onSuccess: (data) => {
+      setReplayResult(data);
+      toast.success("回放完成，已生成对比结果");
+    },
+    onError: (error) => {
+      toast.error(`回放失败：${error.message}`);
+    },
+  });
+
+  const handleReplay = (logId: number) => {
+    setReplayLogId(logId);
+    setReplayDialogOpen(true);
+    setReplayResult(null);
+    replayMutation.mutate({ id: logId });
+  };
 
   const retryMutation = trpc.aiLog.retryDelivery.useMutation({
     onSuccess: async (result) => {
@@ -341,6 +362,15 @@ export default function AiBrainLog() {
                         </p>
                       </div>
                     </button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => handleReplay(log.id)}
+                      title="回放此 AI日志"
+                    >
+                      <RotateCw className="h-3.5 w-3.5 mr-1" /> Replay
+                    </Button>
                     {log.conversationId && (
                       <Button
                         variant="ghost"
@@ -511,6 +541,153 @@ export default function AiBrainLog() {
           )}
         </CardContent>
       </Card>
+
+      {/* Replay Dialog */}
+      <Dialog open={replayDialogOpen} onOpenChange={setReplayDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCw className="h-5 w-5" />
+              AI 日志回放
+            </DialogTitle>
+          </DialogHeader>
+
+          {replayMutation.isPending && !replayResult && (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+              <span className="ml-3 text-muted-foreground">正在回放，使用正式引擎执行 Dry Run...</span>
+            </div>
+          )}
+
+          {replayResult && (
+            <div className="space-y-4">
+              {/* Warning banner */}
+              <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                <p className="text-xs text-blue-700">
+                  模拟回放 · 不会发送给客户 · 不会建立对话 · 不会影响正式统计
+                </p>
+              </div>
+
+              {/* Customer Message */}
+              <div className="p-3 rounded-lg bg-muted/30 border">
+                <p className="text-xs font-semibold text-muted-foreground mb-1">客户消息</p>
+                <p className="text-sm">{replayResult.historical.customerMessage || "(无文字内容)"}</p>
+              </div>
+
+              {/* Difference Summary */}
+              <div className={`p-3 rounded-lg border ${replayResult.differences.sourceChanged ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200"}`}>
+                <p className="text-sm font-semibold mb-2">
+                  {replayResult.differences.sourceChanged ? "命中来源已改变" : "命中来源未改变"}
+                </p>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">历史结果</p>
+                    <Badge variant="outline" className="mt-1">{SOURCE_LABELS[replayResult.historical.finalSource] ?? replayResult.historical.finalSource}</Badge>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">当前结果</p>
+                    <Badge variant="outline" className="mt-1">{SOURCE_LABELS[replayResult.current.finalSource] ?? replayResult.current.finalSource}</Badge>
+                  </div>
+                </div>
+                {replayResult.differences.sourceChanged && (
+                  <p className="text-xs text-amber-700 mt-2">
+                    {replayResult.differences.sourceDetail}
+                  </p>
+                )}
+              </div>
+
+              {/* Detailed Comparison */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Historical */}
+                <div className="p-3 rounded-lg border bg-muted/20">
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">历史结果（原始日志）</p>
+                  <div className="space-y-1 text-sm">
+                    <div><span className="text-muted-foreground">来源：</span>{SOURCE_LABELS[replayResult.historical.finalSource] ?? replayResult.historical.finalSource}</div>
+                    <div><span className="text-muted-foreground">规则ID：</span>{replayResult.historical.matchedRuleId ?? "—"}</div>
+                    <div><span className="text-muted-foreground">知识ID：</span>{replayResult.historical.matchedKnowledgeId ?? "—"}</div>
+                    <div><span className="text-muted-foreground">商品ID：</span>{replayResult.historical.matchedProductId ?? "—"}</div>
+                    <div><span className="text-muted-foreground">转人工：</span>{replayResult.historical.isHandover ? "是" : "否"}</div>
+                    <div><span className="text-muted-foreground">耗时：</span>{replayResult.historical.processingTimeMs ?? "—"}ms</div>
+                    {replayResult.historical.errorCode && (
+                      <div className="text-red-600"><span className="text-muted-foreground">错误：</span>{replayResult.historical.errorCode}</div>
+                    )}
+                  </div>
+                  {replayResult.historical.aiReply && (
+                    <div className="mt-2 p-2 rounded bg-blue-50 border border-blue-100">
+                      <p className="text-xs font-semibold text-blue-700 mb-1">AI回复</p>
+                      <p className="text-sm whitespace-pre-wrap">{replayResult.historical.aiReply}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Current */}
+                <div className="p-3 rounded-lg border bg-muted/20">
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">当前结果（重新执行）</p>
+                  <div className="space-y-1 text-sm">
+                    <div><span className="text-muted-foreground">来源：</span>{SOURCE_LABELS[replayResult.current.finalSource] ?? replayResult.current.finalSource}</div>
+                    <div><span className="text-muted-foreground">规则ID：</span>{replayResult.current.matchedRuleId ?? "—"}</div>
+                    <div><span className="text-muted-foreground">知识ID：</span>{replayResult.current.matchedKnowledgeId ?? "—"}</div>
+                    <div><span className="text-muted-foreground">商品ID：</span>{replayResult.current.matchedProductId ?? "—"}</div>
+                    <div><span className="text-muted-foreground">转人工：</span>{replayResult.current.shouldHandover ? "是" : "否"}</div>
+                    <div><span className="text-muted-foreground">耗时：</span>{replayResult.current.processingTimeMs}ms</div>
+                    {replayResult.current.llmCalled && (
+                      <div><span className="text-muted-foreground">LLM：</span>{replayResult.current.llmModel ?? "default"}</div>
+                    )}
+                  </div>
+                  {replayResult.current.aiReply && (
+                    <div className="mt-2 p-2 rounded bg-blue-50 border border-blue-100">
+                      <p className="text-xs font-semibold text-blue-700 mb-1">AI回复</p>
+                      <p className="text-sm whitespace-pre-wrap">{replayResult.current.aiReply}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Reply Comparison */}
+              {replayResult.differences.replyChanged && (
+                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+                  <p className="text-xs font-semibold text-amber-700 mb-1">回复内容已改变</p>
+                  <p className="text-sm text-amber-800">{replayResult.differences.replyDetail}</p>
+                </div>
+              )}
+
+              {/* Current Processing Trail */}
+              {Array.isArray(replayResult.current.processingSteps) && replayResult.current.processingSteps.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold mb-2">当前处理轨迹</p>
+                  <div className="space-y-1">
+                    {replayResult.current.processingSteps.map((step: any, idx: number) => (
+                      <div key={idx} className="flex items-start gap-2 text-sm">
+                        <span className="text-muted-foreground shrink-0 w-6 text-right">{idx + 1}.</span>
+                        <div className="flex-1">
+                          <span className="font-medium">{step.label}</span>
+                          {step.detail && <span className="text-muted-foreground ml-2">— {step.detail}</span>}
+                          {step.result && (
+                            <Badge variant="outline" className={`ml-2 text-xs ${
+                              step.result === "hit" ? "border-green-300 text-green-700" :
+                              step.result === "missed" ? "border-gray-300 text-gray-500" :
+                              step.result === "skipped" ? "border-blue-300 text-blue-600" :
+                              step.result === "error" ? "border-red-300 text-red-700" : ""
+                            }`}>
+                              {step.result}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReplayDialogOpen(false)}>
+              关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

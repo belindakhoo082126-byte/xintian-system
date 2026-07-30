@@ -219,6 +219,42 @@
 
 ---
 
+## V1.4 — AI 日志回放（AI Replay）
+
+**发布日期：** 2026-07-30  
+**开发阶段：** AI大脑 Phase 2 Task 4
+
+### Added
+
+- AI 日志回放功能（Replay）：从 AI日志列表一键回放，使用正式引擎执行 Dry Run 并显示历史 vs 当前结果对比
+  - **Replay 按钮**：每条 AI日志行添加「Replay」按钮，点击后自动载入客户消息、平台、AI状态、人工接手状态
+  - **回放对话框**：左右分栏显示历史结果与当前结果，包含来源、规则ID、知识ID、商品ID、转人工、耗时、AI回复
+  - **差异检测**：自动高亮来源变化（如 reply_rule → knowledge）、回复内容变化、转人工状态变化
+  - **当前处理轨迹**：展示重新执行后的完整处理步骤
+  - **安全提示**：对话框顶部持续显示「模拟回放 · 不会发送给客户 · 不会建立对话 · 不会影响正式统计」
+- 后端 `replayFromAiLog` 函数（`aiTestRunner.ts`）：从 AI日志提取配置，调用 `runTest` 执行 Dry Run，计算差异
+- 后端 `getAiLogForReplay` 函数（`db.ts`）：获取 AI日志完整数据用于回放
+- tRPC 路由 `aiLog.replay`：Admin-only mutation，返回历史 + 当前 + 差异对比
+- 单元测试 9 项（`ai-replay.test.ts`）：覆盖 db 查询、差异计算逻辑、路由结构验证
+
+### Changed
+
+- `AiBrainLog.tsx`：新增 Replay 按钮、回放对话框、状态管理
+- `aiTestRunner.ts`：新增 `aiLogs` import 和 `replayFromAiLog` 函数
+
+### Database
+
+- 无新增表，无迁移（回放结果写入 `ai_test_runs` 表，复用现有测试记录表）
+
+### Notes
+
+- Replay 使用 `SideEffectPolicy` 全程 Dry Run，不发送消息、不建立对话、不写入 `ai_logs`
+- 回放结果保存为 `ai_test_runs` 记录，与正式 AI日志物理隔离
+- 回放时自动启用 LLM 以观察完整行为
+- 模拟会员/订单选项保持禁用状态
+
+---
+
 ## 后续记录模板
 
 ```md

@@ -11,7 +11,7 @@
 import { processChatAI, type MessageContext, type ChatAIResult } from "./aiEngines";
 import { AiProcessingContext } from "./aiLogContext";
 import { getDb } from "./db";
-import { aiTestRuns, aiPersona, aiKnowledge } from "../drizzle/schema";
+import { aiTestRuns, aiPersona, aiKnowledge, aiLogs } from "../drizzle/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
 
@@ -564,4 +564,120 @@ export async function rerunTest(
   }
 
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Replay from AI Log — Re-execute AI on a historical log entry
+// ---------------------------------------------------------------------------
+
+export async function replayFromAiLog(
+  logId: number,
+  testedBy: string
+): Promise<{
+  historical: {
+    finalSource: string;
+    matchedRuleId: number | null;
+    matchedKnowledgeId: number | null;
+    matchedProductId: number | null;
+    aiReply: string | null;
+    isHandover: boolean;
+    handoverReason: string | null;
+    processingTimeMs: number | null;
+    processingSteps: any;
+    errorCode: string | null;
+    errorStage: string | null;
+    errorMessage: string | null;
+    customerMessage: string | null;
+    createdAt: Date;
+  };
+  current: TestRunResult;
+  differences: {
+    sourceChanged: boolean;
+    replyChanged: boolean;
+    handoverChanged: boolean;
+    ruleChanged: boolean;
+    knowledgeChanged: boolean;
+    productChanged: boolean;
+    processingTimeChanged: boolean;
+    sourceDetail: string;
+    replyDetail: string;
+  };
+} | null> {
+  const database = await getDb();
+  if (!database) return null;
+
+  // 1. Get the original AI log
+  const [originalLog] = await database
+    .select()
+    .from(aiLogs)
+    .where(eq(aiLogs.id, logId))
+    .limit(1);
+
+  if (!originalLog) return null;
+
+  // 2. Build test config from the log
+  const config: TestRunConfig = {
+    platform: originalLog.platform === "whatsapp" ? "whatsapp" : "messenger",
+    language: "auto",
+    aiEnabled: originalLog.aiEnabled,
+    handoverStatus: originalLog.handoverStatus as "none" | "pending" | "claimed",
+    enableLLM: true, // Always enable LLM for replay to see full behavior
+    simulatedCustomerName: originalLog.customerName || undefined,
+    isMember: false, // Reserved
+    hasOrder: false, // Reserved
+    testMessage: originalLog.customerMessage || "",
+  };
+
+  // 3. Run the test (dry run, no side effects)
+  const currentResult = await runTest(config, testedBy);
+
+  // 4. Build historical snapshot
+  const historical = {
+    finalSource: originalLog.finalSource,
+    matchedRuleId: originalLog.matchedRuleId,
+    matchedKnowledgeId: originalLog.matchedKnowledgeId,
+    matchedProductId: originalLog.matchedProductId,
+    aiReply: originalLog.aiReply,
+    isHandover: originalLog.isHandover,
+    handoverReason: originalLog.handoverReason,
+    processingTimeMs: originalLog.processingTimeMs,
+    processingSteps: originalLog.processingSteps,
+    errorCode: originalLog.errorCode,
+    errorStage: originalLog.errorStage,
+    errorMessage: originalLog.errorMessage,
+    customerMessage: originalLog.customerMessage,
+    createdAt: originalLog.createdAt,
+  };
+
+  // 5. Compute differences
+  const sourceChanged = historical.finalSource !== currentResult.finalSource;
+  const replyChanged = historical.aiReply !== currentResult.aiReply;
+  const handoverChanged = historical.isHandover !== currentResult.shouldHandover;
+  const ruleChanged = historical.matchedRuleId !== (currentResult.matchedRuleId ?? null);
+  const knowledgeChanged = historical.matchedKnowledgeId !== (currentResult.matchedKnowledgeId ?? null);
+  const productChanged = historical.matchedProductId !== (currentResult.matchedProductId ?? null);
+  const processingTimeChanged = historical.processingTimeMs !== currentResult.processingTimeMs;
+
+  const sourceDetail = sourceChanged
+    ? `${historical.finalSource} → ${currentResult.finalSource}`
+    : "无变化";
+  const replyDetail = replyChanged
+    ? "回复内容已改变"
+    : "回复内容相同";
+
+  return {
+    historical,
+    current: currentResult,
+    differences: {
+      sourceChanged,
+      replyChanged,
+      handoverChanged,
+      ruleChanged,
+      knowledgeChanged,
+      productChanged,
+      processingTimeChanged,
+      sourceDetail,
+      replyDetail,
+    },
+  };
 }

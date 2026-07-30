@@ -9727,3 +9727,61 @@ export async function getAiSuggestions(): Promise<{
 
   return { suggestions };
 }
+
+// ---------------------------------------------------------------------------
+// AI Replay — Get AI log data for replay into test center
+// ---------------------------------------------------------------------------
+
+export async function getAiLogForReplay(logId: number): Promise<{
+  id: number;
+  customerMessage: string | null;
+  platform: string;
+  sourceType: string;
+  aiEnabled: boolean;
+  handoverStatus: string;
+  finalSource: string;
+  matchedRuleId: number | null;
+  matchedKnowledgeId: number | null;
+  matchedProductId: number | null;
+  aiReply: string | null;
+  isHandover: boolean;
+  handoverReason: string | null;
+  processingTimeMs: number | null;
+  processingSteps: any;
+  errorCode: string | null;
+  errorStage: string | null;
+  errorMessage: string | null;
+  customerName: string | null;
+  createdAt: Date;
+} | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [log] = await db.select({
+    id: aiLogs.id,
+    customerMessage: aiLogs.customerMessage,
+    platform: aiLogs.platform,
+    sourceType: aiLogs.sourceType,
+    aiEnabled: aiLogs.aiEnabled,
+    handoverStatus: aiLogs.handoverStatus,
+    finalSource: aiLogs.finalSource,
+    matchedRuleId: aiLogs.matchedRuleId,
+    matchedKnowledgeId: aiLogs.matchedKnowledgeId,
+    matchedProductId: aiLogs.matchedProductId,
+    aiReply: aiLogs.aiReply,
+    isHandover: aiLogs.isHandover,
+    handoverReason: aiLogs.handoverReason,
+    processingTimeMs: aiLogs.processingTimeMs,
+    processingSteps: aiLogs.processingSteps,
+    errorCode: aiLogs.errorCode,
+    errorStage: aiLogs.errorStage,
+    errorMessage: aiLogs.errorMessage,
+    customerName: aiLogs.customerName,
+    createdAt: aiLogs.createdAt,
+  })
+  .from(aiLogs)
+  .where(eq(aiLogs.id, logId))
+  .limit(1);
+
+  return log || null;
+}
