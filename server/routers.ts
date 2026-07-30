@@ -4835,6 +4835,7 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         dateTo: z.string().optional(),
         customerName: z.string().optional(),
         platform: z.string().optional(),
+        sourceType: z.enum(["private_chat", "facebook_live", "facebook_post", "facebook_reel"]).optional(),
         finalSource: z.string().optional(),
         sendStatus: z.string().optional(),
         isHandover: z.boolean().optional(),

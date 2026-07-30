@@ -9,8 +9,17 @@ const AiKnowledge = lazy(() => import("./AiKnowledge"));
 const ReplyRules = lazy(() => import("./ReplyRules"));
 const AiBrainLog = lazy(() => import("./AiBrainLog"));
 
+const AI_BRAIN_TABS = new Set(["dashboard", "persona", "knowledge", "reply-rules", "log"]);
+
+export function getAiBrainInitialTab(search: string): string {
+  const requestedTab = new URLSearchParams(search).get("tab");
+  return requestedTab && AI_BRAIN_TABS.has(requestedTab) ? requestedTab : "dashboard";
+}
+
 export default function AiBrain() {
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState(() =>
+    getAiBrainInitialTab(typeof window === "undefined" ? "" : window.location.search),
+  );
 
   return (
     <div className="container max-w-6xl py-6">

@@ -7381,48 +7381,51 @@ export async function reorderLiveAiFlows(ids: number[]) {
   return { success: true };
 }
 
-// Semantic matching: check if a comment message matches any AI flow
-// Returns the matched flow's reply content, or null if no match
-export async function matchLiveAiFlow(commentMessage: string): Promise<string | null> {
+export interface LiveAiFlowMatch {
+  flowId: number;
+  reply: string;
+  matchedKeyword: string;
+  matchType: "keyword" | "semantic";
+}
+
+// Semantic matching: check if a comment message matches any AI flow.
+// Returns the true flow identity together with the reply, so callers can log real execution.
+export async function matchLiveAiFlowWithMetadata(commentMessage: string): Promise<LiveAiFlowMatch | null> {
   const db = await getDb();
   if (!db) return null;
-  // Get all enabled flows, sorted by sortOrder (priority)
   const flows = await db.select().from(liveAiFlows)
     .where(eq(liveAiFlows.isEnabled, true))
     .orderBy(asc(liveAiFlows.sortOrder));
-  
-  if (flows.length === 0) return null;
-  
+
   const lowerMsg = commentMessage.toLowerCase().trim();
-  
   for (const flow of flows) {
     try {
       const keywords: string[] = JSON.parse(flow.triggerKeywords);
       for (const keyword of keywords) {
         const lowerKeyword = keyword.toLowerCase().trim();
-        // Check if the comment contains the keyword (substring match)
-        // Also check semantic similarity using simple token overlap
         if (lowerMsg.includes(lowerKeyword)) {
-          return flow.replyContent;
+          return { flowId: flow.id, reply: flow.replyContent, matchedKeyword: keyword, matchType: "keyword" };
         }
-        // Token-based semantic matching: split both into tokens and check overlap
         const msgTokens = lowerMsg.split(/\s+/).filter((t: string) => t.length > 0);
         const keywordTokens = lowerKeyword.split(/\s+/).filter((t: string) => t.length > 0);
         if (keywordTokens.length > 0 && msgTokens.length > 0) {
           const overlap = keywordTokens.filter((t: string) => msgTokens.some((m: string) => m.includes(t) || t.includes(m)));
-          // If all keyword tokens have a match in the message, trigger the flow
           if (overlap.length === keywordTokens.length) {
-            return flow.replyContent;
+            return { flowId: flow.id, reply: flow.replyContent, matchedKeyword: keyword, matchType: "semantic" };
           }
         }
       }
-    } catch (e) {
-      // Skip invalid JSON
-      continue;
+    } catch {
+      // Ignore malformed flow keywords and continue to later enabled flows.
     }
   }
-  
   return null;
+}
+
+// Compatibility wrapper for existing callers that only need a reply string.
+export async function matchLiveAiFlow(commentMessage: string): Promise<string | null> {
+  const match = await matchLiveAiFlowWithMetadata(commentMessage);
+  return match?.reply ?? null;
 }
 // ============================================================================
 // V4: Wholesale & Agent Report helpers
@@ -8732,6 +8735,8 @@ export async function createAiLog(record: AiLogRecord): Promise<number | null> {
       customerName: record.customerName,
       platform: record.platform as any,
       sourceType: record.sourceType as any,
+      sourceEventId: record.sourceEventId ?? null,
+      sourceBindingId: record.sourceBindingId ?? null,
       customerMessageId: record.customerMessageId,
       aiReplyMessageId: record.aiReplyMessageId,
       customerMessage: record.customerMessage,
@@ -8779,6 +8784,8 @@ export async function updateAiLogAfterSend(
     errorMessage?: string;
     retryCount?: number;
     lastRetryAt?: Date;
+    processingTimeMs?: number;
+    processingSteps?: AiLogRecord["processingSteps"];
   },
 ): Promise<void> {
   try {
@@ -8792,6 +8799,8 @@ export async function updateAiLogAfterSend(
     if (updates.errorMessage !== undefined) updateData.errorMessage = updates.errorMessage;
     if (updates.retryCount !== undefined) updateData.retryCount = updates.retryCount;
     if (updates.lastRetryAt !== undefined) updateData.lastRetryAt = updates.lastRetryAt;
+    if (updates.processingTimeMs !== undefined) updateData.processingTimeMs = updates.processingTimeMs;
+    if (updates.processingSteps !== undefined) updateData.processingSteps = updates.processingSteps;
     await db.update(aiLogs).set(updateData).where(eq(aiLogs.id, aiLogId));
     broadcastChange("aiLog");
   } catch (err) {
@@ -8805,11 +8814,11 @@ export async function addDeliveryAttempt(
   attemptNumber: number,
   sendStatus: string,
   extra?: { platformMessageId?: string; errorCode?: string; errorMessage?: string },
-): Promise<void> {
+): Promise<number | null> {
   try {
     const db = await getDb();
-    if (!db) return;
-    await db.insert(aiLogDeliveryAttempts).values({
+    if (!db) return null;
+    const [result] = await db.insert(aiLogDeliveryAttempts).values({
       aiLogId,
       attemptNumber,
       sendStatus: sendStatus as any,
@@ -8817,9 +8826,12 @@ export async function addDeliveryAttempt(
       errorCode: extra?.errorCode,
       errorMessage: extra?.errorMessage,
     });
+    const attemptId = (result as any).insertId ?? null;
     broadcastChange("aiLog");
+    return attemptId;
   } catch (err) {
     console.error("[AI Log] Failed to add delivery attempt:", err);
+    return null;
   }
 }
 
@@ -8854,6 +8866,7 @@ export async function getAiLogs(params: {
   dateTo?: string;
   customerName?: string;
   platform?: string;
+  sourceType?: string;
   finalSource?: string;
   sendStatus?: string;
   isHandover?: boolean;
@@ -8878,6 +8891,9 @@ export async function getAiLogs(params: {
   }
   if (params.platform && params.platform !== "all") {
     conditions.push(eq(aiLogs.platform, params.platform as any));
+  }
+  if (params.sourceType && params.sourceType !== "all") {
+    conditions.push(eq(aiLogs.sourceType, params.sourceType as any));
   }
   if (params.finalSource && params.finalSource !== "all") {
     conditions.push(eq(aiLogs.finalSource, params.finalSource as any));
@@ -8911,6 +8927,9 @@ export async function getAiLogs(params: {
       customerId: aiLogs.customerId,
       customerName: aiLogs.customerName,
       platform: aiLogs.platform,
+      sourceType: aiLogs.sourceType,
+      sourceEventId: aiLogs.sourceEventId,
+      sourceBindingId: aiLogs.sourceBindingId,
       customerMessage: aiLogs.customerMessage,
       finalSource: aiLogs.finalSource,
       sendStatus: aiLogs.sendStatus,

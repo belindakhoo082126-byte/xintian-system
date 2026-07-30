@@ -12,13 +12,24 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChevronDown, ChevronRight, ExternalLink, Search, Filter, AlertCircle, CheckCircle, XCircle, Clock, RefreshCw } from "lucide-react";
 
 const SOURCE_LABELS: Record<string, string> = {
+  order_keyword: "订单关键词",
   product: "商品资料",
   reply_rule: "固定回复",
   knowledge: "知识库",
+  llm: "LLM",
+  flow: "Flow",
+  human_handover: "转人工",
   no_match: "未匹配",
   ai_disabled: "AI已关闭",
   human_claimed: "人工接手",
   error: "错误",
+};
+
+const EVENT_SOURCE_LABELS: Record<string, string> = {
+  private_chat: "私聊",
+  facebook_live: "Facebook Live",
+  facebook_post: "Facebook 帖子",
+  facebook_reel: "Facebook Reel",
 };
 
 const SEND_STATUS_LABELS: Record<string, string> = {
@@ -47,6 +58,7 @@ export default function AiBrainLog() {
   const [dateTo, setDateTo] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [platform, setPlatform] = useState("all");
+  const [sourceType, setSourceType] = useState("all");
   const [finalSource, setFinalSource] = useState("all");
   const [sendStatus, setSendStatus] = useState("all");
   const [isHandover, setIsHandover] = useState<string>("all");
@@ -61,11 +73,12 @@ export default function AiBrainLog() {
     dateTo: dateTo || undefined,
     customerName: customerName || undefined,
     platform: platform === "all" ? undefined : platform,
+    sourceType: sourceType === "all" ? undefined : sourceType as "private_chat" | "facebook_live" | "facebook_post" | "facebook_reel",
     finalSource: finalSource === "all" ? undefined : finalSource,
     sendStatus: sendStatus === "all" ? undefined : sendStatus,
     isHandover: isHandover === "all" ? undefined : isHandover === "yes",
     keyword: keyword || undefined,
-  }), [page, pageSize, dateFrom, dateTo, customerName, platform, finalSource, sendStatus, isHandover, keyword]);
+  }), [page, pageSize, dateFrom, dateTo, customerName, platform, sourceType, finalSource, sendStatus, isHandover, keyword]);
 
   const { data, isLoading, refetch } = trpc.aiLog.list.useQuery(queryParams, {
     enabled: isAdmin,
@@ -165,6 +178,19 @@ export default function AiBrainLog() {
               </Select>
             </div>
             <div>
+              <label className="text-xs text-muted-foreground mb-1 block">事件来源</label>
+              <Select value={sourceType} onValueChange={setSourceType}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部</SelectItem>
+                  <SelectItem value="private_chat">私聊</SelectItem>
+                  <SelectItem value="facebook_live">Facebook Live</SelectItem>
+                  <SelectItem value="facebook_post">Facebook 帖子</SelectItem>
+                  <SelectItem value="facebook_reel">Facebook Reel</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <label className="text-xs text-muted-foreground mb-1 block">回复来源</label>
               <Select value={finalSource} onValueChange={setFinalSource}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
@@ -173,6 +199,10 @@ export default function AiBrainLog() {
                   <SelectItem value="product">商品资料</SelectItem>
                   <SelectItem value="reply_rule">固定回复</SelectItem>
                   <SelectItem value="knowledge">知识库</SelectItem>
+                  <SelectItem value="llm">LLM</SelectItem>
+                  <SelectItem value="flow">Flow</SelectItem>
+                  <SelectItem value="order_keyword">订单关键词</SelectItem>
+                  <SelectItem value="human_handover">转人工</SelectItem>
                   <SelectItem value="no_match">未匹配</SelectItem>
                   <SelectItem value="ai_disabled">AI已关闭</SelectItem>
                   <SelectItem value="human_claimed">人工接手</SelectItem>
@@ -209,7 +239,7 @@ export default function AiBrainLog() {
               <Search className="h-4 w-4 mr-1" /> 筛选
             </Button>
             <Button variant="ghost" size="sm" onClick={() => {
-              setDateFrom(""); setDateTo(""); setCustomerName(""); setPlatform("all");
+              setDateFrom(""); setDateTo(""); setCustomerName(""); setPlatform("all"); setSourceType("all");
               setFinalSource("all"); setSendStatus("all"); setIsHandover("all"); setKeyword("");
               setPage(1);
             }}>
@@ -241,63 +271,85 @@ export default function AiBrainLog() {
               {items.map((log: any) => (
                 <div key={log.id}>
                   {/* Log Row */}
-                  <button
-                    className="w-full flex items-start gap-3 p-4 text-left hover:bg-accent/50 transition-colors"
-                    onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
-                  >
-                    {expandedId === log.id ? (
-                      <ChevronDown className="h-4 w-4 mt-1 shrink-0" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 mt-1 shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <Badge variant="outline" className="text-xs">
-                          {SOURCE_LABELS[log.finalSource] ?? log.finalSource}
-                        </Badge>
-                        <Badge className={`text-xs ${SEND_STATUS_COLORS[log.sendStatus] ?? ""}`}>
-                          {SEND_STATUS_LABELS[log.sendStatus] ?? log.sendStatus}
-                        </Badge>
-                        {log.isHandover && (
-                          <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">转人工</Badge>
-                        )}
-                        {log.errorCode && (
-                          <Badge variant="outline" className="text-xs border-red-300 text-red-700">
-                            {log.errorCode}
+                  <div className="flex items-start gap-3 p-4 hover:bg-accent/50 transition-colors">
+                    <button
+                      type="button"
+                      className="flex flex-1 min-w-0 items-start gap-3 text-left"
+                      onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
+                      aria-expanded={expandedId === log.id}
+                      aria-label={`查看 AI日志 #${log.id} 的处理详情`}
+                    >
+                      {expandedId === log.id ? (
+                        <ChevronDown className="h-4 w-4 mt-1 shrink-0" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 mt-1 shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <Badge variant="outline" className="text-xs">
+                            {SOURCE_LABELS[log.finalSource] ?? log.finalSource}
                           </Badge>
-                        )}
-                        <span className="text-xs text-muted-foreground">
-                          {log.customerName ?? "未知客户"}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(log.createdAt).toLocaleString("zh-CN")}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {log.processingTimeMs}ms
-                        </span>
+                          <Badge className="text-xs bg-slate-100 text-slate-700">
+                            {EVENT_SOURCE_LABELS[log.sourceType] ?? log.sourceType ?? "私聊"}
+                          </Badge>
+                          <Badge className={`text-xs ${SEND_STATUS_COLORS[log.sendStatus] ?? ""}`}>
+                            {SEND_STATUS_LABELS[log.sendStatus] ?? log.sendStatus}
+                          </Badge>
+                          {log.isHandover && (
+                            <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">转人工</Badge>
+                          )}
+                          {log.errorCode && (
+                            <Badge variant="outline" className="text-xs border-red-300 text-red-700">
+                              {log.errorCode}
+                            </Badge>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            {log.customerName ?? "未知客户"}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(log.createdAt).toLocaleString("zh-CN")}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {log.processingTimeMs}ms
+                          </span>
+                        </div>
+                        <p className="text-sm truncate text-foreground">
+                          {log.customerMessage || "(无文字内容)"}
+                        </p>
                       </div>
-                      <p className="text-sm truncate text-foreground">
-                        {log.customerMessage || "(无文字内容)"}
-                      </p>
-                    </div>
+                    </button>
                     {log.conversationId && (
                       <Button
                         variant="ghost"
                         size="sm"
                         className="shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/chat?conversationId=${log.conversationId}`);
-                        }}
+                        onClick={() => navigate(`/chat?conversationId=${log.conversationId}`)}
                       >
                         <ExternalLink className="h-3.5 w-3.5 mr-1" /> Chat
                       </Button>
                     )}
-                  </button>
+                  </div>
 
                   {/* Expanded Detail */}
                   {expandedId === log.id && detail && (
                     <div className="px-4 pb-4 bg-muted/30">
+                      {(detail.sourceType !== "private_chat" || detail.sourceEventId || detail.sourceBindingId) && (
+                        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 rounded-lg border bg-background p-3 text-sm">
+                          <div>
+                            <p className="text-xs text-muted-foreground">事件来源</p>
+                            <p className="font-medium">{EVENT_SOURCE_LABELS[detail.sourceType] ?? detail.sourceType ?? "私聊"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">来源事件 ID</p>
+                            <p className="font-medium break-all">{detail.sourceEventId ?? "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">来源绑定 / Flow ID</p>
+                            <p className="font-medium">{detail.sourceBindingId ?? detail.matchedFlowId ?? "—"}</p>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Processing Steps */}
                       <div className="mt-2">
                         <h4 className="text-sm font-semibold mb-2">处理轨迹</h4>

@@ -1,4 +1,17 @@
 import axios from "axios";
+import {
+  addChatMessage,
+  addDeliveryAttempt,
+  createAiLog,
+  createHandoverRequest,
+  getOrCreateConversation,
+  matchLiveAiFlowWithMetadata,
+  storeIncomingMessengerMessage,
+  updateAiLogAfterSend,
+  updateDeliveryAttempt,
+} from "./db";
+import { AiProcessingContext } from "./aiLogContext";
+import { processChatAI } from "./aiEngines";
 
 const FB_GRAPH_API = "https://graph.facebook.com/v21.0";
 
@@ -260,7 +273,6 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
   let conversation: any = null;
   let storeResult: { conversationId: number; customerMessageId: number | null; customerId: number | null; customerName: string | null } | null = null;
   try {
-    const { storeIncomingMessengerMessage, getOrCreateConversation } = require("./db");
     storeResult = await storeIncomingMessengerMessage(psid, text, attachments);
     // Get conversation to check AI status
     conversation = await getOrCreateConversation(null, "messenger", psid);
@@ -274,7 +286,6 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
 
   if (text && aiEnabled && handoverStatus !== "claimed") {
     // Create AiProcessingContext for logging
-    const { AiProcessingContext } = require("./aiLogContext");
     const logCtx = new AiProcessingContext(
       conversation?.id ?? null,
       storeResult?.customerId ?? null,
@@ -289,7 +300,6 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
     // Use the new independent AI engine pipeline for private chat
     // Engines: Product Match → Reply Rule → Knowledge → Handover (no hardcoded replies)
     try {
-      const { processChatAI } = require("./aiEngines");
       const result = await processChatAI(
         {
           text,
@@ -305,11 +315,16 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
       );
 
       if (result.shouldReply && result.reply) {
-        // Create main AI log (pending status)
-        const { createAiLog, addDeliveryAttempt, updateAiLogAfterSend } = require("./db");
+        // Create the primary log and the first delivery attempt before sending.
+        // All logging helpers fail closed, so an audit write failure never blocks the reply.
+        logCtx.sendStatus = "pending";
+        logCtx.addStep("delivery", "发送AI回复", "已建立发送尝试，等待 Messenger 平台确认", "pending");
         const aiLogId = await createAiLog(logCtx.finalize());
+        const deliveryAttemptId = aiLogId
+          ? await addDeliveryAttempt(aiLogId, 1, "pending")
+          : null;
 
-        // Send AI reply via Messenger API
+        // Send AI reply via Messenger API.
         let sendOk = false;
         let platformMsgId: string | undefined;
         let errorCode: string | undefined;
@@ -324,19 +339,19 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
           console.error("[Messenger] Failed to send AI reply:", sendErr);
         }
 
-        // Record delivery attempt
-        if (aiLogId) {
-          await addDeliveryAttempt(aiLogId, 1, sendOk ? "sent" : "failed", {
+        // Update the same first attempt with the actual platform result.
+        if (deliveryAttemptId) {
+          await updateDeliveryAttempt(deliveryAttemptId, {
+            sendStatus: sendOk ? "sent" : "failed",
             platformMessageId: platformMsgId,
             errorCode,
             errorMessage,
           });
         }
 
-        // Store AI reply in chat system
+        // Store AI reply in chat system.
         let aiReplyMessageId: number | null = null;
         try {
-          const { addChatMessage } = require("./db");
           const aiMsgResult = await addChatMessage({
             conversationId: conversation.id,
             senderType: "ai",
@@ -351,21 +366,30 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
           console.error("[Messenger] Failed to store AI reply:", err);
         }
 
-        // Update main AI log with send result
+        // Persist the final audit state, including the exact end-to-end duration.
+        logCtx.sendStatus = sendOk ? "sent" : "failed";
+        logCtx.platformMessageId = platformMsgId;
+        logCtx.aiReplyMessageId = aiReplyMessageId ?? undefined;
+        logCtx.errorCode = errorCode;
+        logCtx.errorStage = sendOk ? undefined : "messenger_send";
+        logCtx.errorMessage = errorMessage;
+        logCtx.addStep(
+          "delivery",
+          "发送AI回复",
+          sendOk ? `Messenger 已确认（平台消息 ID：${platformMsgId ?? "未返回"}）` : `发送失败：${errorMessage ?? errorCode ?? "未知错误"}`,
+          sendOk ? "sent" : "failed",
+        );
         if (aiLogId) {
-          logCtx.sendStatus = sendOk ? "sent" : "failed";
-          logCtx.platformMessageId = platformMsgId;
-          logCtx.aiReplyMessageId = aiReplyMessageId ?? undefined;
-          logCtx.errorCode = errorCode;
-          logCtx.errorStage = sendOk ? undefined : "messenger_send";
-          logCtx.errorMessage = errorMessage;
+          const finalLog = logCtx.finalize();
           await updateAiLogAfterSend(aiLogId, {
-            sendStatus: sendOk ? "sent" : "failed",
-            platformMessageId: platformMsgId,
-            aiReplyMessageId: aiReplyMessageId ?? undefined,
-            errorCode,
-            errorStage: sendOk ? undefined : "messenger_send",
-            errorMessage,
+            sendStatus: finalLog.sendStatus,
+            platformMessageId: finalLog.platformMessageId,
+            aiReplyMessageId: finalLog.aiReplyMessageId ?? undefined,
+            errorCode: finalLog.errorCode,
+            errorStage: finalLog.errorStage,
+            errorMessage: finalLog.errorMessage,
+            processingTimeMs: finalLog.processingTimeMs,
+            processingSteps: finalLog.processingSteps,
           });
         }
         return;
@@ -375,10 +399,10 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
         // AI could not match — create handover request for human staff
         console.log("[Messenger] AI handover triggered for PSID:", psid, "Reason:", result.handoverReason);
         try {
-          const { createHandoverRequest } = require("./db");
           await createHandoverRequest({
             conversationId: conversation.id,
             customerId: conversation.customerId,
+            customerName: conversation.customerName ?? storeResult?.customerName ?? "客户",
             platform: "messenger",
             platformId: psid,
             reason: result.handoverReason || "AI无法匹配客户消息",
@@ -389,7 +413,6 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
         }
         // Create AI log for handover
         try {
-          const { createAiLog } = require("./db");
           logCtx.sendStatus = "not_sent";
           await createAiLog(logCtx.finalize());
         } catch (err) {
@@ -401,7 +424,6 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
       console.error("[Messenger] AI engine error:", err);
       // Create error AI log
       try {
-        const { createAiLog } = require("./db");
         logCtx.finalSource = "error";
         logCtx.sendStatus = "failed";
         logCtx.errorCode = "engine_error";
@@ -414,8 +436,6 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
     console.log("[Messenger] AI reply disabled for PSID:", psid, "— skipping auto-reply");
     // Create AI log for disabled AI
     try {
-      const { AiProcessingContext } = require("./aiLogContext");
-      const { createAiLog } = require("./db");
       const logCtx = new AiProcessingContext(
         conversation?.id ?? null,
         storeResult?.customerId ?? null,
@@ -434,8 +454,6 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
   } else if (text && handoverStatus === "claimed") {
     // Human has claimed — create AI log
     try {
-      const { AiProcessingContext } = require("./aiLogContext");
-      const { createAiLog } = require("./db");
       const logCtx = new AiProcessingContext(
         conversation?.id ?? null,
         storeResult?.customerId ?? null,
@@ -490,6 +508,16 @@ async function handlePostback(psid: string, postback: any): Promise<void> {
   }
 }
 
+function inferCommentSourceType(value: any): "facebook_live" | "facebook_post" | "facebook_reel" {
+  if (value?.reel_id || value?.media_product_type === "REELS" || value?.media_type === "REELS") {
+    return "facebook_reel";
+  }
+  if (value?.live_video_id || value?.video_id || value?.live_video?.id) {
+    return "facebook_live";
+  }
+  return "facebook_post";
+}
+
 /**
  * Handle Page feed events (comments, posts)
  */
@@ -514,7 +542,14 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
       const commenterPsid = value?.from?.id;
       const commentMessage = value?.message;
       console.log("[Facebook] New comment (via feed):", commenterName, ":", commentMessage, "on post:", postId);
-      await processComment({ commentId, commenterName, commenterPsid, commentMessage, postId });
+      await processComment({
+        commentId,
+        commenterName,
+        commenterPsid,
+        commentMessage,
+        postId,
+        sourceType: inferCommentSourceType(value),
+      });
     } else {
       // Other feed events (posts, shares, likes, etc.)
       console.log("[Facebook] Feed event item:", item, "post:", postId, "message:", message);
@@ -533,7 +568,14 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
 
     // Auto-reply to comments + keyword matching for live order capture
     if (commentMessage) {
-      await processComment({ commentId, commenterName, commenterPsid, commentMessage, postId });
+      await processComment({
+        commentId,
+        commenterName,
+        commenterPsid,
+        commentMessage,
+        postId,
+        sourceType: inferCommentSourceType(value),
+      });
     }
   }
   if (field === "live_videos") {
@@ -598,18 +640,108 @@ async function processComment(params: {
   commenterPsid: string;
   commentMessage: string;
   postId: string;
+  sourceType: "facebook_live" | "facebook_post" | "facebook_reel";
 }): Promise<void> {
-  const { commentId, commenterName, commenterPsid, commentMessage, postId } = params;
+  const { commentId, commenterName, commenterPsid, commentMessage, postId, sourceType } = params;
   const lowerMsg = commentMessage.toLowerCase();
 
-  // Try AI Flow matching first (before keyword capture)
+  // Flow comments intentionally use no chat conversation. Their platform event and matched
+  // Flow ID are persisted directly so audit records never create a fake private chat.
   try {
-    const { matchLiveAiFlow } = require("./db");
-    const aiReply = await matchLiveAiFlow(commentMessage);
-    if (aiReply) {
-      // AI Flow matched — auto-reply and return (no order capture)
-      await replyToComment(commentId, aiReply);
-      console.log("[Facebook] AI Flow auto-reply sent for comment:", commentMessage);
+    const flowMatch = await matchLiveAiFlowWithMetadata(commentMessage);
+    if (flowMatch) {
+      const startedAt = Date.now();
+      const receivedAt = new Date();
+      const processingSteps = [
+        {
+          step: "receive",
+          label: "收到 Facebook 评论",
+          detail: `来源：${sourceType}`,
+          result: "passed",
+          ts: receivedAt.toISOString(),
+        },
+        {
+          step: "flow_match",
+          label: "Flow Engine 匹配",
+          detail: `${flowMatch.matchType === "keyword" ? "关键词" : "语义"}命中：${flowMatch.matchedKeyword}`,
+          result: "hit",
+          ts: new Date().toISOString(),
+          flowId: flowMatch.flowId,
+        },
+      ];
+
+      let aiLogId: number | null = null;
+      try {
+        aiLogId = await createAiLog({
+          conversationId: null,
+          customerId: null,
+          customerName: commenterName || null,
+          platform: "messenger",
+          sourceType,
+          sourceEventId: commentId || postId || null,
+          sourceBindingId: flowMatch.flowId,
+          customerMessageId: null,
+          aiReplyMessageId: null,
+          customerMessage: commentMessage,
+          receivedAt,
+          aiEnabled: true,
+          handoverStatus: "none",
+          processingSteps,
+          finalSource: "flow",
+          matchedFlowId: flowMatch.flowId,
+          aiReply: flowMatch.reply,
+          sendStatus: "pending",
+          retryCount: 0,
+          isHandover: false,
+          processingTimeMs: Date.now() - startedAt,
+        });
+      } catch (logErr) {
+        console.error("[AI Log] Failed to start Flow audit record:", logErr);
+      }
+
+      let attemptId: number | null = null;
+      if (aiLogId) {
+        try {
+          attemptId = await addDeliveryAttempt(aiLogId, 1, "pending");
+        } catch (logErr) {
+          console.error("[AI Log] Failed to start Flow delivery attempt:", logErr);
+        }
+      }
+
+      // AI Flow matched — auto-reply and return (no order capture).
+      const replyResult = await replyToComment(commentId, flowMatch.reply);
+      const finalProcessingSteps = [
+        ...processingSteps,
+        {
+          step: "delivery",
+          label: "Facebook 评论回复发送",
+          detail: replyResult.success ? "发送成功" : `发送失败：${replyResult.errorMessage ?? "未知错误"}`,
+          result: replyResult.success ? "sent" : "failed",
+          ts: new Date().toISOString(),
+        },
+      ];
+
+      if (aiLogId) {
+        if (attemptId) {
+          await updateDeliveryAttempt(attemptId, {
+            sendStatus: replyResult.success ? "sent" : "failed",
+            platformMessageId: replyResult.platformMessageId,
+            errorCode: replyResult.errorCode,
+            errorMessage: replyResult.errorMessage,
+          });
+        }
+        await updateAiLogAfterSend(aiLogId, {
+          sendStatus: replyResult.success ? "sent" : "failed",
+          platformMessageId: replyResult.platformMessageId,
+          errorCode: replyResult.errorCode,
+          errorStage: replyResult.success ? undefined : "facebook_comment_send",
+          errorMessage: replyResult.errorMessage,
+          processingTimeMs: Date.now() - startedAt,
+          processingSteps: finalProcessingSteps,
+        });
+      }
+
+      console.log("[Facebook] AI Flow auto-reply completed for comment:", commentMessage);
       return;
     }
   } catch (aiErr: any) {
@@ -781,16 +913,26 @@ async function processComment(params: {
 /**
  * Reply to a comment on a Facebook post
  */
-async function replyToComment(commentId: string, message: string): Promise<void> {
-  const token = getPageAccessToken();
+async function replyToComment(commentId: string, message: string): Promise<{
+  success: boolean;
+  platformMessageId?: string;
+  errorCode?: string;
+  errorMessage?: string;
+}> {
   try {
-    await axios.post(
+    const token = getPageAccessToken();
+    const response = await axios.post(
       `${FB_GRAPH_API}/${commentId}/comments?access_token=${token}`,
       { message }
     );
     console.log("[Facebook] Replied to comment:", commentId);
+    const platformMessageId = response?.data?.id ?? response?.data?.comment_id;
+    return { success: true, platformMessageId: platformMessageId ? String(platformMessageId) : undefined };
   } catch (error: any) {
+    const errorCode = error?.response?.status ?? error?.code ?? "facebook_comment_send";
+    const errorMessage = error?.response?.data?.error?.message ?? error?.message ?? "Facebook 评论回复发送失败";
     console.error("[Facebook] Failed to reply to comment:", error?.response?.data || error?.message);
+    return { success: false, errorCode: String(errorCode), errorMessage: String(errorMessage).slice(0, 500) };
   }
 }
 

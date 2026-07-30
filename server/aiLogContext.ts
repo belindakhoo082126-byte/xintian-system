@@ -25,6 +25,8 @@ export interface AiLogRecord {
   customerName: string | null;
   platform: string;
   sourceType: string;
+  sourceEventId?: string | null;
+  sourceBindingId?: number | null;
   customerMessageId: number | null;
   aiReplyMessageId: number | null;
   customerMessage: string;
@@ -134,6 +136,8 @@ export class AiProcessingContext {
       customerName: this.customerName,
       platform: this.platform,
       sourceType: "private_chat",
+      sourceEventId: null,
+      sourceBindingId: null,
       customerMessageId: this.customerMessageId,
       aiReplyMessageId: this.aiReplyMessageId ?? null,
       customerMessage: this.customerMessage.slice(0, 200),

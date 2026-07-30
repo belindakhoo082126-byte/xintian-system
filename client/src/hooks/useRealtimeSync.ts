@@ -15,7 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 // ============================================================================
 
 // Map SSE category → React Query key prefix to invalidate
-const CATEGORY_TO_QUERY_KEYS: Record<string, string[]> = {
+export const CATEGORY_TO_QUERY_KEYS: Record<string, string[]> = {
   orders: ["orders", "orderItems", "orderRemarks", "orderExceptions", "specialOrders"],
   products: ["products", "productVariations", "variants", "productBundles"],
   customers: ["customers"],
@@ -28,6 +28,7 @@ const CATEGORY_TO_QUERY_KEYS: Record<string, string[]> = {
   specialOrders: ["specialOrders", "orders", "followUp"],
   membership: ["membership", "membershipReviews"],
   chat: ["chat", "aiHandover"],
+  aiLog: ["aiLog"],
   all: [], // Empty = invalidate everything
 };
 

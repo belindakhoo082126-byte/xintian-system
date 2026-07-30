@@ -1324,5 +1324,14 @@
 - [x] Vitest 测试覆盖 createAiLog / aiLog.list / AiProcessingContext
 - [x] TypeScript 零错误
 - [x] CHANGELOG 更新
-- [ ] 保存检查点
-- [ ] 截图验证与最终交付报告
+- [x] 保存检查点
+- [x] 截图验证（AI日志界面、深链接与 Flow 来源筛选）
+- [ ] 最终交付报告（待获取受控实时消息验收截图）
+- [x] 修正 AI日志列表中展开行与 Chat 跳转按钮的嵌套交互结构
+- [x] 补充 aiLog SSE 事件到前端 AI日志查询缓存的刷新映射
+- [x] 验证 aiLog SSE 广播可同时通知两个独立客户端
+- [x] 修正 AI日志发送尝试为发送前 pending 创建、发送后原记录更新，并同步处理耗时
+- [x] 覆盖普通私聊 pending 发送尝试、结果更新与日志失败隔离的端到端单元测试
+- [x] 补齐 Facebook Live／Post／Reel Flow 日志的真实写入、来源字段持久化与后台展示
+- [x] 修正 /ai-brain?tab=log 深链接以打开 AI日志标签，确保总控制台快捷入口可在导航后正确跳转
+- [ ] 保存包含 Flow、SSE 与深链接修正的最终 AI日志发布检查点
