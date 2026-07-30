@@ -4719,6 +4719,7 @@ export const appRouter = router({
       enableCTA: z.boolean().optional(),
       ctaTemplate: z.string().optional(),
       customPrompt: z.string().optional(),
+      replyPrinciples: z.string().optional(),
     })).mutation(async ({ input }) => {
       return await db.updateAiPersona(input);
     }),
@@ -4766,7 +4767,7 @@ export const appRouter = router({
 - Emoji 使用：${emojiMap[persona.emojiLevel] || persona.emojiLevel}
 - 默认语言：${persona.defaultLanguage === 'zh' ? '中文' : persona.defaultLanguage === 'en' ? 'English' : persona.defaultLanguage}
 - 支持语言：${supportedLangs.join(', ')}
-${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.proactiveInquire ? '- 主动询问客户需求\n' : ''}${persona.enableCTA && persona.ctaTemplate ? `- 回复结尾加入：${persona.ctaTemplate}\n` : ''}${persona.customPrompt ? `\n额外要求：\n${persona.customPrompt}\n` : ''}
+${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.proactiveInquire ? '- 主动询问客户需求\n' : ''}${persona.enableCTA && persona.ctaTemplate ? `- 回复结束语：${persona.ctaTemplate}\n` : ''}${persona.replyPrinciples ? `\nAI回复原则：\n${persona.replyPrinciples}\n` : ''}${persona.customPrompt ? `\n额外要求：\n${persona.customPrompt}\n` : ''}
 注意：这是模拟预览，不要提及你是AI模型或ChatGPT。直接以${persona.aiName}的身份回复。`;
 
         try {

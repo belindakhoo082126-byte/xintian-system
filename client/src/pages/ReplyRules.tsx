@@ -109,6 +109,16 @@ export default function ReplyRules() {
                         <Badge key={ch} variant="secondary">{ch}</Badge>
                       ))}
                       {!rule.isEnabled && <Badge variant="destructive">已停用</Badge>}
+                      {rule.usageCount > 0 && (
+                        <Badge variant="outline" className="text-blue-600">
+                          命中 {rule.usageCount} 次
+                        </Badge>
+                      )}
+                      {rule.lastMatchedAt && (
+                        <span className="text-xs text-muted-foreground">
+                          最后命中: {new Date(rule.lastMatchedAt).toLocaleString()}
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {keywords.map((kw: string, i: number) => (

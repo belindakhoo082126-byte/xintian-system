@@ -302,6 +302,7 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
             messageType: "text",
             content: result.reply,
             status: "sent",
+            aiResponseSource: result.source,
           });
         } catch (err) {
           console.error("[Messenger] Failed to store AI reply:", err);

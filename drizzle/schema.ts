@@ -1933,6 +1933,8 @@ export const chatMessages = mysqlTable("chat_messages", {
   status: mysqlEnum("status", ["sent", "delivered", "read", "failed"]).default("sent").notNull(),
   // Error message if failed
   errorMessage: text("errorMessage"),
+  // Source engine for AI messages: product, reply_rule, knowledge or flow
+  aiResponseSource: varchar("aiResponseSource", { length: 32 }),
   // Timestamp
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -1994,6 +1996,9 @@ export const replyRules = mysqlTable("reply_rules", {
   channels: text("channels").notNull().default('["messenger","whatsapp"]'), // JSON array
   // Enabled toggle
   isEnabled: boolean("isEnabled").default(true).notNull(),
+  // Real usage metrics, incremented by the Reply Rule Engine after a match
+  usageCount: int("usageCount").default(0).notNull(),
+  lastMatchedAt: timestamp("lastMatchedAt"),
   // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -2020,6 +2025,9 @@ export const aiKnowledge = mysqlTable("ai_knowledge", {
   useLLM: boolean("useLLM").default(false).notNull(),
   // Enabled toggle
   isEnabled: boolean("isEnabled").default(true).notNull(),
+  // Real usage metrics, incremented by the Knowledge Engine after a match
+  usageCount: int("usageCount").default(0).notNull(),
+  lastMatchedAt: timestamp("lastMatchedAt"),
   // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -2060,6 +2068,8 @@ export const aiPersona = mysqlTable("ai_persona", {
   ctaTemplate: text("ctaTemplate").default("还有什么小田可以帮到你的吗？😊"),
   // Custom system prompt additions (optional, for advanced users)
   customPrompt: text("customPrompt"),
+  // Brand and service principles that guide AI reply consistency
+  replyPrinciples: text("replyPrinciples"),
   // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

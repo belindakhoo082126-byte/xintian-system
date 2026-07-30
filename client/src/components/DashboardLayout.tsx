@@ -111,7 +111,7 @@ const menuStructure: MenuEntry[] = [
       { icon: AlertCircle, label: { zh: "AI 转人工通知", en: "AI Handover" }, path: "/ai-handover" },
       { icon: Brain, label: { zh: "AI 大脑", en: "AI Brain" }, path: "/ai-brain" },
       { icon: Bot, label: { zh: "Flow 管理", en: "Flow Management" }, path: "/flows" },
-      { icon: Video, label: { zh: "直播 AI 客服", en: "Live AI Agent" }, path: "/live-ai-flows" },
+      { icon: Video, label: { zh: "直播AI", en: "Live AI" }, path: "/live-ai-flows" },
     ],
   },
 

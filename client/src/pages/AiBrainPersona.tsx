@@ -1,14 +1,21 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { User, Send, Sparkles, Eye } from "lucide-react";
+import { User, Send, Sparkles, Eye, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
+
+const LANGUAGES = [
+  { code: "zh", label: "中文" },
+  { code: "en", label: "English" },
+  { code: "ms", label: "Bahasa Melayu" },
+];
 
 export default function AiBrainPersona() {
   const { data: persona, isLoading } = trpc.aiBrain.getPersona.useQuery();
@@ -33,6 +40,7 @@ export default function AiBrainPersona() {
     enableCTA: true,
     ctaTemplate: "还有什么小田可以帮到你的吗？",
     customPrompt: "",
+    replyPrinciples: "",
   });
 
   const [previewInput, setPreviewInput] = useState("");
@@ -55,6 +63,7 @@ export default function AiBrainPersona() {
         enableCTA: persona.enableCTA ?? true,
         ctaTemplate: persona.ctaTemplate || "还有什么小田可以帮到你的吗？",
         customPrompt: persona.customPrompt || "",
+        replyPrinciples: (persona as any).replyPrinciples || "",
       });
     }
   }, [persona]);
@@ -81,6 +90,27 @@ export default function AiBrainPersona() {
 
   const update = (key: string, value: any) => {
     setForm(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Parse supported languages from JSON string for checkbox state
+  const supportedLangs: string[] = (() => {
+    try { return JSON.parse(form.supportedLanguages || "[]") as string[]; } catch { return ["zh"]; }
+  })();
+
+  const toggleLanguage = (code: string) => {
+    const current = new Set(supportedLangs);
+    if (current.has(code)) {
+      current.delete(code);
+    } else {
+      current.add(code);
+    }
+    const arr = Array.from(current);
+    // Keep order: zh, en, ms
+    arr.sort((a, b) => {
+      const order = ["zh", "en", "ms"];
+      return order.indexOf(a) - order.indexOf(b);
+    });
+    update("supportedLanguages", JSON.stringify(arr));
   };
 
   if (isLoading) {
@@ -153,11 +183,26 @@ export default function AiBrainPersona() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>支持语言（JSON 数组）</Label>
-                <Input value={form.supportedLanguages} onChange={e => update("supportedLanguages", e.target.value)} placeholder='["zh","en","ms"]' />
+            {/* 支持语言 — 复选框 */}
+            <div>
+              <Label>支持语言</Label>
+              <div className="flex flex-wrap gap-4 mt-2">
+                {LANGUAGES.map(lang => (
+                  <div key={lang.code} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`lang-${lang.code}`}
+                      checked={supportedLangs.includes(lang.code)}
+                      onCheckedChange={() => toggleLanguage(lang.code)}
+                    />
+                    <Label htmlFor={`lang-${lang.code}`} className="cursor-pointer text-sm font-normal">
+                      {lang.label}
+                    </Label>
+                  </div>
+                ))}
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Emoji 使用程度</Label>
                 <Select value={form.emojiLevel} onValueChange={v => update("emojiLevel", v)}>
@@ -170,18 +215,17 @@ export default function AiBrainPersona() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-
-            <div>
-              <Label>回复长度</Label>
-              <Select value={form.replyLength} onValueChange={v => update("replyLength", v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="short">简短（1-2 句）</SelectItem>
-                  <SelectItem value="medium">适中（3-5 句）</SelectItem>
-                  <SelectItem value="long">详细（5 句以上）</SelectItem>
-                </SelectContent>
-              </Select>
+              <div>
+                <Label>回复长度</Label>
+                <Select value={form.replyLength} onValueChange={v => update("replyLength", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="short">简短（1-2 句）</SelectItem>
+                    <SelectItem value="medium">适中（3-5 句）</SelectItem>
+                    <SelectItem value="long">详细（5 句以上）</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* 行为开关 */}
@@ -195,15 +239,31 @@ export default function AiBrainPersona() {
                 <Switch checked={form.proactiveInquire} onCheckedChange={v => update("proactiveInquire", v)} />
               </div>
               <div className="flex items-center justify-between">
-                <Label>回复结尾加入 CTA</Label>
+                <Label>回复结尾加入结束语</Label>
                 <Switch checked={form.enableCTA} onCheckedChange={v => update("enableCTA", v)} />
               </div>
               {form.enableCTA && (
                 <div>
-                  <Label>CTA 文案</Label>
+                  <Label>结束语（Closing Message）</Label>
                   <Input value={form.ctaTemplate} onChange={e => update("ctaTemplate", e.target.value)} placeholder="还有什么小田可以帮到你的吗？" />
+                  <p className="text-xs text-muted-foreground mt-1">例如：欢迎加入会员 / 欢迎浏览商城 / 欢迎观看直播 / 欢迎继续咨询</p>
                 </div>
               )}
+            </div>
+
+            {/* AI 回复原则 */}
+            <div className="pt-2 border-t">
+              <Label className="flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4" />
+                AI 回复原则
+              </Label>
+              <Textarea
+                value={form.replyPrinciples}
+                onChange={e => update("replyPrinciples", e.target.value)}
+                rows={5}
+                placeholder={"一律称呼客户为「花友」\n不主动承诺库存\n不主动承诺到货日期\n优先推荐现货\n保持专业、亲切的品牌语气"}
+              />
+              <p className="text-xs text-muted-foreground mt-1">用于长期维护品牌一致性，每行一条原则。</p>
             </div>
 
             {/* 自定义提示词 */}

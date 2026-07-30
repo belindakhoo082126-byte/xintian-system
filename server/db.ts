@@ -7956,6 +7956,7 @@ export async function addChatMessage(data: {
   platformMessageId?: string;
   status?: string;
   errorMessage?: string;
+  aiResponseSource?: string;
 }): Promise<any> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -7970,6 +7971,7 @@ export async function addChatMessage(data: {
     platformMessageId: data.platformMessageId,
     status: (data.status || "sent") as any,
     errorMessage: data.errorMessage,
+    aiResponseSource: data.aiResponseSource,
   });
   
   // Update conversation's last message preview
@@ -8412,6 +8414,7 @@ export async function updateAiPersona(data: {
   enableCTA?: boolean;
   ctaTemplate?: string;
   customPrompt?: string;
+  replyPrinciples?: string;
 }) {
   const database = await getDb();
   if (!database) throw new Error("Database not available");
@@ -8435,6 +8438,7 @@ export async function updateAiPersona(data: {
       enableCTA: data.enableCTA ?? true,
       ctaTemplate: data.ctaTemplate || "还有什么小田可以帮到你的吗？",
       customPrompt: data.customPrompt,
+      replyPrinciples: data.replyPrinciples,
     });
   }
   return { success: true };
@@ -8511,6 +8515,16 @@ export async function getAiBrainStatus() {
     status.knowledgeEngine = { state: "error", detail: "Database not available" };
   }
 
+  // Webhook — check if FB_VERIFY_TOKEN is set (webhook subscription requires it)
+  const hasVerifyToken = !!process.env.FB_VERIFY_TOKEN;
+  if (hasVerifyToken && (hasPageToken || hasPageId)) {
+    status.webhook = { state: "ok", detail: "Webhook verify token configured" };
+  } else if (hasVerifyToken) {
+    status.webhook = { state: "ok", detail: "Verify token set (Page config incomplete)" };
+  } else {
+    status.webhook = { state: "unconfigured", detail: "FB_VERIFY_TOKEN not set" };
+  }
+
   // SSE
   status.sse = { state: "ok", detail: "SSE endpoint /api/sse active" };
 
@@ -8585,17 +8599,44 @@ export async function getAiBrainStats() {
     ));
   const flowTriggers: number = Number(flowCountResult[0]?.c || 0);
 
-  // Reply rule triggers & knowledge triggers — approximated by AI text messages
-  // Since we don't have a separate trigger log, we estimate based on AI text messages
-  const aiTextMessages = await database.select({ c: sql`count(*)` })
+  // Real trigger counts from aiResponseSource on AI messages
+  const replyRuleTriggersResult = await database.select({ c: sql`count(*)` })
     .from(chatMessages)
     .where(and(
       sql`${chatMessages.createdAt} >= ${startOfDay}`,
       sql`${chatMessages.createdAt} < ${endOfDay}`,
       eq(chatMessages.senderType, "ai"),
-      eq(chatMessages.messageType, "text")
+      eq(chatMessages.aiResponseSource, "reply_rule")
     ));
-  const aiTextCount: number = Number(aiTextMessages[0]?.c || 0);
+  const replyRuleTriggers: number = Number(replyRuleTriggersResult[0]?.c || 0);
+
+  const knowledgeTriggersResult = await database.select({ c: sql`count(*)` })
+    .from(chatMessages)
+    .where(and(
+      sql`${chatMessages.createdAt} >= ${startOfDay}`,
+      sql`${chatMessages.createdAt} < ${endOfDay}`,
+      eq(chatMessages.senderType, "ai"),
+      eq(chatMessages.aiResponseSource, "knowledge")
+    ));
+  const knowledgeTriggers: number = Number(knowledgeTriggersResult[0]?.c || 0);
+
+  const productTriggersResult = await database.select({ c: sql`count(*)` })
+    .from(chatMessages)
+    .where(and(
+      sql`${chatMessages.createdAt} >= ${startOfDay}`,
+      sql`${chatMessages.createdAt} < ${endOfDay}`,
+      eq(chatMessages.senderType, "ai"),
+      eq(chatMessages.aiResponseSource, "product")
+    ));
+  const productTriggers: number = Number(productTriggersResult[0]?.c || 0);
+
+  // AI auto-resolved rate: AI replies that did NOT result in handover / total AI replies
+  const totalAiReplies = aiReplies || 0;
+  const aiResolved = totalAiReplies - handoverCount;
+  const aiResolvedRate = totalAiReplies > 0 ? Math.round((aiResolved / totalAiReplies) * 100) : 0;
+  // Human handover rate: handovers / (AI replies + handovers)
+  const totalHandled = totalAiReplies + handoverCount;
+  const handoverRate = totalHandled > 0 ? Math.round((handoverCount / totalHandled) * 100) : 0;
 
   return {
     todayConversations,
@@ -8604,8 +8645,11 @@ export async function getAiBrainStats() {
     handoverCount,
     aiUnanswered,
     flowTriggers,
-    replyRuleTriggers: Math.max(0, aiTextCount - flowTriggers),
-    knowledgeTriggers: 0, // Would need a trigger log table for precise tracking
+    replyRuleTriggers,
+    knowledgeTriggers,
+    productTriggers,
+    aiResolvedRate,
+    handoverRate,
   };
 }
 
@@ -8618,12 +8662,21 @@ export async function getAiBrainAlerts() {
     return alerts;
   }
 
-  // Check for unpublished knowledge entries
+  // Check for unpublished knowledge entries (drafts)
   try {
     const knowledge = await getAllAiKnowledge();
     const unpublished = knowledge.filter((k: any) => !k.isEnabled).length;
     if (unpublished > 0) {
-      alerts.push({ level: "info", title: "未发布知识库", detail: `${unpublished} 条知识库条目未启用` });
+      alerts.push({ level: "info", title: "知识库草稿未发布", detail: `${unpublished} 条知识库条目未启用` });
+    }
+  } catch { /* ignore */ }
+
+  // Check for unpublished reply rules (drafts)
+  try {
+    const rules = await getAllReplyRules();
+    const unpublishedRules = rules.filter((r: any) => !r.isEnabled).length;
+    if (unpublishedRules > 0) {
+      alerts.push({ level: "info", title: "固定回复草稿未发布", detail: `${unpublishedRules} 条固定回复规则未启用` });
     }
   } catch { /* ignore */ }
 
@@ -8634,7 +8687,7 @@ export async function getAiBrainAlerts() {
       .from(aiHandoverRequests)
       .where(eq(aiHandoverRequests.status, "pending"));
     if (pending.length > 0) {
-      alerts.push({ level: "warning", title: "AI无法回答", detail: `${pending.length} 个待处理转人工请求` });
+      alerts.push({ level: "warning", title: "待处理转人工", detail: `${pending.length} 个待处理转人工请求` });
     }
   } catch { /* ignore */ }
 
@@ -8645,7 +8698,7 @@ export async function getAiBrainAlerts() {
 
   // Check webhook verify token
   if (!process.env.FB_VERIFY_TOKEN) {
-    alerts.push({ level: "warning", title: "Webhook Verify Token 未配置", detail: "FB_VERIFY_TOKEN 未设置" });
+    alerts.push({ level: "warning", title: "Webhook 未配置", detail: "FB_VERIFY_TOKEN 未设置，Webhook 无法验证" });
   }
 
   return alerts;

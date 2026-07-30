@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Plus, Pencil, Trash2, Brain } from "lucide-react";
 import { toast } from "sonner";
 
-const CATEGORIES = ["shipping", "membership", "product", "faq", "payment", "order", "other"];
+const CATEGORIES = ["运费", "会员", "商品", "植物养护", "售后", "发货", "付款", "常见问题", "其他"];
 
 export default function AiKnowledge() {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -67,7 +67,7 @@ export default function AiKnowledge() {
 
   const handleAdd = () => {
     setEditingId(null);
-    setForm({ category: "faq", topic: "", triggerKeywords: "", content: "", priority: 100, useLLM: false, isEnabled: true });
+    setForm({ category: "常见问题", topic: "", triggerKeywords: "", content: "", priority: 100, useLLM: false, isEnabled: true });
     setDialogOpen(true);
   };
 
@@ -122,6 +122,16 @@ export default function AiKnowledge() {
                       <Badge variant="outline">优先级: {item.priority}</Badge>
                       {item.useLLM && <Badge variant="default">LLM</Badge>}
                       {!item.isEnabled && <Badge variant="destructive">已停用</Badge>}
+                      {item.usageCount > 0 && (
+                        <Badge variant="outline" className="text-blue-600">
+                          使用 {item.usageCount} 次
+                        </Badge>
+                      )}
+                      {item.lastMatchedAt && (
+                        <span className="text-xs text-muted-foreground">
+                          最后命中: {new Date(item.lastMatchedAt).toLocaleString()}
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {keywords.map((kw: string, i: number) => (

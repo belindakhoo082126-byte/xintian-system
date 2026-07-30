@@ -1,9 +1,8 @@
 import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Info, AlertCircle, Plus, BookOpen, MessageSquare, FlaskConical, FileText, Activity, Zap, Brain, TrendingUp, MessageCircle, UserCheck, Bot, Database, Radio, Server } from "lucide-react";
-import { useState } from "react";
+import { AlertTriangle, Info, AlertCircle, Plus, BookOpen, MessageSquare, FlaskConical, FileText, Activity, Zap, Brain, TrendingUp, MessageCircle, UserCheck, Bot, Database, Radio, Server, Webhook, CheckCircle, Percent } from "lucide-react";
 
 type StatusState = "ok" | "error" | "unconfigured";
 
@@ -13,26 +12,33 @@ const STATUS_CONFIG: Record<StatusState, { color: string; label: string; dot: st
   unconfigured: { color: "text-gray-400", label: "未配置", dot: "bg-gray-300" },
 };
 
+// Row 1: System core — Messenger, Database, Webhook, SSE
+// Row 2: Engines — Flow Engine, Reply Rule Engine, Knowledge Engine, Chat
+const STATUS_ORDER = [
+  "messenger", "database", "webhook", "sse",
+  "flowEngine", "replyRuleEngine", "knowledgeEngine", "chat",
+];
+
 const STATUS_ICONS: Record<string, any> = {
   messenger: MessageCircle,
-  whatsapp: MessageCircle,
-  chat: MessageSquare,
+  database: Database,
+  webhook: Webhook,
+  sse: Radio,
   flowEngine: Zap,
   replyRuleEngine: MessageSquare,
   knowledgeEngine: Brain,
-  sse: Radio,
-  database: Database,
+  chat: MessageCircle,
 };
 
 const STATUS_LABELS: Record<string, string> = {
   messenger: "Messenger",
-  whatsapp: "WhatsApp",
-  chat: "Chat",
+  database: "Database",
+  webhook: "Webhook",
+  sse: "SSE 即时同步",
   flowEngine: "Flow Engine",
   replyRuleEngine: "Reply Rule Engine",
   knowledgeEngine: "Knowledge Engine",
-  sse: "SSE 即时同步",
-  database: "Database",
+  chat: "Chat",
 };
 
 const ALERT_ICONS = {
@@ -52,6 +58,10 @@ export default function AiBrainDashboard({ onNavigate }: { onNavigate: (tab: str
   const { data: stats, isLoading: statsLoading } = trpc.aiBrain.getStats.useQuery();
   const { data: alerts = [] } = trpc.aiBrain.getAlerts.useQuery();
 
+  const orderedStatus = status
+    ? STATUS_ORDER.filter(k => k in status).map(k => [k, (status as any)[k]] as [string, any])
+    : [];
+
   return (
     <div className="space-y-6">
       {/* AI 运行状态 */}
@@ -63,8 +73,8 @@ export default function AiBrainDashboard({ onNavigate }: { onNavigate: (tab: str
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {statusLoading ? (
             <Card className="col-span-full"><CardContent className="py-8 text-center text-muted-foreground">加载中...</CardContent></Card>
-          ) : status ? (
-            Object.entries(status).map(([key, val]: [string, any]) => {
+          ) : orderedStatus.length > 0 ? (
+            orderedStatus.map(([key, val]) => {
               const Icon = STATUS_ICONS[key] || Server;
               const cfg = STATUS_CONFIG[val.state as StatusState] || STATUS_CONFIG.unconfigured;
               return (
@@ -95,6 +105,24 @@ export default function AiBrainDashboard({ onNavigate }: { onNavigate: (tab: str
           <TrendingUp className="w-5 h-5" />
           今日 AI 统计
         </h2>
+        {/* Rate cards — prominent */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <RateCard
+            label="AI 自动解决率"
+            value={stats?.aiResolvedRate ?? 0}
+            icon={CheckCircle}
+            color="text-green-600"
+            loading={statsLoading}
+          />
+          <RateCard
+            label="人工接手率"
+            value={stats?.handoverRate ?? 0}
+            icon={UserCheck}
+            color="text-orange-600"
+            loading={statsLoading}
+          />
+        </div>
+        {/* Count cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard label="今日客户对话" value={stats?.todayConversations ?? 0} loading={statsLoading} icon={MessageCircle} />
           <StatCard label="AI 回复数量" value={stats?.aiReplies ?? 0} loading={statsLoading} icon={Bot} />
@@ -180,6 +208,24 @@ function StatCard({ label, value, loading, icon: Icon }: { label: string; value:
         </div>
         <div className="text-2xl font-bold">
           {loading ? <span className="text-muted-foreground text-base">...</span> : value}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RateCard({ label, value, icon: Icon, color, loading }: { label: string; value: number; icon: any; color: string; loading: boolean }) {
+  return (
+    <Card>
+      <CardContent className="py-4 px-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Icon className={`w-5 h-5 ${color}`} />
+            <span className="text-sm font-medium">{label}</span>
+          </div>
+          <div className={`text-3xl font-bold ${color}`}>
+            {loading ? <span className="text-muted-foreground text-base">...</span> : `${value}%`}
+          </div>
         </div>
       </CardContent>
     </Card>

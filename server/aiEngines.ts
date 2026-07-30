@@ -10,13 +10,38 @@
  */
 
 import { getDb } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import {
   replyRules,
   aiKnowledge,
   products,
   liveAiFlows,
 } from "../drizzle/schema";
+
+// Helper: increment usage count and update lastMatchedAt for a matched rule or knowledge entry
+async function recordUsage(table: "replyRules" | "aiKnowledge", id: number): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  try {
+    if (table === "replyRules") {
+      await database.update(replyRules)
+        .set({
+          usageCount: sql`${replyRules.usageCount} + 1`,
+          lastMatchedAt: new Date(),
+        })
+        .where(eq(replyRules.id, id));
+    } else {
+      await database.update(aiKnowledge)
+        .set({
+          usageCount: sql`${aiKnowledge.usageCount} + 1`,
+          lastMatchedAt: new Date(),
+        })
+        .where(eq(aiKnowledge.id, id));
+    }
+  } catch (err) {
+    console.error(`[AI Engine] Failed to record usage for ${table} id=${id}:`, err);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -135,6 +160,7 @@ export async function runReplyRuleEngine(ctx: MessageContext): Promise<EngineRes
     );
 
     if (matched) {
+      await recordUsage("replyRules", rule.id);
       return {
         matched: true,
         reply: rule.replyContent,
@@ -181,6 +207,7 @@ export async function runKnowledgeEngine(ctx: MessageContext): Promise<EngineRes
     );
 
     if (matched) {
+      await recordUsage("aiKnowledge", entry.id);
       return {
         matched: true,
         reply: entry.content,
@@ -258,6 +285,9 @@ export interface ChatAIResult {
   source: string;
   shouldHandover: boolean;
   handoverReason?: string;
+  ruleId?: number;
+  knowledgeId?: number;
+  productId?: number;
 }
 
 export async function processChatAI(
@@ -295,6 +325,7 @@ export async function processChatAI(
       reply: productResult.reply,
       source: "product",
       shouldHandover: false,
+      productId: productResult.productId,
     };
   }
 
@@ -306,6 +337,7 @@ export async function processChatAI(
       reply: ruleResult.reply,
       source: "reply_rule",
       shouldHandover: false,
+      ruleId: ruleResult.ruleId,
     };
   }
 
@@ -317,6 +349,7 @@ export async function processChatAI(
       reply: knowledgeResult.reply,
       source: "knowledge",
       shouldHandover: false,
+      knowledgeId: knowledgeResult.knowledgeId,
     };
   }
 
