@@ -4888,6 +4888,67 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
   }),
 
   // ===========================================================================
+  // AI Analysis Center — Admin-only analytics for AI performance optimization
+  // ===========================================================================
+  aiAnalysis: router({
+    // Dashboard overview
+    getDashboard: adminProcedure
+      .input(z.object({ days: z.number().min(1).max(365).default(1) }))
+      .query(async ({ input }) => {
+        return db.getAiAnalysisDashboard(input.days);
+      }),
+
+    // Source distribution analysis
+    getSourceAnalysis: adminProcedure
+      .input(z.object({ days: z.number().min(1).max(365).default(7) }))
+      .query(async ({ input }) => {
+        return db.getSourceAnalysis(input.days);
+      }),
+
+    // Knowledge base analysis
+    getKnowledgeAnalysis: adminProcedure
+      .query(async () => {
+        return db.getKnowledgeAnalysis();
+      }),
+
+    // Reply rule analysis
+    getReplyRuleAnalysis: adminProcedure
+      .query(async () => {
+        return db.getReplyRuleAnalysis();
+      }),
+
+    // No-match analysis
+    getNoMatchAnalysis: adminProcedure
+      .input(z.object({
+        days: z.number().min(1).max(365).default(7),
+        limit: z.number().min(1).max(100).default(20),
+      }))
+      .query(async ({ input }) => {
+        return db.getNoMatchAnalysis(input.days, input.limit);
+      }),
+
+    // Handover analysis
+    getHandoverAnalysis: adminProcedure
+      .input(z.object({ days: z.number().min(1).max(365).default(7) }))
+      .query(async ({ input }) => {
+        return db.getHandoverAnalysis(input.days);
+      }),
+
+    // LLM analysis
+    getLlmAnalysis: adminProcedure
+      .input(z.object({ days: z.number().min(1).max(365).default(7) }))
+      .query(async ({ input }) => {
+        return db.getLlmAnalysis(input.days);
+      }),
+
+    // AI improvement suggestions
+    getSuggestions: adminProcedure
+      .query(async () => {
+        return db.getAiSuggestions();
+      }),
+  }),
+
+  // ===========================================================================
   // AI Test Center — Admin-only test execution, completely isolated from ai_logs
   // ===========================================================================
   aiTest: router({

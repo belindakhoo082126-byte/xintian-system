@@ -180,6 +180,45 @@
 
 ---
 
+## V1.3 — AI 分析中心
+
+**发布日期：** 2026-07-30  
+**开发阶段：** AI大脑 Phase 2 Task 3
+
+### Added
+
+- AI 分析中心（`AiBrainAnalysis.tsx`）：7 个分析模块 + AI 改善建议引擎
+  - **概览 Dashboard**：今日 AI 回复数、命中率、转人工率、回复失败率、平均处理时间、LLM 调用次数、来源分布条形图
+  - **来源分析 Source Analysis**：各命中来源（固定回复/知识库/商品/LLM/无法匹配等）占比统计
+  - **知识库分析 Knowledge Analysis**：使用排行、从未使用、已禁用、草稿列表
+  - **固定回复分析 Reply Rule Analysis**：最高命中、最低命中、从未使用规则
+  - **无法回答分析 No Match Analysis**：客户最常问但 AI 无法回答的问题频率排行
+  - **转人工分析 Handover Analysis**：转人工原因分布、最近转人工请求列表
+  - **LLM 分析 LLM Analysis**：调用次数、成功率、失败率、平均 Token、平均时间、模型分布
+  - **AI 改善建议 AI Suggestions**：自动检测高频未回答问题、从未使用规则/知识、高转人工率、高失败率、待发布草稿、高频知识优化机会
+- 后端 8 个统计查询函数（`db.ts`）：`getAiAnalysisDashboard`、`getSourceAnalysis`、`getKnowledgeAnalysis`、`getReplyRuleAnalysis`、`getNoMatchAnalysis`、`getHandoverAnalysis`、`getLlmAnalysis`、`getAiSuggestions`
+- tRPC 路由 `aiAnalysis`：8 个 Admin-only 查询过程
+- 单元测试 10 项（`ai-analysis.test.ts`）：覆盖所有统计函数与路由结构验证
+- AI大脑 Tab 启用「AI 分析」（原为 disabled ComingSoon）
+
+### Changed
+
+- `AiBrain.tsx`：analytics Tab 从 disabled 改为 enabled，加载 `AiBrainAnalysis` 组件
+- `aiBrainTabs.test.ts`：更新 analytics Tab 预期从 fallback 改为直接命中
+
+### Database
+
+- 无新增表，无迁移（基于现有 `ai_logs`、`reply_rules`、`ai_knowledge`、`ai_handover_requests` 表查询）
+
+### Notes
+
+- AI 分析中心仅 Admin 可使用
+- 所有统计数据仅来自 `ai_logs`（正式 AI日志），不包含 `ai_test_runs`（测试记录）
+- AI 改善建议引擎自动调用各分析模块并生成可操作建议
+- 统计范围可选：今日 / 过去 7 天 / 过去 30 天 / 过去 90 天
+
+---
+
 ## 后续记录模板
 
 ```md

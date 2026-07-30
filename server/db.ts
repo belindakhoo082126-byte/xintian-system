@@ -9259,3 +9259,471 @@ export async function createKnowledgeDraft(data: {
     return null;
   }
 }
+
+
+// ============================================================================
+// AI Analysis Center — Statistics queries for AI performance analysis
+// All queries read from ai_logs (production) and exclude ai_test_runs
+// ============================================================================
+
+/** Get AI Analysis Dashboard overview stats */
+export async function getAiAnalysisDashboard(days: number = 1): Promise<{
+  totalReplies: number;
+  hitRate: number;
+  handoverRate: number;
+  failureRate: number;
+  avgProcessingMs: number;
+  llmCallCount: number;
+  bySource: Record<string, number>;
+  totalBySource: Record<string, number>;
+  sentCount: number;
+  failedCount: number;
+  handoverCount: number;
+  noMatchCount: number;
+}> {
+  const db = await getDb();
+  if (!db) return { totalReplies: 0, hitRate: 0, handoverRate: 0, failureRate: 0, avgProcessingMs: 0, llmCallCount: 0, bySource: {}, totalBySource: {}, sentCount: 0, failedCount: 0, handoverCount: 0, noMatchCount: 0 };
+
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  since.setHours(0, 0, 0, 0);
+
+  const allLogs = await db.select({
+    finalSource: aiLogs.finalSource,
+    sendStatus: aiLogs.sendStatus,
+    isHandover: aiLogs.isHandover,
+    processingTimeMs: aiLogs.processingTimeMs,
+  })
+  .from(aiLogs)
+  .where(gte(aiLogs.createdAt, since));
+
+  const bySource: Record<string, number> = {};
+  let sent = 0, failed = 0, handover = 0, noMatch = 0, totalProcessingMs = 0;
+  let llmCalls = 0;
+
+  for (const log of allLogs) {
+    bySource[log.finalSource] = (bySource[log.finalSource] ?? 0) + 1;
+    if (log.sendStatus === "sent") sent++;
+    if (log.sendStatus === "failed") failed++;
+    if (log.isHandover) handover++;
+    if (log.finalSource === "no_match") noMatch++;
+    if (log.processingTimeMs) totalProcessingMs += log.processingTimeMs;
+    if (log.finalSource === "llm") llmCalls++;
+  }
+
+  const total = allLogs.length;
+  const hitCount = total - noMatch;
+
+  return {
+    totalReplies: total,
+    hitRate: total > 0 ? Math.round((hitCount / total) * 100) : 0,
+    handoverRate: total > 0 ? Math.round((handover / total) * 100) : 0,
+    failureRate: total > 0 ? Math.round((failed / total) * 100) : 0,
+    avgProcessingMs: total > 0 ? Math.round(totalProcessingMs / total) : 0,
+    llmCallCount: llmCalls,
+    bySource,
+    totalBySource: bySource,
+    sentCount: sent,
+    failedCount: failed,
+    handoverCount: handover,
+    noMatchCount: noMatch,
+  };
+}
+
+/** Get source distribution analysis */
+export async function getSourceAnalysis(days: number = 7): Promise<{
+  sources: { source: string; count: number; percentage: number }[];
+  total: number;
+}> {
+  const db = await getDb();
+  if (!db) return { sources: [], total: 0 };
+
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  since.setHours(0, 0, 0, 0);
+
+  const allLogs = await db.select({ finalSource: aiLogs.finalSource })
+    .from(aiLogs)
+    .where(gte(aiLogs.createdAt, since));
+
+  const sourceMap: Record<string, number> = {};
+  for (const log of allLogs) {
+    sourceMap[log.finalSource] = (sourceMap[log.finalSource] ?? 0) + 1;
+  }
+
+  const total = allLogs.length;
+  const sources = Object.entries(sourceMap)
+    .map(([source, count]) => ({ source, count, percentage: total > 0 ? Math.round((count / total) * 100) : 0 }))
+    .sort((a, b) => b.count - a.count);
+
+  return { sources, total };
+}
+
+/** Get knowledge base analysis */
+export async function getKnowledgeAnalysis(): Promise<{
+  usageRanking: { id: number; topic: string; category: string; usageCount: number; lastMatchedAt: Date | null; isEnabled: boolean; status: string }[];
+  neverUsed: { id: number; topic: string; category: string; isEnabled: boolean; status: string }[];
+  disabled: { id: number; topic: string; category: string; status: string }[];
+  drafts: { id: number; topic: string; category: string; sourceAiTestRunId: number | null; sourceNote: string | null }[];
+  total: number;
+  publishedCount: number;
+  draftCount: number;
+}> {
+  const db = await getDb();
+  if (!db) return { usageRanking: [], neverUsed: [], disabled: [], drafts: [], total: 0, publishedCount: 0, draftCount: 0 };
+
+  const allKnowledge = await db.select({
+    id: aiKnowledge.id,
+    topic: aiKnowledge.topic,
+    category: aiKnowledge.category,
+    usageCount: aiKnowledge.usageCount,
+    lastMatchedAt: aiKnowledge.lastMatchedAt,
+    isEnabled: aiKnowledge.isEnabled,
+    status: aiKnowledge.status,
+    sourceAiTestRunId: aiKnowledge.sourceAiTestRunId,
+    sourceNote: aiKnowledge.sourceNote,
+  })
+  .from(aiKnowledge);
+
+  const usageRanking = allKnowledge
+    .filter(k => k.status === "published" && k.isEnabled)
+    .sort((a, b) => b.usageCount - a.usageCount)
+    .map(k => ({ id: k.id, topic: k.topic, category: k.category, usageCount: k.usageCount, lastMatchedAt: k.lastMatchedAt, isEnabled: k.isEnabled, status: k.status }));
+
+  const neverUsed = allKnowledge
+    .filter(k => k.status === "published" && k.isEnabled && k.usageCount === 0)
+    .map(k => ({ id: k.id, topic: k.topic, category: k.category, isEnabled: k.isEnabled, status: k.status }));
+
+  const disabled = allKnowledge
+    .filter(k => !k.isEnabled && k.status === "published")
+    .map(k => ({ id: k.id, topic: k.topic, category: k.category, status: k.status }));
+
+  const drafts = allKnowledge
+    .filter(k => k.status === "draft")
+    .map(k => ({ id: k.id, topic: k.topic, category: k.category, sourceAiTestRunId: k.sourceAiTestRunId, sourceNote: k.sourceNote }));
+
+  return {
+    usageRanking,
+    neverUsed,
+    disabled,
+    drafts,
+    total: allKnowledge.length,
+    publishedCount: allKnowledge.filter(k => k.status === "published").length,
+    draftCount: drafts.length,
+  };
+}
+
+/** Get reply rule analysis */
+export async function getReplyRuleAnalysis(): Promise<{
+  topHits: { id: number; name: string; usageCount: number; lastMatchedAt: Date | null; isEnabled: boolean }[];
+  lowHits: { id: number; name: string; usageCount: number; lastMatchedAt: Date | null; isEnabled: boolean }[];
+  neverUsed: { id: number; name: string; isEnabled: boolean }[];
+  total: number;
+  enabledCount: number;
+}> {
+  const db = await getDb();
+  if (!db) return { topHits: [], lowHits: [], neverUsed: [], total: 0, enabledCount: 0 };
+
+  const { replyRules } = await import("../drizzle/schema");
+  const allRules = await db.select({
+    id: replyRules.id,
+    name: replyRules.name,
+    usageCount: replyRules.usageCount,
+    lastMatchedAt: replyRules.lastMatchedAt,
+    isEnabled: replyRules.isEnabled,
+  })
+  .from(replyRules);
+
+  const sorted = [...allRules].sort((a, b) => b.usageCount - a.usageCount);
+  const topHits = sorted.slice(0, 10).map(r => ({ ...r }));
+  const lowHits = sorted.filter(r => r.isEnabled && r.usageCount > 0).slice(-10).map(r => ({ ...r }));
+  const neverUsed = allRules.filter(r => r.isEnabled && r.usageCount === 0).map(r => ({ id: r.id, name: r.name, isEnabled: r.isEnabled }));
+
+  return {
+    topHits,
+    lowHits,
+    neverUsed,
+    total: allRules.length,
+    enabledCount: allRules.filter(r => r.isEnabled).length,
+  };
+}
+
+/** Get no-match analysis (questions AI couldn't answer) */
+export async function getNoMatchAnalysis(days: number = 7, limit: number = 20): Promise<{
+  topQuestions: { message: string; count: number; lastAskedAt: Date | null }[];
+  total: number;
+}> {
+  const db = await getDb();
+  if (!db) return { topQuestions: [], total: 0 };
+
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  since.setHours(0, 0, 0, 0);
+
+  const noMatchLogs = await db.select({
+    customerMessage: aiLogs.customerMessage,
+    createdAt: aiLogs.createdAt,
+  })
+  .from(aiLogs)
+  .where(and(
+    eq(aiLogs.finalSource, "no_match"),
+    gte(aiLogs.createdAt, since)
+  ));
+
+  // Group by normalized message
+  const messageMap: Record<string, { count: number; lastAskedAt: Date | null }> = {};
+  for (const log of noMatchLogs) {
+    const msg = (log.customerMessage || "").trim().toLowerCase().substring(0, 200);
+    if (!msg) continue;
+    if (!messageMap[msg]) {
+      messageMap[msg] = { count: 0, lastAskedAt: null };
+    }
+    messageMap[msg].count++;
+    const logDate = log.createdAt ? new Date(log.createdAt as any) : null;
+    if (logDate && (!messageMap[msg].lastAskedAt || logDate > messageMap[msg].lastAskedAt)) {
+      messageMap[msg].lastAskedAt = logDate;
+    }
+  }
+
+  const topQuestions = Object.entries(messageMap)
+    .map(([message, data]) => ({ message, count: data.count, lastAskedAt: data.lastAskedAt }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+
+  return { topQuestions, total: noMatchLogs.length };
+}
+
+/** Get handover analysis */
+export async function getHandoverAnalysis(days: number = 7): Promise<{
+  total: number;
+  byReason: { reason: string; count: number }[];
+  recentHandovers: { id: number; customerName: string | null; reason: string; priority: string; status: string; createdAt: Date | null }[];
+}> {
+  const db = await getDb();
+  if (!db) return { total: 0, byReason: [], recentHandovers: [] };
+
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  since.setHours(0, 0, 0, 0);
+
+  const handoverLogs = await db.select({
+    handoverReason: aiLogs.handoverReason,
+  })
+  .from(aiLogs)
+  .where(and(
+    eq(aiLogs.isHandover, true),
+    gte(aiLogs.createdAt, since)
+  ));
+
+  const reasonMap: Record<string, number> = {};
+  for (const log of handoverLogs) {
+    const reason = log.handoverReason || "未分类";
+    reasonMap[reason] = (reasonMap[reason] ?? 0) + 1;
+  }
+
+  const byReason = Object.entries(reasonMap)
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // Also get handover requests
+  const recentRequests = await db.select({
+    id: aiHandoverRequests.id,
+    customerName: aiHandoverRequests.customerName,
+    reason: aiHandoverRequests.reason,
+    priority: aiHandoverRequests.priority,
+    status: aiHandoverRequests.status,
+    createdAt: aiHandoverRequests.createdAt,
+  })
+  .from(aiHandoverRequests)
+  .where(gte(aiHandoverRequests.createdAt, since))
+  .orderBy(desc(aiHandoverRequests.createdAt))
+  .limit(10);
+
+  const recentHandovers = recentRequests.map((r: any) => ({
+    id: r.id,
+    customerName: r.customerName,
+    reason: r.reason,
+    priority: r.priority,
+    status: r.status,
+    createdAt: r.createdAt ? new Date(r.createdAt as any) : null,
+  }));
+
+  return {
+    total: handoverLogs.length,
+    byReason,
+    recentHandovers,
+  };
+}
+
+/** Get LLM analysis */
+export async function getLlmAnalysis(days: number = 7): Promise<{
+  totalCalls: number;
+  successCount: number;
+  failedCount: number;
+  successRate: number;
+  avgProcessingMs: number;
+  avgInputTokens: number;
+  avgOutputTokens: number;
+  byModel: { model: string; count: number }[];
+}> {
+  const db = await getDb();
+  if (!db) return { totalCalls: 0, successCount: 0, failedCount: 0, successRate: 0, avgProcessingMs: 0, avgInputTokens: 0, avgOutputTokens: 0, byModel: [] };
+
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  since.setHours(0, 0, 0, 0);
+
+  // LLM calls are tracked in ai_logs where finalSource involves LLM
+  // Also check processingSteps for LLM usage
+  const llmLogs = await db.select({
+    finalSource: aiLogs.finalSource,
+    processingTimeMs: aiLogs.processingTimeMs,
+    processingSteps: aiLogs.processingSteps,
+    errorCode: aiLogs.errorCode,
+  })
+  .from(aiLogs)
+  .where(and(
+    gte(aiLogs.createdAt, since),
+    or(
+      eq(aiLogs.finalSource, "llm"),
+      eq(aiLogs.finalSource, "knowledge"),
+    )
+  ));
+
+  let totalCalls = 0, successCount = 0, failedCount = 0, totalProcessingMs = 0;
+  let totalInputTokens = 0, totalOutputTokens = 0;
+  const modelMap: Record<string, number> = {};
+
+  for (const log of llmLogs) {
+    // Check if LLM was actually called by examining processing steps
+    const steps = log.processingSteps as any[];
+    if (!Array.isArray(steps)) continue;
+
+    const llmStep = steps.find((s: any) => s.step === "llm_generate" || s.step === "llm");
+    if (!llmStep || llmStep.result !== "hit") continue;
+
+    totalCalls++;
+    if (log.errorCode) {
+      failedCount++;
+    } else {
+      successCount++;
+    }
+    if (log.processingTimeMs) totalProcessingMs += log.processingTimeMs;
+    if (llmStep.inputTokens) totalInputTokens += llmStep.inputTokens;
+    if (llmStep.outputTokens) totalOutputTokens += llmStep.outputTokens;
+    if (llmStep.model) modelMap[llmStep.model] = (modelMap[llmStep.model] ?? 0) + 1;
+  }
+
+  const byModel = Object.entries(modelMap)
+    .map(([model, count]) => ({ model, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    totalCalls,
+    successCount,
+    failedCount,
+    successRate: totalCalls > 0 ? Math.round((successCount / totalCalls) * 100) : 0,
+    avgProcessingMs: totalCalls > 0 ? Math.round(totalProcessingMs / totalCalls) : 0,
+    avgInputTokens: totalCalls > 0 ? Math.round(totalInputTokens / totalCalls) : 0,
+    avgOutputTokens: totalCalls > 0 ? Math.round(totalOutputTokens / totalCalls) : 0,
+    byModel,
+  };
+}
+
+/** Get AI improvement suggestions (auto-generated) */
+export async function getAiSuggestions(): Promise<{
+  suggestions: { type: string; severity: string; title: string; description: string; action: string }[];
+}> {
+  const db = await getDb();
+  if (!db) return { suggestions: [] };
+
+  const suggestions: { type: string; severity: string; title: string; description: string; action: string }[] = [];
+
+  // 1. Check for high-frequency no-match questions
+  const noMatchAnalysis = await getNoMatchAnalysis(7, 5);
+  for (const q of noMatchAnalysis.topQuestions) {
+    if (q.count >= 3) {
+      suggestions.push({
+        type: "no_match",
+        severity: "high",
+        title: `「${q.message.substring(0, 30)}${q.message.length > 30 ? "..." : ""}」被问及 ${q.count} 次，AI无法回答`,
+        description: `过去7天内有 ${q.count} 位客户询问此问题，但知识库和固定回复均未命中。建议建立对应知识库条目或固定回复规则。`,
+        action: "建立知识库条目",
+      });
+    }
+  }
+
+  // 2. Check for never-used reply rules (30+ days)
+  const ruleAnalysis = await getReplyRuleAnalysis();
+  for (const rule of ruleAnalysis.neverUsed) {
+    suggestions.push({
+      type: "rule_unused",
+      severity: "medium",
+      title: `固定回复规则「${rule.name}」从未被命中`,
+      description: `该规则已启用但使用次数为0，可能需要优化关键词或考虑停用。`,
+      action: "优化关键词或停用",
+    });
+  }
+
+  // 3. Check for never-used knowledge entries
+  const knowledgeAnalysis = await getKnowledgeAnalysis();
+  for (const k of knowledgeAnalysis.neverUsed) {
+    suggestions.push({
+      type: "knowledge_unused",
+      severity: "medium",
+      title: `知识库条目「${k.topic}」从未被命中`,
+      description: `该知识条目已发布且已启用，但使用次数为0。可能需要优化关键词或内容。`,
+      action: "优化关键词或内容",
+    });
+  }
+
+  // 4. Check for high handover rate
+  const handoverAnalysis = await getHandoverAnalysis(7);
+  const dashboard = await getAiAnalysisDashboard(7);
+  if (dashboard.totalReplies > 0 && dashboard.handoverRate > 30) {
+    suggestions.push({
+      type: "high_handover",
+      severity: "high",
+      title: `转人工率偏高（${dashboard.handoverRate}%）`,
+      description: `过去7天AI回复中转人工率超过30%，建议检查高频转人工原因并优化AI知识库覆盖范围。`,
+      action: "查看转人工分析",
+    });
+  }
+
+  // 5. Check for high failure rate
+  if (dashboard.totalReplies > 0 && dashboard.failureRate > 20) {
+    suggestions.push({
+      type: "high_failure",
+      severity: "high",
+      title: `回复失败率偏高（${dashboard.failureRate}%）`,
+      description: `过去7天AI回复发送失败率超过20%，建议检查Messenger API连接或Token状态。`,
+      action: "检查API连接",
+    });
+  }
+
+  // 6. Check for draft knowledge entries
+  if (knowledgeAnalysis.draftCount > 0) {
+    suggestions.push({
+      type: "draft_pending",
+      severity: "low",
+      title: `有 ${knowledgeAnalysis.draftCount} 条知识库草稿待发布`,
+      description: `这些草稿来自AI测试中心，尚未发布。发布后将参与正式引擎匹配。`,
+      action: "查看知识库草稿",
+    });
+  }
+
+  // 7. Check for high-usage knowledge (optimization opportunity)
+  for (const k of knowledgeAnalysis.usageRanking.slice(0, 3)) {
+    if (k.usageCount >= 10) {
+      suggestions.push({
+        type: "knowledge_optimize",
+        severity: "low",
+        title: `知识库「${k.topic}」过去命中 ${k.usageCount} 次，可考虑优化内容`,
+        description: `高频使用的知识条目，优化内容质量可进一步提升客户满意度。`,
+        action: "编辑知识条目",
+      });
+    }
+  }
+
+  return { suggestions };
+}

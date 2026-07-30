@@ -9,8 +9,9 @@ const AiKnowledge = lazy(() => import("./AiKnowledge"));
 const ReplyRules = lazy(() => import("./ReplyRules"));
 const AiBrainLog = lazy(() => import("./AiBrainLog"));
 const AiBrainTest = lazy(() => import("./AiBrainTest"));
+const AiBrainAnalysis = lazy(() => import("./AiBrainAnalysis"));
 
-const AI_BRAIN_TABS = new Set(["dashboard", "persona", "knowledge", "reply-rules", "log", "test"]);
+const AI_BRAIN_TABS = new Set(["dashboard", "persona", "knowledge", "reply-rules", "log", "test", "analytics"]);
 
 export function getAiBrainInitialTab(search: string): string {
   const requestedTab = new URLSearchParams(search).get("tab");
@@ -60,7 +61,7 @@ export default function AiBrain() {
             <FlaskConical className="w-4 h-4" />
             <span className="text-xs">AI 测试</span>
           </TabsTrigger>
-          <TabsTrigger value="analytics" className="flex flex-col items-center gap-1 py-2" disabled>
+          <TabsTrigger value="analytics" className="flex flex-col items-center gap-1 py-2">
             <BarChart3 className="w-4 h-4" />
             <span className="text-xs">AI 分析</span>
           </TabsTrigger>
@@ -99,7 +100,9 @@ export default function AiBrain() {
         </TabsContent>
 
         <TabsContent value="analytics">
-          <ComingSoon title="AI 分析" description="未来可在此查看 AI 回复质量分析、客户满意度、知识库覆盖率等数据。" />
+          <Suspense fallback={<div className="py-12 text-center text-muted-foreground">加载中...</div>}>
+            <AiBrainAnalysis />
+          </Suspense>
         </TabsContent>
       </Tabs>
     </div>

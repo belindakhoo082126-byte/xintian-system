@@ -1378,3 +1378,30 @@
 - [x] CHANGELOG 更新
 - [x] 保存检查点
 - [x] 18项验收资料（全部完成，详见最终验收报告）
+
+## AI大脑 Phase 2 Task 3：AI Analysis（AI分析中心）开发
+
+### 数据库
+- [x] 无需新增表（基于现有 ai_logs、ai_test_runs、reply_rules、ai_knowledge、chat 数据）
+
+### 后端
+- [x] db.ts: getAiAnalysisDashboard（今日AI回复数、命中率、转人工率、回复失败率、平均处理时间、LLM调用次数）
+- [x] db.ts: getSourceAnalysis（各来源占比统计）
+- [x] db.ts: getKnowledgeAnalysis（使用排行、从未使用、低命中、已禁用）
+- [x] db.ts: getReplyRuleAnalysis（最高命中、最低命中、长期未使用）
+- [x] db.ts: getNoMatchAnalysis（无法回答问题频率排行）
+- [x] db.ts: getHandoverAnalysis（转人工原因分类统计）
+- [x] db.ts: getLlmAnalysis（调用次数、成功率、失败率、平均Token、平均时间）
+- [x] db.ts: getAiSuggestions（自动改善建议引擎）
+- [x] routers.ts: aiAnalysis router（getDashboard、getSourceAnalysis、getKnowledgeAnalysis、getReplyRuleAnalysis、getNoMatchAnalysis、getHandoverAnalysis、getLlmAnalysis、getSuggestions）
+
+### 前端
+- [x] AiBrainAnalysis.tsx 页面（Dashboard概览 + Source Analysis + Knowledge Analysis + Reply Rule Analysis + No Match Analysis + Handover Analysis + LLM Analysis + AI Suggestions）
+- [x] AiBrain.tsx 启用 analytics Tab，替换 ComingSoon
+
+### 测试与验收
+- [x] 单元测试：aiAnalysis router 各查询函数
+- [x] TypeScript 零错误
+- [x] Vitest 全部通过
+- [x] CHANGELOG 更新
+- [x] 保存检查点
