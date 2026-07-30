@@ -76,7 +76,7 @@ export default function AiBrainPersona() {
     if (!previewInput.trim()) return;
     setPreviewResult("生成中...");
     previewMutation.mutate(
-      { userMessage: previewInput },
+      { userMessage: previewInput, personaOverride: form },
       {
         onSuccess: (data: any) => {
           setPreviewResult(data.reply || "（无回复）");

@@ -122,16 +122,12 @@ export default function AiKnowledge() {
                       <Badge variant="outline">优先级: {item.priority}</Badge>
                       {item.useLLM && <Badge variant="default">LLM</Badge>}
                       {!item.isEnabled && <Badge variant="destructive">已停用</Badge>}
-                      {item.usageCount > 0 && (
-                        <Badge variant="outline" className="text-blue-600">
-                          使用 {item.usageCount} 次
-                        </Badge>
-                      )}
-                      {item.lastMatchedAt && (
-                        <span className="text-xs text-muted-foreground">
-                          最后命中: {new Date(item.lastMatchedAt).toLocaleString()}
-                        </span>
-                      )}
+                      <Badge variant="outline" className="text-blue-600">
+                        使用 {Number(item.usageCount ?? 0)} 次
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        最后命中: {item.lastMatchedAt ? new Date(item.lastMatchedAt).toLocaleString() : "尚无记录"}
+                      </span>
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {keywords.map((kw: string, i: number) => (

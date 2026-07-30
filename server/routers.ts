@@ -4727,12 +4727,32 @@ export const appRouter = router({
     previewReply: adminProcedure
       .input(z.object({
         userMessage: z.string().min(1),
+        // Preview may use the form's unsaved state. This remains simulation-only
+        // and never persists or sends a message to a customer.
+        personaOverride: z.object({
+          aiName: z.string().optional(),
+          brandName: z.string().optional(),
+          aiSelfReference: z.string().optional(),
+          customerAddress: z.string().optional(),
+          replyTone: z.string().optional(),
+          defaultLanguage: z.string().optional(),
+          supportedLanguages: z.string().optional(),
+          emojiLevel: z.string().optional(),
+          replyLength: z.string().optional(),
+          proactiveRecommend: z.boolean().optional(),
+          proactiveInquire: z.boolean().optional(),
+          enableCTA: z.boolean().optional(),
+          ctaTemplate: z.string().optional(),
+          customPrompt: z.string().optional(),
+          replyPrinciples: z.string().optional(),
+        }).partial().optional(),
       }))
       .mutation(async ({ input }) => {
-        const persona = await db.getAiPersona();
-        if (!persona) {
+        const savedPersona = await db.getAiPersona();
+        if (!savedPersona) {
           return { reply: "请先设置 AI 人设后再进行预览。" };
         }
+        const persona = { ...savedPersona, ...input.personaOverride };
 
         // Build system prompt from persona settings
         const toneMap: Record<string, string> = {
@@ -4767,20 +4787,35 @@ export const appRouter = router({
 - Emoji 使用：${emojiMap[persona.emojiLevel] || persona.emojiLevel}
 - 默认语言：${persona.defaultLanguage === 'zh' ? '中文' : persona.defaultLanguage === 'en' ? 'English' : persona.defaultLanguage}
 - 支持语言：${supportedLangs.join(', ')}
-${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.proactiveInquire ? '- 主动询问客户需求\n' : ''}${persona.enableCTA && persona.ctaTemplate ? `- 回复结束语：${persona.ctaTemplate}\n` : ''}${persona.replyPrinciples ? `\nAI回复原则：\n${persona.replyPrinciples}\n` : ''}${persona.customPrompt ? `\n额外要求：\n${persona.customPrompt}\n` : ''}
+${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.proactiveInquire ? '- 主动询问客户需求\n' : ''}${persona.enableCTA && persona.ctaTemplate ? `- 回复结束语：${persona.ctaTemplate}\n` : ''}${persona.replyPrinciples ? `\n不可违反的 AI回复原则（最高优先级；如与前述人设字段冲突，以本区原则为准）：\n${persona.replyPrinciples}\n请逐条严格遵守这些原则。\n` : ''}${persona.customPrompt ? `\n额外要求：\n${persona.customPrompt}\n` : ''}
 注意：这是模拟预览，不要提及你是AI模型或ChatGPT。直接以${persona.aiName}的身份回复。`;
 
         try {
           const { invokeLLM } = await import("./_core/llm");
+          // Claude Haiku provides low-latency text output for this interactive
+          // preview. GPT-5 may spend the small output budget on reasoning first,
+          // which can leave the visible reply empty when max_tokens is capped.
           const result = await invokeLLM({
-            model: "gpt-5-mini",
+            model: "claude-haiku-4-5",
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: input.userMessage },
             ],
             maxTokens: 500,
           });
-          const reply = result.choices?.[0]?.message?.content || "（无回复内容）";
+          const content = result.choices?.[0]?.message?.content;
+          const reply = Array.isArray(content)
+            ? content
+                .filter((part): part is { type: "text"; text: string } => part.type === "text")
+                .map(part => part.text)
+                .join("\n")
+                .trim()
+            : typeof content === "string"
+              ? content.trim()
+              : "";
+          if (!reply) {
+            throw new Error("预览模型未生成可用文本，请稍后重试。");
+          }
           return { reply };
         } catch (err: any) {
           return { reply: `预览生成失败：${err.message || "未知错误"}` };

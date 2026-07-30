@@ -106,19 +106,15 @@ export default function ReplyRules() {
                       <span className="font-semibold">{rule.name}</span>
                       <Badge variant="outline">优先级: {rule.priority}</Badge>
                       {channels.map((ch: string) => (
-                        <Badge key={ch} variant="secondary">{ch}</Badge>
+                        <Badge key={ch} variant="secondary">{ch === "messenger" ? "Messenger" : ch === "whatsapp" ? "WhatsApp" : ch}</Badge>
                       ))}
                       {!rule.isEnabled && <Badge variant="destructive">已停用</Badge>}
-                      {rule.usageCount > 0 && (
-                        <Badge variant="outline" className="text-blue-600">
-                          命中 {rule.usageCount} 次
-                        </Badge>
-                      )}
-                      {rule.lastMatchedAt && (
-                        <span className="text-xs text-muted-foreground">
-                          最后命中: {new Date(rule.lastMatchedAt).toLocaleString()}
-                        </span>
-                      )}
+                      <Badge variant="outline" className="text-blue-600">
+                        使用 {Number(rule.usageCount ?? 0)} 次
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        最后命中: {rule.lastMatchedAt ? new Date(rule.lastMatchedAt).toLocaleString() : "尚无记录"}
+                      </span>
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {keywords.map((kw: string, i: number) => (
