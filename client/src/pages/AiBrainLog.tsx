@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChevronDown, ChevronRight, ExternalLink, Search, Filter, AlertCircle, CheckCircle, XCircle, Clock, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 
 const SOURCE_LABELS: Record<string, string> = {
   order_keyword: "订单关键词",
@@ -46,6 +47,12 @@ const SEND_STATUS_COLORS: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-700",
 };
 
+export function formatAuditDate(value: unknown) {
+  if (!value) return "—";
+  const date = value instanceof Date ? value : new Date(value as string | number);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("zh-CN");
+}
+
 export default function AiBrainLog() {
   const [_, navigate] = useLocation();
   const { user } = useAuth();
@@ -64,6 +71,19 @@ export default function AiBrainLog() {
   const [isHandover, setIsHandover] = useState<string>("all");
   const [keyword, setKeyword] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const utils = trpc.useUtils();
+
+  const retryMutation = trpc.aiLog.retryDelivery.useMutation({
+    onSuccess: async (result) => {
+      await Promise.all([
+        utils.aiLog.list.invalidate(),
+        utils.aiLog.getStats.invalidate(),
+        utils.aiLog.getDetail.invalidate({ id: result.aiLogId }),
+      ]);
+      toast.success(result.sendStatus === "sent" ? `第 ${result.attemptNumber} 次发送成功` : `第 ${result.attemptNumber} 次发送仍失败`);
+    },
+    onError: (error) => toast.error(`重试失败：${error.message}`),
+  });
 
   // Build query params
   const queryParams = useMemo(() => ({
@@ -298,6 +318,9 @@ export default function AiBrainLog() {
                           {log.isHandover && (
                             <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">转人工</Badge>
                           )}
+                          {Number(log.retryCount) > 0 && (
+                            <Badge variant="outline" className="text-xs border-amber-300 text-amber-700">重试 {log.retryCount}</Badge>
+                          )}
                           {log.errorCode && (
                             <Badge variant="outline" className="text-xs border-red-300 text-red-700">
                               {log.errorCode}
@@ -307,7 +330,7 @@ export default function AiBrainLog() {
                             {log.customerName ?? "未知客户"}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {new Date(log.createdAt).toLocaleString("zh-CN")}
+                            {formatAuditDate(log.createdAt)}
                           </span>
                           <span className="text-xs text-muted-foreground">
                             {log.processingTimeMs}ms
@@ -425,11 +448,34 @@ export default function AiBrainLog() {
                                   <span className="text-xs text-red-500">{att.errorMessage}</span>
                                 )}
                                 <span className="text-xs text-muted-foreground ml-auto">
-                                  {new Date(att.createdAt).toLocaleString("zh-CN")}
+                                  {formatAuditDate(att.attemptedAt ?? att.createdAt)}
                                 </span>
                               </div>
                             ))}
                           </div>
+                        </div>
+                      )}
+
+                      {detail.sendStatus === "failed" && detail.sourceType === "private_chat" && detail.platform === "messenger" && detail.aiReply && (
+                        <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                          <div>
+                            <p className="text-sm font-medium text-amber-900">可重新发送此 AI 回复</p>
+                            <p className="text-xs text-amber-800">将建立新的发送尝试，不会创建第二条 AI 处理日志。</p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={retryMutation.isPending}
+                            onClick={() => {
+                              if (window.confirm("确定重试发送这条 AI 回复吗？该操作会向客户的 Messenger 发送消息。")) {
+                                retryMutation.mutate({ id: detail.id });
+                              }
+                            }}
+                          >
+                            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${retryMutation.isPending ? "animate-spin" : ""}`} />
+                            {retryMutation.isPending ? "重试中" : "重试发送"}
+                          </Button>
                         </div>
                       )}
 

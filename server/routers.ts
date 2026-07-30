@@ -8,6 +8,7 @@ import * as db from "./db";
 import { eq } from "drizzle-orm";
 import { variants } from "../drizzle/schema";
 import { sendTelegramJoinFlow, sendMembershipFlow, getUserProfile, sendTextMessage } from "./messenger";
+import { retryFailedAiLogDelivery } from "./aiLogRetry";
 import * as parceldaily from "./parceldaily";
 import * as parcelking from "./parcelking";
 import { ParcelKingError } from "./parcelking";
@@ -4852,6 +4853,19 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         const detail = await db.getAiLogDetail(input.id);
         if (!detail) throw new TRPCError({ code: "NOT_FOUND", message: "日志不存在" });
         return detail;
+      }),
+
+    retryDelivery: adminProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        try {
+          return await retryFailedAiLogDelivery(input.id);
+        } catch (error: any) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error?.message ?? "AI日志重试失败",
+          });
+        }
       }),
 
     getStats: adminProcedure

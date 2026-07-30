@@ -7862,6 +7862,16 @@ export async function getOrCreateConversation(customerId: number | null, platfor
   return created[0];
 }
 
+/** Get an existing chat conversation by primary key for AI delivery retries. */
+export async function getChatConversationById(conversationId: number): Promise<any | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [conversation] = await db.select().from(chatConversations)
+    .where(eq(chatConversations.id, conversationId))
+    .limit(1);
+  return conversation ?? null;
+}
+
 // List conversations with filters
 export async function listChatConversations(filters: {
   platform?: string;
@@ -7992,6 +8002,23 @@ export async function addChatMessage(data: {
   
   broadcastChange("chat" as any);
   return { success: true, messageId };
+}
+
+/** Synchronize a stored AI chat message after a delivery retry completes. */
+export async function updateChatMessageDelivery(
+  messageId: number,
+  updates: { status: "sent" | "failed"; platformMessageId?: string | null; errorMessage?: string | null },
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(chatMessages)
+    .set({
+      status: updates.status,
+      platformMessageId: updates.platformMessageId,
+      errorMessage: updates.errorMessage,
+    })
+    .where(eq(chatMessages.id, messageId));
+  broadcastChange("chat" as any);
 }
 
 // Mark conversation messages as read (reset unread count)
@@ -8777,11 +8804,11 @@ export async function updateAiLogAfterSend(
   aiLogId: number,
   updates: {
     sendStatus: string;
-    platformMessageId?: string;
-    aiReplyMessageId?: number;
-    errorCode?: string;
-    errorStage?: string;
-    errorMessage?: string;
+    platformMessageId?: string | null;
+    aiReplyMessageId?: number | null;
+    errorCode?: string | null;
+    errorStage?: string | null;
+    errorMessage?: string | null;
     retryCount?: number;
     lastRetryAt?: Date;
     processingTimeMs?: number;

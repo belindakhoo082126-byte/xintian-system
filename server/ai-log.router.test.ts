@@ -21,6 +21,10 @@ vi.mock("./_core/llm", () => ({
   invokeLLM: vi.fn(),
 }));
 
+vi.mock("./aiLogRetry", () => ({
+  retryFailedAiLogDelivery: vi.fn(),
+}));
+
 import { appRouter } from "./routers";
 import * as dbMock from "./db";
 

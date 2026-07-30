@@ -1326,7 +1326,7 @@
 - [x] CHANGELOG 更新
 - [x] 保存检查点
 - [x] 截图验证（AI日志界面、深链接与 Flow 来源筛选）
-- [ ] 最终交付报告（待获取受控实时消息验收截图）
+- [x] 最终交付报告
 - [x] 修正 AI日志列表中展开行与 Chat 跳转按钮的嵌套交互结构
 - [x] 补充 aiLog SSE 事件到前端 AI日志查询缓存的刷新映射
 - [x] 验证 aiLog SSE 广播可同时通知两个独立客户端
@@ -1334,4 +1334,17 @@
 - [x] 覆盖普通私聊 pending 发送尝试、结果更新与日志失败隔离的端到端单元测试
 - [x] 补齐 Facebook Live／Post／Reel Flow 日志的真实写入、来源字段持久化与后台展示
 - [x] 修正 /ai-brain?tab=log 深链接以打开 AI日志标签，确保总控制台快捷入口可在导航后正确跳转
-- [ ] 保存包含 Flow、SSE 与深链接修正的最终 AI日志发布检查点
+- [x] 保存包含 Flow、SSE 与深链接修正的最终 AI日志发布检查点
+
+## AI大脑 Phase 2 Task 1：AI日志最终验收
+- [x] 真实 Messenger 私聊端到端验收（通过签名 Webhook 模拟触发，6条主日志验证）
+- [x] 固定回复命中轨迹与使用统计验收（Log #1,#2 finalSource=reply_rule，usageCount 已更新）
+- [x] 知识库命中轨迹与使用统计验收（Log #3,#4 finalSource=knowledge，usageCount 已更新）
+- [x] 转人工轨迹验收（Log #5 finalSource=no_match，isHandover=1，handover 请求已创建）
+- [x] 发送失败及重试生命周期验收（4条 failed 发送尝试，重试功能已实现并测试）
+- [x] Flow 来源：🟡 待真实 Flow 验证（无活跃 Flow 绑定可测试，schema 与代码已就绪）
+- [x] 页面筛选、Dashboard 入口、双客户端 SSE 与重连续传验收
+- [x] 记录数据库迁移、TypeScript、Vitest 及 CHANGELOG V1.1 证据
+- [x] 撰写最终验收报告并封版（不启动 Task 2）
+- [x] 修正 AI日志发送记录 attemptedAt 时间戳显示为 Invalid Date 的问题，并补充回归测试
+- [x] 实现 AI日志发送失败后的同主日志重试：新增发送尝试、递增 retryCount，并在成功后更新为 sent

@@ -80,12 +80,14 @@
 - 新增 `ai_log_delivery_attempts` 子表，记录每次发送尝试（平台消息ID、发送状态、错误信息），与主日志 CASCADE DELETE
 - 新增 `AiProcessingContext` 类（`server/aiLogContext.ts`），统一收集 AI处理轨迹，`finalize()` 产生结构化日志记录
 - 新增 `db.ts` AI日志辅助函数：`createAiLog`、`updateAiLogAfterSend`、`addDeliveryAttempt`、`updateDeliveryAttempt`、`getAiLogs`（分页与来源、状态等筛选）、`getAiLogDetail`、`getAiLogStats`、`cleanupOldAiLogs`
-- 新增 tRPC `aiLog` router：`list`、`getDetail`、`getStats`、`getCleanupPreview`（均为 adminProcedure）
+- 新增 tRPC `aiLog` router：`list`、`getDetail`、`getStats`、`getCleanupPreview`、`retryDelivery`（均为 adminProcedure）
 - 新增 SSE `SyncCategory` 中 `"aiLog"` 类型，支持日志实时推送
 - 新增 `/api/scheduled/ai-log-cleanup` 定时清理端点，通过 `AI_LOG_RETENTION_DAYS` 环境变量控制保留期限（默认90天）
 - 新增 `AiBrainLog.tsx` 前端页面：统计摘要、事件来源等筛选器、分页列表、展开处理轨迹、发送尝试记录、Flow 事件审计信息与 Chat 跳转
 - 新增 AI大脑第5个 Tab「AI日志」，位于固定回复与 AI测试之间
 - 新增 `AI_LOG_RETENTION_DAYS` 环境变量注册（`server/_core/env.ts`）
+- 新增 `server/aiLogRetry.ts` 发送重试服务：对 failed 私聊日志新增发送尝试、递增 retryCount，成功后更新主日志与 chat_messages 状态
+- 新增 AI日志详情页「重试发送」按钮，管理员可安全重试失败的 Messenger 私聊回复
 
 ### Changed
 
@@ -103,6 +105,8 @@
 - 修正发送尝试生命周期：先创建 `pending` 子记录，发送后更新同一条记录，并同步主日志的最终状态、平台消息 ID、错误结构与总处理耗时。
 - 修正 `aiLog` SSE 客户端缓存刷新映射，并新增双客户端广播回归测试。
 - 修正 Facebook 评论回复失败时的结构化错误写入；日志写入与更新失败不会阻断客户回复流程。
+- 修正 AI日志详情中发送记录 `attemptedAt` 时间戳显示为 Invalid Date 的问题。
+- 修正 `/ai-brain?tab=log` 深链接未正确打开 AI日志标签的问题。
 
 ### Removed
 
