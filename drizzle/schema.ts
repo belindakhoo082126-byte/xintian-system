@@ -2214,3 +2214,135 @@ export const aiTestRuns = mysqlTable("ai_test_runs", {
 
 export type AiTestRun = typeof aiTestRuns.$inferSelect;
 export type InsertAiTestRun = typeof aiTestRuns.$inferInsert;
+
+// ============================================================================
+// AI Regression Test — Regression Sets, Questions, Runs, Run Details
+// ============================================================================
+
+export const regressionSets = mysqlTable("regression_sets", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 100 }),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  createdBy: varchar("createdBy", { length: 255 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type RegressionSet = typeof regressionSets.$inferSelect;
+export type InsertRegressionSet = typeof regressionSets.$inferInsert;
+
+export const regressionQuestions = mysqlTable("regression_questions", {
+  id: int("id").autoincrement().primaryKey(),
+  setId: int("setId").notNull(),
+  question: text("question").notNull(),
+  expectedSource: varchar("expectedSource", { length: 50 }),
+  expectedKeywords: text("expectedKeywords"),
+  expectedReply: text("expectedReply"),
+  category: varchar("category", { length: 100 }),
+  priority: mysqlEnum("priority", ["low", "medium", "high"]).default("medium").notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type RegressionQuestion = typeof regressionQuestions.$inferSelect;
+export type InsertRegressionQuestion = typeof regressionQuestions.$inferInsert;
+
+export const regressionRuns = mysqlTable("regression_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  setId: int("setId").notNull(),
+  versionId: int("versionId"),
+  isBaseline: boolean("isBaseline").default(false).notNull(),
+  baselineRunId: int("baselineRunId"),
+  status: mysqlEnum("status", ["running", "completed", "failed"]).default("running").notNull(),
+  totalQuestions: int("totalQuestions").default(0).notNull(),
+  passedCount: int("passedCount").default(0).notNull(),
+  failedCount: int("failedCount").default(0).notNull(),
+  accuracy: decimal("accuracy", { precision: 5, scale: 2 }).default("0").notNull(),
+  avgProcessingMs: int("avgProcessingMs").default(0).notNull(),
+  // Difference summary
+  newHits: int("newHits").default(0).notNull(),
+  lostHits: int("lostHits").default(0).notNull(),
+  sourceChanged: int("sourceChanged").default(0).notNull(),
+  replyChanged: int("replyChanged").default(0).notNull(),
+  noMatchIncreased: int("noMatchIncreased").default(0).notNull(),
+  noMatchDecreased: int("noMatchDecreased").default(0).notNull(),
+  handoverIncreased: int("handoverIncreased").default(0).notNull(),
+  llmIncreased: int("llmIncreased").default(0).notNull(),
+  llmDecreased: int("llmDecreased").default(0).notNull(),
+  // Metadata
+  runBy: varchar("runBy", { length: 255 }).notNull(),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+});
+
+export type RegressionRun = typeof regressionRuns.$inferSelect;
+export type InsertRegressionRun = typeof regressionRuns.$inferInsert;
+
+export const regressionRunDetails = mysqlTable("regression_run_details", {
+  id: int("id").autoincrement().primaryKey(),
+  runId: int("runId").notNull(),
+  questionId: int("questionId").notNull(),
+  question: text("question").notNull(),
+  // Current result
+  finalSource: varchar("finalSource", { length: 50 }).notNull(),
+  matchedRuleId: int("matchedRuleId"),
+  matchedKnowledgeId: int("matchedKnowledgeId"),
+  matchedProductId: int("matchedProductId"),
+  aiReply: text("aiReply"),
+  shouldHandover: boolean("shouldHandover").default(false).notNull(),
+  processingTimeMs: int("processingTimeMs"),
+  llmCalled: boolean("llmCalled").default(false).notNull(),
+  processingSteps: json("processingSteps"),
+  // Baseline comparison
+  baselineSource: varchar("baselineSource", { length: 50 }),
+  baselineReply: text("baselineReply"),
+  baselineRuleId: int("baselineRuleId"),
+  baselineKnowledgeId: int("baselineKnowledgeId"),
+  baselineProductId: int("baselineProductId"),
+  baselineIsHandover: boolean("baselineIsHandover"),
+  // Pass/Fail
+  isPassed: boolean("isPassed").default(false).notNull(),
+  differences: json("differences"),
+  suggestion: text("suggestion"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type RegressionRunDetail = typeof regressionRunDetails.$inferSelect;
+export type InsertRegressionRunDetail = typeof regressionRunDetails.$inferInsert;
+
+// ============================================================================
+// AI Version — Version management for AI configuration snapshots
+// ============================================================================
+
+export const aiVersions = mysqlTable("ai_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  versionNumber: varchar("versionNumber", { length: 50 }).notNull(),
+  label: varchar("label", { length: 255 }),
+  description: text("description"),
+  // Snapshot of AI configuration at publish time
+  knowledgeCount: int("knowledgeCount").default(0).notNull(),
+  ruleCount: int("ruleCount").default(0).notNull(),
+  personaId: int("personaId"),
+  personaSnapshot: json("personaSnapshot"),
+  // Snapshot of all knowledge and rules (for rollback)
+  knowledgeSnapshot: json("knowledgeSnapshot"),
+  rulesSnapshot: json("rulesSnapshot"),
+  // Regression result at publish time
+  regressionRunId: int("regressionRunId"),
+  regressionAccuracy: decimal("regressionAccuracy", { precision: 5, scale: 2 }),
+  // Status
+  status: mysqlEnum("status", ["draft", "published", "archived"]).default("draft").notNull(),
+  publishedBy: varchar("publishedBy", { length: 255 }),
+  publishedAt: timestamp("publishedAt"),
+  createdBy: varchar("createdBy", { length: 255 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AiVersion = typeof aiVersions.$inferSelect;
+export type InsertAiVersion = typeof aiVersions.$inferInsert;

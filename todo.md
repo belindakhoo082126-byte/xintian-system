@@ -1418,3 +1418,27 @@
 - [x] Vitest 全部通过
 - [x] CHANGELOG 更新
 - [x] 保存检查点
+
+## AI大脑 Phase 2 Task 5：Regression Test（AI回归测试）+ AI Version（AI版本管理）
+
+- [x] schema.ts: regression_sets 表（问题集管理）
+- [x] schema.ts: regression_questions 表（问题条目）
+- [x] schema.ts: regression_runs 表（回归执行记录）
+- [x] schema.ts: regression_run_details 表（逐题结果）
+- [x] schema.ts: ai_versions 表（AI版本发布与回滚）
+- [x] 数据库迁移 SQL 生成并执行
+- [x] db.ts: Regression Set CRUD 查询函数
+- [x] db.ts: Regression Run 保存与查询函数
+- [x] db.ts: AI Version CRUD 查询函数
+- [x] aiTestRunner.ts: runRegression 批量执行引擎
+- [x] aiTestRunner.ts: compareWithBaseline Baseline 对比逻辑
+- [x] routers.ts: aiRegression router（Set CRUD + Run + Report）
+- [x] routers.ts: aiVersion router（Publish + Rollback + List）
+- [x] AiBrainRegression.tsx: 回归测试前端页面
+- [x] AiBrain.tsx: 添加 regression Tab
+- [x] AiBrainLog.tsx: Replay 对话框添加「加入 Regression Set」按钮
+- [x] 单元测试：ai-regression.test.ts
+- [x] TypeScript 零错误
+- [x] Vitest 全部通过
+- [x] CHANGELOG 更新
+- [x] 保存检查点

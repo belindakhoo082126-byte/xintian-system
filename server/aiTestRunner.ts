@@ -681,3 +681,238 @@ export async function replayFromAiLog(
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Regression Test — Batch Execution Engine
+// ---------------------------------------------------------------------------
+
+export interface RegressionResult {
+  runId: number;
+  totalQuestions: number;
+  passedCount: number;
+  failedCount: number;
+  accuracy: number;
+  avgProcessingMs: number;
+  // Difference summary
+  newHits: number;
+  lostHits: number;
+  sourceChanged: number;
+  replyChanged: number;
+  noMatchIncreased: number;
+  noMatchDecreased: number;
+  handoverIncreased: number;
+  llmIncreased: number;
+  llmDecreased: number;
+  failedDetails: RegressionFailedDetail[];
+}
+
+export interface RegressionFailedDetail {
+  questionId: number;
+  question: string;
+  finalSource: string;
+  baselineSource?: string;
+  aiReply: string | null;
+  baselineReply?: string | null;
+  differences: any;
+  suggestion: string;
+}
+
+export interface RegressionQuestionInput {
+  id: number;
+  question: string;
+  expectedSource?: string;
+  expectedKeywords?: string;
+  expectedReply?: string;
+}
+
+export interface BaselineResult {
+  questionId: number;
+  finalSource: string;
+  aiReply: string | null;
+  matchedRuleId?: number;
+  matchedKnowledgeId?: number;
+  matchedProductId?: number;
+  shouldHandover: boolean;
+}
+
+/**
+ * Run a regression test: execute all questions through the formal AI engine in Dry Run mode.
+ * Compare results against baseline (if available).
+ * All results are saved to regression_runs and regression_run_details tables.
+ */
+export async function runRegression(
+  questions: RegressionQuestionInput[],
+  baseline: BaselineResult[] | null,
+  runId: number,
+  saveDetailFn: (data: any) => Promise<void>,
+): Promise<RegressionResult> {
+  let passedCount = 0;
+  let failedCount = 0;
+  let totalProcessingMs = 0;
+  let newHits = 0;
+  let lostHits = 0;
+  let sourceChanged = 0;
+  let replyChanged = 0;
+  let noMatchIncreased = 0;
+  let noMatchDecreased = 0;
+  let handoverIncreased = 0;
+  let llmIncreased = 0;
+  let llmDecreased = 0;
+  const failedDetails: RegressionFailedDetail[] = [];
+
+  const baselineMap = new Map<number, BaselineResult>();
+  if (baseline) {
+    for (const b of baseline) {
+      baselineMap.set(b.questionId, b);
+    }
+  }
+
+  for (const q of questions) {
+    const config: TestRunConfig = {
+      platform: "messenger",
+      language: "auto",
+      aiEnabled: true,
+      handoverStatus: "none",
+      enableLLM: true,
+      isMember: false,
+      hasOrder: false,
+      testMessage: q.question,
+    };
+
+    let result: TestRunResult;
+    try {
+      result = await runTest(config, "regression");
+    } catch (err: any) {
+      result = {
+        finalSource: "error",
+        aiReply: null,
+        shouldHandover: false,
+        processingTimeMs: 0,
+        processingSteps: [{ step: "regression_error", error: err?.message || String(err) }],
+        llmCalled: false,
+        llmTimedOut: false,
+        personaSnapshot: null,
+      };
+    }
+
+    totalProcessingMs += result.processingTimeMs;
+
+    // Compare with baseline
+    const baselineEntry = baselineMap.get(q.id);
+    const hasBaseline = !!baselineEntry;
+
+    const diffs: any = {};
+    let isPassed = true;
+    const suggestions: string[] = [];
+
+    // Check expected source if specified
+    if (q.expectedSource && q.expectedSource !== result.finalSource) {
+      isPassed = false;
+      suggestions.push(`期望来源 ${q.expectedSource}，实际 ${result.finalSource}`);
+    }
+
+    // Compare with baseline
+    if (hasBaseline) {
+      const bl = baselineEntry!;
+      if (bl.finalSource !== result.finalSource) {
+        diffs.sourceChanged = { from: bl.finalSource, to: result.finalSource };
+        sourceChanged++;
+        isPassed = false;
+        suggestions.push(`来源从 ${bl.finalSource} 变为 ${result.finalSource}`);
+      }
+      if (bl.aiReply !== result.aiReply) {
+        diffs.replyChanged = { from: bl.aiReply, to: result.aiReply };
+        replyChanged++;
+      }
+      if (bl.shouldHandover !== result.shouldHandover) {
+        diffs.handoverChanged = { from: bl.shouldHandover, to: result.shouldHandover };
+        if (result.shouldHandover && !bl.shouldHandover) handoverIncreased++;
+      }
+      if (bl.finalSource === "no_match" && result.finalSource !== "no_match") {
+        noMatchDecreased++;
+        newHits++;
+      }
+      if (bl.finalSource !== "no_match" && result.finalSource === "no_match") {
+        noMatchIncreased++;
+        lostHits++;
+        isPassed = false;
+        suggestions.push("此前可命中，现在无法匹配");
+      }
+      if (!bl.shouldHandover && result.shouldHandover) {
+        handoverIncreased++;
+      }
+      if (result.llmCalled && !baselineMap.has(q.id)) {
+        llmIncreased++;
+      }
+    } else {
+      // No baseline — first run, treat as baseline
+      if (result.finalSource === "no_match") {
+        isPassed = false;
+        suggestions.push("无法匹配任何来源");
+      }
+    }
+
+    if (isPassed) {
+      passedCount++;
+    } else {
+      failedCount++;
+      failedDetails.push({
+        questionId: q.id,
+        question: q.question,
+        finalSource: result.finalSource,
+        baselineSource: baselineEntry?.finalSource,
+        aiReply: result.aiReply,
+        baselineReply: baselineEntry?.aiReply,
+        differences: diffs,
+        suggestion: suggestions.join("；") || "未通过预期验证",
+      });
+    }
+
+    // Save detail
+    await saveDetailFn({
+      runId,
+      questionId: q.id,
+      question: q.question,
+      finalSource: result.finalSource,
+      matchedRuleId: result.matchedRuleId || null,
+      matchedKnowledgeId: result.matchedKnowledgeId || null,
+      matchedProductId: result.matchedProductId || null,
+      aiReply: result.aiReply,
+      shouldHandover: result.shouldHandover,
+      processingTimeMs: result.processingTimeMs,
+      llmCalled: result.llmCalled,
+      processingSteps: result.processingSteps,
+      baselineSource: baselineEntry?.finalSource || null,
+      baselineReply: baselineEntry?.aiReply || null,
+      baselineRuleId: baselineEntry?.matchedRuleId || null,
+      baselineKnowledgeId: baselineEntry?.matchedKnowledgeId || null,
+      baselineProductId: baselineEntry?.matchedProductId || null,
+      baselineIsHandover: baselineEntry?.shouldHandover || false,
+      isPassed,
+      differences: diffs,
+      suggestion: suggestions.join("；") || null,
+    });
+  }
+
+  const accuracy = questions.length > 0 ? (passedCount / questions.length) * 100 : 0;
+  const avgProcessingMs = questions.length > 0 ? Math.round(totalProcessingMs / questions.length) : 0;
+
+  return {
+    runId,
+    totalQuestions: questions.length,
+    passedCount,
+    failedCount,
+    accuracy,
+    avgProcessingMs,
+    newHits,
+    lostHits,
+    sourceChanged,
+    replyChanged,
+    noMatchIncreased,
+    noMatchDecreased,
+    handoverIncreased,
+    llmIncreased,
+    llmDecreased,
+    failedDetails,
+  };
+}

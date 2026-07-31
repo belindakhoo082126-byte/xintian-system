@@ -255,6 +255,50 @@
 
 ---
 
+## V1.5 — AI 回归测试（Regression Test）+ AI 版本管理（AI Version）
+
+**发布日期：** 2026-07-31  
+**开发阶段：** AI大脑 Phase 2 Task 5
+
+### Added
+
+- **回归测试（Regression Test）**：企业级 AI 回归测试系统，修改 Knowledge/Reply Rule/Persona/Prompt 后自动验证整个 AI 是否退步
+  - **Regression Set 管理**：创建多个问题集（如 Shipping、Order、Member、Plant 等），每个问题可设置期望来源、期望关键词、优先级
+  - **批量执行引擎**：逐题通过正式 `processChatAI` 执行 Dry Run，全程 SideEffectPolicy 零副作用
+  - **Baseline 对比**：首次运行保存为 Baseline，后续运行自动与 Baseline 对比，检测来源变化、回复变化、No Match 增减、转人工增减、LLM 调用变化
+  - **Regression Report**：Overall Score（通过/失败/准确率/平均耗时）、Difference Summary、Failed Questions 列表（含建议）
+  - **执行历史**：保存每次回归测试记录，含运行时间、操作者、通过率、准确率
+- **AI 版本管理（AI Version）**：AI 配置版本发布与回滚
+  - **版本创建**：自动快照当前 Knowledge 和 Reply Rules（含完整数据用于回滚）
+  - **版本发布**：发布新版本时自动归档旧版本
+  - **版本回滚**：从快照恢复 Knowledge 和 Reply Rules 到指定版本状态
+  - **回归关联**：版本可关联回归测试结果和准确率
+- 前端页面 `AiBrainRegression.tsx`：回归测试与版本管理双 Tab 界面
+- 后端 `runRegression` 函数（`aiTestRunner.ts`）：批量执行、Baseline 对比、差异检测
+- 数据库表：`regression_sets`、`regression_questions`、`regression_runs`、`regression_run_details`、`ai_versions`
+- tRPC 路由：`aiRegression`（Set CRUD + Run + Report）、`aiVersion`（Create + Publish + Rollback + List）
+- 单元测试 17 项（`ai-regression.test.ts`）：覆盖 db 函数导出、差异计算逻辑、路由结构验证
+
+### Changed
+
+- `AiBrain.tsx`：新增「回归测试」Tab（第 8 个 Tab），使用 GitBranch 图标
+- `db.ts`：新增 regression 和 aiVersion 相关 import 和 20+ 个数据库查询函数
+- `routers.ts`：新增 `aiRegression` 和 `aiVersion` 两个 router
+
+### Database
+
+- 新增 5 张表：`regression_sets`、`regression_questions`、`regression_runs`、`regression_run_details`、`ai_versions`
+- 迁移文件：`drizzle/migrations/0009_regression_and_versions.sql`
+
+### Notes
+
+- 回归测试使用正式 AI 引擎执行 Dry Run，不发送消息、不建立对话、不写入 `ai_logs`
+- 回归结果保存在 `regression_runs` 和 `regression_run_details` 表，与正式数据物理隔离
+- AI 版本快照包含完整 Knowledge 和 Reply Rules 数据，支持精确回滚
+- Baseline 对比逻辑：首次运行为 Baseline，后续运行与 Baseline 对比（非与上一轮对比）
+
+---
+
 ## 后续记录模板
 
 ```md

@@ -9,7 +9,8 @@ import { eq } from "drizzle-orm";
 import { variants } from "../drizzle/schema";
 import { sendTelegramJoinFlow, sendMembershipFlow, getUserProfile, sendTextMessage } from "./messenger";
 import { retryFailedAiLogDelivery } from "./aiLogRetry";
-import { runTest, rerunTest } from "./aiTestRunner";
+import { runTest, rerunTest, runRegression } from "./aiTestRunner";
+import type { RegressionQuestionInput, BaselineResult } from "./aiTestRunner";
 import * as parceldaily from "./parceldaily";
 import * as parcelking from "./parcelking";
 import { ParcelKingError } from "./parcelking";
@@ -5078,6 +5079,275 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         if (!draftId) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         return { draftId };
       }),
+  }),
+
+  // ==========================================================================
+  // AI Regression Test Router
+  // ==========================================================================
+  aiRegression: router({
+    // --- Regression Set Management ---
+    listSets: adminProcedure.query(async () => {
+      return db.getRegressionSets();
+    }),
+
+    getSet: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const set = await db.getRegressionSetById(input.id);
+      if (!set) throw new TRPCError({ code: "NOT_FOUND" });
+      const questions = await db.getRegressionQuestions(input.id);
+      return { ...set, questions };
+    }),
+
+    createSet: adminProcedure.input(z.object({
+      name: z.string().min(1),
+      description: z.string().optional(),
+      category: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      return db.createRegressionSet({
+        name: input.name,
+        description: input.description,
+        category: input.category,
+        createdBy: ctx.user?.name || ctx.user?.openId || "admin",
+      });
+    }),
+
+    updateSet: adminProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      category: z.string().optional(),
+      isEnabled: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateRegressionSet(id, data);
+      return { success: true };
+    }),
+
+    deleteSet: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.deleteRegressionSet(input.id);
+      return { success: true };
+    }),
+
+    // --- Question Management ---
+    listQuestions: adminProcedure.input(z.object({ setId: z.number() })).query(async ({ input }) => {
+      return db.getRegressionQuestions(input.setId);
+    }),
+
+    addQuestion: adminProcedure.input(z.object({
+      setId: z.number(),
+      question: z.string().min(1),
+      expectedSource: z.string().optional(),
+      expectedKeywords: z.string().optional(),
+      expectedReply: z.string().optional(),
+      category: z.string().optional(),
+      priority: z.enum(["low", "medium", "high"]).optional(),
+    })).mutation(async ({ input }) => {
+      return db.addRegressionQuestion(input);
+    }),
+
+    updateQuestion: adminProcedure.input(z.object({
+      id: z.number(),
+      question: z.string().optional(),
+      expectedSource: z.string().optional(),
+      expectedKeywords: z.string().optional(),
+      expectedReply: z.string().optional(),
+      category: z.string().optional(),
+      priority: z.enum(["low", "medium", "high"]).optional(),
+      isEnabled: z.boolean().optional(),
+      sortOrder: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateRegressionQuestion(id, data);
+      return { success: true };
+    }),
+
+    deleteQuestion: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.deleteRegressionQuestion(input.id);
+      return { success: true };
+    }),
+
+    // --- Run Regression ---
+    run: adminProcedure.input(z.object({
+      setId: z.number(),
+      versionId: z.number().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const set = await db.getRegressionSetById(input.setId);
+      if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "Regression set not found" });
+
+      const questions = await db.getRegressionQuestions(input.setId);
+      const enabledQuestions = questions.filter(q => q.isEnabled);
+      if (enabledQuestions.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No enabled questions in this set" });
+      }
+
+      // Check for existing baseline
+      const runs = await db.getRegressionRuns(input.setId);
+      const baselineRun = runs.find(r => r.isBaseline);
+      const isBaseline = !baselineRun;
+
+      // Create run record
+      const run = await db.createRegressionRun({
+        setId: input.setId,
+        versionId: input.versionId,
+        isBaseline,
+        baselineRunId: baselineRun?.id,
+        totalQuestions: enabledQuestions.length,
+        runBy: ctx.user?.name || ctx.user?.openId || "admin",
+      });
+
+      // Get baseline details if available
+      let baseline: BaselineResult[] | null = null;
+      if (baselineRun) {
+        const baselineDetails = await db.getRegressionRunDetails(baselineRun.id);
+        baseline = baselineDetails.map(d => ({
+          questionId: d.questionId,
+          finalSource: d.finalSource,
+          aiReply: d.aiReply,
+          matchedRuleId: d.matchedRuleId || undefined,
+          matchedKnowledgeId: d.matchedKnowledgeId || undefined,
+          matchedProductId: d.matchedProductId || undefined,
+          shouldHandover: d.shouldHandover,
+        }));
+      }
+
+      // Prepare question inputs
+      const questionInputs: RegressionQuestionInput[] = enabledQuestions.map(q => ({
+        id: q.id,
+        question: q.question,
+        expectedSource: q.expectedSource || undefined,
+        expectedKeywords: q.expectedKeywords || undefined,
+        expectedReply: q.expectedReply || undefined,
+      }));
+
+      // Execute regression
+      const result = await runRegression(questionInputs, baseline, run.id, async (detail) => {
+        await db.createRegressionRunDetail(detail);
+      });
+
+      // Update run record with results
+      await db.updateRegressionRun(run.id, {
+        status: "completed",
+        passedCount: result.passedCount,
+        failedCount: result.failedCount,
+        accuracy: result.accuracy.toFixed(2),
+        avgProcessingMs: result.avgProcessingMs,
+        newHits: result.newHits,
+        lostHits: result.lostHits,
+        sourceChanged: result.sourceChanged,
+        replyChanged: result.replyChanged,
+        noMatchIncreased: result.noMatchIncreased,
+        noMatchDecreased: result.noMatchDecreased,
+        handoverIncreased: result.handoverIncreased,
+        llmIncreased: result.llmIncreased,
+        llmDecreased: result.llmDecreased,
+        completedAt: new Date(),
+      });
+
+      return result;
+    }),
+
+    // --- Run History & Details ---
+    listRuns: adminProcedure.input(z.object({ setId: z.number() })).query(async ({ input }) => {
+      return db.getRegressionRuns(input.setId);
+    }),
+
+    getRunDetails: adminProcedure.input(z.object({ runId: z.number() })).query(async ({ input }) => {
+      const [run, details] = await Promise.all([
+        db.getRegressionRunById(input.runId),
+        db.getRegressionRunDetails(input.runId),
+      ]);
+      if (!run) throw new TRPCError({ code: "NOT_FOUND" });
+      return { run, details };
+    }),
+  }),
+
+  // ==========================================================================
+  // AI Version Router
+  // ==========================================================================
+  aiVersion: router({
+    list: adminProcedure.query(async () => {
+      return db.getAiVersions();
+    }),
+
+    get: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const ver = await db.getAiVersionById(input.id);
+      if (!ver) throw new TRPCError({ code: "NOT_FOUND" });
+      return ver;
+    }),
+
+    getLatestPublished: adminProcedure.query(async () => {
+      return db.getLatestPublishedVersion();
+    }),
+
+    create: adminProcedure.input(z.object({
+      versionNumber: z.string().min(1),
+      label: z.string().optional(),
+      description: z.string().optional(),
+      regressionRunId: z.number().optional(),
+      regressionAccuracy: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      // Snapshot current knowledge and rules counts
+      const { aiKnowledge, replyRules } = await import("../drizzle/schema");
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const knowledgeRows = await database.select().from(aiKnowledge).where(eq(aiKnowledge.isEnabled, true));
+      const ruleRows = await database.select().from(replyRules).where(eq(replyRules.isEnabled, true));
+
+      // Get all knowledge and rules for snapshot (for rollback)
+      const allKnowledge = await database.select().from(aiKnowledge);
+      const allRules = await database.select().from(replyRules);
+
+      return db.createAiVersion({
+        versionNumber: input.versionNumber,
+        label: input.label,
+        description: input.description,
+        knowledgeCount: knowledgeRows.length,
+        ruleCount: ruleRows.length,
+        knowledgeSnapshot: allKnowledge,
+        rulesSnapshot: allRules,
+        regressionRunId: input.regressionRunId,
+        regressionAccuracy: input.regressionAccuracy,
+        createdBy: ctx.user?.name || ctx.user?.openId || "admin",
+      });
+    }),
+
+    publish: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+      await db.publishAiVersion(input.id, ctx.user?.name || ctx.user?.openId || "admin");
+      return { success: true };
+    }),
+
+    rollback: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+      const version = await db.getAiVersionById(input.id);
+      if (!version) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!version.knowledgeSnapshot || !version.rulesSnapshot) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This version does not contain rollback snapshots" });
+      }
+
+      // Restore knowledge and rules from snapshot
+      const { aiKnowledge, replyRules } = await import("../drizzle/schema");
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      // Clear and restore knowledge
+      await database.delete(aiKnowledge);
+      if (Array.isArray(version.knowledgeSnapshot)) {
+        for (const k of version.knowledgeSnapshot) {
+          await database.insert(aiKnowledge).values(k);
+        }
+      }
+
+      // Clear and restore rules
+      await database.delete(replyRules);
+      if (Array.isArray(version.rulesSnapshot)) {
+        for (const r of version.rulesSnapshot) {
+          await database.insert(replyRules).values(r);
+        }
+      }
+
+      // Mark as published
+      await db.rollbackToVersion(input.id, ctx.user?.name || ctx.user?.openId || "admin");
+      return { success: true };
+    }),
   }),
 });
 

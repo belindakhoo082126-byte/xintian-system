@@ -39,6 +39,8 @@ import {
   aiLogs, aiLogDeliveryAttempts,
   // V4.2 imports - AI Brain Phase 2 Task 2 (AI Test Center)
   aiTestRuns, aiKnowledge,
+  // V4.3 imports - AI Brain Phase 2 Task 5 (Regression Test & AI Version)
+  regressionSets, regressionQuestions, regressionRuns, regressionRunDetails, aiVersions,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -9784,4 +9786,290 @@ export async function getAiLogForReplay(logId: number): Promise<{
   .limit(1);
 
   return log || null;
+}
+
+// ============================================================================
+// AI Regression Test — Database Helpers
+// ============================================================================
+
+// --- Regression Sets ---
+
+export async function getRegressionSets() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(regressionSets).orderBy(desc(regressionSets.createdAt));
+}
+
+export async function getRegressionSetById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [set] = await db.select().from(regressionSets).where(eq(regressionSets.id, id)).limit(1);
+  return set || null;
+}
+
+export async function createRegressionSet(data: { name: string; description?: string; category?: string; createdBy: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(regressionSets).values({
+    name: data.name,
+    description: data.description || null,
+    category: data.category || null,
+    createdBy: data.createdBy,
+  });
+  const id = (result as any).insertId;
+  const [set] = await db.select().from(regressionSets).where(eq(regressionSets.id, id)).limit(1);
+  return set;
+}
+
+export async function updateRegressionSet(id: number, data: { name?: string; description?: string; category?: string; isEnabled?: boolean }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(regressionSets).set(data).where(eq(regressionSets.id, id));
+}
+
+export async function deleteRegressionSet(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Delete questions first
+  await db.delete(regressionQuestions).where(eq(regressionQuestions.setId, id));
+  await db.delete(regressionSets).where(eq(regressionSets.id, id));
+}
+
+// --- Regression Questions ---
+
+export async function getRegressionQuestions(setId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(regressionQuestions)
+    .where(eq(regressionQuestions.setId, setId))
+    .orderBy(asc(regressionQuestions.sortOrder));
+}
+
+export async function addRegressionQuestion(data: {
+  setId: number;
+  question: string;
+  expectedSource?: string;
+  expectedKeywords?: string;
+  expectedReply?: string;
+  category?: string;
+  priority?: "low" | "medium" | "high";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [q] = await db.insert(regressionQuestions).values({
+    setId: data.setId,
+    question: data.question,
+    expectedSource: data.expectedSource || null,
+    expectedKeywords: data.expectedKeywords || null,
+    expectedReply: data.expectedReply || null,
+    category: data.category || null,
+    priority: data.priority || "medium",
+  });
+  return q;
+}
+
+export async function updateRegressionQuestion(id: number, data: Partial<{
+  question: string;
+  expectedSource: string;
+  expectedKeywords: string;
+  expectedReply: string;
+  category: string;
+  priority: "low" | "medium" | "high";
+  isEnabled: boolean;
+  sortOrder: number;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(regressionQuestions).set(data).where(eq(regressionQuestions.id, id));
+}
+
+export async function deleteRegressionQuestion(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(regressionQuestions).where(eq(regressionQuestions.id, id));
+}
+
+// --- Regression Runs ---
+
+export async function getRegressionRuns(setId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(regressionRuns)
+    .where(eq(regressionRuns.setId, setId))
+    .orderBy(desc(regressionRuns.createdAt));
+}
+
+export async function getRegressionRunById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [run] = await db.select().from(regressionRuns).where(eq(regressionRuns.id, id)).limit(1);
+  return run || null;
+}
+
+export async function createRegressionRun(data: {
+  setId: number;
+  versionId?: number;
+  isBaseline: boolean;
+  baselineRunId?: number;
+  totalQuestions: number;
+  runBy: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(regressionRuns).values({
+    setId: data.setId,
+    versionId: data.versionId || null,
+    isBaseline: data.isBaseline,
+    baselineRunId: data.baselineRunId || null,
+    totalQuestions: data.totalQuestions,
+    runBy: data.runBy,
+  });
+  const id = (result as any).insertId;
+  const [run] = await db.select().from(regressionRuns).where(eq(regressionRuns.id, id)).limit(1);
+  return run;
+}
+
+export async function updateRegressionRun(id: number, data: Partial<{
+  status: "running" | "completed" | "failed";
+  passedCount: number;
+  failedCount: number;
+  accuracy: string;
+  avgProcessingMs: number;
+  newHits: number;
+  lostHits: number;
+  sourceChanged: number;
+  replyChanged: number;
+  noMatchIncreased: number;
+  noMatchDecreased: number;
+  handoverIncreased: number;
+  llmIncreased: number;
+  llmDecreased: number;
+  errorMessage: string;
+  completedAt: Date;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(regressionRuns).set(data).where(eq(regressionRuns.id, id));
+}
+
+// --- Regression Run Details ---
+
+export async function createRegressionRunDetail(data: {
+  runId: number;
+  questionId: number;
+  question: string;
+  finalSource: string;
+  matchedRuleId?: number;
+  matchedKnowledgeId?: number;
+  matchedProductId?: number;
+  aiReply?: string;
+  shouldHandover: boolean;
+  processingTimeMs: number;
+  llmCalled: boolean;
+  processingSteps: any;
+  baselineSource?: string;
+  baselineReply?: string;
+  baselineRuleId?: number;
+  baselineKnowledgeId?: number;
+  baselineProductId?: number;
+  baselineIsHandover?: boolean;
+  isPassed: boolean;
+  differences: any;
+  suggestion?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(regressionRunDetails).values(data);
+}
+
+export async function getRegressionRunDetails(runId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(regressionRunDetails)
+    .where(eq(regressionRunDetails.runId, runId))
+    .orderBy(asc(regressionRunDetails.id));
+}
+
+// --- AI Versions ---
+
+export async function getAiVersions() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiVersions).orderBy(desc(aiVersions.createdAt));
+}
+
+export async function getAiVersionById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [ver] = await db.select().from(aiVersions).where(eq(aiVersions.id, id)).limit(1);
+  return ver || null;
+}
+
+export async function getLatestPublishedVersion() {
+  const db = await getDb();
+  if (!db) return null;
+  const [ver] = await db.select().from(aiVersions)
+    .where(eq(aiVersions.status, "published"))
+    .orderBy(desc(aiVersions.publishedAt))
+    .limit(1);
+  return ver || null;
+}
+
+export async function createAiVersion(data: {
+  versionNumber: string;
+  label?: string;
+  description?: string;
+  knowledgeCount: number;
+  ruleCount: number;
+  personaId?: number;
+  personaSnapshot?: any;
+  knowledgeSnapshot?: any;
+  rulesSnapshot?: any;
+  regressionRunId?: number;
+  regressionAccuracy?: string;
+  createdBy: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [ver] = await db.insert(aiVersions).values({
+    versionNumber: data.versionNumber,
+    label: data.label || null,
+    description: data.description || null,
+    knowledgeCount: data.knowledgeCount,
+    ruleCount: data.ruleCount,
+    personaId: data.personaId || null,
+    personaSnapshot: data.personaSnapshot || null,
+    knowledgeSnapshot: data.knowledgeSnapshot || null,
+    rulesSnapshot: data.rulesSnapshot || null,
+    regressionRunId: data.regressionRunId || null,
+    regressionAccuracy: data.regressionAccuracy || null,
+    createdBy: data.createdBy,
+  });
+  return ver;
+}
+
+export async function publishAiVersion(id: number, publishedBy: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Archive all currently published versions
+  await db.update(aiVersions).set({ status: "archived" }).where(eq(aiVersions.status, "published"));
+  // Publish the new version
+  await db.update(aiVersions).set({
+    status: "published",
+    publishedBy,
+    publishedAt: new Date(),
+  }).where(eq(aiVersions.id, id));
+}
+
+export async function rollbackToVersion(id: number, rolledBackBy: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Archive all currently published versions
+  await db.update(aiVersions).set({ status: "archived" }).where(eq(aiVersions.status, "published"));
+  // Publish the target version again
+  await db.update(aiVersions).set({
+    status: "published",
+    publishedBy: rolledBackBy,
+    publishedAt: new Date(),
+  }).where(eq(aiVersions.id, id));
 }

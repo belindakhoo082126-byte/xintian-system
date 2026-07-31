@@ -1,6 +1,6 @@
 import { useState, lazy, Suspense } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Brain, LayoutDashboard, User, BookOpen, MessageSquare, FlaskConical, BarChart3, FileText } from "lucide-react";
+import { Brain, LayoutDashboard, User, BookOpen, MessageSquare, FlaskConical, BarChart3, FileText, GitBranch } from "lucide-react";
 import AiBrainDashboard from "./AiBrainDashboard";
 import AiBrainPersona from "./AiBrainPersona";
 
@@ -10,8 +10,9 @@ const ReplyRules = lazy(() => import("./ReplyRules"));
 const AiBrainLog = lazy(() => import("./AiBrainLog"));
 const AiBrainTest = lazy(() => import("./AiBrainTest"));
 const AiBrainAnalysis = lazy(() => import("./AiBrainAnalysis"));
+const AiBrainRegression = lazy(() => import("./AiBrainRegression"));
 
-const AI_BRAIN_TABS = new Set(["dashboard", "persona", "knowledge", "reply-rules", "log", "test", "analytics"]);
+const AI_BRAIN_TABS = new Set(["dashboard", "persona", "knowledge", "reply-rules", "log", "test", "analytics", "regression"]);
 
 export function getAiBrainInitialTab(search: string): string {
   const requestedTab = new URLSearchParams(search).get("tab");
@@ -36,7 +37,7 @@ export default function AiBrain() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 md:grid-cols-7 mb-6 h-auto">
+        <TabsList className="grid w-full grid-cols-3 md:grid-cols-8 mb-6 h-auto">
           <TabsTrigger value="dashboard" className="flex flex-col items-center gap-1 py-2">
             <LayoutDashboard className="w-4 h-4" />
             <span className="text-xs">总控制台</span>
@@ -64,6 +65,10 @@ export default function AiBrain() {
           <TabsTrigger value="analytics" className="flex flex-col items-center gap-1 py-2">
             <BarChart3 className="w-4 h-4" />
             <span className="text-xs">AI 分析</span>
+          </TabsTrigger>
+          <TabsTrigger value="regression" className="flex flex-col items-center gap-1 py-2">
+            <GitBranch className="w-4 h-4" />
+            <span className="text-xs">回归测试</span>
           </TabsTrigger>
         </TabsList>
 
@@ -102,6 +107,12 @@ export default function AiBrain() {
         <TabsContent value="analytics">
           <Suspense fallback={<div className="py-12 text-center text-muted-foreground">加载中...</div>}>
             <AiBrainAnalysis />
+          </Suspense>
+        </TabsContent>
+
+        <TabsContent value="regression">
+          <Suspense fallback={<div className="py-12 text-center text-muted-foreground">加载中...</div>}>
+            <AiBrainRegression />
           </Suspense>
         </TabsContent>
       </Tabs>
