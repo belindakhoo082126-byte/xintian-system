@@ -11,6 +11,22 @@ import { sendTelegramJoinFlow, sendMembershipFlow, getUserProfile, sendTextMessa
 import { retryFailedAiLogDelivery } from "./aiLogRetry";
 import { runTest, rerunTest, runRegression } from "./aiTestRunner";
 import type { RegressionQuestionInput, BaselineResult } from "./aiTestRunner";
+import {
+  classifyIntent,
+  createDraftOrder,
+  approveDraftOrder,
+  rejectDraftOrder,
+  createOrderChangeRequest,
+  approveOrderChangeRequest,
+  rejectOrderChangeRequest,
+  generateHandoverSummary,
+  queryOrderShipping,
+  reserveInventory,
+  releaseInventory,
+  convertInventory,
+} from "./businessAi";
+import { draftOrders, orderChangeRequests, reservationRecords } from "../drizzle/schema";
+import { and, desc, eq as eqB } from "drizzle-orm";
 import * as parceldaily from "./parceldaily";
 import * as parcelking from "./parcelking";
 import { ParcelKingError } from "./parcelking";
@@ -5347,6 +5363,125 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
       // Mark as published
       await db.rollbackToVersion(input.id, ctx.user?.name || ctx.user?.openId || "admin");
       return { success: true };
+    }),
+  }),
+
+  // ==========================================================================
+  // Draft Orders Router (Business AI)
+  // ==========================================================================
+  draftOrders: router({
+    list: adminProcedure.input(z.object({
+      status: z.enum(["waiting_approval", "approved", "rejected", "expired", "all"]).default("all"),
+      limit: z.number().default(50),
+      offset: z.number().default(0),
+    })).query(async ({ input }) => {
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      let query = database.select().from(draftOrders).orderBy(desc(draftOrders.createdAt)).limit(input.limit).offset(input.offset);
+      if (input.status !== "all") {
+        query = database.select().from(draftOrders).where(eqB(draftOrders.status, input.status)).orderBy(desc(draftOrders.createdAt)).limit(input.limit).offset(input.offset) as any;
+      }
+      return await query;
+    }),
+
+    get: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      const [draft] = await database.select().from(draftOrders).where(eqB(draftOrders.id, input.id)).limit(1);
+      if (!draft) throw new TRPCError({ code: "NOT_FOUND" });
+      return draft;
+    }),
+
+    approve: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+      try {
+        const result = await approveDraftOrder(input.id, ctx.user?.name || ctx.user?.openId || "admin");
+        return { success: true, ...result };
+      } catch (e: any) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: e.message });
+      }
+    }),
+
+    reject: adminProcedure.input(z.object({ id: z.number(), reason: z.string().optional() })).mutation(async ({ input, ctx }) => {
+      try {
+        await rejectDraftOrder(input.id, ctx.user?.name || ctx.user?.openId || "admin", input.reason);
+        return { success: true };
+      } catch (e: any) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: e.message });
+      }
+    }),
+  }),
+
+  // ==========================================================================
+  // Order Change Requests Router (Business AI)
+  // ==========================================================================
+  orderChangeRequests: router({
+    list: adminProcedure.input(z.object({
+      status: z.enum(["waiting_approval", "approved", "rejected", "expired", "all"]).default("all"),
+      limit: z.number().default(50),
+      offset: z.number().default(0),
+    })).query(async ({ input }) => {
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      let query = database.select().from(orderChangeRequests).orderBy(desc(orderChangeRequests.createdAt)).limit(input.limit).offset(input.offset);
+      if (input.status !== "all") {
+        query = database.select().from(orderChangeRequests).where(eqB(orderChangeRequests.status, input.status)).orderBy(desc(orderChangeRequests.createdAt)).limit(input.limit).offset(input.offset) as any;
+      }
+      return await query;
+    }),
+
+    get: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      const [req] = await database.select().from(orderChangeRequests).where(eqB(orderChangeRequests.id, input.id)).limit(1);
+      if (!req) throw new TRPCError({ code: "NOT_FOUND" });
+      return req;
+    }),
+
+    approve: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+      try {
+        await approveOrderChangeRequest(input.id, ctx.user?.name || ctx.user?.openId || "admin");
+        return { success: true };
+      } catch (e: any) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: e.message });
+      }
+    }),
+
+    reject: adminProcedure.input(z.object({ id: z.number(), reason: z.string().optional() })).mutation(async ({ input, ctx }) => {
+      try {
+        await rejectOrderChangeRequest(input.id, ctx.user?.name || ctx.user?.openId || "admin", input.reason);
+        return { success: true };
+      } catch (e: any) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: e.message });
+      }
+    }),
+  }),
+
+  // ==========================================================================
+  // Reservation Records Router (Business AI)
+  // ==========================================================================
+  reservations: router({
+    list: adminProcedure.input(z.object({
+      status: z.enum(["active", "converted", "released", "all"]).default("all"),
+      productId: z.number().optional(),
+      limit: z.number().default(50),
+      offset: z.number().default(0),
+    })).query(async ({ input }) => {
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      let query = database.select().from(reservationRecords).orderBy(desc(reservationRecords.createdAt)).limit(input.limit).offset(input.offset);
+      if (input.status !== "all") {
+        query = database.select().from(reservationRecords).where(eqB(reservationRecords.status, input.status)).orderBy(desc(reservationRecords.createdAt)).limit(input.limit).offset(input.offset) as any;
+      }
+      return await query;
+    }),
+  }),
+
+  // ==========================================================================
+  // AI Logistics Router (Business AI)
+  // ==========================================================================
+  aiLogistics: router({
+    queryOrder: adminProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+      return await queryOrderShipping(input.orderId);
     }),
   }),
 });

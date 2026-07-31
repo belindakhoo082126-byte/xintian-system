@@ -118,6 +118,8 @@ export const products = mysqlTable("products", {
   // Inventory
   weightKg: decimal("weightKg", { precision: 8, scale: 2 }),
   stockQuantity: int("stockQuantity").default(0),
+  // Business AI: Reserved quantity (for draft orders and change requests)
+  reservedQuantity: int("reservedQuantity").default(0).notNull(),
   isPreOrder: boolean("isPreOrder").default(false),
 
   // Sales strategy
@@ -2346,3 +2348,112 @@ export const aiVersions = mysqlTable("ai_versions", {
 
 export type AiVersion = typeof aiVersions.$inferSelect;
 export type InsertAiVersion = typeof aiVersions.$inferInsert;
+
+// ===========================================================================
+// Business AI Integration — Draft Orders, Order Change Requests, Reservations
+// ===========================================================================
+
+/**
+ * Draft Orders — AI detects purchase intent, creates draft (not official order).
+ * Staff approves → official order created, inventory converted.
+ * Staff rejects → inventory released, draft closed.
+ */
+export const draftOrders = mysqlTable("draft_orders", {
+  id: int("id").autoincrement().primaryKey(),
+  draftNumber: varchar("draftNumber", { length: 50 }).notNull().unique(),
+  customerId: int("customerId"),
+  customerName: varchar("customerName", { length: 255 }),
+  messengerId: varchar("messengerId", { length: 255 }),
+  platform: mysqlEnum("platform", ["messenger", "whatsapp", "other"]).default("messenger").notNull(),
+  // AI context
+  aiLogId: int("aiLogId"),
+  detectedIntent: varchar("detectedIntent", { length: 100 }),
+  originalMessage: text("originalMessage"),
+  // Items snapshot (JSON array of { productId, productName, quantity, price, variantId? })
+  items: json("items").notNull(),
+  totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }).default("0").notNull(),
+  // Status: waiting_approval / approved / rejected / expired
+  status: mysqlEnum("status", ["waiting_approval", "approved", "rejected", "expired"]).default("waiting_approval").notNull(),
+  // Approval tracking
+  approvedBy: varchar("approvedBy", { length: 255 }),
+  approvedAt: timestamp("approvedAt"),
+  rejectedBy: varchar("rejectedBy", { length: 255 }),
+  rejectedAt: timestamp("rejectedAt"),
+  rejectReason: text("rejectReason"),
+  // Link to official order once approved
+  officialOrderId: int("officialOrderId"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DraftOrder = typeof draftOrders.$inferSelect;
+export type InsertDraftOrder = typeof draftOrders.$inferInsert;
+
+/**
+ * Order Change Requests — AI detects modification request for existing order.
+ * AI never modifies official order directly; creates change request for staff approval.
+ */
+export const orderChangeRequests = mysqlTable("order_change_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  requestNumber: varchar("requestNumber", { length: 50 }).notNull().unique(),
+  orderId: int("orderId").notNull(),
+  orderNumber: varchar("orderNumber", { length: 50 }).notNull(),
+  customerId: int("customerId"),
+  customerName: varchar("customerName", { length: 255 }),
+  // Change type
+  requestType: mysqlEnum("requestType", [
+    "add_item", "remove_item", "change_quantity",
+    "change_address", "change_phone", "cancel_item", "other",
+  ]).notNull(),
+  // Change details (JSON — structure depends on requestType)
+  changeDetails: json("changeDetails").notNull(),
+  // AI context
+  aiLogId: int("aiLogId"),
+  detectedIntent: varchar("detectedIntent", { length: 100 }),
+  originalMessage: text("originalMessage"),
+  // Status: waiting_approval / approved / rejected / expired
+  status: mysqlEnum("status", ["waiting_approval", "approved", "rejected", "expired"]).default("waiting_approval").notNull(),
+  // Approval tracking
+  approvedBy: varchar("approvedBy", { length: 255 }),
+  approvedAt: timestamp("approvedAt"),
+  rejectedBy: varchar("rejectedBy", { length: 255 }),
+  rejectedAt: timestamp("rejectedAt"),
+  rejectReason: text("rejectReason"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OrderChangeRequest = typeof orderChangeRequests.$inferSelect;
+export type InsertOrderChangeRequest = typeof orderChangeRequests.$inferInsert;
+
+/**
+ * Reservation Records — every inventory reservation is traceable.
+ * Source: draft_order / change_request
+ * When approved → converted to official allocation (status = converted).
+ * When rejected → released (status = released).
+ */
+export const reservationRecords = mysqlTable("reservation_records", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  productName: varchar("productName", { length: 200 }),
+  variantId: int("variantId"),
+  quantity: int("quantity").notNull(),
+  // Source: draft_order / change_request
+  source: mysqlEnum("source", ["draft_order", "change_request"]).notNull(),
+  // Reference number (draft order number or change request number)
+  referenceNumber: varchar("referenceNumber", { length: 50 }).notNull(),
+  referenceId: int("referenceId").notNull(),
+  // Status: active / converted / released
+  status: mysqlEnum("status", ["active", "converted", "released"]).default("active").notNull(),
+  // Conversion tracking
+  convertedAt: timestamp("convertedAt"),
+  releasedAt: timestamp("releasedAt"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ReservationRecord = typeof reservationRecords.$inferSelect;
+export type InsertReservationRecord = typeof reservationRecords.$inferInsert;

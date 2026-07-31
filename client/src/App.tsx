@@ -18,6 +18,8 @@ import Customers from "./pages/Customers";
 import Flows from "@/pages/Flows";
 import Chat from "@/pages/Chat";
 import AiHandover from "@/pages/AiHandover";
+import DraftOrders from "@/pages/DraftOrders";
+import OrderChangeRequests from "@/pages/OrderChangeRequests";
 import ReplyRules from "@/pages/ReplyRules";
 import AiKnowledge from "@/pages/AiKnowledge";
 import AiBrain from "@/pages/AiBrain";
@@ -93,6 +95,8 @@ function DashboardRoutes() {
       <Route path={"/customers"} component={Customers} />
       <Route path={"/chat"} component={Chat} />
       <Route path={"/ai-handover"} component={AiHandover} />
+      <Route path={"/draft-orders"} component={DraftOrders} />
+      <Route path={"/order-change-requests"} component={OrderChangeRequests} />
       <Route path={"/ai-brain"} component={AiBrain} />
       <Route path={"/reply-rules"} component={ReplyRules} />
       <Route path={"/ai-knowledge"} component={AiKnowledge} />

@@ -1442,3 +1442,44 @@
 - [x] Vitest 全部通过
 - [x] CHANGELOG 更新
 - [x] 保存检查点
+
+## Business AI Integration（业务 AI 集成）
+
+### 数据库层
+- [x] schema.ts: draft_orders 表（草稿订单）
+- [x] schema.ts: draft_order_items 表（草稿订单商品）
+- [x] schema.ts: order_change_requests 表（订单变更请求）
+- [x] schema.ts: reservation_records 表（库存预留记录）
+- [x] schema.ts: products 表新增 reservedQuantity 字段
+- [x] schema.ts: ai_logs 表新增 detectedIntent 字段
+- [x] schema.ts: ai_handover_requests 表新增结构化摘要字段
+- [x] 数据库迁移 SQL 编写并执行
+
+### 后端核心
+- [x] aiEngines.ts: AI Case Classification 引擎（意图分类）
+- [x] aiEngines.ts: processChatAI 集成意图分类与业务路由
+- [x] businessAi.ts: Draft Order 创建逻辑
+- [x] businessAi.ts: Order Change Request 创建逻辑
+- [x] businessAi.ts: Inventory Reservation 逻辑（预留/释放/转换）
+- [x] businessAi.ts: AI Logistics 查询逻辑
+- [x] businessAi.ts: AI Handover Summary 生成逻辑
+
+### 后端路由
+- [x] routers.ts: draftOrders 路由（CRUD + 审批/拒绝）
+- [x] routers.ts: orderChangeRequests 路由（CRUD + 审批/拒绝）
+- [x] routers.ts: reservations 路由（查询预留记录）
+- [x] routers.ts: aiLogistics 路由（物流查询）
+
+### 前端页面
+- [x] DashboardLayout: Order Management 菜单重构（Orders / Order Requests / Returns）
+- [x] DraftOrders.tsx: 草稿订单列表与审批界面
+- [x] OrderChangeRequests.tsx: 订单变更请求列表与审批界面
+- [x] ProductsV2.tsx: 库存三级显示（On Hand / Reserved / Available）
+- [x] Dashboard.tsx: AI Tasks 模块（转人工/草稿订单/变更请求/今日统计）
+
+### 测试与验收
+- [x] 单元测试：business-ai.test.ts
+- [x] TypeScript 零错误
+- [x] Vitest 全部通过
+- [x] CHANGELOG 更新
+- [x] 保存检查点

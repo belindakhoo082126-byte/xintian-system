@@ -305,7 +305,58 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
+        {/* AI Tasks Module — Business AI Integration */}
+        <Card className="border-purple-200 bg-purple-50/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Bot className="h-5 w-5 text-purple-600" />
+              {lang === "zh" ? "AI 任务队列" : "AI Tasks Queue"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Link href="/draft-orders?status=waiting_approval" className="block">
+                <div className="rounded-lg border border-purple-200 bg-white p-3 hover:shadow-md transition-shadow cursor-pointer">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">{lang === "zh" ? "草稿订单待审批" : "Draft Orders"}</span>
+                    <ShoppingCart className="h-4 w-4 text-purple-500" />
+                  </div>
+                  <p className="text-2xl font-bold text-purple-700 mt-1">
+                    <DraftOrderCount />
+                  </p>
+                </div>
+              </Link>
+              <Link href="/order-change-requests?status=waiting_approval" className="block">
+                <div className="rounded-lg border border-purple-200 bg-white p-3 hover:shadow-md transition-shadow cursor-pointer">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">{lang === "zh" ? "变更请求待审批" : "Change Requests"}</span>
+                    <FileText className="h-4 w-4 text-purple-500" />
+                  </div>
+                  <p className="text-2xl font-bold text-purple-700 mt-1">
+                    <ChangeRequestCount />
+                  </p>
+                </div>
+              </Link>
+            </div>
+            <Link href="/ai-brain?tab=analytics" className="block">
+              <Button variant="outline" size="sm" className="w-full">
+                {lang === "zh" ? "AI 分析中心" : "AI Analysis"} <ArrowRight className="h-3 w-3 ml-1" />
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+
       </div>
     </div>
   );
+}
+
+function DraftOrderCount() {
+  const { data } = trpc.draftOrders.list.useQuery({ status: "waiting_approval", limit: 1, offset: 0 });
+  return <span>{data?.length || 0}</span>;
+}
+
+function ChangeRequestCount() {
+  const { data } = trpc.orderChangeRequests.list.useQuery({ status: "waiting_approval", limit: 1, offset: 0 });
+  return <span>{data?.length || 0}</span>;
 }

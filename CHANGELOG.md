@@ -331,3 +331,69 @@
 
 - 
 ```
+
+## V1.6 — Business AI Integration（业务 AI 编排层）
+
+**发布日期：** 2026-07-31  
+**开发阶段：** AI大脑 Phase 2 — Business AI Integration
+
+### Added
+
+- **AI Case Classification（意图分类引擎）**：AI 自动识别客户消息意图并路由到对应工作流
+  - 支持 12 种意图分类：shipment_tracking、parcel_issue、complaint、refund、order_modification、order_status、new_order、membership、product_inquiry、human_assistance、cooperation、other
+  - 支持中文、英文、马来文多语言关键词匹配
+  - 强制转人工场景：包裹损坏、投诉、退款、合作 — 自动转人工且 AI 不回复
+- **Draft Orders（草稿订单）**：AI 识别购买意图后自动创建草稿订单
+  - 自动预留库存（reservedQuantity）
+  - 等待 Admin 审批后转为正式订单
+  - 拒绝时自动释放预留库存
+  - 24 小时未审批自动过期
+- **Order Change Requests（订单变更请求）**：AI 识别修改订单意图后创建变更请求
+  - 支持添加商品、移除商品、修改数量、修改地址、修改电话、取消商品、其他
+  - Admin 审批后自动执行变更并更新订单
+  - 拒绝时自动释放预留库存
+- **Inventory Reservation System（库存预留系统）**：三级库存管理
+  - On Hand（库存总量）→ Reserved（预留）→ Available（可用）
+  - 每次预留可追溯（reservation_records 表）
+  - 支持草稿订单和变更请求两种预留来源
+  - 预留可转换为正式扣减或释放
+- **AI Handover Summary（转人工摘要）**：转人工时自动生成结构化摘要
+  - 包含客户信息、转人工原因、AI 已执行操作、建议下一步
+  - 优先级分类：high（包裹/投诉/退款）、medium（订单相关）、normal（一般咨询）
+- **AI Logistics（物流查询）**：AI 自动查询订单物流状态
+- **Dashboard AI Tasks Module**：Dashboard 新增 AI 任务队列模块
+  - 显示待审批草稿订单数量和变更请求数量
+  - 一键跳转到对应审批页面
+  - 快捷入口 AI 分析中心
+- 前端页面 `DraftOrders.tsx`：草稿订单列表、详情、审批/拒绝
+- 前端页面 `OrderChangeRequests.tsx`：变更请求列表、详情、审批/拒绝
+- 后端 `businessAi.ts`：核心业务 AI 编排层（意图分类、草稿订单、变更请求、库存预留、转人工摘要）
+- 数据库表：`draft_orders`、`order_change_requests`、`reservation_records`
+- tRPC 路由：`draftOrders`（List + Get + Approve + Reject）、`orderChangeRequests`（同上）、`reservations`（List）、`aiLogistics`（QueryOrder）
+- 单元测试 23 项（`business-ai.test.ts`）：覆盖意图分类、转人工摘要、路由结构验证
+
+### Changed
+
+- `DashboardLayout.tsx`：订单管理菜单新增「草稿订单」和「订单变更请求」两个子菜单项
+- `App.tsx`：新增 `/draft-orders` 和 `/order-change-requests` 路由
+- `Dashboard.tsx`：新增 AI 任务队列模块（紫色主题卡片）
+- `products` 表：新增 `reservedQuantity` 字段（int, default 0, not null）
+- `ai_logs` 表：新增 `detectedIntent` 和 `handoverSummary` 字段
+- `ai_handover_requests` 表：新增 `priority` 和 `suggestedNextAction` 字段
+
+### Database
+
+- 新增 3 张表：`draft_orders`、`order_change_requests`、`reservation_records`
+- `products` 表新增 `reservedQuantity` 字段
+- `ai_logs` 表新增 `detectedIntent`、`handoverSummary` 字段
+- `ai_handover_requests` 表新增 `priority`、`suggestedNextAction` 字段
+- 迁移文件：`drizzle/migrations/0010_business_ai.sql`
+
+### Notes
+
+- 所有 AI 业务操作（草稿订单、变更请求）均需 Admin 人工审批，AI 不直接创建正式订单或修改订单
+- 库存预留系统确保不会超卖：Available = On Hand - Reserved
+- 强制转人工场景（包裹损坏、投诉、退款、合作）AI 不回复客户，直接转人工
+- 草稿订单和变更请求 24 小时未审批自动过期，预留库存自动释放
+
+---

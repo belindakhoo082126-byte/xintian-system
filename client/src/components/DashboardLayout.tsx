@@ -34,7 +34,7 @@ import {
   MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook,
   FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings,
   Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle, AlertCircle,
-  ClipboardList, Video, Plane, ChevronDown, Bot, Home, FileText, Receipt, Brain,
+  ClipboardList, Video, Plane, ChevronDown, Bot, Home, FileText, Receipt, Brain, FileEdit,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -79,6 +79,8 @@ const menuStructure: MenuEntry[] = [
       { icon: Plane, label: { zh: "中国代购订单", en: "Import Orders" }, path: "/orders/import" },
       { icon: Crown, label: { zh: "会员订单", en: "Membership Orders" }, path: "/membership" },
       { icon: Search, label: { zh: "订单查询", en: "Order Search" }, path: "/orders/search" },
+      { icon: FileEdit, label: { zh: "草稿订单", en: "Draft Orders" }, path: "/draft-orders" },
+      { icon: FileEdit, label: { zh: "订单变更请求", en: "Change Requests" }, path: "/order-change-requests" },
     ],
   },
 
