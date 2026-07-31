@@ -126,12 +126,12 @@ export default function Dashboard() {
         <div className="grid grid-cols-3 sm:grid-cols-9 gap-4">
           {workCards.map((card, i) => (
             <Link key={i} href={card.link}>
-              <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-xs font-medium text-muted-foreground">{card.title}</CardTitle>
-                  <card.icon className={`h-4 w-4 ${card.color}`} />
+              <Card className="h-[112px] flex flex-col hover:shadow-md transition-shadow cursor-pointer">
+                <CardHeader className="flex flex-row items-start justify-between pb-1 pt-3 px-3">
+                  <CardTitle className="text-xs font-medium text-muted-foreground leading-tight line-clamp-2 min-h-[2rem]">{card.title}</CardTitle>
+                  <card.icon className={`h-4 w-4 shrink-0 ${card.color}`} />
                 </CardHeader>
-                <CardContent>
+                <CardContent className="mt-auto px-3 pb-3">
                   <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
                 </CardContent>
               </Card>
