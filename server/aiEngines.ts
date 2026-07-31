@@ -19,6 +19,7 @@ import {
 } from "../drizzle/schema";
 import type { AiProcessingContext } from "./aiLogContext";
 import { classifyIntent, generateHandoverSummary } from "./businessAi";
+import { runProductAiRecommendation } from "./productAi";
 import type { CaseIntent, HandoverSummary } from "./businessAi";
 
 // Helper: increment usage count and update lastMatchedAt for a matched rule or knowledge entry
@@ -303,6 +304,9 @@ export interface ChatAIResult {
   handoverSummary?: any;
   draftOrderId?: number;
   changeRequestId?: number;
+  // Product AI Intelligence
+  productAiTags?: string[];
+  productAiRecommendations?: number[];
 }
 
 export async function processChatAI(
@@ -371,6 +375,31 @@ export async function processChatAI(
 
   // Step 2.7: Flow source check (private chat skips Flow Engine)
   if (logCtx) logCtx.addStep("flow_check", "Flow来源检查", "普通私聊，不进入Flow Engine", "skipped");
+
+  // Step 2.8: Product AI Recommendation (AI Tags based)
+  const tAi = Date.now();
+  const aiRecResult = await runProductAiRecommendation(ctx.text, {
+    enableLLM: true,
+    personaSnapshot: null, // will be fetched inside if needed
+    logContext: logCtx,
+  });
+  if (aiRecResult.matched) {
+    if (logCtx) {
+      logCtx.finalSource = "product_ai";
+      logCtx.matchedProductId = aiRecResult.recommendations[0]?.productId;
+      logCtx.aiReply = aiRecResult.reply;
+    }
+    return {
+      shouldReply: true,
+      reply: aiRecResult.reply,
+      source: "product_ai",
+      shouldHandover: false,
+      productId: aiRecResult.recommendations[0]?.productId,
+      detectedIntent: intent.intent,
+      productAiTags: aiRecResult.matchedTags,
+      productAiRecommendations: aiRecResult.recommendations.map(r => r.productId),
+    };
+  }
 
   // Step 3: Order keyword / Product keyword match
   const t0 = Date.now();

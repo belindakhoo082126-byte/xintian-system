@@ -433,3 +433,37 @@
 - 所有 `processChatAI` 返回结果均携带 `detectedIntent`，方便日志分析和统计
 
 ---
+
+## V1.8 — Product AI Intelligence（商品 AI 智能推荐升级）
+
+**发布日期：** 2026-08-01
+**开发阶段：** AI大脑 Phase 2 — Product AI Intelligence
+
+### Added
+
+- 新增 Product AI Tags（AI 标签）字段：商品管理页面新增 AI Tags 编辑器，支持自由输入、Enter 添加、快捷标签选择
+- 22+ 预设标签分类：场景（办公室/客厅/卧室/阳台）、用途（送礼/开幕/乔迁）、难度（新手/容易照顾/低维护）、环境（耐阴/耐旱/空气净化）、安全（宠物安全/儿童安全）、风水（招财）、类型（观叶/开花/大型/中型/小型）
+- 新增 AI Selling Points（AI 推荐卖点）字段：AI 回复时优先引用此内容，不会自行编造卖点
+- 新增 AI 商品推荐引擎（`server/productAi.ts`）：完整推荐流程（客户提问 → AI Tags 解析 → 商品匹配 → 属性筛选 → 库存检查 → LLM 润色）
+- LLM 仅负责整理语言和排版，不允许推荐数据库不存在的商品
+- 支持中英马来三语关键词解析
+- 集成到 `processChatAI` 管道（Step 2.8），位于 Flow 检查之后、商品关键词匹配之前
+- AI 测试中心轨迹支持：`TestRunResult` 新增 `productAiTags` 和 `productAiRecommendations` 字段
+- 21 项 Product AI 单元测试（`server/product-ai.test.ts`）
+
+### Changed
+
+- `productsV2` router 的 `create` 和 `update` 过程新增 `aiTags` 和 `aiSellingPoints` 可选输入
+- `ProductsV2.tsx` 表单新增 AI Tags 标签编辑器和 AI Selling Points 文本输入区域
+- `ChatAIResult` 接口新增 `productAiTags` 和 `productAiRecommendations` 字段
+
+### Database
+
+- `products` 表新增 `aiTags` (TEXT, nullable) 和 `aiSellingPoints` (TEXT, nullable) 两列
+
+### Notes
+
+- AI 标签参与商品推荐匹配，后续新增标签无需修改代码即可立即生效
+- AI Selling Points 不参与筛选，仅在 LLM 回复时引用
+- LLM 不负责决定推荐商品，仅负责润色回复
+- 商品推荐引擎位于正式 AI 管道的 Step 2.8，在现有商品关键词匹配之前执行

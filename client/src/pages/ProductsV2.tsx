@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Upload } from "lucide-react";
+import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Upload, Bot } from "lucide-react";
 
 const RAW_PRODUCT_TYPES = [
   { value: "physical", zh: "实体商品", en: "Physical Product" },
@@ -100,6 +100,9 @@ type ProductForm = {
   visibleTo: string[];
   specialPriceStartDate: string;
   specialPriceEndDate: string;
+  // V5: AI Tags & Selling Points
+  aiTags: string[];
+  aiSellingPoints: string;
 };
 
 const EMPTY_FORM: ProductForm = {
@@ -118,6 +121,7 @@ const EMPTY_FORM: ProductForm = {
   salesMode: "normal", preorderWaitDays: "", spotSaleEnabled: false, spotSaleQty: 0, linkedBatchId: "",
   wholesalePrice: "", agentPrice: "", moq: 0, visibleTo: ["retail", "member", "wholesale", "agent"],
   specialPriceStartDate: "", specialPriceEndDate: "",
+  aiTags: [], aiSellingPoints: "",
 };
 
 const RAW_STEPS = [
@@ -256,6 +260,8 @@ export default function ProductsV2() {
         visibleTo: (() => { try { return JSON.parse((p as any).visibleTo || '"[\"retail\",\"member\",\"wholesale\",\"agent\"]"'); } catch { return ["retail", "member", "wholesale", "agent"]; } })(),
         specialPriceStartDate: (p as any).specialPriceStartDate ? String((p as any).specialPriceStartDate).split("T")[0] : "",
         specialPriceEndDate: (p as any).specialPriceEndDate ? String((p as any).specialPriceEndDate).split("T")[0] : "",
+        aiTags: (() => { try { const t = JSON.parse((p as any).aiTags || "[]"); return Array.isArray(t) ? t : []; } catch { return []; } })(),
+        aiSellingPoints: (p as any).aiSellingPoints || "",
       });
       setVariants(p.variants || []);
       hydratedEditingIdRef.current = editingId;
@@ -418,6 +424,8 @@ export default function ProductsV2() {
       specialPriceStartDate: form.specialPriceStartDate || undefined,
       specialPriceEndDate: form.specialPriceEndDate || undefined,
       keywordChannels: JSON.stringify(form.keywordChannels),
+      aiTags: JSON.stringify(form.aiTags),
+      aiSellingPoints: form.aiSellingPoints || undefined,
     };
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...data });
@@ -1097,6 +1105,72 @@ export default function ProductsV2() {
                     <p className="text-xs text-muted-foreground">
                       {translate("提示：以上字段如不填写，商城不会显示对应区域。", "Note: Fields left empty will not be shown in the mall.")}
                     </p>
+
+                    {/* V5: AI Tags & Selling Points */}
+                    {isPhysical && (
+                      <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+                        <div className="flex items-center gap-2">
+                          <Bot className="h-4 w-4 text-primary" />
+                          <span className="text-sm font-medium">{translate("AI 智能推荐设置", "AI Recommendation Settings")}</span>
+                        </div>
+                        <div>
+                          <Label>{translate("AI Tags（AI 标签）", "AI Tags")}</Label>
+                          <p className="text-xs text-muted-foreground mb-2">{translate("用于 AI 商品推荐匹配。客户描述需求时，AI 会根据这些标签筛选商品。", "Used by AI to match products when customers describe their needs.")}</p>
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {form.aiTags.map((tag, idx) => (
+                              <span key={idx} className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+                                {tag}
+                                <button type="button" onClick={() => setForm({ ...form, aiTags: form.aiTags.filter((_, i) => i !== idx) })} className="text-primary/50 hover:text-primary">
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                          <div className="flex gap-2">
+                            <Input
+                              id="ai-tag-input"
+                              placeholder={translate("输入标签后按 Enter，如：办公室、耐阴、新手", "Type a tag and press Enter, e.g. office, low-light, beginner")}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  const input = e.target as HTMLInputElement;
+                                  const val = input.value.trim();
+                                  if (val && !form.aiTags.includes(val)) {
+                                    setForm({ ...form, aiTags: [...form.aiTags, val] });
+                                  }
+                                  input.value = "";
+                                }
+                              }}
+                            />
+                            <Button type="button" variant="outline" size="sm" onClick={() => {
+                              const input = document.getElementById("ai-tag-input") as HTMLInputElement;
+                              const val = input?.value?.trim();
+                              if (val && !form.aiTags.includes(val)) {
+                                setForm({ ...form, aiTags: [...form.aiTags, val] });
+                                input.value = "";
+                              }
+                            }}>{translate("添加", "Add")}</Button>
+                          </div>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {translate("常用：", "Quick: ")}{["办公室", "客厅", "卧室", "阳台", "送礼", "新手", "耐阴", "耐旱", "宠物安全", "空气净化", "大型植物", "小型植物"].map(t => (
+                              <button key={t} type="button" onClick={() => { if (!form.aiTags.includes(t)) setForm({ ...form, aiTags: [...form.aiTags, t] }); }} className="text-xs text-primary/60 hover:text-primary hover:underline">
+                                {t}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <Label>{translate("AI Selling Points（AI 推荐卖点）", "AI Selling Points")}</Label>
+                          <p className="text-xs text-muted-foreground mb-2">{translate("AI 回复时优先引用此内容，不会自行编造卖点。", "AI will quote this text in replies instead of inventing selling points.")}</p>
+                          <Textarea
+                            value={form.aiSellingPoints}
+                            onChange={(e) => setForm({ ...form, aiSellingPoints: e.target.value })}
+                            rows={2}
+                            placeholder={translate("如：非常适合新手、办公室热卖、最容易照顾、净化空气效果佳", "e.g. Perfect for beginners, office bestseller, easiest to care for, great air purifier")}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

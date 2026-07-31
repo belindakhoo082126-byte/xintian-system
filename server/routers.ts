@@ -411,6 +411,8 @@ export const appRouter = router({
         specialPriceStartDate: z.string().optional(),
         specialPriceEndDate: z.string().optional(),
         keywordChannels: z.string().optional(),
+        aiTags: z.string().optional(),
+        aiSellingPoints: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         // Check keyword conflict
@@ -480,6 +482,8 @@ export const appRouter = router({
         specialPriceStartDate: z.string().optional(),
         specialPriceEndDate: z.string().optional(),
         keywordChannels: z.string().optional(),
+        aiTags: z.string().optional(),
+        aiSellingPoints: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;

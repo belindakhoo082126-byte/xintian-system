@@ -162,6 +162,9 @@ export interface TestRunResult {
   llmOutputTokens?: number;
   // Persona snapshot
   personaSnapshot: any;
+  // Product AI Intelligence
+  productAiTags?: string[];
+  productAiRecommendations?: Array<{ productId: number; name: string; sellingPrice: string | null }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -467,6 +470,8 @@ export async function runTest(
     llmInputTokens,
     llmOutputTokens,
     personaSnapshot,
+    productAiTags: result.productAiTags,
+    productAiRecommendations: result.productAiRecommendations?.map(id => ({ productId: id, name: "", sellingPrice: null })),
   };
 
   // 9. Write to ai_test_runs (independent table)

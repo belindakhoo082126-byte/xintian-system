@@ -200,6 +200,11 @@ export const products = mysqlTable("products", {
   specialPriceStartDate: timestamp("specialPriceStartDate"),
   specialPriceEndDate: timestamp("specialPriceEndDate"),
 
+  // V5: AI Tags — for AI product recommendation matching (JSON array of strings)
+  aiTags: text("aiTags"), // JSON array, e.g. ["办公室","耐阴","新手","送礼"]
+  // V5: AI Selling Points — for AI reply enrichment (free text, not used for filtering)
+  aiSellingPoints: text("aiSellingPoints"),
+
   // Internal notes
   notes: text("notes"),
 
