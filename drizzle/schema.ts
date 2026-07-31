@@ -2135,6 +2135,9 @@ export const aiLogs = mysqlTable("ai_logs", {
   handoverReason: text("handoverReason"),
   // Performance
   processingTimeMs: int("processingTimeMs"),
+  // Business AI — intent classification and handover summary
+  detectedIntent: varchar("detectedIntent", { length: 100 }),
+  handoverSummary: text("handoverSummary"),
   // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

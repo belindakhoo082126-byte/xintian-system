@@ -8790,6 +8790,8 @@ export async function createAiLog(record: AiLogRecord): Promise<number | null> {
       isHandover: record.isHandover,
       handoverReason: record.handoverReason,
       processingTimeMs: record.processingTimeMs,
+      detectedIntent: (record as any).detectedIntent || null,
+      handoverSummary: (record as any).handoverSummary ? JSON.stringify((record as any).handoverSummary) : null,
     });
     const insertResult = result as any;
     const aiLogId = insertResult.insertId ?? null;

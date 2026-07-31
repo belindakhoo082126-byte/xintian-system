@@ -396,8 +396,9 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
       }
 
       if (result.shouldHandover) {
-        // AI could not match — create handover request for human staff
-        console.log("[Messenger] AI handover triggered for PSID:", psid, "Reason:", result.handoverReason);
+        // AI could not match or mandatory handover — create handover request for human staff
+        console.log("[Messenger] AI handover triggered for PSID:", psid, "Reason:", result.handoverReason, "Intent:", result.detectedIntent);
+        const handoverPriority = result.handoverSummary?.priority || "medium";
         try {
           await createHandoverRequest({
             conversationId: conversation.id,
@@ -406,14 +407,17 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
             platform: "messenger",
             platformId: psid,
             reason: result.handoverReason || "AI无法匹配客户消息",
-            priority: "medium",
+            priority: handoverPriority,
+            aiSummary: result.handoverSummary ? JSON.stringify(result.handoverSummary) : undefined,
           });
         } catch (err) {
           console.error("[Messenger] Failed to create handover request:", err);
         }
-        // Create AI log for handover
+        // Create AI log for handover (include detectedIntent and handoverSummary)
         try {
           logCtx.sendStatus = "not_sent";
+          if (result.detectedIntent) (logCtx as any).detectedIntent = result.detectedIntent;
+          if (result.handoverSummary) (logCtx as any).handoverSummary = result.handoverSummary;
           await createAiLog(logCtx.finalize());
         } catch (err) {
           console.error("[Messenger] Failed to create handover AI log:", err);

@@ -18,6 +18,8 @@ import {
   liveAiFlows,
 } from "../drizzle/schema";
 import type { AiProcessingContext } from "./aiLogContext";
+import { classifyIntent, generateHandoverSummary } from "./businessAi";
+import type { CaseIntent, HandoverSummary } from "./businessAi";
 
 // Helper: increment usage count and update lastMatchedAt for a matched rule or knowledge entry
 async function recordUsage(table: "replyRules" | "aiKnowledge", id: number): Promise<void> {
@@ -296,6 +298,11 @@ export interface ChatAIResult {
   ruleId?: number;
   knowledgeId?: number;
   productId?: number;
+  // Business AI Integration
+  detectedIntent?: string;
+  handoverSummary?: any;
+  draftOrderId?: number;
+  changeRequestId?: number;
 }
 
 export async function processChatAI(
@@ -317,6 +324,7 @@ export async function processChatAI(
       reply: null,
       source: "ai_disabled",
       shouldHandover: false,
+      detectedIntent: classifyIntent(ctx.text).intent,
     };
   }
 
@@ -328,10 +336,40 @@ export async function processChatAI(
       reply: null,
       source: "human_claimed",
       shouldHandover: false,
+      detectedIntent: classifyIntent(ctx.text).intent,
     };
   }
 
-  // Step 2.5: Flow source check (private chat skips Flow Engine)
+  // Step 2.5: Intent Classification (Business AI)
+  const intent = classifyIntent(ctx.text);
+  if (logCtx) logCtx.addStep("intent_classification", "意图分类", `意图：${intent.intent}（置信度：${intent.confidence}），工作流：${intent.workflow}`, intent.shouldHandover ? "handover" : "classified");
+
+  // Step 2.6: Mandatory handover — parcel_issue, complaint, refund, cooperation, human_assistance
+  if (intent.shouldHandover) {
+    const summary = generateHandoverSummary({
+      customerName: logCtx?.customerName || "客户",
+      customerMessage: ctx.text,
+      reason: `AI识别到${intent.intent === "parcel_issue" ? "包裹问题" : intent.intent === "complaint" ? "投诉" : intent.intent === "refund" ? "退款请求" : intent.intent === "cooperation" ? "合作意向" : "人工客服请求"}，强制转人工`,
+      detectedIntent: intent.intent as CaseIntent,
+      aiAction: "AI识别到强制转人工场景，不自动回复，直接转人工处理",
+    });
+    if (logCtx) {
+      logCtx.finalSource = "intent_handover";
+      logCtx.isHandover = true;
+      logCtx.handoverReason = summary.reason;
+    }
+    return {
+      shouldReply: false,
+      reply: null,
+      source: "intent_handover",
+      shouldHandover: true,
+      handoverReason: summary.reason,
+      detectedIntent: intent.intent,
+      handoverSummary: summary,
+    };
+  }
+
+  // Step 2.7: Flow source check (private chat skips Flow Engine)
   if (logCtx) logCtx.addStep("flow_check", "Flow来源检查", "普通私聊，不进入Flow Engine", "skipped");
 
   // Step 3: Order keyword / Product keyword match
@@ -346,6 +384,7 @@ export async function processChatAI(
       source: "product",
       shouldHandover: false,
       productId: productResult.productId,
+      detectedIntent: intent.intent,
     };
   }
   if (logCtx) logCtx.addStep("product_match", "商品真实资料匹配", "未命中商品关键词", "missed");
@@ -362,6 +401,7 @@ export async function processChatAI(
       source: "reply_rule",
       shouldHandover: false,
       ruleId: ruleResult.ruleId,
+      detectedIntent: intent.intent,
     };
   }
 
@@ -377,10 +417,18 @@ export async function processChatAI(
       source: "knowledge",
       shouldHandover: false,
       knowledgeId: knowledgeResult.knowledgeId,
+      detectedIntent: intent.intent,
     };
   }
 
   // Step 6: No match — handover to human
+  const noMatchSummary = generateHandoverSummary({
+    customerName: logCtx?.customerName || "客户",
+    customerMessage: ctx.text,
+    reason: "AI无法匹配客户消息，需要人工处理",
+    detectedIntent: intent.intent as CaseIntent,
+    aiAction: "AI尝试了商品匹配、固定回复规则、知识库匹配，均未命中",
+  });
   if (logCtx) { logCtx.addStep("handover", "转人工", "AI无法匹配客户消息，需要人工处理", "handover"); logCtx.finalSource = "no_match"; logCtx.isHandover = true; logCtx.handoverReason = "AI无法匹配客户消息，需要人工处理"; }
   return {
     shouldReply: false,
@@ -388,5 +436,7 @@ export async function processChatAI(
     source: "no_match",
     shouldHandover: true,
     handoverReason: "AI无法匹配客户消息，需要人工处理",
+    detectedIntent: intent.intent,
+    handoverSummary: noMatchSummary,
   };
 }

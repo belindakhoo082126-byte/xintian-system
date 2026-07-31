@@ -1483,3 +1483,16 @@
 - [x] Vitest 全部通过
 - [x] CHANGELOG 更新
 - [x] 保存检查点
+
+## classifyIntent 集成到 processChatAI 管道
+
+- [x] 审阅 processChatAI 管道结构和 classifyIntent 接口
+- [x] 在 processChatAI 开头插入意图分类步骤
+- [x] 强制转人工场景（parcel_issue/complaint/refund/cooperation）直接转人工，AI 不回复
+- [x] new_order 意图创建草稿订单并回复客户确认
+- [x] order_modification 意图创建变更请求并回复客户确认
+- [x] shipment_tracking 意图查询物流并回复
+- [x] 将 detectedIntent 和 handoverSummary 写入 ai_logs
+- [x] 单元测试覆盖集成逻辑
+- [x] TypeScript 类型检查通过
+- [x] 保存检查点

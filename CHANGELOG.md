@@ -397,3 +397,39 @@
 - 草稿订单和变更请求 24 小时未审批自动过期，预留库存自动释放
 
 ---
+
+## V1.7 — classifyIntent 集成到 processChatAI 管道
+
+**发布日期：** 2026-07-31  
+**开发阶段：** AI大脑 — Business AI 管道集成
+
+### Added
+
+- **意图分类集成到正式 AI 管道**：`processChatAI` 在 AI 启用检查和人工接手检查之后、商品匹配之前，自动执行 `classifyIntent` 意图分类
+  - 所有返回路径均携带 `detectedIntent` 字段，记录 AI 对客户消息的意图判断
+  - 强制转人工场景（包裹损坏、投诉、退款、合作、人工客服请求）在意图分类阶段直接转人工，AI 不回复客户
+  - 转人工时自动生成 `HandoverSummary`（含优先级、建议下一步操作），传递给 `createHandoverRequest` 和 `ai_logs`
+  - `no_match` 场景也生成结构化 `HandoverSummary`，包含 AI 已执行的匹配步骤摘要
+- **ai_logs 表新增字段**：`detectedIntent`（VARCHAR 100）和 `handoverSummary`（TEXT）
+- **messenger.ts 转人工增强**：根据 `handoverSummary.priority` 动态设置转人工优先级（high/medium/normal），并将摘要写入 `aiHandoverRequests.aiSummary`
+- 单元测试 14 项（`ai-intent-integration.test.ts`）：覆盖强制转人工、正常分类、no_match 摘要等场景
+
+### Changed
+
+- `aiEngines.ts`：`ChatAIResult` 接口新增 `detectedIntent`、`handoverSummary`、`draftOrderId`、`changeRequestId` 字段
+- `aiEngines.ts`：`processChatAI` 新增 Step 2.5（意图分类）和 Step 2.6（强制转人工检查）
+- `db.ts`：`createAiLog` 插入时写入 `detectedIntent` 和 `handoverSummary`
+- `messenger.ts`：转人工时传递 `aiSummary` 和动态 `priority`
+- `drizzle/schema.ts`：`aiLogs` 表新增 `detectedIntent` 和 `handoverSummary` 列
+
+### Database
+
+- `ai_logs` 表新增 `detectedIntent`（VARCHAR 100, nullable）和 `handoverSummary`（TEXT, nullable）字段
+
+### Notes
+
+- 意图分类在正式 AI 匹配管道之前执行，但仅对强制转人工场景（parcel_issue/complaint/refund/cooperation/human_assistance）拦截
+- 其他意图（general_inquiry/membership/shipment_tracking/new_order/order_modification/product_inquiry）不拦截，继续进入正式匹配管道
+- 所有 `processChatAI` 返回结果均携带 `detectedIntent`，方便日志分析和统计
+
+---
