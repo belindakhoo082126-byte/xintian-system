@@ -467,3 +467,34 @@
 - AI Selling Points 不参与筛选，仅在 LLM 回复时引用
 - LLM 不负责决定推荐商品，仅负责润色回复
 - 商品推荐引擎位于正式 AI 管道的 Step 2.8，在现有商品关键词匹配之前执行
+
+---
+
+## V1.9 — Live Room 商品管理优化（修正版）
+
+**发布日期：** 2026-08-01  
+**开发阶段：** Live Room 商品管理优化
+
+### Added
+
+- `searchProductsForLiveRoom` 新增 `alreadyAdded` 标志，搜索结果直接显示已加入商品禁用状态
+- `searchProductsForLiveRoom` 返回更多正式商品数据：SKU、keywords、stockQuantity、sellingPrice、productStatus、isPreOrder、aiTags、aiSellingPoints
+- `getLiveRoomProducts` 返回完整正式商品数据：SKU、keywords、sellingPrice、stockQuantity、status、isPreOrder、categoryId、aiTags、aiSellingPoints
+- 前端新增独立的直播售价编辑对话框，明确标注「仅影响当前直播」
+- 商品卡片显示正式商品数据：SKU、关键词、总库存、商品状态、预购状态
+- 直播售价与原价不同时显示删除线原价
+
+### Changed
+
+- `batchAddProductsToLiveRoom` 简化为仅接收 `productId` + 可选 `livePrice`，商品数据（keyword、displayName、price、stock、imageUrl）全部从 `products` 表读取
+- `generateKeywordCopyText` 从正式 `products` 表读取 `keyword` 和 `name`，不再使用直播房本地副本
+- `updateProduct` 路由仅允许修改 `price`（直播售价）、`status` 和 `sortOrder`，移除 `keyword`、`displayName`、`stock` 编辑权限
+- 前端加入商品窗口移除关键词前缀输入，改为直播售价自定义选项
+- 搜索结果已加入商品显示灰色禁用状态 + 「已加入」标签
+- `ProductGroupCard` 新增 `onPriceEdit` prop 和 DollarSign 按钮，点击打开售价编辑对话框
+
+### Design Principle
+
+- 直播房不建立第二套商品资料，仅引用商品管理的正式商品数据
+- 直播房只允许修改售价（直播特价），仅影响当前直播，不修改正式商品售价
+- 所有商品资料统一维护于 Product Management，直播房仅负责：加入商品、调整直播售价、删除商品、排序商品

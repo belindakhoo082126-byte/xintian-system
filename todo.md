@@ -1496,3 +1496,17 @@
 - [x] 单元测试覆盖集成逻辑
 - [x] TypeScript 类型检查通过
 - [x] 保存检查点
+
+## Live Room 商品管理优化（修正版）
+
+- [x] 后端：searchProductsForLiveRoom 增加 alreadyAdded 检测，返回已加入状态
+- [x] 后端：batchAddProductsToLiveRoom 简化为仅接收 productId + livePrice，keyword/displayName 从 products 表读取
+- [x] 后端：getLiveRoomProducts 增强返回正式商品数据（SKU、keywords、stockQuantity、sellingPrice、category、aiTags、aiSellingPoints、productStatus）
+- [x] 后端：generateKeywordCopyText 从正式 products 表读取 keyword 和 name
+- [x] 后端：updateLiveRoomProduct 仅允许修改 price（直播售价）
+- [x] 前端：加入商品窗口移除关键词前缀输入，搜索结果增加已加入禁用状态
+- [x] 前端：商品卡片显示正式商品数据（SKU、keywords、库存、价格、预购状态、商品状态）
+- [x] 前端：Edit 仅保留直播售价编辑，其它字段只读
+- [x] 前端：保留 Keyword Copy 功能（从正式 products.keywords 读取）
+- [x] 类型检查通过
+- [x] 保存检查点

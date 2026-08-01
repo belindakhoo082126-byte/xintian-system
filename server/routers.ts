@@ -4002,10 +4002,7 @@ export const appRouter = router({
     updateProduct: adminProcedure
       .input(z.object({
         id: z.number(),
-        keyword: z.string().optional(),
-        displayName: z.string().optional(),
         price: z.union([z.string(), z.number()]).optional(),
-        stock: z.number().optional(),
         status: z.enum(['active', 'paused', 'sold_out']).optional(),
         sortOrder: z.number().optional(),
       }))
@@ -4090,12 +4087,7 @@ export const appRouter = router({
         items: z.array(z.object({
           productId: z.number(),
           variationId: z.number().optional(),
-          keyword: z.string(),
-          displayName: z.string(),
-          price: z.union([z.string(), z.number()]),
-          stock: z.number().default(0),
-          imageUrl: z.string().optional(),
-          specImage: z.string().optional(),
+          livePrice: z.number().optional(),
         })),
       }))
       .mutation(async ({ input }) => {

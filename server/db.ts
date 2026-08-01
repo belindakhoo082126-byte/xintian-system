@@ -6972,15 +6972,24 @@ export async function getLiveRoomProducts(liveRoomId: number) {
   const rows = await db.select().from(liveRoomProducts)
     .where(eq(liveRoomProducts.liveRoomId, liveRoomId))
     .orderBy(asc(liveRoomProducts.sortOrder));
-  // Fetch product-level info (name, cover image) for grouping
+  // Fetch product-level info from products table for grouping
   const productIds = Array.from(new Set(rows.map((r: any) => r.productId)));
   const productInfos: Record<number, any> = {};
   for (const pid of productIds) {
     const pRows = await db.select({
       id: products.id,
       name: products.name,
+      sku: products.sku,
+      keyword: products.keyword,
       coverImageUrl: products.coverImageUrl,
       productMode: products.productMode,
+      sellingPrice: products.sellingPrice,
+      stockQuantity: products.stockQuantity,
+      status: products.status,
+      isPreOrder: products.isPreOrder,
+      categoryId: products.categoryId,
+      aiTags: products.aiTags,
+      aiSellingPoints: products.aiSellingPoints,
     }).from(products).where(eq(products.id, pid)).limit(1);
     if (pRows.length > 0) productInfos[pid] = pRows[0];
   }
@@ -6994,6 +7003,15 @@ export async function getLiveRoomProducts(liveRoomId: number) {
         productName: productInfos[pid]?.name || row.displayName,
         coverImageUrl: productInfos[pid]?.coverImageUrl || row.imageUrl,
         productMode: productInfos[pid]?.productMode || 'simple',
+        productSku: productInfos[pid]?.sku || null,
+        productKeyword: productInfos[pid]?.keyword || null,
+        productSellingPrice: productInfos[pid]?.sellingPrice || null,
+        productStockQuantity: productInfos[pid]?.stockQuantity ?? null,
+        productStatus: productInfos[pid]?.status || null,
+        productIsPreOrder: productInfos[pid]?.isPreOrder || false,
+        productCategoryId: productInfos[pid]?.categoryId || null,
+        productAiTags: productInfos[pid]?.aiTags || null,
+        productAiSellingPoints: productInfos[pid]?.aiSellingPoints || null,
         variations: [] as any[],
       };
     }
@@ -7179,6 +7197,11 @@ export async function generateKeywordCopyText(liveRoomProductId: number, liveCom
     .where(eq(liveRoomProducts.id, liveRoomProductId)).limit(1);
   if (product.length === 0) throw new Error("Product not found");
   const p = product[0];
+  // Fetch canonical product data from products table
+  const pRows = await db.select().from(products).where(eq(products.id, p.productId)).limit(1);
+  const productData = pRows.length > 0 ? pRows[0] as any : null;
+  const keyword = productData?.keyword || p.keyword || p.displayName;
+  const name = productData?.name || p.displayName;
   // Check if product has variants (same productId, different variationId)
   const siblings = await db.select().from(liveRoomProducts)
     .where(eq(liveRoomProducts.liveRoomId, p.liveRoomId));
@@ -7186,7 +7209,7 @@ export async function generateKeywordCopyText(liveRoomProductId: number, liveCom
   const footer = liveCommentFooter || "👇 留言关键词即可自动下单";
   if (sameProduct.length <= 1) {
     // No variants — single product format
-    return `🌸 ${p.displayName}\n💰 RM${Number(p.price).toFixed(0)}\n📝 关键词：\n${p.keyword}+1\n\n${footer}`;
+    return `🌸 ${name}\n💰 RM${Number(p.price).toFixed(0)}\n📝 关键词：\n${keyword}+1\n\n${footer}`;
   }
   // Has variants — check if same price or different prices
   const allSamePrice = sameProduct.every((s: any) => Number(s.price) === Number(p.price));
@@ -7199,7 +7222,7 @@ export async function generateKeywordCopyText(liveRoomProductId: number, liveCom
     return `${colorName}｜RM${Number(s.price).toFixed(0)}｜${s.keyword}+1`;
   });
   // Use the base product name (without variant suffix)
-  const baseName = p.displayName.replace(/[🔴❤️🩷💛💚💙🟣⚪️⚫️🟤]+\s*\S+/, "").trim() || p.displayName;
+  const baseName = name.replace(/[🔴❤️🩷💛💚💙🟣⚪️⚫️🟤]+\s*\S+/, "").trim() || name;
   return `🌸 ${baseName}\n\n${lines.join("\n")}\n\n${footer}`;
 }
 
@@ -7531,6 +7554,10 @@ export async function searchProductsForLiveRoom(liveRoomId: number, query: strin
   if (categoryId) {
     whereClause = sql`(${products.name} LIKE ${likePattern} OR ${products.sku} LIKE ${likePattern} OR ${products.keyword} LIKE ${likePattern}) AND ${products.categoryId} = ${categoryId}`;
   }
+  // Get already added productIds for this live room
+  const existing = await db.select({ productId: liveRoomProducts.productId }).from(liveRoomProducts)
+    .where(eq(liveRoomProducts.liveRoomId, liveRoomId));
+  const addedIds = new Set(existing.map((r: any) => r.productId));
   const results = await db.select({
     id: products.id,
     name: products.name,
@@ -7540,49 +7567,57 @@ export async function searchProductsForLiveRoom(liveRoomId: number, query: strin
     sellingPrice: products.sellingPrice,
     stockQuantity: products.stockQuantity,
     categoryId: products.categoryId,
+    productStatus: products.status,
+    isPreOrder: products.isPreOrder,
+    aiTags: products.aiTags,
+    aiSellingPoints: products.aiSellingPoints,
     hasVariants: sql`EXISTS(SELECT 1 FROM ${variants} v WHERE v.productId = ${products.id})`,
   }).from(products)
     .where(whereClause)
     .limit(20);
-  return results;
+  // Add alreadyAdded flag
+  return results.map((r: any) => ({ ...r, alreadyAdded: addedIds.has(r.id) }));
 }
 
 // @realtime-broadcast: liveRooms
 export async function batchAddProductsToLiveRoom(liveRoomId: number, items: Array<{
   productId: number;
   variationId?: number;
-  keyword: string;
-  displayName: string;
-  price: number;
-  stock: number;
-  imageUrl?: string;
-  specImage?: string;
+  livePrice?: number; // optional override; if not provided, use product sellingPrice
 }>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const existing = await db.select().from(liveRoomProducts)
     .where(eq(liveRoomProducts.liveRoomId, liveRoomId));
   const nextSort = existing.length;
+  const existingProductIds = new Set(existing.map((r: any) => r.productId));
   const inserted: number[] = [];
   for (let i = 0; i < items.length; i++) {
     const data = items[i];
+    // Skip if already added
+    if (existingProductIds.has(data.productId)) continue;
+    // Fetch product data from products table
+    const pRows = await db.select().from(products).where(eq(products.id, data.productId)).limit(1);
+    if (pRows.length === 0) continue;
+    const p = pRows[0] as any;
+    const price = data.livePrice != null ? String(data.livePrice) : String(p.sellingPrice || 0);
     const result = await db.insert(liveRoomProducts).values({
       liveRoomId,
       productId: data.productId,
       variationId: data.variationId || null,
-      keyword: data.keyword,
-      displayName: data.displayName,
-      price: String(data.price),
-      startStock: data.stock,
+      keyword: p.keyword || p.name,
+      displayName: p.name,
+      price,
+      startStock: Number(p.stockQuantity || 0),
       reservedCount: 0,
-      availableStock: data.stock,
+      availableStock: Number(p.stockQuantity || 0),
       orderedCount: 0,
       allowPreorder: false,
       preorderCount: 0,
       status: "active",
       sortOrder: nextSort + i,
-      imageUrl: data.imageUrl || null,
-      specImage: data.specImage || null,
+      imageUrl: p.coverImageUrl || null,
+      specImage: null,
     });
     inserted.push(result[0].insertId);
   }

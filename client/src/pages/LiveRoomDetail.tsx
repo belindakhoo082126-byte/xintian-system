@@ -116,12 +116,15 @@ export default function LiveRoomDetail(props: any) {
   const [batchSelectedIds, setBatchSelectedIds] = useState<number[]>([]);
   const [batchSelectedProducts, setBatchSelectedProducts] = useState<Record<number, any>>({});
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [batchAddKeyword, setBatchAddKeyword] = useState("");
+  // batchAddKeyword removed — live room no longer stores duplicate keyword data
   const [batchAddPriceMode, setBatchAddPriceMode] = useState<"original" | "custom">("original");
   const [batchAddPrice, setBatchAddPrice] = useState("");
   const [selectedComment, setSelectedComment] = useState<any | null>(null);
   const [showReport, setShowReport] = useState(false);
   const [endLiveConfirmOpen, setEndLiveConfirmOpen] = useState(false);
+  const [priceEditOpen, setPriceEditOpen] = useState(false);
+  const [priceEditId, setPriceEditId] = useState<number | null>(null);
+  const [priceEditValue, setPriceEditValue] = useState("");
 
   // Product search for batch add
   const productSearchResults = trpc.liveRooms.searchProducts.useQuery(
@@ -140,7 +143,7 @@ export default function LiveRoomDetail(props: any) {
       setAddDialogOpen(false);
       setBatchSelectedIds([]);
       setBatchSelectedProducts({});
-      setBatchAddKeyword("");
+      // batchAddKeyword removed
       setProductSearchQuery("");
     },
     onError: (e: any) => toast.error("批量加入失败: " + e.message),
@@ -270,18 +273,27 @@ export default function LiveRoomDetail(props: any) {
     setStockDialogOpen(true);
   }
 
+  function openPriceEdit(id: number, currentPrice: number) {
+    setPriceEditId(id);
+    setPriceEditValue(String(currentPrice));
+    setPriceEditOpen(true);
+  }
+
+  function handlePriceSave() {
+    if (priceEditId && priceEditValue) {
+      updateProductMutation.mutate({ id: priceEditId, price: Number(priceEditValue) });
+      setPriceEditOpen(false);
+    }
+  }
+
   function handleBatchSubmit() {
     const items = batchSelectedIds.map(id => {
       const p = batchSelectedProducts[id];
       if (!p) return null;
-      const price = batchAddPriceMode === "custom" && batchAddPrice ? Number(batchAddPrice) : Number(p.sellingPrice || 0);
+      const livePrice = batchAddPriceMode === "custom" && batchAddPrice ? Number(batchAddPrice) : undefined;
       return {
         productId: p.id,
-        keyword: batchAddKeyword || p.keyword || p.name,
-        displayName: p.name,
-        price,
-        stock: Number(p.stockQuantity || 0),
-        imageUrl: p.coverImageUrl || undefined,
+        livePrice,
       };
     }).filter(Boolean);
     if (items.length === 0) {
@@ -486,6 +498,7 @@ export default function LiveRoomDetail(props: any) {
                           onStatusChange={handleStatusChange}
                           onTogglePreorder={(id: number, val: boolean) => togglePreorderMutation.mutate({ id, allowPreorder: val })}
                           onAdjustStock={openStockDialog}
+                          onPriceEdit={openPriceEdit}
                           onDelete={(id: number) => deleteProductMutation.mutate({ id })}
                           onCopyKeyword={handleCopyKeyword}
                         />
@@ -644,23 +657,14 @@ export default function LiveRoomDetail(props: any) {
               </Select>
             </div>
 
-            {/* Batch settings */}
+            {/* Live price override (optional) */}
             <div className="flex gap-2 items-end">
-              <div className="flex-1">
-                <Label className="text-xs">关键词前缀（可选）</Label>
-                <Input
-                  placeholder="统一关键词前缀"
-                  value={batchAddKeyword}
-                  onChange={e => setBatchAddKeyword(e.target.value)}
-                  className="h-8"
-                />
-              </div>
               <div>
-                <Label className="text-xs">价格模式</Label>
+                <Label className="text-xs">直播售价</Label>
                 <Select value={batchAddPriceMode} onValueChange={(v) => setBatchAddPriceMode(v as any)}>
                   <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="original">原价</SelectItem>
+                    <SelectItem value="original">使用原价</SelectItem>
                     <SelectItem value="custom">自定义价</SelectItem>
                   </SelectContent>
                 </Select>
@@ -677,6 +681,7 @@ export default function LiveRoomDetail(props: any) {
                   />
                 </div>
               )}
+              <div className="flex-1" />
             </div>
 
             {/* Search results */}
@@ -685,30 +690,39 @@ export default function LiveRoomDetail(props: any) {
                 {(productSearchResults.data || []).length === 0 ? (
                   <div className="p-4 text-center text-sm text-muted-foreground">未找到商品</div>
                 ) : (
-                  (productSearchResults.data || []).map((p: any) => (
-                    <div
-                      key={p.id}
-                      className={`flex items-center gap-3 p-2 border-b cursor-pointer hover:bg-muted/50 ${batchSelectedIds.includes(p.id) ? "bg-primary/5" : ""}`}
-                      onClick={() => toggleBatchSelection(p)}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={batchSelectedIds.includes(p.id)}
-                        onChange={() => {}}
-                        className="h-4 w-4"
-                      />
-                      {p.coverImageUrl && (
-                        <img src={p.coverImageUrl} alt="" className="h-10 w-10 rounded object-cover" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{p.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          SKU: {p.sku || "-"} · 库存: {p.stockQuantity || 0} · {p.hasVariants ? "有规格" : "无规格"}
-                        </p>
+                  (productSearchResults.data || []).map((p: any) => {
+                    const isAdded = !!p.alreadyAdded;
+                    const isSelected = batchSelectedIds.includes(p.id);
+                    return (
+                      <div
+                        key={p.id}
+                        className={`flex items-center gap-3 p-2 border-b ${isAdded ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-muted/50"} ${isSelected ? "bg-primary/5" : ""}`}
+                        onClick={() => !isAdded && toggleBatchSelection(p)}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={isAdded}
+                          onChange={() => {}}
+                          className="h-4 w-4"
+                        />
+                        {p.coverImageUrl && (
+                          <img src={p.coverImageUrl} alt="" className="h-10 w-10 rounded object-cover" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{p.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            SKU: {p.sku || "-"} · 库存: {p.stockQuantity || 0} · {p.hasVariants ? "有规格" : "无规格"}
+                          </p>
+                        </div>
+                        {isAdded ? (
+                          <Badge variant="outline" className="text-xs text-green-600">已加入</Badge>
+                        ) : (
+                          <span className="text-sm font-medium">RM{Number(p.sellingPrice || 0).toFixed(2)}</span>
+                        )}
                       </div>
-                      <span className="text-sm font-medium">RM{Number(p.sellingPrice || 0).toFixed(2)}</span>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}
@@ -724,6 +738,36 @@ export default function LiveRoomDetail(props: any) {
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>取消</Button>
             <Button onClick={handleBatchSubmit} disabled={batchAddMutation.isPending || batchSelectedIds.length === 0}>
               批量加入 ({batchSelectedIds.length})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Live Price Edit Dialog */}
+      <Dialog open={priceEditOpen} onOpenChange={setPriceEditOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>修改直播售价</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-3">
+            <div>
+              <Label>直播售价（RM）</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={priceEditValue}
+                onChange={e => setPriceEditValue(e.target.value)}
+                placeholder="输入直播特价"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                此价格仅影响当前直播，不会修改正式商品售价。
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPriceEditOpen(false)}>取消</Button>
+            <Button onClick={handlePriceSave} disabled={updateProductMutation.isPending || !priceEditValue}>
+              保存
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -839,7 +883,7 @@ export default function LiveRoomDetail(props: any) {
 
 // ============ Sub Components ============
 
-function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onAdjustStock, onDelete, onCopyKeyword }: any) {
+function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onAdjustStock, onPriceEdit, onDelete, onCopyKeyword }: any) {
   const variations = group.variations || [];
   const hasMultiple = variations.length > 1;
   const totalOrdered = variations.reduce((sum: number, v: any) => sum + (v.orderedCount || 0), 0);
@@ -848,7 +892,7 @@ function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onA
   return (
     <Card className="overflow-hidden">
       <CardContent className="p-2.5">
-        {/* Product header */}
+        {/* Product header — shows canonical product data */}
         <div className="flex items-start gap-2">
           {(group.coverImageUrl || variations[0]?.imageUrl) && (
             <img src={group.coverImageUrl || variations[0]?.imageUrl} alt="" className="h-12 w-12 rounded object-cover flex-shrink-0" />
@@ -856,9 +900,23 @@ function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onA
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{group.productName}</p>
             <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+              {group.productSku && <span>SKU: {group.productSku}</span>}
+              {group.productKeyword && <span>关键词: <code className="text-xs bg-muted px-1 rounded">{group.productKeyword}</code></span>}
               <span>已喊: {totalOrdered}</span>
               <span>剩余: {totalAvailable}</span>
               {hasMultiple && <Badge variant="outline" className="text-xs">{variations.length} 规格</Badge>}
+            </div>
+            {/* Show canonical product status */}
+            <div className="flex items-center gap-1.5 text-xs mt-0.5">
+              {group.productStatus && group.productStatus !== "active" && (
+                <Badge variant="outline" className="text-xs text-orange-600">商品状态: {group.productStatus}</Badge>
+              )}
+              {group.productIsPreOrder && (
+                <Badge className="bg-blue-100 text-blue-700 text-xs">预购商品</Badge>
+              )}
+              {group.productStockQuantity != null && (
+                <span className="text-muted-foreground">总库存: {group.productStockQuantity}</span>
+              )}
             </div>
           </div>
         </div>
@@ -883,7 +941,11 @@ function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onA
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground mt-0.5">
                   <span>关键词: <code className="text-xs bg-muted px-1 rounded">{v.keyword}</code></span>
-                  <span>RM{Number(v.price || 0).toFixed(2)}</span>
+                  {group.productSellingPrice != null && Number(v.price) !== Number(group.productSellingPrice) ? (
+                    <span className="text-orange-600 font-medium">RM{Number(v.price || 0).toFixed(2)} <span className="line-through text-muted-foreground/60">RM{Number(group.productSellingPrice).toFixed(2)}</span></span>
+                  ) : (
+                    <span>RM{Number(v.price || 0).toFixed(2)}</span>
+                  )}
                   <span>库: {v.availableStock}</span>
                   <span>喊: {v.orderedCount}</span>
                   {v.allowPreorder && <Badge className="bg-blue-100 text-blue-700 text-xs">预购</Badge>}
@@ -914,6 +976,10 @@ function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onA
                     )}
                   </>
                 )}
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="修改直播售价"
+                  onClick={() => onPriceEdit(v.id, Number(v.price || 0))}>
+                  <DollarSign className="h-3 w-3" />
+                </Button>
                 <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="调整库存"
                   onClick={() => onAdjustStock(v.id)}>
                   <Edit className="h-3 w-3" />
