@@ -1585,4 +1585,16 @@
 - [x] 库存统一显示：On Hand / Reserved / Available
 - [x] TypeScript 零错误
 - [x] Vitest 29/30 通过（1个 ParcelKing API 超时，非代码问题）
-- [ ] 保存检查点
+- [x] 保存检查点
+
+## V2.0.6: 直播状态修复 + 自动记录时间 + 直播报告改进
+
+- [x] Schema: live_rooms 新增 liveStartTime / liveEndTime 字段
+- [x] 后端: startLive 专用 mutation（记录开始时间）
+- [x] 后端: endLive 改为记录结束时间
+- [x] 后端: getLiveRoomReport 返回开始/结束时间 + 直播时长
+- [x] 前端: 开始直播按钮改用 startLive mutation
+- [x] 前端: 直播报告改为显示直播时长/开始结束时间
+- [x] TypeScript 零错误
+- [x] Vitest 全部通过
+- [x] 保存检查点

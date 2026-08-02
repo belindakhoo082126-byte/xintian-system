@@ -216,6 +216,13 @@ export default function LiveRoomDetail(props: any) {
     onError: (e: any) => toast.error("操作失败: " + e.message),
   });
 
+  const startLiveMutation = trpc.liveRooms.startLive.useMutation({
+    onSuccess: () => {
+      queryClient.liveRooms.getById.invalidate({ id: roomId });
+      queryClient.liveRooms.list.invalidate();
+      toast.success("直播已开始");
+    },
+  });
   const endLiveMutation = trpc.liveRooms.endLive.useMutation({
     onSuccess: () => {
       queryClient.liveRooms.getById.invalidate({ id: roomId });
@@ -435,8 +442,8 @@ export default function LiveRoomDetail(props: any) {
         <div className="flex items-center gap-2">
           {!isLive && !isEnded && (
             <Button variant="default" size="sm" className="gap-2"
-              onClick={() => updateRoomMutation.mutate({ id: roomId, status: "live" })}
-              disabled={updateRoomMutation.isPending}>
+              onClick={() => startLiveMutation.mutate({ liveRoomId: roomId })}
+              disabled={startLiveMutation.isPending}>
               <Play className="h-4 w-4" /> 开始直播
             </Button>
           )}
@@ -1355,20 +1362,37 @@ function ProductOrderRow({ item }: any) {
 }
 
 function ReportView({ report }: any) {
+  const formatTime = (t: any) => {
+    if (!t) return "-";
+    return new Date(t).toLocaleString("zh-CN", { hour: "2-digit", minute: "2-digit", month: "2-digit", day: "2-digit" });
+  };
+  const formatDuration = (mins: number) => {
+    if (!mins) return "-";
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h} 小时 ${m} 分钟` : `${m} 分钟`;
+  };
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-semibold flex items-center gap-2">
         <BarChart3 className="h-5 w-5" /> 直播报告
       </h2>
+      {/* Live time summary */}
+      <Card><CardContent className="p-3">
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div><p className="text-xs text-muted-foreground">开始时间</p><p className="text-sm font-bold">{formatTime(report.liveStartTime)}</p></div>
+          <div><p className="text-xs text-muted-foreground">结束时间</p><p className="text-sm font-bold">{formatTime(report.liveEndTime)}</p></div>
+          <div><p className="text-xs text-muted-foreground">直播时长</p><p className="text-sm font-bold text-blue-600">{formatDuration(report.durationMinutes || 0)}</p></div>
+        </div>
+      </CardContent></Card>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">总留言</p><p className="text-xl font-bold">{report.totalComments || 0}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">有效关键词</p><p className="text-xl font-bold">{report.matchedComments || 0}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">捉单数</p><p className="text-xl font-bold">{report.captureCount || 0}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">订单数</p><p className="text-xl font-bold">{report.totalOrders || 0}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">商品件数</p><p className="text-xl font-bold">{report.totalItems || 0}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">销售额</p><p className="text-xl font-bold">RM{Number(report.totalRevenue || 0).toFixed(2)}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">已付款</p><p className="text-xl font-bold">{report.paidOrders || 0}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">新客户</p><p className="text-xl font-bold">{report.newCustomers || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">总留言数</p><p className="text-xl font-bold">{report.totalComments || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">自动捉单数</p><p className="text-xl font-bold">{report.captureCount || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">成功订单数</p><p className="text-xl font-bold">{report.totalOrders || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">商品销售件数</p><p className="text-xl font-bold">{report.totalItems || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">销售总额</p><p className="text-xl font-bold">RM{Number(report.totalRevenue || 0).toFixed(2)}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">已付款金额</p><p className="text-xl font-bold text-green-600">{report.paidOrders || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">新客户数量</p><p className="text-xl font-bold">{report.newCustomers || 0}</p></CardContent></Card>
       </div>
 
       {/* Hot Products */}

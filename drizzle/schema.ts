@@ -1518,6 +1518,9 @@ export const liveRooms = mysqlTable("live_rooms", {
   aiReplyEnabled: boolean("aiReplyEnabled").default(true).notNull(),
   // V2.0: Continue monitoring comments after live ends (up to 30 days)
   continueMonitor: boolean("continueMonitor").default(true).notNull(),
+  // V2.0.6: Auto-recorded live start/end times
+  liveStartTime: timestamp("liveStartTime"),
+  liveEndTime: timestamp("liveEndTime"),
   // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

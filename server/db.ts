@@ -7849,6 +7849,18 @@ export async function getLiveRoomReport(liveRoomId: number) {
     .from(liveRoomProducts).where(eq(liveRoomProducts.liveRoomId, liveRoomId));
   // Capture count (捉单数 = matched comments)
   const captureCount = matchedComments[0]?.count || 0;
+  // Get live room data for start/end times
+  const roomData = await db.select({
+    liveStartTime: liveRooms.liveStartTime,
+    liveEndTime: liveRooms.liveEndTime,
+  }).from(liveRooms).where(eq(liveRooms.id, liveRoomId)).limit(1);
+  const startTime = roomData[0]?.liveStartTime;
+  const endTime = roomData[0]?.liveEndTime;
+  // Calculate duration in minutes
+  let durationMinutes = 0;
+  if (startTime && endTime) {
+    durationMinutes = Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000);
+  }
   return {
     totalComments: Number(totalComments[0]?.count || 0),
     matchedComments: Number(matchedComments[0]?.count || 0),
@@ -7866,6 +7878,9 @@ export async function getLiveRoomReport(liveRoomId: number) {
     newCustomers: Number(newCustomers[0]?.count || 0),
     messengerSent: Number(messengerSent[0]?.count || 0),
     messengerFailed: Number(messengerFailed[0]?.count || 0),
+    liveStartTime: startTime || null,
+    liveEndTime: endTime || null,
+    durationMinutes,
   };
 }
 

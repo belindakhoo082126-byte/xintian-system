@@ -4142,12 +4142,24 @@ export const appRouter = router({
         return await db.getLiveRoomReport(input.liveRoomId);
       }),
 
+    // --- Start Live (开始直播) ---
+    startLive: adminProcedure
+      .input(z.object({ liveRoomId: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.updateLiveRoom(input.liveRoomId, {
+          status: 'live',
+          liveStartTime: new Date(),
+        } as any);
+        return { success: true };
+      }),
     // --- End Live (直播结束) ---
     endLive: adminProcedure
       .input(z.object({ liveRoomId: z.number() }))
       .mutation(async ({ input }) => {
-        // Set status to ended
-        await db.updateLiveRoom(input.liveRoomId, { status: 'ended' } as any);
+        await db.updateLiveRoom(input.liveRoomId, {
+          status: 'ended',
+          liveEndTime: new Date(),
+        } as any);
         return { success: true };
       }),
 
