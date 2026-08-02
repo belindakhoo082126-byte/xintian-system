@@ -18,7 +18,7 @@ import {
   Package, DollarSign, ShoppingCart, Boxes, ChevronUp, ChevronDown,
   Search, AlertCircle, Video, BarChart3, Send,
   CheckCircle2, TrendingUp, User, Edit, Radio, Layers,
-  Bot, Monitor, StickyNote, Ban, Link2,
+  Bot, Monitor, StickyNote, Ban, Link2, ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -1158,127 +1158,157 @@ function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onA
   const hasMultiple = variations.length > 1;
   const totalOrdered = variations.reduce((sum: number, v: any) => sum + (v.orderedCount || 0), 0);
   const totalAvailable = variations.reduce((sum: number, v: any) => sum + (v.availableStock || 0), 0);
+  const totalReserved = variations.reduce((sum: number, v: any) => sum + (v.reservedCount || 0), 0);
+  const onHand = group.productStockQuantity ?? totalAvailable + totalReserved;
+
+  // Stock color: green >10, yellow 1-10, red =0
+  const stockColor = totalAvailable > 10 ? "text-green-600" : totalAvailable > 0 ? "text-yellow-600" : "text-red-600";
+  const stockBg = totalAvailable > 10 ? "bg-green-50" : totalAvailable > 0 ? "bg-yellow-50" : "bg-red-50";
 
   return (
     <Card className="overflow-hidden">
-      <CardContent className="p-2.5">
-        {/* Product header — shows canonical product data (no duplication) */}
-        <div className="flex items-start gap-2">
-          {(group.coverImageUrl || variations[0]?.imageUrl) ? (
-            <img src={group.coverImageUrl || variations[0]?.imageUrl} alt="" className="h-12 w-12 rounded object-cover flex-shrink-0" />
-          ) : (
-            <div className="h-12 w-12 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground flex-shrink-0">无图</div>
-          )}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{group.productName}</p>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-              {group.productSku && <span>SKU: {group.productSku}</span>}
-              {group.productKeyword && <span>关键词: <code className="text-xs bg-muted px-1 rounded">{group.productKeyword}</code></span>}
-              {hasMultiple && <Badge variant="outline" className="text-xs">{variations.length} 规格</Badge>}
+      <CardContent className="p-3">
+        {/* Product image — large 1:1 ratio */}
+        <div className="flex gap-3">
+          <div className="w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center">
+            {(group.coverImageUrl || variations[0]?.imageUrl) ? (
+              <img
+                src={group.coverImageUrl || variations[0]?.imageUrl}
+                alt={group.productName || ""}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                  (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
+                }}
+              />
+            ) : null}
+            <div className={`${group.coverImageUrl || variations[0]?.imageUrl ? "hidden" : ""} flex flex-col items-center justify-center text-muted-foreground`}>
+              <ImageIcon className="h-6 w-6 mb-0.5" />
+              <span className="text-xs">无图</span>
             </div>
-            {/* Unified stock display: On Hand / Reserved / Available */}
-            <div className="flex items-center gap-1.5 text-xs mt-0.5">
-              {group.productStatus && group.productStatus !== "active" && (
-                <Badge variant="outline" className="text-xs text-orange-600">状态: {group.productStatus}</Badge>
+          </div>
+
+          {/* Product name + price + keyword */}
+          <div className="flex-1 min-w-0 flex flex-col justify-between">
+            <div>
+              <p className="text-sm font-bold truncate">{group.productName}</p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <code className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
+                {hasMultiple && <Badge variant="outline" className="text-xs">{variations.length} 规格</Badge>}
+                {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs">预购</Badge>}
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              {group.productSellingPrice != null && Number(variations[0]?.price || 0) !== Number(group.productSellingPrice) ? (
+                <span className="text-lg font-bold text-orange-600">RM{Number(variations[0]?.price || 0).toFixed(2)}
+                  <span className="line-through text-xs text-muted-foreground/60 ml-1">RM{Number(group.productSellingPrice).toFixed(2)}</span>
+                </span>
+              ) : (
+                <span className="text-lg font-bold">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
               )}
-              {group.productIsPreOrder && (
-                <Badge className="bg-blue-100 text-blue-700 text-xs">预购</Badge>
-              )}
-              <span className="text-muted-foreground">On Hand: {group.productStockQuantity ?? '-'}</span>
-              <span className="text-muted-foreground">Reserved: {variations.reduce((s: number, v: any) => s + (v.reservedCount || 0), 0)}</span>
-              <span className="text-muted-foreground">Available: {totalAvailable}</span>
-              <span className="text-muted-foreground">已喊: {totalOrdered}</span>
             </div>
           </div>
         </div>
 
-        <Separator className="my-2" />
+        {/* Stock summary — Chinese labels, color-coded */}
+        <div className={`flex items-center justify-around mt-2.5 py-1.5 rounded-md ${stockBg}`}>
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground">现货</p>
+            <p className="text-sm font-bold">{onHand}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground">已喊</p>
+            <p className="text-sm font-bold text-orange-600">{totalReserved}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground">可卖</p>
+            <p className={`text-sm font-bold ${stockColor}`}>{totalAvailable}</p>
+          </div>
+        </div>
 
-        {/* Variation rows */}
-        <div className="space-y-1.5">
-          {variations.map((v: any) => (
-            <div key={v.id} className="flex items-center gap-2 text-xs">
-              {/* Spec image */}
-              {v.specImage && (
-                <img src={v.specImage} alt="" className="h-8 w-8 rounded object-cover flex-shrink-0" />
-              )}
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1">
-                  <span className="font-medium truncate">{v.displayName}</span>
-                  <span className={`inline-flex px-1 py-0.5 rounded text-xs ${productStatusColors[v.status] || ""}`}>
-                    {productStatusLabels[v.status] || v.status}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground mt-0.5">
-                  <span>关键词: <code className="text-xs bg-muted px-1 rounded">{v.keyword}</code></span>
-                  {group.productSellingPrice != null && Number(v.price) !== Number(group.productSellingPrice) ? (
-                    <span className="text-orange-600 font-medium">RM{Number(v.price || 0).toFixed(2)} <span className="line-through text-muted-foreground/60">RM{Number(group.productSellingPrice).toFixed(2)}</span></span>
-                  ) : (
-                    <span>RM{Number(v.price || 0).toFixed(2)}</span>
-                  )}
-                  <span>Available: {v.availableStock}</span>
-                  <span>已喊: {v.orderedCount}</span>
-                  {v.allowPreorder && <Badge className="bg-blue-100 text-blue-700 text-xs">预购</Badge>}
-                  {v.preorderCount > 0 && <span className="text-blue-600">预:{v.preorderCount}</span>}
-                </div>
-              </div>
-              {/* Actions */}
-              <div className="flex items-center gap-0.5 flex-shrink-0">
-                {isLive && (
-                  <>
-                    {v.status === "active" && (
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="暂停捉单"
+        {/* Multi-variation: show each variation with image + keyword + price */}
+        {hasMultiple && (
+          <div className="mt-2 space-y-1.5">
+            <Separator className="mb-1.5" />
+            {variations.map((v: any) => {
+              const vAvail = v.availableStock || 0;
+              const vColor = vAvail > 10 ? "text-green-600" : vAvail > 0 ? "text-yellow-600" : "text-red-600";
+              return (
+                <div key={v.id} className="flex items-center gap-2">
+                  {/* Variation image */}
+                  <div className="w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center">
+                    {v.specImage ? (
+                      <img src={v.specImage} alt="" className="w-full h-full object-cover"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    ) : null}
+                    {!v.specImage && <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />}
+                  </div>
+                  {/* Variation info */}
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-medium truncate">{v.displayName}</span>
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <code className="text-xs bg-muted px-1 rounded">{v.keyword}</code>
+                      <span className="font-medium">RM{Number(v.price || 0).toFixed(2)}</span>
+                      <span className={vColor}>可卖:{vAvail}</span>
+                      {v.allowPreorder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">预购</Badge>}
+                    </div>
+                  </div>
+                  {/* Variation actions */}
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    {isLive && v.status === "active" && (
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="暂停"
                         onClick={() => onStatusChange(v.id, "paused")}>
                         <Pause className="h-3 w-3" />
                       </Button>
                     )}
-                    {v.status === "paused" && (
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="恢复捉单"
+                    {isLive && v.status === "paused" && (
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="恢复"
                         onClick={() => onStatusChange(v.id, "active")}>
                         <Play className="h-3 w-3" />
                       </Button>
                     )}
-                    {v.status !== "sold_out" && (
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="标记售完"
+                    {isLive && v.status !== "sold_out" && (
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="售完"
                         onClick={() => onStatusChange(v.id, "sold_out")}>
                         <XCircle className="h-3 w-3" />
                       </Button>
                     )}
-                  </>
-                )}
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="修改直播售价"
-                  onClick={() => onPriceEdit(v.id, Number(v.price || 0))}>
-                  <DollarSign className="h-3 w-3" />
-                </Button>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="调整库存"
-                  onClick={() => onAdjustStock(v.id)}>
-                  <Edit className="h-3 w-3" />
-                </Button>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="复制关键词文案"
-                  onClick={() => onCopyKeyword(v.id)}>
-                  <Copy className="h-3 w-3" />
-                </Button>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="删除"
-                  onClick={() => onDelete(v.id)}>
-                  <Trash2 className="h-3 w-3 text-destructive" />
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Preorder toggle for single-variation products */}
-        {variations.length === 1 && (
-          <div className="flex items-center gap-2 mt-2 pt-2 border-t">
-            <Switch
-              checked={variations[0].allowPreorder}
-              onCheckedChange={(val) => onTogglePreorder(variations[0].id, val)}
-              className="scale-75"
-            />
-            <span className="text-xs text-muted-foreground">允许预购（库存到0后可继续捉单）</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
+
+        {/* Action buttons — single row */}
+        <div className="flex items-center justify-between mt-2.5 pt-2 border-t">
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
+              onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
+              <DollarSign className="h-3.5 w-3.5" /> 改价
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
+              onClick={() => onAdjustStock(variations[0]?.id)}>
+              <Edit className="h-3.5 w-3.5" /> 库存
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
+              onClick={() => onCopyKeyword(variations[0]?.id)}>
+              <Copy className="h-3.5 w-3.5" /> 复制
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs text-destructive"
+              onClick={() => onDelete(variations[0]?.id)}>
+              <Trash2 className="h-3.5 w-3.5" /> 取消
+            </Button>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Switch
+              checked={variations[0]?.allowPreorder || false}
+              onCheckedChange={(val) => onTogglePreorder(variations[0]?.id, val)}
+              className="scale-75"
+            />
+            <span className="text-xs text-muted-foreground">预购</span>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
