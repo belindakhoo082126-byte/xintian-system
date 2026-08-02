@@ -18,6 +18,7 @@ import {
   Package, DollarSign, ShoppingCart, Boxes, ChevronUp, ChevronDown,
   Search, AlertCircle, Video, BarChart3, Send,
   CheckCircle2, TrendingUp, User, Edit, Radio, Layers,
+  Bot, Monitor, StickyNote, Ban, Link2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -125,6 +126,28 @@ export default function LiveRoomDetail(props: any) {
   const [priceEditOpen, setPriceEditOpen] = useState(false);
   const [priceEditId, setPriceEditId] = useState<number | null>(null);
   const [priceEditValue, setPriceEditValue] = useState("");
+  // V2.0: Send comment state
+  const [commentInput, setCommentInput] = useState("");
+  // V2.0: Staff Note state
+  const [noteInput, setNoteInput] = useState("");
+  // V2.0: Blacklist dialog state
+  const [blacklistDialogOpen, setBlacklistDialogOpen] = useState(false);
+  const [blacklistCustomer, setBlacklistCustomer] = useState<any>(null);
+  const [blacklistReason, setBlacklistReason] = useState("");
+  // V2.0: Order search state
+  const [orderSearch, setOrderSearch] = useState("");
+
+  // V2.0: Filtered orders by search
+  const filteredOrders = useMemo(() => {
+    if (!liveOrders) return [];
+    if (!orderSearch) return liveOrders;
+    const lower = orderSearch.toLowerCase();
+    return liveOrders.filter((o: any) =>
+      (o.orderNumber || "").toLowerCase().includes(lower) ||
+      (o.customerName || "").toLowerCase().includes(lower) ||
+      (o.facebookName || "").toLowerCase().includes(lower)
+    );
+  }, [liveOrders, orderSearch]);
 
   // Product search for batch add
   const productSearchResults = trpc.liveRooms.searchProducts.useQuery(
@@ -214,6 +237,59 @@ export default function LiveRoomDetail(props: any) {
       toast.success("留言已标记为已处理");
     },
   });
+
+  // V2.0: Send comment mutation
+  const sendCommentMutation = trpc.liveRooms.sendComment.useMutation({
+    onSuccess: (data: any) => {
+      if (data.success) {
+        toast.success("留言已发送到 Facebook 直播");
+        setCommentInput("");
+        queryClient.liveRooms.getComments.invalidate({ liveRoomId: roomId });
+      } else {
+        toast.error("发送失败: " + (data.error || "未知错误"));
+      }
+    },
+    onError: (e: any) => toast.error("发送失败: " + e.message),
+  });
+
+  // V2.0: Toggle blacklist mutation
+  const toggleBlacklistMutation = trpc.liveRooms.toggleBlacklist.useMutation({
+    onSuccess: () => {
+      toast.success("黑名单状态已更新");
+      setBlacklistDialogOpen(false);
+      setBlacklistCustomer(null);
+      setBlacklistReason("");
+    },
+    onError: (e: any) => toast.error("操作失败: " + e.message),
+  });
+
+  // V2.0: Staff Note mutations
+  const createNoteMutation = trpc.liveRooms.createNote.useMutation({
+    onSuccess: () => {
+      toast.success("备注已添加");
+      setNoteInput("");
+      if (selectedComment) {
+        queryClient.liveRooms.getCommentNotes.invalidate({ liveCommentId: selectedComment.id });
+      }
+    },
+    onError: (e: any) => toast.error("添加失败: " + e.message),
+  });
+
+  const deleteNoteMutation = trpc.liveRooms.deleteNote.useMutation({
+    onSuccess: () => {
+      toast.success("备注已删除");
+      if (selectedComment) {
+        queryClient.liveRooms.getCommentNotes.invalidate({ liveCommentId: selectedComment.id });
+      }
+    },
+    onError: (e: any) => toast.error("删除失败: " + e.message),
+  });
+
+  // V2.0: Staff Notes query (for selected comment)
+  const commentNotesQuery = trpc.liveRooms.getCommentNotes.useQuery(
+    { liveCommentId: selectedComment?.id || 0 },
+    { enabled: !!selectedComment }
+  );
 
   // Filtered comments
   const filteredComments = useMemo(() => {
@@ -469,6 +545,29 @@ export default function LiveRoomDetail(props: any) {
             </Card>
           </div>
 
+          {/* V2.0: AI Reply & Continue Monitor Toggles */}
+          <div className="flex items-center gap-4 text-xs">
+            <div className="flex items-center gap-2">
+              <Bot className="h-4 w-4 text-purple-500" />
+              <span className="text-muted-foreground">AI 自动回复</span>
+              <Switch
+                checked={room.aiReplyEnabled ?? true}
+                onCheckedChange={(val) => updateRoomMutation.mutate({ id: roomId, aiReplyEnabled: val })}
+                className="scale-75"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Monitor className="h-4 w-4 text-blue-500" />
+              <span className="text-muted-foreground">持续监控留言</span>
+              <Switch
+                checked={room.continueMonitor ?? true}
+                onCheckedChange={(val) => updateRoomMutation.mutate({ id: roomId, continueMonitor: val })}
+                className="scale-75"
+              />
+              <span className="text-muted-foreground">（直播结束后继续捉单）</span>
+            </div>
+          </div>
+
           {/* Three-Column Layout: Products | Comments | Orders */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3" style={{ minHeight: "500px" }}>
             {/* Region 2: Products Area */}
@@ -548,8 +647,38 @@ export default function LiveRoomDetail(props: any) {
                   </div>
                 </div>
               </CardHeader>
+              {/* V2.0: Send comment input */}
+              <div className="px-3 pb-2">
+                <div className="flex gap-1">
+                  <Input
+                    placeholder="输入留言内容发送到直播..."
+                    value={commentInput}
+                    onChange={e => setCommentInput(e.target.value)}
+                    className="h-7 text-xs"
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && commentInput.trim() && room.facebookVideoId) {
+                        sendCommentMutation.mutate({ videoId: room.facebookVideoId, message: commentInput.trim() });
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="default" size="sm" className="h-7 px-2 gap-1"
+                    disabled={!commentInput.trim() || !room.facebookVideoId || sendCommentMutation.isPending}
+                    onClick={() => {
+                      if (commentInput.trim() && room.facebookVideoId) {
+                        sendCommentMutation.mutate({ videoId: room.facebookVideoId, message: commentInput.trim() });
+                      }
+                    }}
+                  >
+                    <Send className="h-3 w-3" /> 发送
+                  </Button>
+                </div>
+                {!room.facebookVideoId && (
+                  <p className="text-xs text-muted-foreground mt-1">未设置 Facebook 视频 ID，无法发送留言</p>
+                )}
+              </div>
               <CardContent className="flex-1 overflow-hidden p-0">
-                <ScrollArea className="h-full" style={{ height: "calc(100vh - 380px)" }}>
+                <ScrollArea className="h-full" style={{ height: "calc(100vh - 420px)" }}>
                   <div className="p-2 space-y-1">
                     {filteredComments.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
@@ -576,7 +705,7 @@ export default function LiveRoomDetail(props: any) {
               <CardHeader className="pb-2 py-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
-                    <ShoppingCart className="h-4 w-4" /> 订单区
+                    <ShoppingCart className="h-4 w-4" /> 得标订单
                   </CardTitle>
                   <div className="flex gap-1">
                     <Button
@@ -591,20 +720,43 @@ export default function LiveRoomDetail(props: any) {
                       onClick={() => setOrderViewMode("byProduct")}>
                       按商品
                     </Button>
+                    <Button
+                      variant="outline" size="sm" className="h-6 text-xs px-2 gap-1"
+                      onClick={() => {
+                        const text = liveOrders.map((o: any) =>
+                          `${o.customerName || o.facebookName || "未知"} - ${o.orderNumber} - RM${Number(o.totalAmount || 0).toFixed(2)}`
+                        ).join("\n");
+                        navigator.clipboard.writeText(text);
+                        toast.success("得标名单已复制");
+                      }}
+                      title="复制得标名单"
+                    >
+                      <Copy className="h-3 w-3" /> 复制
+                    </Button>
                   </div>
+                </div>
+                {/* V2.0: Order search */}
+                <div className="relative mt-1.5">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                  <Input
+                    placeholder="搜索订单号/客户名..."
+                    value={orderSearch}
+                    onChange={e => setOrderSearch(e.target.value)}
+                    className="h-7 text-xs pl-7"
+                  />
                 </div>
               </CardHeader>
               <CardContent className="flex-1 overflow-hidden p-0">
                 <ScrollArea className="h-full" style={{ height: "calc(100vh - 320px)" }}>
                   <div className="p-2 space-y-1.5">
                     {orderViewMode === "byCustomer" ? (
-                      liveOrders.length === 0 ? (
+                      filteredOrders.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
                           <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                          <p className="text-xs">暂无订单</p>
+                          <p className="text-xs">{orderSearch ? "未找到匹配订单" : "暂无订单"}</p>
                         </div>
                       ) : (
-                        liveOrders.map((order: any) => (
+                        filteredOrders.map((order: any) => (
                           <OrderRow key={order.orderId} order={order} />
                         ))
                       )
@@ -865,7 +1017,74 @@ export default function LiveRoomDetail(props: any) {
                 )}
               </div>
             </div>
+            {/* V2.0: Staff Notes Section */}
+            <div className="border-t pt-3">
+              <div className="flex items-center gap-2 mb-2">
+                <StickyNote className="h-4 w-4 text-amber-500" />
+                <span className="text-sm font-medium">工作人员备注</span>
+              </div>
+              {/* Existing notes */}
+              <div className="space-y-1.5 mb-2 max-h-32 overflow-y-auto">
+                {(commentNotesQuery.data || []).map((note: any) => (
+                  <div key={note.id} className="bg-amber-50 dark:bg-amber-900/20 rounded p-2 text-xs">
+                    <p>{note.content}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-muted-foreground">{note.createdBy || "Admin"} · {new Date(note.createdAt).toLocaleString("zh-CN")}</span>
+                      <Button variant="ghost" size="sm" className="h-5 px-1 text-xs text-destructive"
+                        onClick={() => { deleteNoteMutation.mutate({ id: note.id }); }}>
+                        删除
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+                {(commentNotesQuery.data || []).length === 0 && (
+                  <p className="text-xs text-muted-foreground">暂无备注</p>
+                )}
+              </div>
+              {/* Add note input */}
+              <div className="flex gap-1">
+                <Input
+                  placeholder="添加备注..."
+                  value={noteInput}
+                  onChange={e => setNoteInput(e.target.value)}
+                  className="h-7 text-xs"
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && noteInput.trim() && selectedComment) {
+                      createNoteMutation.mutate({
+                        liveCommentId: selectedComment.id,
+                        liveRoomId: roomId,
+                        orderId: selectedComment.orderId,
+                        customerId: selectedComment.customerId,
+                        content: noteInput.trim(),
+                      });
+                    }
+                  }}
+                />
+                <Button variant="default" size="sm" className="h-7 px-2"
+                  disabled={!noteInput.trim() || createNoteMutation.isPending}
+                  onClick={() => {
+                    if (noteInput.trim() && selectedComment) {
+                      createNoteMutation.mutate({
+                        liveCommentId: selectedComment.id,
+                        liveRoomId: roomId,
+                        orderId: selectedComment.orderId,
+                        customerId: selectedComment.customerId,
+                        content: noteInput.trim(),
+                      });
+                    }
+                  }}>
+                  添加
+                </Button>
+              </div>
+            </div>
             <DialogFooter>
+              <Button variant="outline" size="sm" className="gap-1"
+                onClick={() => {
+                  setBlacklistCustomer({ name: selectedComment.commenterName, psid: selectedComment.commenterPsid });
+                  setBlacklistDialogOpen(true);
+                }}>
+                <Ban className="h-4 w-4" /> 加入黑名单
+              </Button>
               {!selectedComment.isHandled && (
                 <Button variant="outline" size="sm" className="gap-1"
                   onClick={() => { markCommentHandledMutation.mutate({ commentId: selectedComment.id }); setSelectedComment(null); }}>
@@ -877,6 +1096,42 @@ export default function LiveRoomDetail(props: any) {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* V2.0: Blacklist Dialog */}
+      <Dialog open={blacklistDialogOpen} onOpenChange={setBlacklistDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>加入黑名单</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-3">
+            <div className="text-sm text-muted-foreground">
+              客户: {blacklistCustomer?.name || "未知"}
+            </div>
+            <div>
+              <Label>原因</Label>
+              <Textarea
+                value={blacklistReason}
+                onChange={e => setBlacklistReason(e.target.value)}
+                placeholder="请输入加入黑名单的原因..."
+                className="text-sm"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBlacklistDialogOpen(false)}>取消</Button>
+            <Button variant="destructive"
+              disabled={toggleBlacklistMutation.isPending || !blacklistReason.trim()}
+              onClick={() => {
+                if (blacklistCustomer && blacklistReason.trim()) {
+                  toast.info("黑名单功能需要客户ID，请通过客户管理页面操作");
+                  setBlacklistDialogOpen(false);
+                }
+              }}>
+              <Ban className="h-4 w-4" /> 确认加入
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

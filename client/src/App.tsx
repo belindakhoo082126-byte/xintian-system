@@ -47,6 +47,7 @@ import MallPayment from "@/pages/mall/MallPayment";
 import Packing from "@/pages/Packing";
 import PackingDetail from "@/pages/PackingDetail";
 import CustomerOrderTracking from "@/pages/CustomerOrderTracking";
+import CustomerOrderPage from "@/pages/CustomerOrderPage";
 import ProfitAnalysisReport from "@/pages/ProfitAnalysisReport";
 import LiveRooms from "@/pages/LiveRooms";
 import LiveRoomDetail from "@/pages/LiveRoomDetail";
@@ -152,6 +153,7 @@ function App() {
             <Route path={"/mall/product/:id"} component={MallProductDetail} />
             <Route path={"/mall"} component={MallHome} />
             <Route path={"/order-tracking"} component={CustomerOrderTracking} />
+            <Route path={"/order/:orderNumber/:token"} component={({ params }: any) => <CustomerOrderPage orderNumber={params.orderNumber} token={params.token} />} />
             <Route>
               <DashboardLayout>
                 <DashboardRoutes />

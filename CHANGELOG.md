@@ -498,3 +498,37 @@
 - 直播房不建立第二套商品资料，仅引用商品管理的正式商品数据
 - 直播房只允许修改售价（直播特价），仅影响当前直播，不修改正式商品售价
 - 所有商品资料统一维护于 Product Management，直播房仅负责：加入商品、调整直播售价、删除商品、排序商品
+
+---
+
+## V2.0 — Live Studio 优化 + 订单安全链接 + 得标通知
+
+**发布日期：** 2026-08-02  
+**开发阶段：** Live Studio V2.0 + Order V1.0
+
+### Added
+
+- 直播房间新增 AI 自动回复 Toggle（`aiReplyEnabled`），可控制是否启用 AI 自动回复留言
+- 直播房间新增 持续监控留言 Toggle（`continueMonitor`），直播结束后可继续捉单
+- 留言区新增发送留言输入框，可直接发送留言到 Facebook 直播视频
+- 留言详情对话框新增 Staff Note 区域，可添加/删除工作人员备注
+- 留言详情对话框新增「加入黑名单」按钮
+- 订单区标题改为「得标订单」，新增搜索框（可搜索订单号/客户名）和「复制」按钮（一键复制得标名单）
+- 新增客户订单公开页面（`/order/:orderNumber/:token`），通过 secureToken 安全验证，无需登录即可查看订单
+- 订单详情页新增「复制订单链接」按钮，复制客户订单公开链接
+- 后端新增 `liveRooms.sendComment`、`liveRooms.toggleBlacklist`、`liveRooms.createNote`、`getCommentNotes`、`deleteNote` 路由
+- 后端新增 `publicOrder.getByToken` 路由，通过安全 Token 获取客户订单信息
+- `createOrderFromLiveCapture` 自动生成 `secureToken`，用于客户订单安全链接
+
+### Database
+
+- `live_rooms` 新增 `aiReplyEnabled`（BOOLEAN, 默认 true）
+- `live_rooms` 新增 `continueMonitor`（BOOLEAN, 默认 true）
+- `orders` 新增 `secureToken`（VARCHAR(64), UNIQUE）
+- 新建 `live_comment_notes` 表（id, liveCommentId, liveRoomId, orderId, customerId, content, createdBy, createdAt）
+
+### Notes
+
+- 直播房不建立第二套商品资料，仅引用商品管理的正式商品数据
+- 客户订单公开页面通过 secureToken 验证，无需登录，Token 在订单创建时自动生成
+- Staff Note 独立于客户可见的订单备注，仅工作人员可见

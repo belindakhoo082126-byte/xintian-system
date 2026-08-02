@@ -29,6 +29,8 @@ import {
   // V2.0 Phase 2.5 imports - Live AI Flows
   liveAiFlows,
   liveComments,
+  // V2.0 imports - Live Comment Notes (Staff Note)
+  liveCommentNotes,
   // V3.1 imports - Product Bundles
   productBundles, productBundleItems, bundleStockLogs,
   // V2.1 imports - Order Payments & Operation Logs
@@ -4602,6 +4604,7 @@ export async function createOrderFromLiveCapture(data: {
   
   // Create new order
   const orderNumber = `XT${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const secureToken = generateSecureToken();
   const orderResult = await db.insert(orders).values({
     orderNumber,
     customerId: customer.id,
@@ -4618,6 +4621,7 @@ export async function createOrderFromLiveCapture(data: {
     sourceName: data.sourceName || "Facebook Live",
     originalCustomerComment: data.commentMessage,
     commentDate: new Date(),
+    secureToken,
   });
   
   const orderId = (orderResult as any)[0].insertId;
@@ -10109,4 +10113,234 @@ export async function rollbackToVersion(id: number, rolledBackBy: string) {
     publishedBy: rolledBackBy,
     publishedAt: new Date(),
   }).where(eq(aiVersions.id, id));
+}
+
+// ============================================================================
+// V2.0: Live Studio + Order Security Link Functions
+// ============================================================================
+
+import { randomBytes } from "crypto";
+
+/**
+ * Generate a cryptographically secure random token for order access.
+ */
+export function generateSecureToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+/**
+ * Get order by order number and secure token (public access, no auth required).
+ * Returns sanitized order data safe for public exposure.
+ */
+export async function getOrderBySecureToken(orderNumber: string, token: string) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const order = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    physicalStatus: orders.physicalStatus,
+    totalAmount: orders.totalAmount,
+    paidAmount: orders.paidAmount,
+    shippingFee: orders.shippingFee,
+    discountAmount: orders.discountAmount,
+    extraCharge: orders.extraCharge,
+    extraChargeDescription: orders.extraChargeDescription,
+    creditUsed: orders.creditUsed,
+    shippingAddress: orders.shippingAddress,
+    shippingMethod: orders.shippingMethod,
+    courierCompany: orders.courierCompany,
+    trackingNumber: orders.trackingNumber,
+    paymentMethodName: orders.paymentMethodName,
+    receiptUrl: orders.receiptUrl,
+    createdAt: orders.createdAt,
+    secureToken: orders.secureToken,
+    customerName: customers.name,
+    customerPhone: customers.phoneNumber,
+    customerEmail: customers.email,
+    customerAddress: customers.address,
+    customerCity: customers.city,
+    customerState: customers.state,
+    customerPostalCode: customers.postalCode,
+  }).from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id))
+    .where(eq(orders.orderNumber, orderNumber))
+    .limit(1);
+
+  if (order.length === 0) return null;
+
+  // Verify token matches
+  if (!order[0].secureToken || order[0].secureToken !== token) return null;
+
+  const orderData = order[0];
+
+  // Get order items
+  const items = await db.select({
+    productName: orderItems.productName,
+    variationName: orderItems.variationName,
+    quantity: orderItems.quantity,
+    unitPrice: orderItems.unitPrice,
+    subtotal: orderItems.subtotal,
+    productType: orderItems.productType,
+    productId: orderItems.productId,
+  }).from(orderItems).where(eq(orderItems.orderId, orderData.id));
+
+  // Enrich with product images
+  const enrichedItems = await Promise.all(items.map(async (i) => {
+    const product = await db.select({
+      coverImageUrl: products.coverImageUrl,
+    }).from(products).where(eq(products.id, i.productId)).limit(1);
+    return { ...i, coverImageUrl: product[0]?.coverImageUrl || null };
+  }));
+
+  // Get packages
+  const pkgs = await getOrderPackages(orderData.id);
+
+  // Map status to customer-friendly labels
+  const statusMap: Record<string, string> = {
+    "pending": "Pending Payment",
+    "receipt_uploaded": "Payment Review",
+    "partial_payment": "Payment Review",
+    "hold_order": "Pending Payment",
+    "packing": "Payment Confirmed",
+    "shipped": "Shipped",
+    "partial_shipped": "Partial Shipped",
+    "completed": "Completed",
+    "cancelled": "Cancelled",
+  };
+
+  return {
+    ...orderData,
+    customerStatus: statusMap[orderData.physicalStatus || ""] || orderData.physicalStatus || "Unknown",
+    items: enrichedItems,
+    packages: pkgs,
+  };
+}
+
+/**
+ * Toggle customer blacklist status.
+ */
+export async function toggleCustomerBlacklist(customerId: number, isBlacklisted: boolean, reason: string, operatorName: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  if (isBlacklisted) {
+    await db.update(customers).set({
+      isBlacklisted: true,
+      blacklistReason: reason,
+      blacklistAt: new Date(),
+      blacklistBy: null, // Could store operator ID if available
+    }).where(eq(customers.id, customerId));
+  } else {
+    await db.update(customers).set({
+      isBlacklisted: false,
+      blacklistReason: null,
+      unblacklistAt: new Date(),
+      unblacklistBy: null,
+    }).where(eq(customers.id, customerId));
+  }
+  broadcastChanges(["customers"]);
+  return { success: true };
+}
+
+/**
+ * Get customer by commenter PSID or name (for blacklist check from live comments).
+ */
+export async function getCustomerByCommenter(commenterName: string, commenterPsid?: string) {
+  const db = await getDb();
+  if (!db) return null;
+
+  if (commenterPsid) {
+    const byPsid = await db.select().from(customers)
+      .where(eq(customers.messengerId, commenterPsid))
+      .limit(1);
+    if (byPsid.length > 0) return byPsid[0];
+  }
+
+  const byName = await db.select().from(customers)
+    .where(eq(customers.facebookName, commenterName))
+    .limit(1);
+  return byName[0] || null;
+}
+
+// ============================================================================
+// Live Comment Notes (Staff Note) CRUD
+// ============================================================================
+
+export async function getLiveCommentNotes(liveCommentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.select().from(liveCommentNotes)
+    .where(eq(liveCommentNotes.liveCommentId, liveCommentId))
+    .orderBy(desc(liveCommentNotes.createdAt));
+}
+
+export async function getLiveRoomNotes(liveRoomId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.select().from(liveCommentNotes)
+    .where(eq(liveCommentNotes.liveRoomId, liveRoomId))
+    .orderBy(desc(liveCommentNotes.createdAt));
+}
+
+export async function createLiveCommentNote(data: {
+  liveCommentId: number;
+  liveRoomId: number;
+  orderId?: number;
+  customerId?: number;
+  content: string;
+  createdBy?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(liveCommentNotes).values({
+    liveCommentId: data.liveCommentId,
+    liveRoomId: data.liveRoomId,
+    orderId: data.orderId || null,
+    customerId: data.customerId || null,
+    content: data.content,
+    createdBy: data.createdBy || null,
+  });
+  broadcastChanges(["liveRooms"]);
+  return { id: (result as any)[0].insertId, ...data };
+}
+
+export async function deleteLiveCommentNote(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(liveCommentNotes).where(eq(liveCommentNotes.id, id));
+  broadcastChanges(["liveRooms"]);
+  return { success: true };
+}
+
+/**
+ * Send a comment on a Facebook Live video via Graph API.
+ * Uses the Page Access Token to post as the page.
+ */
+export async function sendLiveComment(videoId: string, message: string): Promise<{ success: boolean; commentId?: string; error?: string }> {
+  const pageAccessToken = ENV.fbPageAccessToken;
+  if (!pageAccessToken) {
+    return { success: false, error: "Facebook Page Access Token not configured" };
+  }
+
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/v21.0/${videoId}/comments`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          access_token: pageAccessToken,
+        }),
+      }
+    );
+    const data = await response.json();
+    if (data.error) {
+      return { success: false, error: data.error.message };
+    }
+    return { success: true, commentId: data.id };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 }

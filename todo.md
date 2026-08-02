@@ -1510,3 +1510,32 @@
 - [x] 前端：保留 Keyword Copy 功能（从正式 products.keywords 读取）
 - [x] 类型检查通过
 - [x] 保存检查点
+
+## V2.0 Phase A：直播房间控制 + 留言区增强
+- [ ] schema.ts: live_rooms 新增 aiReplyEnabled (boolean) + continueMonitor (boolean) 字段
+- [ ] schema.ts: live_comment_notes 表（Staff Note 系统）
+- [ ] schema.ts: orders 新增 secureToken (varchar 64, unique) 字段
+- [ ] 数据库迁移 SQL 生成并执行
+- [ ] db.ts: updateLiveRoom 支持 aiReplyEnabled / continueMonitor 字段
+- [x] db.ts: sendLiveComment 函数（Facebook Graph API 发送留言）
+- [x] db.ts: toggleCustomerBlacklist 函数
+- [ ] db.ts: live_comment_notes CRUD 函数
+- [x] db.ts: createOrderFromLiveCapture 生成 secureToken
+- [x] db.ts: getOrderBySecureToken 公开查询函数
+- [ ] routers.ts: liveRooms 新增 sendComment / toggleBlacklist / staffNotes 路由
+- [ ] routers.ts: liveRooms update 路由支持 aiReplyEnabled / continueMonitor
+- [x] routers.ts: 新增 publicOrder 路由（getOrderBySecureToken）
+- [x] messenger.ts: webhook 检查 continueMonitor + aiReplyEnabled
+- [x] messenger.ts: 得标通知包含订单链接
+- [x] 前端 LiveRoomDetail: AI Reply / Continue Monitor Toggle
+- [x] 前端 LiveRoomDetail: 留言区发送留言输入框
+- [x] 前端 LiveRoomDetail: 头像点击弹出黑名单菜单
+- [x] 前端 LiveRoomDetail: Staff Note 区域（留言详情对话框）
+- [x] 前端 LiveRoomDetail: 订单区命名优化 + 搜索 + 复制得标名单
+- [x] 前端 CustomerOrderPage: 公开客户订单页面
+- [x] App.tsx: 新增 /order/:orderNumber/:token 公开路由
+- [x] 前端订单列表/详情: 复制订单链接按钮
+- [x] TypeScript 零错误
+- [x] Vitest 全部通过
+- [x] CHANGELOG 更新
+- [x] 保存检查点

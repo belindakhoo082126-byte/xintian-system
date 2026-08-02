@@ -604,6 +604,8 @@ export const orders = mysqlTable("orders", {
     "shipped",              // 已发货
     "completed",            // 完成
   ]).default("waiting_payment"),
+  // V2.0: Secure token for public order access (customer order page)
+  secureToken: varchar("secureToken", { length: 64 }).unique(),
 });
 
 export type Order = typeof orders.$inferSelect;
@@ -1512,6 +1514,10 @@ export const liveRooms = mysqlTable("live_rooms", {
   estimatedStartTime: varchar("estimatedStartTime", { length: 50 }),
   // Notes
   notes: text("notes"),
+  // V2.0: AI Reply enabled for this live room (auto-reply to FAQ comments)
+  aiReplyEnabled: boolean("aiReplyEnabled").default(true).notNull(),
+  // V2.0: Continue monitoring comments after live ends (up to 30 days)
+  continueMonitor: boolean("continueMonitor").default(true).notNull(),
   // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -1634,6 +1640,32 @@ export const liveComments = mysqlTable("live_comments", {
 
 export type LiveComment = typeof liveComments.$inferSelect;
 export type InsertLiveComment = typeof liveComments.$inferInsert;
+
+// ============================================================================
+// V2.0: Live Comment Notes (Staff Note 工作人员备注)
+// ============================================================================
+
+export const liveCommentNotes = mysqlTable("live_comment_notes", {
+  id: int("id").autoincrement().primaryKey(),
+  // Linked live comment
+  liveCommentId: int("liveCommentId").notNull(),
+  // Linked live room (for quick filtering)
+  liveRoomId: int("liveRoomId").notNull(),
+  // Optional: linked order (if note relates to an order)
+  orderId: int("orderId"),
+  // Optional: linked customer (if note relates to a customer)
+  customerId: int("customerId"),
+  // Note content
+  content: text("content").notNull(),
+  // Who created this note
+  createdBy: varchar("createdBy", { length: 255 }),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+});
+
+export type LiveCommentNote = typeof liveCommentNotes.$inferSelect;
+export type InsertLiveCommentNote = typeof liveCommentNotes.$inferInsert;
 
 // ============================================================================
 // V2.0: Import Batches (采购批次)

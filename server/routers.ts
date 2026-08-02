@@ -3962,6 +3962,8 @@ export const appRouter = router({
         streamerName: z.string().optional(),
         facebookPageId: z.string().optional(),
         estimatedStartTime: z.string().optional(),
+        aiReplyEnabled: z.boolean().optional(),
+        continueMonitor: z.boolean().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
@@ -4147,6 +4149,66 @@ export const appRouter = router({
         // Set status to ended
         await db.updateLiveRoom(input.liveRoomId, { status: 'ended' } as any);
         return { success: true };
+      }),
+
+    // --- V2.0: Send Comment to Facebook Live (发送留言) ---
+    sendComment: adminProcedure
+      .input(z.object({
+        videoId: z.string(),
+        message: z.string().min(1),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.sendLiveComment(input.videoId, input.message);
+      }),
+
+    // --- V2.0: Toggle Customer Blacklist (黑名单切换) ---
+    toggleBlacklist: adminProcedure
+      .input(z.object({
+        customerId: z.number(),
+        isBlacklisted: z.boolean(),
+        reason: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.toggleCustomerBlacklist(
+          input.customerId,
+          input.isBlacklisted,
+          input.reason || '',
+          ctx.user?.name || 'Admin',
+        );
+      }),
+
+    // --- V2.0: Staff Notes (工作人员备注) ---
+    getCommentNotes: adminProcedure
+      .input(z.object({ liveCommentId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getLiveCommentNotes(input.liveCommentId);
+      }),
+
+    getRoomNotes: adminProcedure
+      .input(z.object({ liveRoomId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getLiveRoomNotes(input.liveRoomId);
+      }),
+
+    createNote: adminProcedure
+      .input(z.object({
+        liveCommentId: z.number(),
+        liveRoomId: z.number(),
+        orderId: z.number().optional(),
+        customerId: z.number().optional(),
+        content: z.string().min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.createLiveCommentNote({
+          ...input,
+          createdBy: ctx.user?.name || 'Admin',
+        });
+      }),
+
+    deleteNote: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.deleteLiveCommentNote(input.id);
       }),
   }),
 
@@ -5479,6 +5541,24 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
     queryOrder: adminProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
       return await queryOrderShipping(input.orderId);
     }),
+  }),
+
+  // ==========================================================================
+  // V2.0: Public Order Router (客户订单公开查询 - 无需登录)
+  // ==========================================================================
+  publicOrder: router({
+    getByToken: publicProcedure
+      .input(z.object({
+        orderNumber: z.string(),
+        token: z.string(),
+      }))
+      .query(async ({ input }) => {
+        const result = await db.getOrderBySecureToken(input.orderNumber, input.token);
+        if (!result) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: '订单不存在或链接无效' });
+        }
+        return result;
+      }),
   }),
 });
 
