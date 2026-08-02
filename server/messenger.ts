@@ -884,11 +884,12 @@ async function processComment(params: {
         try {
           const isMerged = (orderResult as any).merged;
           if (isMerged) {
-            // V2.0.1: Merged order notification also includes "查询订单及结账" button
+            // V2.0.2: Merged order notification with detailed product info and "查询订单及结账" button
             const mergeOrderUrl = orderResult.secureToken
               ? `${process.env.VITE_PUBLIC_URL || 'https://xintianfb-mkjyuzze.manus.space'}/order/${orderResult.orderNumber}/${orderResult.secureToken}`
               : null;
-            const mergeText = `${commenterName} 您好！已追加到订单 ${orderResult.orderNumber}\n新增: ${itemList}\n当前总额: RM ${orderResult.totalAmount}`;
+            const mergeDetailLines = matched.map((m: any) => `• ${m.productName}${m.variationName ? ` (${m.variationName})` : ''} ×${m.quantity} @ RM ${m.unitPrice}`).join('\n');
+            const mergeText = `${commenterName} 您好！已追加到订单 ${orderResult.orderNumber}\n\n新增商品:\n${mergeDetailLines}\n\n当前总额: RM ${orderResult.totalAmount}`;
             if (mergeOrderUrl) {
               await sendButtonMessage(commenterPsid || '', mergeText, [
                 { title: '查询订单及结账', url: mergeOrderUrl },
@@ -897,11 +898,12 @@ async function processComment(params: {
               await sendTextMessage(commenterPsid || '', mergeText);
             }
           } else {
-            // V2.0.1: Send winner notification with "查询订单及结账" button linking to public order page
+            // V2.0.2: Send winner notification with detailed product info and "查询订单及结账" button
             const orderUrl = orderResult.secureToken
               ? `${process.env.VITE_PUBLIC_URL || 'https://xintianfb-mkjyuzze.manus.space'}/order/${orderResult.orderNumber}/${orderResult.secureToken}`
               : null;
-            const notifText = `您好 ${commenterName}！\n\n您的直播订单已创建 ✅\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请点击下方按钮查看订单并完成结账~`;
+            const detailLines = matched.map((m: any) => `• ${m.productName}${m.variationName ? ` (${m.variationName})` : ''} ×${m.quantity} @ RM ${m.unitPrice} = RM ${(parseFloat(m.unitPrice) * m.quantity).toFixed(2)}`).join('\n');
+            const notifText = `恭喜 ${commenterName} 成功下单 ✅\n\n订单编号: ${orderResult.orderNumber}\n\n${detailLines}\n\n订单总额: RM ${orderResult.totalAmount}\n\n请点击下方按钮查看订单并完成结账~`;
             if (orderUrl) {
               await sendButtonMessage(commenterPsid || '', notifText, [
                 { title: '查询订单及结账', url: orderUrl },

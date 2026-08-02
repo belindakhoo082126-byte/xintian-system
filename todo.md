@@ -1548,3 +1548,16 @@
 - [x] TypeScript 零错误
 - [x] Vitest 全部通过
 - [x] 保存检查点
+
+## V2.0.2: 得标通知内容 + 金额明细 + 实时更新修复
+
+- [x] 1. 得标通知内容增加商品名称、数量、规格、单价明细
+- [x] 2. CustomerOrderPage 金额明细增加普通/特价小计、Discount、应付款
+- [x] 3. 运费规则确认（已正确，无需修改）
+- [x] 4. Credit 扣减显示确认（已在金额明细中修复）
+- [x] 5. CustomerOrderPage 增加 refetchInterval=10s 加快实时更新
+- [x] 6. AI 加单后实时更新（同问题5）
+- [x] 7. 物流数据确认（已是真实数据，无需修改）
+- [x] TypeScript 零错误
+- [x] Vitest 全部通过
+- [x] 保存检查点

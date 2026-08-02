@@ -10148,6 +10148,7 @@ export async function getOrderBySecureToken(orderNumber: string, token: string) 
     extraCharge: orders.extraCharge,
     extraChargeDescription: orders.extraChargeDescription,
     creditUsed: orders.creditUsed,
+    physicalSubtotal: orders.physicalSubtotal,
     shippingAddress: orders.shippingAddress,
     shippingMethod: orders.shippingMethod,
     courierCompany: orders.courierCompany,
@@ -10210,11 +10211,17 @@ export async function getOrderBySecureToken(orderNumber: string, token: string) 
     "cancelled": "Cancelled",
   };
 
+  // V2.0.2: Compute amount due for customer-facing display
+  const totalNum = parseFloat(orderData.totalAmount || "0");
+  const paidNum = parseFloat(orderData.paidAmount || "0");
+  const amountDue = Math.max(0, totalNum - paidNum).toFixed(2);
+
   return {
     ...orderData,
     customerStatus: statusMap[orderData.physicalStatus || ""] || orderData.physicalStatus || "Unknown",
     items: enrichedItems,
     packages: pkgs,
+    amountDue,
   };
 }
 
