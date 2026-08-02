@@ -104,7 +104,7 @@ export default function CustomerOrderPage(props: any) {
 
         {o && !isLoading && (
           <div className="space-y-4">
-            {/* V2.0.3: Yellow alert when no address */}
+            {/* V2.0.3: Address status banner - yellow when no address, green when completed */}
             {!hasAddress && canEditAddress && !showAddressForm && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
                 <MapPin className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -119,6 +119,26 @@ export default function CustomerOrderPage(props: any) {
                     填写收货地址
                   </Button>
                 </div>
+              </div>
+            )}
+            {hasAddress && !showAddressForm && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-center gap-3">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+                <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                  <span className="font-medium text-emerald-900">✓ 收货地址已完成</span>
+                  <span className="text-emerald-700">配送方式：{SHIPPING_METHODS.find(m => m.value === o.shippingMethod)?.label || o.shippingMethod}</span>
+                  <span className="text-emerald-700">运费：RM {o.shippingFee || "0.00"}</span>
+                </div>
+                {canEditAddress && (
+                  <Button variant="ghost" size="sm" className="text-emerald-700 hover:text-emerald-900" onClick={() => {
+                    setAddressInput(o.shippingAddress || "");
+                    setPhoneInput(o.customerPhone || "");
+                    setShippingMethod(o.shippingMethod || "west_malaysia");
+                    setShowAddressForm(true);
+                  }}>
+                    修改
+                  </Button>
+                )}
               </div>
             )}
 
