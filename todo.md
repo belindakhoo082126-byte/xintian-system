@@ -1641,3 +1641,11 @@
 - [x] 英文翻译支持（主要 UI 文字）
 - [x] TypeScript 零错误 + Vitest 全部通过
 - [x] 保存检查点
+
+## V2.0.13: 商品管理图片上传修复
+
+- [x] 修复封面图片上传按钮（Button asChild 导致 label 点击不触发 file input）
+- [x] 修复视频上传按钮（相同 asChild 问题）
+- [x] 修复规格图片上传按钮（相同 asChild 问题）
+- [x] TypeScript 零错误 + Vitest 全部通过
+- [x] 保存检查点

@@ -947,10 +947,8 @@ export default function ProductsV2() {
                       <Label>{translate("封面图片", "Cover Image")}</Label>
                       <div className="flex items-center gap-3">
                         <Input value={form.coverImageUrl} onChange={(e) => setForm({ ...form, coverImageUrl: e.target.value })} placeholder={translate("https://... 或点击上传", "https://... or click to upload")} />
-                        <label className="cursor-pointer">
-                          <Button variant="outline" asChild>
-                            <span><Upload className="h-4 w-4 mr-1" />{translate("上传", "Upload")}</span>
-                          </Button>
+                        <label className="cursor-pointer inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground">
+                          <Upload className="h-4 w-4" />{translate("上传", "Upload")}
                           <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (!file) return;
@@ -1029,10 +1027,8 @@ export default function ProductsV2() {
                       <Label>{translate("商品影片", "Product Video")}</Label>
                       <div className="flex items-center gap-3">
                         <Input value={form.videoUrl} onChange={(e) => setForm({ ...form, videoUrl: e.target.value })} placeholder={translate("https://... 或点击上传影片", "https://... or click to upload video")} />
-                        <label className="cursor-pointer">
-                          <Button variant="outline" asChild>
-                            <span>{translate("上传影片", "Upload Video")}</span>
-                          </Button>
+                        <label className="cursor-pointer inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground">
+                          {translate("上传影片", "Upload Video")}
                           <input type="file" accept="video/*" className="hidden" onChange={async (ev) => {
                             const file = ev.target.files?.[0];
                             if (!file) return;
@@ -1722,10 +1718,8 @@ export default function ProductsV2() {
               <Label>{translate("规格图片", "Variant Image")}</Label>
               <div className="flex items-center gap-3">
                 <Input value={variantForm.imageUrl} onChange={(e) => setVariantForm({ ...variantForm, imageUrl: e.target.value })} placeholder={translate("https://... 或点击上传", "https://... or click to upload")} />
-                <label className="cursor-pointer">
-                  <Button variant="outline" asChild>
-                    <span><Upload className="h-4 w-4 mr-1" />{translate("上传", "Upload")}</span>
-                  </Button>
+                <label className="cursor-pointer inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground">
+                  <Upload className="h-4 w-4" />{translate("上传", "Upload")}
                   <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
