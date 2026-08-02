@@ -136,6 +136,18 @@ export default function LiveRoomDetail(props: any) {
   const [blacklistReason, setBlacklistReason] = useState("");
   // V2.0: Order search state
   const [orderSearch, setOrderSearch] = useState("");
+  // V2.0.9: Product card display mode (大卡/紧凑)
+  const [cardMode, setCardMode] = useState<'large' | 'compact'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('liveCardMode') as 'large' | 'compact') || 'large';
+    }
+    return 'large';
+  });
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('liveCardMode', cardMode);
+    }
+  }, [cardMode]);
 
   // V2.0: Filtered orders by search
   const filteredOrders = useMemo(() => {
@@ -575,16 +587,24 @@ export default function LiveRoomDetail(props: any) {
             </div>
           </div>
 
-          {/* Three-Column Layout: Products | Comments | Orders */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3" style={{ minHeight: "500px" }}>
-            {/* Region 2: Products Area */}
-            <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
+          {/* Three-Column Layout: Products 45% | Comments 30% | Orders 25% */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3" style={{ minHeight: "500px" }}>
+            {/* Region 2: Products Area (45%) */}
+            <Card className="flex flex-col lg:col-span-5" style={{ maxHeight: "calc(100vh - 280px)" }}>
               <CardHeader className="pb-2 py-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <Package className="h-4 w-4" /> 商品区
                   </CardTitle>
-                  <Badge variant="secondary" className="text-xs">{liveProductGroups.length} 个</Badge>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+                      <Button variant={cardMode === 'large' ? 'default' : 'ghost'} size="sm" className="h-6 px-2 text-xs"
+                        onClick={() => setCardMode('large')}>大卡</Button>
+                      <Button variant={cardMode === 'compact' ? 'default' : 'ghost'} size="sm" className="h-6 px-2 text-xs"
+                        onClick={() => setCardMode('compact')}>紧凑</Button>
+                    </div>
+                    <Badge variant="secondary" className="text-xs">{liveProductGroups.length} 个</Badge>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="flex-1 overflow-hidden p-0">
@@ -601,6 +621,7 @@ export default function LiveRoomDetail(props: any) {
                           key={group.productId}
                           group={group}
                           isLive={isLive}
+                          cardMode={cardMode}
                           onStatusChange={handleStatusChange}
                           onTogglePreorder={(id: number, val: boolean) => togglePreorderMutation.mutate({ id, allowPreorder: val })}
                           onAdjustStock={openStockDialog}
@@ -615,8 +636,8 @@ export default function LiveRoomDetail(props: any) {
               </CardContent>
             </Card>
 
-            {/* Region 3: Comments Area */}
-            <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
+            {/* Region 3: Comments Area (30%) */}
+            <Card className="flex flex-col lg:col-span-4" style={{ maxHeight: "calc(100vh - 280px)" }}>
               <CardHeader className="pb-2 py-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
@@ -707,8 +728,8 @@ export default function LiveRoomDetail(props: any) {
               </CardContent>
             </Card>
 
-            {/* Region 4: Orders Area */}
-            <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
+            {/* Region 4: Orders Area (25%) */}
+            <Card className="flex flex-col lg:col-span-3" style={{ maxHeight: "calc(100vh - 280px)" }}>
               <CardHeader className="pb-2 py-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
@@ -1153,10 +1174,9 @@ export default function LiveRoomDetail(props: any) {
 
 // ============ Sub Components ============
 
-function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onAdjustStock, onPriceEdit, onDelete, onCopyKeyword }: any) {
+function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePreorder, onAdjustStock, onPriceEdit, onDelete, onCopyKeyword }: any) {
   const variations = group.variations || [];
   const hasMultiple = variations.length > 1;
-  const totalOrdered = variations.reduce((sum: number, v: any) => sum + (v.orderedCount || 0), 0);
   const totalAvailable = variations.reduce((sum: number, v: any) => sum + (v.availableStock || 0), 0);
   const totalReserved = variations.reduce((sum: number, v: any) => sum + (v.reservedCount || 0), 0);
   const onHand = group.productStockQuantity ?? totalAvailable + totalReserved;
@@ -1164,65 +1184,93 @@ function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onA
   // Stock color: green >10, yellow 1-10, red =0
   const stockColor = totalAvailable > 10 ? "text-green-600" : totalAvailable > 0 ? "text-yellow-600" : "text-red-600";
   const stockBg = totalAvailable > 10 ? "bg-green-50" : totalAvailable > 0 ? "bg-yellow-50" : "bg-red-50";
+  const isCompact = cardMode === 'compact';
+  const imgSize = isCompact ? 'w-14 h-14' : 'w-[100px] h-[100px]';
+  const imgUrl = group.coverImageUrl || variations[0]?.imageUrl;
+
+  // Placeholder image component (no text, just icon)
+  const Placeholder = ({ size = 'h-8 w-8' }: { size?: string }) => (
+    <div className="flex items-center justify-center w-full h-full bg-gradient-to-br from-green-50 to-green-100">
+      <ImageIcon className={`${size} text-green-300`} />
+    </div>
+  );
 
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-3">
-        {/* Product image — large 1:1 ratio */}
+    <Card className={`overflow-hidden ${isCompact ? 'py-0' : ''}`}>
+      <CardContent className={isCompact ? 'p-2' : 'p-3'}>
         <div className="flex gap-3">
-          <div className="w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center">
-            {(group.coverImageUrl || variations[0]?.imageUrl) ? (
+          {/* Left: Product image (fixed ratio, no crop) */}
+          <div className={`${imgSize} rounded-lg overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center`}>
+            {imgUrl ? (
               <img
-                src={group.coverImageUrl || variations[0]?.imageUrl}
+                src={imgUrl}
                 alt={group.productName || ""}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                  (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
+                  const img = e.target as HTMLImageElement;
+                  img.style.display = 'none';
+                  const ph = img.nextElementSibling;
+                  if (ph) ph.classList.remove('hidden');
                 }}
               />
             ) : null}
-            <div className={`${group.coverImageUrl || variations[0]?.imageUrl ? "hidden" : ""} flex flex-col items-center justify-center text-muted-foreground`}>
-              <ImageIcon className="h-6 w-6 mb-0.5" />
-              <span className="text-xs">无图</span>
+            <div className={imgUrl ? 'hidden' : ''}>
+              <Placeholder size={isCompact ? 'h-5 w-5' : 'h-8 w-8'} />
             </div>
           </div>
 
-          {/* Product name + price + keyword */}
+          {/* Middle: Product info */}
           <div className="flex-1 min-w-0 flex flex-col justify-between">
             <div>
-              <p className="text-sm font-bold truncate">{group.productName}</p>
+              <p className={`font-bold truncate ${isCompact ? 'text-xs' : 'text-sm'}`}>{group.productName}</p>
               <div className="flex items-center gap-1.5 mt-1">
                 <code className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
-                {hasMultiple && <Badge variant="outline" className="text-xs">{variations.length} 规格</Badge>}
-                {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs">预购</Badge>}
+                {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length}规格</Badge>}
+                {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">预购</Badge>}
               </div>
             </div>
-            <div className="flex items-baseline gap-2">
+            <div className="flex items-baseline gap-2 mt-1">
               {group.productSellingPrice != null && Number(variations[0]?.price || 0) !== Number(group.productSellingPrice) ? (
-                <span className="text-lg font-bold text-orange-600">RM{Number(variations[0]?.price || 0).toFixed(2)}
+                <span className={`${isCompact ? 'text-base' : 'text-lg'} font-bold text-orange-600`}>RM{Number(variations[0]?.price || 0).toFixed(2)}
                   <span className="line-through text-xs text-muted-foreground/60 ml-1">RM{Number(group.productSellingPrice).toFixed(2)}</span>
                 </span>
               ) : (
-                <span className="text-lg font-bold">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
+                <span className={`${isCompact ? 'text-base' : 'text-lg'} font-bold`}>RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
               )}
             </div>
+            {/* Stock: Chinese labels, inline */}
+            <div className={`flex items-center gap-3 mt-1 ${isCompact ? 'text-xs' : 'text-sm'}`}>
+              <span className="text-muted-foreground">现货:<b className="text-foreground ml-0.5">{onHand}</b></span>
+              <span className="text-muted-foreground">已喊:<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>
+              <span className="text-muted-foreground">可卖:<b className={`${stockColor} ml-0.5`}>{totalAvailable}</b></span>
+            </div>
           </div>
-        </div>
 
-        {/* Stock summary — Chinese labels, color-coded */}
-        <div className={`flex items-center justify-around mt-2.5 py-1.5 rounded-md ${stockBg}`}>
-          <div className="text-center">
-            <p className="text-xs text-muted-foreground">现货</p>
-            <p className="text-sm font-bold">{onHand}</p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs text-muted-foreground">已喊</p>
-            <p className="text-sm font-bold text-orange-600">{totalReserved}</p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs text-muted-foreground">可卖</p>
-            <p className={`text-sm font-bold ${stockColor}`}>{totalAvailable}</p>
+          {/* Right: Vertical action buttons */}
+          <div className="flex flex-col gap-1 flex-shrink-0">
+            <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title="修改价格"
+              onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
+              <DollarSign className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title="调整库存"
+              onClick={() => onAdjustStock(variations[0]?.id)}>
+              <Package className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title="复制关键词"
+              onClick={() => onCopyKeyword(variations[0]?.id)}>
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center text-destructive" title="移除商品"
+              onClick={() => onDelete(variations[0]?.id)}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+            <div className="flex items-center justify-center mt-0.5">
+              <Switch
+                checked={variations[0]?.allowPreorder || false}
+                onCheckedChange={(val) => onTogglePreorder(variations[0]?.id, val)}
+                className="scale-[0.6]"
+              />
+            </div>
           </div>
         </div>
 
@@ -1235,15 +1283,14 @@ function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onA
               const vColor = vAvail > 10 ? "text-green-600" : vAvail > 0 ? "text-yellow-600" : "text-red-600";
               return (
                 <div key={v.id} className="flex items-center gap-2">
-                  {/* Variation image */}
                   <div className="w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center">
                     {v.specImage ? (
                       <img src={v.specImage} alt="" className="w-full h-full object-cover"
                         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    ) : null}
-                    {!v.specImage && <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />}
+                    ) : (
+                      <ImageIcon className="h-3.5 w-3.5 text-green-300" />
+                    )}
                   </div>
-                  {/* Variation info */}
                   <div className="flex-1 min-w-0">
                     <span className="text-xs font-medium truncate">{v.displayName}</span>
                     <div className="flex items-center gap-1.5 text-xs">
@@ -1253,7 +1300,6 @@ function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onA
                       {v.allowPreorder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">预购</Badge>}
                     </div>
                   </div>
-                  {/* Variation actions */}
                   <div className="flex items-center gap-0.5 flex-shrink-0">
                     {isLive && v.status === "active" && (
                       <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="暂停"
@@ -1279,36 +1325,6 @@ function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onA
             })}
           </div>
         )}
-
-        {/* Action buttons — single row */}
-        <div className="flex items-center justify-between mt-2.5 pt-2 border-t">
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
-              onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
-              <DollarSign className="h-3.5 w-3.5" /> 改价
-            </Button>
-            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
-              onClick={() => onAdjustStock(variations[0]?.id)}>
-              <Edit className="h-3.5 w-3.5" /> 库存
-            </Button>
-            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
-              onClick={() => onCopyKeyword(variations[0]?.id)}>
-              <Copy className="h-3.5 w-3.5" /> 复制
-            </Button>
-            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs text-destructive"
-              onClick={() => onDelete(variations[0]?.id)}>
-              <Trash2 className="h-3.5 w-3.5" /> 取消
-            </Button>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Switch
-              checked={variations[0]?.allowPreorder || false}
-              onCheckedChange={(val) => onTogglePreorder(variations[0]?.id, val)}
-              className="scale-75"
-            />
-            <span className="text-xs text-muted-foreground">预购</span>
-          </div>
-        </div>
       </CardContent>
     </Card>
   );
