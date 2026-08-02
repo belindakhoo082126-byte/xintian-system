@@ -1598,3 +1598,10 @@
 - [x] TypeScript 零错误
 - [x] Vitest 全部通过
 - [x] 保存检查点
+
+## V2.0.8：商品管理与直播房单一资料来源修复
+
+- [x] 修复 productsV2.list 的 pendingQty SQL 查询错误，确保商品管理正常显示 products 表正式资料
+- [x] 确认直播房只通过 productId 读取 products 表正式商品资料，并避免回退使用旧复制资料
+- [x] 验证商品管理、直播房商品卡及加入商品搜索均读取同一 products 数据来源
+- [x] 保存检查点（回归测试已补充）

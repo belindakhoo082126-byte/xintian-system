@@ -1628,7 +1628,7 @@ export async function getProductsEnhanced(params: {
       SELECT oi.productId, COALESCE(SUM(oi.quantity), 0) as pendingQty
       FROM order_items oi
       JOIN orders o ON o.id = oi.orderId
-      WHERE o.status IN ('pending', 'checkout', 'confirmed')
+      WHERE o.physicalStatus IN ('pending', 'checkout', 'confirmed')
       AND oi.productId IN (${sql.join(productIds, sql`, `)})
       GROUP BY oi.productId
     `);
@@ -6998,25 +6998,29 @@ export async function getLiveRoomProducts(liveRoomId: number) {
     }).from(products).where(eq(products.id, pid)).limit(1);
     if (pRows.length > 0) productInfos[pid] = pRows[0];
   }
-  // Group by productId: products with variants show multiple rows as variations
+  // Single source of truth: only render records whose referenced product still exists.
+  // Product identity, image, keyword, price, stock, status and AI metadata always come
+  // directly from products; live_room_products keeps only live-specific controls.
   const grouped: Record<number, any> = {};
   for (const row of rows) {
     const pid = row.productId;
+    const product = productInfos[pid];
+    if (!product) continue;
     if (!grouped[pid]) {
       grouped[pid] = {
         productId: pid,
-        productName: productInfos[pid]?.name || row.displayName,
-        coverImageUrl: productInfos[pid]?.coverImageUrl || row.imageUrl,
-        productMode: productInfos[pid]?.productMode || 'simple',
-        productSku: productInfos[pid]?.sku || null,
-        productKeyword: productInfos[pid]?.keyword || null,
-        productSellingPrice: productInfos[pid]?.sellingPrice || null,
-        productStockQuantity: productInfos[pid]?.stockQuantity ?? null,
-        productStatus: productInfos[pid]?.status || null,
-        productIsPreOrder: productInfos[pid]?.isPreOrder || false,
-        productCategoryId: productInfos[pid]?.categoryId || null,
-        productAiTags: productInfos[pid]?.aiTags || null,
-        productAiSellingPoints: productInfos[pid]?.aiSellingPoints || null,
+        productName: product.name,
+        coverImageUrl: product.coverImageUrl,
+        productMode: product.productMode,
+        productSku: product.sku,
+        productKeyword: product.keyword,
+        productSellingPrice: product.sellingPrice,
+        productStockQuantity: product.stockQuantity,
+        productStatus: product.status,
+        productIsPreOrder: product.isPreOrder,
+        productCategoryId: product.categoryId,
+        productAiTags: product.aiTags,
+        productAiSellingPoints: product.aiSellingPoints,
         variations: [] as any[],
       };
     }
