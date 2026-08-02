@@ -154,7 +154,7 @@ export default function LiveRoomDetail(props: any) {
     { liveRoomId: roomId, query: productSearchQuery, categoryId: categoryFilter !== "all" ? Number(categoryFilter) : undefined },
     { enabled: productSearchQuery.length > 0 }
   );
-  const categoriesQuery = trpc.categories.list.useQuery({ activeOnly: true });
+  const categoriesQuery = trpc.productCategoriesLegacy.list.useQuery({ activeOnly: true });
 
   // Mutations
   const batchAddMutation = trpc.liveRooms.batchAddProducts.useMutation({
@@ -845,6 +845,9 @@ export default function LiveRoomDetail(props: any) {
                   (productSearchResults.data || []).map((p: any) => {
                     const isAdded = !!p.alreadyAdded;
                     const isSelected = batchSelectedIds.includes(p.id);
+                    const onHand = p.stockQuantity || 0;
+                    const reserved = p.reservedQuantity || 0;
+                    const available = onHand - reserved;
                     return (
                       <div
                         key={p.id}
@@ -858,17 +861,22 @@ export default function LiveRoomDetail(props: any) {
                           onChange={() => {}}
                           className="h-4 w-4"
                         />
-                        {p.coverImageUrl && (
-                          <img src={p.coverImageUrl} alt="" className="h-10 w-10 rounded object-cover" />
+                        {p.coverImageUrl ? (
+                          <img src={p.coverImageUrl} alt="" className="h-10 w-10 rounded object-cover flex-shrink-0" />
+                        ) : (
+                          <div className="h-10 w-10 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground flex-shrink-0">无图</div>
                         )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{p.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            SKU: {p.sku || "-"} · 库存: {p.stockQuantity || 0} · {p.hasVariants ? "有规格" : "无规格"}
+                            SKU: {p.sku || "-"} · On Hand: {onHand} · Reserved: {reserved} · Available: {available}
                           </p>
+                          {p.keywords && (
+                            <p className="text-xs text-muted-foreground truncate">关键词: {p.keywords}</p>
+                          )}
                         </div>
                         {isAdded ? (
-                          <Badge variant="outline" className="text-xs text-green-600">已加入</Badge>
+                          <Badge variant="outline" className="text-xs text-green-600">✓ 已加入</Badge>
                         ) : (
                           <span className="text-sm font-medium">RM{Number(p.sellingPrice || 0).toFixed(2)}</span>
                         )}
@@ -1147,31 +1155,32 @@ function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onA
   return (
     <Card className="overflow-hidden">
       <CardContent className="p-2.5">
-        {/* Product header — shows canonical product data */}
+        {/* Product header — shows canonical product data (no duplication) */}
         <div className="flex items-start gap-2">
-          {(group.coverImageUrl || variations[0]?.imageUrl) && (
+          {(group.coverImageUrl || variations[0]?.imageUrl) ? (
             <img src={group.coverImageUrl || variations[0]?.imageUrl} alt="" className="h-12 w-12 rounded object-cover flex-shrink-0" />
+          ) : (
+            <div className="h-12 w-12 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground flex-shrink-0">无图</div>
           )}
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{group.productName}</p>
             <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
               {group.productSku && <span>SKU: {group.productSku}</span>}
               {group.productKeyword && <span>关键词: <code className="text-xs bg-muted px-1 rounded">{group.productKeyword}</code></span>}
-              <span>已喊: {totalOrdered}</span>
-              <span>剩余: {totalAvailable}</span>
               {hasMultiple && <Badge variant="outline" className="text-xs">{variations.length} 规格</Badge>}
             </div>
-            {/* Show canonical product status */}
+            {/* Unified stock display: On Hand / Reserved / Available */}
             <div className="flex items-center gap-1.5 text-xs mt-0.5">
               {group.productStatus && group.productStatus !== "active" && (
-                <Badge variant="outline" className="text-xs text-orange-600">商品状态: {group.productStatus}</Badge>
+                <Badge variant="outline" className="text-xs text-orange-600">状态: {group.productStatus}</Badge>
               )}
               {group.productIsPreOrder && (
-                <Badge className="bg-blue-100 text-blue-700 text-xs">预购商品</Badge>
+                <Badge className="bg-blue-100 text-blue-700 text-xs">预购</Badge>
               )}
-              {group.productStockQuantity != null && (
-                <span className="text-muted-foreground">总库存: {group.productStockQuantity}</span>
-              )}
+              <span className="text-muted-foreground">On Hand: {group.productStockQuantity ?? '-'}</span>
+              <span className="text-muted-foreground">Reserved: {variations.reduce((s: number, v: any) => s + (v.reservedCount || 0), 0)}</span>
+              <span className="text-muted-foreground">Available: {totalAvailable}</span>
+              <span className="text-muted-foreground">已喊: {totalOrdered}</span>
             </div>
           </div>
         </div>
@@ -1201,8 +1210,8 @@ function ProductGroupCard({ group, isLive, onStatusChange, onTogglePreorder, onA
                   ) : (
                     <span>RM{Number(v.price || 0).toFixed(2)}</span>
                   )}
-                  <span>库: {v.availableStock}</span>
-                  <span>喊: {v.orderedCount}</span>
+                  <span>Available: {v.availableStock}</span>
+                  <span>已喊: {v.orderedCount}</span>
                   {v.allowPreorder && <Badge className="bg-blue-100 text-blue-700 text-xs">预购</Badge>}
                   {v.preorderCount > 0 && <span className="text-blue-600">预:{v.preorderCount}</span>}
                 </div>

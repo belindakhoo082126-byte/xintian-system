@@ -1572,3 +1572,17 @@
 - [x] TypeScript 零错误
 - [x] Vitest 全部通过
 - [x] 保存检查点
+
+## V2.0.5: 恢复测试商品 + 统一直播房数据来源
+
+- [x] 恢复26个完整测试商品资料（花类3/叶类12/果树2/肥料3/盆器3/其他5）
+- [x] 每个商品包含：图片/SKU/关键词/AI Tags/Selling Points/光线/水分/施肥/售价/库存/状态
+- [x] 直播房分类下拉改用 product_categories（花类/叶类/果树/肥料/盆器/其他）
+- [x] 搜索加入 keywords 字段查询（输入"龟背"可找到 MON 龟背竹）
+- [x] 已加入商品显示「✓ 已加入」+ Disabled
+- [x] 搜索结果显示商品图片
+- [x] 商品卡去重：不再重复显示商品名称
+- [x] 库存统一显示：On Hand / Reserved / Available
+- [x] TypeScript 零错误
+- [x] Vitest 29/30 通过（1个 ParcelKing API 超时，非代码问题）
+- [ ] 保存检查点

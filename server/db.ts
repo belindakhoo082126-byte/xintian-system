@@ -7555,9 +7555,9 @@ export async function searchProductsForLiveRoom(liveRoomId: number, query: strin
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const likePattern = `%${query}%`;
-  let whereClause = sql`(${products.name} LIKE ${likePattern} OR ${products.sku} LIKE ${likePattern} OR ${products.keyword} LIKE ${likePattern})`;
+  let whereClause = sql`(${products.name} LIKE ${likePattern} OR ${products.sku} LIKE ${likePattern} OR ${products.keyword} LIKE ${likePattern} OR ${products.keywords} LIKE ${likePattern})`;
   if (categoryId) {
-    whereClause = sql`(${products.name} LIKE ${likePattern} OR ${products.sku} LIKE ${likePattern} OR ${products.keyword} LIKE ${likePattern}) AND ${products.categoryId} = ${categoryId}`;
+    whereClause = sql`(${products.name} LIKE ${likePattern} OR ${products.sku} LIKE ${likePattern} OR ${products.keyword} LIKE ${likePattern} OR ${products.keywords} LIKE ${likePattern}) AND ${products.categoryId} = ${categoryId}`;
   }
   // Get already added productIds for this live room
   const existing = await db.select({ productId: liveRoomProducts.productId }).from(liveRoomProducts)
@@ -7568,9 +7568,11 @@ export async function searchProductsForLiveRoom(liveRoomId: number, query: strin
     name: products.name,
     sku: products.sku,
     keyword: products.keyword,
+    keywords: products.keywords,
     coverImageUrl: products.coverImageUrl,
     sellingPrice: products.sellingPrice,
     stockQuantity: products.stockQuantity,
+    reservedQuantity: products.reservedQuantity,
     categoryId: products.categoryId,
     productStatus: products.status,
     isPreOrder: products.isPreOrder,
