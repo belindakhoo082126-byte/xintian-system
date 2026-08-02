@@ -884,9 +884,31 @@ async function processComment(params: {
         try {
           const isMerged = (orderResult as any).merged;
           if (isMerged) {
-            await sendTextMessage(commenterPsid || '', `${commenterName} 您好！已追加到订单 ${orderResult.orderNumber}\n新增: ${itemList}\n当前总额: RM ${orderResult.totalAmount}`);
+            // V2.0.1: Merged order notification also includes "查询订单及结账" button
+            const mergeOrderUrl = orderResult.secureToken
+              ? `${process.env.VITE_PUBLIC_URL || 'https://xintianfb-mkjyuzze.manus.space'}/order/${orderResult.orderNumber}/${orderResult.secureToken}`
+              : null;
+            const mergeText = `${commenterName} 您好！已追加到订单 ${orderResult.orderNumber}\n新增: ${itemList}\n当前总额: RM ${orderResult.totalAmount}`;
+            if (mergeOrderUrl) {
+              await sendButtonMessage(commenterPsid || '', mergeText, [
+                { title: '查询订单及结账', url: mergeOrderUrl },
+              ]);
+            } else {
+              await sendTextMessage(commenterPsid || '', mergeText);
+            }
           } else {
-            await sendTextMessage(commenterPsid || '', `您好 ${commenterName}！\n\n您的直播订单已创建：\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请提供以下信息完成订单：\n1. 收货地址\n2. 联系电话\n3. 付款方式`);
+            // V2.0.1: Send winner notification with "查询订单及结账" button linking to public order page
+            const orderUrl = orderResult.secureToken
+              ? `${process.env.VITE_PUBLIC_URL || 'https://xintianfb-mkjyuzze.manus.space'}/order/${orderResult.orderNumber}/${orderResult.secureToken}`
+              : null;
+            const notifText = `您好 ${commenterName}！\n\n您的直播订单已创建 ✅\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请点击下方按钮查看订单并完成结账~`;
+            if (orderUrl) {
+              await sendButtonMessage(commenterPsid || '', notifText, [
+                { title: '查询订单及结账', url: orderUrl },
+              ]);
+            } else {
+              await sendTextMessage(commenterPsid || '', notifText + '\n\n请提供以下信息完成订单：\n1. 收货地址\n2. 联系电话\n3. 付款方式');
+            }
           }
         } catch (msgErr) {
           console.log("[Facebook] Could not send Messenger message (expected if no PSID)");

@@ -4519,6 +4519,7 @@ export async function createOrderFromLiveCapture(data: {
           totalAmount: existingOrder[0].totalAmount,
           orderId: existingOrder[0].id,
           duplicate: true,
+          secureToken: existingOrder[0].secureToken || null,
         };
       }
     }
@@ -4599,7 +4600,7 @@ export async function createOrderFromLiveCapture(data: {
     
     broadcastChanges(["orders", "inventory", "dashboard"]);
     const existingOrder = await db.select().from(orders).where(eq(orders.id, existingOrderId)).limit(1);
-    return { orderId: existingOrderId, orderNumber: existingOrder[0]?.orderNumber || "", totalAmount: String(allItems[0]?.total || 0), merged: true };
+    return { orderId: existingOrderId, orderNumber: existingOrder[0]?.orderNumber || "", totalAmount: String(allItems[0]?.total || 0), merged: true, secureToken: existingOrder[0]?.secureToken || null };
   }
   
   // Create new order
@@ -4659,7 +4660,7 @@ export async function createOrderFromLiveCapture(data: {
   });
   
   broadcastChanges(["orders", "inventory", "dashboard"]);
-  return { orderId, orderNumber, totalAmount: subtotal.toFixed(2) };
+  return { orderId, orderNumber, totalAmount: subtotal.toFixed(2), secureToken };
 }
 
 // --- Get live order captures (admin) ---

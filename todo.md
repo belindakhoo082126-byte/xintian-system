@@ -1512,18 +1512,18 @@
 - [x] 保存检查点
 
 ## V2.0 Phase A：直播房间控制 + 留言区增强
-- [ ] schema.ts: live_rooms 新增 aiReplyEnabled (boolean) + continueMonitor (boolean) 字段
-- [ ] schema.ts: live_comment_notes 表（Staff Note 系统）
-- [ ] schema.ts: orders 新增 secureToken (varchar 64, unique) 字段
-- [ ] 数据库迁移 SQL 生成并执行
-- [ ] db.ts: updateLiveRoom 支持 aiReplyEnabled / continueMonitor 字段
+- [x] schema.ts: live_rooms 新增 aiReplyEnabled (boolean) + continueMonitor (boolean) 字段
+- [x] schema.ts: live_comment_notes 表（Staff Note 系统）
+- [x] schema.ts: orders 新增 secureToken (varchar 64, unique) 字段
+- [x] 数据库迁移 SQL 生成并执行
+- [x] db.ts: updateLiveRoom 支持 aiReplyEnabled / continueMonitor 字段
 - [x] db.ts: sendLiveComment 函数（Facebook Graph API 发送留言）
 - [x] db.ts: toggleCustomerBlacklist 函数
-- [ ] db.ts: live_comment_notes CRUD 函数
+- [x] db.ts: live_comment_notes CRUD 函数
 - [x] db.ts: createOrderFromLiveCapture 生成 secureToken
 - [x] db.ts: getOrderBySecureToken 公开查询函数
-- [ ] routers.ts: liveRooms 新增 sendComment / toggleBlacklist / staffNotes 路由
-- [ ] routers.ts: liveRooms update 路由支持 aiReplyEnabled / continueMonitor
+- [x] routers.ts: liveRooms 新增 sendComment / toggleBlacklist / staffNotes 路由
+- [x] routers.ts: liveRooms update 路由支持 aiReplyEnabled / continueMonitor
 - [x] routers.ts: 新增 publicOrder 路由（getOrderBySecureToken）
 - [x] messenger.ts: webhook 检查 continueMonitor + aiReplyEnabled
 - [x] messenger.ts: 得标通知包含订单链接
@@ -1538,4 +1538,13 @@
 - [x] TypeScript 零错误
 - [x] Vitest 全部通过
 - [x] CHANGELOG 更新
+- [x] 保存检查点
+
+## V2.0.1: 得标通知「查询订单及结账」按钮
+
+- [x] messenger.ts: 得标通知改用 sendButtonMessage 发送「查询订单及结账」按钮
+- [x] messenger.ts: 合并订单通知也包含查询按钮
+- [x] db.ts: createOrderFromLiveCapture 返回值包含 secureToken
+- [x] TypeScript 零错误
+- [x] Vitest 全部通过
 - [x] 保存检查点
