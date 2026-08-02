@@ -21,6 +21,7 @@ import {
   Bot, Monitor, StickyNote, Ban, Link2, ImageIcon, ClipboardPaste,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useI18n } from "@/contexts/I18nContext";
 
 const productStatusLabels: Record<string, string> = {
   active: "正常",
@@ -76,6 +77,7 @@ export default function LiveRoomDetail(props: any) {
   const roomId = props.roomId ?? (props.match?.params?.id ? parseInt(props.match.params.id) : 0);
   const onBack = props.onBack ?? (() => window.history.back());
   const queryClient = trpc.useUtils();
+  const { translate: tt } = useI18n();
 
   // Queries
   const roomQuery = trpc.liveRooms.getById.useQuery({ id: roomId });
@@ -616,21 +618,21 @@ export default function LiveRoomDetail(props: any) {
             </div>
           </div>
 
-          {/* Three-Column Layout: Products 45% | Comments 20% | Orders 35% */}
-          <div className="grid grid-cols-1 gap-3" style={{ minHeight: "500px", gridTemplateColumns: 'minmax(0, 45fr) minmax(0, 20fr) minmax(0, 35fr)' }}>
-            {/* Region 2: Products Area (45%) */}
+          {/* Two-Column Layout: Products 55% | Comments 45% */}
+          <div className="grid grid-cols-1 gap-3" style={{ minHeight: "400px", gridTemplateColumns: 'minmax(0, 55fr) minmax(0, 45fr)' }}>
+            {/* Region 2: Products Area (55%) */}
             <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
               <CardHeader className="pb-2 py-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
-                    <Package className="h-4 w-4" /> 商品区
+                    <Package className="h-4 w-4" /> {tt("商品区", "Products")}
                   </CardTitle>
                   <div className="flex items-center gap-2">
                     <div className="flex items-center gap-0.5 rounded-md border p-0.5">
                       <Button variant={cardMode === 'large' ? 'default' : 'ghost'} size="sm" className="h-6 px-2 text-xs"
-                        onClick={() => setCardMode('large')}>大卡</Button>
+                        onClick={() => setCardMode('large')}>{tt("大卡", "Large")}</Button>
                       <Button variant={cardMode === 'compact' ? 'default' : 'ghost'} size="sm" className="h-6 px-2 text-xs"
-                        onClick={() => setCardMode('compact')}>紧凑</Button>
+                        onClick={() => setCardMode('compact')}>{tt("紧凑", "Compact")}</Button>
                     </div>
                     <Badge variant="secondary" className="text-xs">{liveProductGroups.length} 个</Badge>
                   </div>
@@ -642,7 +644,7 @@ export default function LiveRoomDetail(props: any) {
                     {liveProductGroups.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
                         <Package className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                        <p className="text-xs">暂无商品，点击「加入商品」</p>
+                        <p className="text-xs">{tt("暂无商品，点击「加入商品」", "No products yet. Click Add Products")}</p>
                       </div>
                     ) : (
                       liveProductGroups.map((group: any) => (
@@ -665,16 +667,29 @@ export default function LiveRoomDetail(props: any) {
               </CardContent>
             </Card>
 
-            {/* Region 3: Comments Area (20%) */}
+            {/* Region 3: Comments Area (45%) */}
             <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
               <CardHeader className="pb-2 py-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4" /> 留言区
+                    <MessageSquare className="h-4 w-4" /> {tt("留言区", "Comments")}
                     {commentStatsMap["matched"] > 0 && (
                       <Badge variant="secondary" className="text-xs">{commentStatsMap["matched"]}</Badge>
                     )}
                   </CardTitle>
+                  <Select value={commentFilter} onValueChange={setCommentFilter}>
+                    <SelectTrigger className="h-6 text-xs w-28"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{tt("全部状态", "All Status")}</SelectItem>
+                      <SelectItem value="matched">{tt("已捉单", "Captured")}</SelectItem>
+                      <SelectItem value="no_match">{tt("未匹配", "No Match")}</SelectItem>
+                      <SelectItem value="sold_out">{tt("已售完", "Sold Out")}</SelectItem>
+                      <SelectItem value="paused">{tt("暂停中", "Paused")}</SelectItem>
+                      <SelectItem value="preorder">{tt("预购", "Preorder")}</SelectItem>
+                      <SelectItem value="order_merged">{tt("已合单", "Merged")}</SelectItem>
+                      <SelectItem value="messenger_failed">{tt("私聊失败", "DM Failed")}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardHeader>
               {/* Row 1: Send comment (top priority) */}
@@ -682,7 +697,7 @@ export default function LiveRoomDetail(props: any) {
                 <div className="flex gap-1">
                   <Input
                     id="comment-input"
-                    placeholder="输入留言内容发送到直播..."
+                    placeholder={tt("输入留言内容发送到直播...", "Type comment to send to live...")}
                     value={commentInput}
                     onChange={e => setCommentInput(e.target.value)}
                     className="h-7 text-xs"
@@ -703,7 +718,7 @@ export default function LiveRoomDetail(props: any) {
                       } catch { toast.error("无法读取剪贴板"); }
                     }}
                   >
-                    <ClipboardPaste className="h-3 w-3" /> 贴上
+                    <ClipboardPaste className="h-3 w-3" /> {tt("贴上", "Paste")}
                   </Button>
                   <Button
                     variant="default" size="sm" className="h-7 px-2 gap-1"
@@ -715,7 +730,7 @@ export default function LiveRoomDetail(props: any) {
                       }
                     }}
                   >
-                    <Send className="h-3 w-3" /> 发送
+                    <Send className="h-3 w-3" /> {tt("发送", "Send")}
                   </Button>
                 </div>
                 {!room.facebookVideoId && (
@@ -728,36 +743,20 @@ export default function LiveRoomDetail(props: any) {
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                   <Input
                     id="comment-search"
-                    placeholder="搜索客户/内容/关键词/商品..."
+                    placeholder={tt("搜索客户/内容/关键词/商品...", "Search customer/content/keyword/product...")}
                     value={commentSearch}
                     onChange={e => setCommentSearch(e.target.value)}
                     className="h-7 text-xs pl-7"
                   />
                 </div>
               </div>
-              {/* Row 3: Status filter */}
-              <div className="px-3 pb-2">
-                <Select value={commentFilter} onValueChange={setCommentFilter}>
-                  <SelectTrigger className="h-6 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部状态</SelectItem>
-                    <SelectItem value="matched">已捉单</SelectItem>
-                    <SelectItem value="no_match">未匹配</SelectItem>
-                    <SelectItem value="sold_out">已售完</SelectItem>
-                    <SelectItem value="paused">暂停中</SelectItem>
-                    <SelectItem value="preorder">预购</SelectItem>
-                    <SelectItem value="order_merged">已合单</SelectItem>
-                    <SelectItem value="messenger_failed">私聊失败</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
               <CardContent className="flex-1 overflow-hidden p-0">
-                <ScrollArea className="h-full" style={{ height: "calc(100vh - 420px)" }}>
+                <ScrollArea className="h-full" style={{ height: "calc(100vh - 380px)" }}>
                   <div className="p-2 space-y-1">
                     {filteredComments.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
                         <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                        <p className="text-xs">暂无留言</p>
+                        <p className="text-xs">{tt("暂无留言", "No comments")}</p>
                       </div>
                     ) : (
                       filteredComments.map((comment: any) => (
@@ -773,84 +772,89 @@ export default function LiveRoomDetail(props: any) {
                 </ScrollArea>
               </CardContent>
             </Card>
+          </div>
 
-            {/* Region 4: Orders Area (35%) */}
-            <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
-              <CardHeader className="pb-2 py-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <ShoppingCart className="h-4 w-4" /> 得标订单
-                  </CardTitle>
-                  <div className="flex gap-1">
-                    <Button
-                      variant={orderViewMode === "byCustomer" ? "default" : "outline"}
-                      size="sm" className="h-6 text-xs px-2"
-                      onClick={() => setOrderViewMode("byCustomer")}>
-                      按客户
-                    </Button>
-                    <Button
-                      variant={orderViewMode === "byProduct" ? "default" : "outline"}
-                      size="sm" className="h-6 text-xs px-2"
-                      onClick={() => setOrderViewMode("byProduct")}>
-                      按商品
-                    </Button>
-                    <Button
-                      variant="outline" size="sm" className="h-6 text-xs px-2 gap-1"
-                      onClick={() => {
-                        const text = liveOrders.map((o: any) =>
-                          `${o.customerName || o.facebookName || "未知"} - ${o.orderNumber} - RM${Number(o.totalAmount || 0).toFixed(2)}`
-                        ).join("\n");
-                        navigator.clipboard.writeText(text);
-                        toast.success("得标名单已复制");
-                      }}
-                      title="复制得标名单"
-                    >
-                      <Copy className="h-3 w-3" /> 复制
-                    </Button>
-                  </div>
+          {/* Region 4: Orders Area (Full Width Bottom) */}
+          <Card className="flex flex-col mt-3" style={{ maxHeight: "300px" }}>
+            <CardHeader className="pb-2 py-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <ShoppingCart className="h-4 w-4" /> {tt("得标订单", "Winning Orders")}
+                </CardTitle>
+                <div className="flex gap-1">
+                  <Button
+                    variant={orderViewMode === "byCustomer" ? "default" : "outline"}
+                    size="sm" className="h-6 text-xs px-2"
+onClick={() => setOrderViewMode("byCustomer")}>
+                      {tt("按客户", "By Customer")}
+                  </Button>
+                  <Button
+                    variant={orderViewMode === "byProduct" ? "default" : "outline"}
+                    size="sm" className="h-6 text-xs px-2"
+                    onClick={() => setOrderViewMode("byProduct")}>
+                    {tt("按商品", "By Product")}
+                  </Button>
+                  <Button
+                    variant="outline" size="sm" className="h-6 text-xs px-2 gap-1"
+                    onClick={() => {
+                      const text = liveOrders.map((o: any) =>
+                        `${o.customerName || o.facebookName || "未知"} - ${o.orderNumber} - RM${Number(o.totalAmount || 0).toFixed(2)}`
+                      ).join("\n");
+                      navigator.clipboard.writeText(text);
+                      toast.success(tt("得标名单已复制", "Winner list copied"));
+                    }}
+                    title="复制得标名单"
+                  >
+                    <Copy className="h-3 w-3" /> 复制
+                  </Button>
                 </div>
-                {/* V2.0: Order search */}
-                <div className="relative mt-1.5">
+              </div>
+              <div className="flex gap-2 mt-1.5">
+                <div className="relative flex-1">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                   <Input
-                    placeholder="搜索订单号/客户名..."
+                    placeholder={tt("搜索订单号/客户名...", "Search order#/customer...")}
                     value={orderSearch}
                     onChange={e => setOrderSearch(e.target.value)}
                     className="h-7 text-xs pl-7"
                   />
                 </div>
-              </CardHeader>
-              <CardContent className="flex-1 overflow-hidden p-0">
-                <ScrollArea className="h-full" style={{ height: "calc(100vh - 320px)" }}>
-                  <div className="p-2 space-y-1.5">
-                    {orderViewMode === "byCustomer" ? (
-                      filteredOrders.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                          <p className="text-xs">{orderSearch ? "未找到匹配订单" : "暂无订单"}</p>
-                        </div>
-                      ) : (
-                        filteredOrders.map((order: any) => (
-                          <OrderRow key={order.orderId} order={order} />
-                        ))
-                      )
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-hidden p-0">
+              <ScrollArea className="h-full" style={{ height: "220px" }}>
+                <div className="p-2 space-y-1.5">
+                  {orderViewMode === "byCustomer" ? (
+                    filteredOrders.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-xs">{orderSearch ? tt("未找到匹配订单", "No matching orders") : tt("暂无订单", "No orders yet")}</p>
+                      </div>
                     ) : (
-                      ordersByProduct.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <Layers className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                          <p className="text-xs">暂无商品订单</p>
-                        </div>
-                      ) : (
-                        ordersByProduct.map((item: any, idx: number) => (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                        {filteredOrders.map((order: any) => (
+                          <OrderRow key={order.orderId} order={order} />
+                        ))}
+                      </div>
+                    )
+                  ) : (
+                    ordersByProduct.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Layers className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-xs">{tt("暂无商品订单", "No product orders")}</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                        {ordersByProduct.map((item: any, idx: number) => (
                           <ProductOrderRow key={idx} item={item} />
-                        ))
-                      )
-                    )}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
         </>
       )}
 
