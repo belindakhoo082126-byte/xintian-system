@@ -6996,7 +6996,19 @@ export async function getLiveRoomProducts(liveRoomId: number) {
       aiTags: products.aiTags,
       aiSellingPoints: products.aiSellingPoints,
     }).from(products).where(eq(products.id, pid)).limit(1);
-    if (pRows.length > 0) productInfos[pid] = pRows[0];
+    if (pRows.length > 0) {
+      const p = pRows[0];
+      // If coverImageUrl is null, try product_images table as fallback
+      if (!p.coverImageUrl) {
+        const imgRows = await db.select({ url: productImages.url })
+          .from(productImages)
+          .where(eq(productImages.productId, pid))
+          .orderBy(asc(productImages.sortOrder))
+          .limit(1);
+        if (imgRows.length > 0) p.coverImageUrl = imgRows[0].url;
+      }
+      productInfos[pid] = p;
+    }
   }
   // Single source of truth: only render records whose referenced product still exists.
   // Product identity, image, keyword, price, stock, status and AI metadata always come

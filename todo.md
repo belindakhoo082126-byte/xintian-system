@@ -1615,3 +1615,11 @@
 - [x] 移除所有英文库存标签（On Hand/Reserved/Available）
 - [x] TypeScript 零错误 + Vitest 全部通过
 - [x] 保存检查点
+
+## V2.0.10: 商品图片修复 + 布局 45/20/35 + 订单区优化
+
+- [x] 修复商品图片不显示：getLiveRoomProducts 增加 product_images 表回退查询
+- [x] 调整三列比例为 45/20/35（商品区/留言区/得标订单）
+- [x] 优化得标订单区显示（按客户/按商品更紧凑）
+- [x] TypeScript 零错误 + Vitest 全部通过
+- [x] 保存检查点

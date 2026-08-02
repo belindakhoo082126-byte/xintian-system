@@ -587,10 +587,10 @@ export default function LiveRoomDetail(props: any) {
             </div>
           </div>
 
-          {/* Three-Column Layout: Products 45% | Comments 30% | Orders 25% */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3" style={{ minHeight: "500px" }}>
+          {/* Three-Column Layout: Products 45% | Comments 20% | Orders 35% */}
+          <div className="grid grid-cols-1 gap-3" style={{ minHeight: "500px", gridTemplateColumns: 'minmax(0, 45fr) minmax(0, 20fr) minmax(0, 35fr)' }}>
             {/* Region 2: Products Area (45%) */}
-            <Card className="flex flex-col lg:col-span-5" style={{ maxHeight: "calc(100vh - 280px)" }}>
+            <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
               <CardHeader className="pb-2 py-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
@@ -636,8 +636,8 @@ export default function LiveRoomDetail(props: any) {
               </CardContent>
             </Card>
 
-            {/* Region 3: Comments Area (30%) */}
-            <Card className="flex flex-col lg:col-span-4" style={{ maxHeight: "calc(100vh - 280px)" }}>
+            {/* Region 3: Comments Area (20%) */}
+            <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
               <CardHeader className="pb-2 py-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
@@ -728,8 +728,8 @@ export default function LiveRoomDetail(props: any) {
               </CardContent>
             </Card>
 
-            {/* Region 4: Orders Area (25%) */}
-            <Card className="flex flex-col lg:col-span-3" style={{ maxHeight: "calc(100vh - 280px)" }}>
+            {/* Region 4: Orders Area (35%) */}
+            <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
               <CardHeader className="pb-2 py-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
