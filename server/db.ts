@@ -10226,6 +10226,83 @@ export async function getOrderBySecureToken(orderNumber: string, token: string) 
 }
 
 /**
+ * V2.0.3: Public update shipping address + recalculate shipping fee
+ * Called by customer from the public order page (no login required, uses secureToken)
+ */
+export async function updateOrderShippingAddress(orderNumber: string, token: string, address: string, phone: string, shippingMethod: string) {
+  const db = await getDb();
+  if (!db) return null;
+
+  // Verify token
+  const order = await db.select({
+    id: orders.id,
+    secureToken: orders.secureToken,
+    physicalSubtotal: orders.physicalSubtotal,
+    totalAmount: orders.totalAmount,
+    creditUsed: orders.creditUsed,
+    extraCharge: orders.extraCharge,
+    discountAmount: orders.discountAmount,
+  }).from(orders).where(eq(orders.orderNumber, orderNumber)).limit(1);
+
+  if (order.length === 0) return null;
+  if (!order[0].secureToken || order[0].secureToken !== token) return null;
+
+  const orderId = order[0].id;
+
+  // Get order items to calculate weight
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const totalWeight = items.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
+
+  // V2.1: Free shipping threshold excludes special-price items
+  const specialSubtotal = items.filter((i: any) => i.priceType === 'special').reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+  const normalSubtotal = items.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+  const thresholdSubtotal = normalSubtotal - specialSubtotal;
+
+  // Calculate shipping fee
+  let shippingFee = 0;
+  if (shippingMethod === 'west_malaysia') {
+    if (thresholdSubtotal >= 150) {
+      shippingFee = totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3;
+    } else {
+      shippingFee = 15 + (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3);
+    }
+  } else if (shippingMethod === 'east_malaysia') {
+    shippingFee = 15;
+  } else if (shippingMethod === 'self_pickup') {
+    shippingFee = 0;
+  } else if (shippingMethod === 'lalamove') {
+    shippingFee = 0;
+  }
+
+  // Recalculate total
+  const subtotal = parseFloat(order[0].physicalSubtotal || '0');
+  const creditUsed = parseFloat(order[0].creditUsed || '0');
+  const extraCharge = parseFloat(order[0].extraCharge || '0');
+  const discountAmount = parseFloat(order[0].discountAmount || '0');
+  const newTotal = subtotal - discountAmount + extraCharge + shippingFee - creditUsed;
+
+  await db.update(orders).set({
+    shippingAddress: address,
+    shippingMethod: shippingMethod as any,
+    shippingFee: shippingFee.toFixed(2),
+    totalAmount: newTotal.toFixed(2),
+  }).where(eq(orders.id, orderId));
+
+  // Also update customer phone if provided
+  if (phone) {
+    const customerRow = await db.select({ customerId: orders.customerId }).from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (customerRow.length > 0 && customerRow[0].customerId) {
+      await db.update(customers).set({ phoneNumber: phone }).where(eq(customers.id, customerRow[0].customerId));
+    }
+  }
+
+  broadcastChanges(['orders', 'dashboard']);
+
+  // Return updated order
+  return await getOrderBySecureToken(orderNumber, token);
+}
+
+/**
  * Toggle customer blacklist status.
  */
 export async function toggleCustomerBlacklist(customerId: number, isBlacklisted: boolean, reason: string, operatorName: string) {

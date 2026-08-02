@@ -3,7 +3,19 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink, Leaf, AlertCircle, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink, Leaf, AlertCircle, RefreshCw, MapPinCheck } from "lucide-react";
+import { toast } from "sonner";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   "Pending Payment": { label: "待付款", color: "bg-amber-100 text-amber-900", icon: Clock },
@@ -16,11 +28,18 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }>
   "Cancelled": { label: "已取消", color: "bg-red-100 text-red-900", icon: AlertCircle },
 };
 
+const SHIPPING_METHODS = [
+  { value: "west_malaysia", label: "西马配送" },
+  { value: "east_malaysia", label: "东马配送" },
+  { value: "self_pickup", label: "自取" },
+  { value: "lalamove", label: "Lalamove" },
+];
+
 export default function CustomerOrderPage(props: any) {
   const orderNumber = props.orderNumber ?? props.match?.params?.orderNumber ?? "";
   const token = props.token ?? props.match?.params?.token ?? "";
 
-  // V2.0.2: refetch every 10s for near real-time updates when Admin/AI adds items
+  // V2.0.2: refetch every 10s for near real-time updates
   const { data: order, isLoading, error, isFetching } = trpc.publicOrder.getByToken.useQuery(
     { orderNumber, token },
     {
@@ -31,8 +50,24 @@ export default function CustomerOrderPage(props: any) {
     }
   );
 
+  // V2.0.3: Address form state
+  const [showAddressForm, setShowAddressForm] = useState(false);
+  const [addressInput, setAddressInput] = useState("");
+  const [phoneInput, setPhoneInput] = useState("");
+  const [shippingMethod, setShippingMethod] = useState<string>("west_malaysia");
+
+  const updateAddressMutation = trpc.publicOrder.updateAddress.useMutation({
+    onSuccess: () => {
+      toast.success("收货地址已更新，运费已重新计算");
+      setShowAddressForm(false);
+    },
+    onError: (e: any) => toast.error("更新失败: " + e.message),
+  });
+
   const o = order as any;
   const statusInfo = o ? STATUS_CONFIG[o.customerStatus] || STATUS_CONFIG["Pending Payment"] : null;
+  const hasAddress = !!(o?.shippingAddress);
+  const canEditAddress = o?.customerStatus === "Pending Payment";
 
   return (
     <div className="min-h-screen bg-background">
@@ -69,6 +104,78 @@ export default function CustomerOrderPage(props: any) {
 
         {o && !isLoading && (
           <div className="space-y-4">
+            {/* V2.0.3: Yellow alert when no address */}
+            {!hasAddress && canEditAddress && !showAddressForm && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                <MapPin className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-amber-900">
+                    请先填写收货地址
+                  </p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    系统将自动计算运费后即可完成付款。消费满 RM150（不含特价商品）10kg 内即可享用免邮福利。
+                  </p>
+                  <Button size="sm" className="mt-2" onClick={() => setShowAddressForm(true)}>
+                    填写收货地址
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* V2.0.3: Address form */}
+            {showAddressForm && canEditAddress && (
+              <Card>
+                <CardHeader><CardTitle className="text-base">填写收货地址</CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <Label>配送方式</Label>
+                    <Select value={shippingMethod} onValueChange={setShippingMethod}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {SHIPPING_METHODS.map(m => (
+                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>联系电话</Label>
+                    <Input
+                      value={phoneInput}
+                      onChange={e => setPhoneInput(e.target.value)}
+                      placeholder="请输入联系电话"
+                    />
+                  </div>
+                  <div>
+                    <Label>收货地址</Label>
+                    <Textarea
+                      value={addressInput}
+                      onChange={e => setAddressInput(e.target.value)}
+                      placeholder="请输入详细收货地址（包括州属、邮编）"
+                      rows={3}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      disabled={updateAddressMutation.isPending || !addressInput.trim()}
+                      onClick={() => {
+                        updateAddressMutation.mutate({
+                          orderNumber,
+                          token,
+                          address: addressInput.trim(),
+                          phone: phoneInput.trim(),
+                          shippingMethod: shippingMethod as any,
+                        });
+                      }}
+                    >
+                      {updateAddressMutation.isPending ? "计算中..." : "确认并计算运费"}
+                    </Button>
+                    <Button variant="outline" onClick={() => setShowAddressForm(false)}>取消</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Status */}
             <Card>
               <CardContent className="py-4">
@@ -109,11 +216,10 @@ export default function CustomerOrderPage(props: any) {
               </CardContent>
             </Card>
 
-            {/* Amount Summary - V2.0.2: Complete breakdown */}
+            {/* Amount Summary - V2.0.3: Complete breakdown with shipping */}
             <Card>
               <CardHeader><CardTitle className="text-base">金额明细</CardTitle></CardHeader>
               <CardContent className="space-y-1 text-sm">
-                {/* 商品小计 */}
                 <div className="flex justify-between">
                   <span>商品小计</span>
                   <span>RM {o.physicalSubtotal || o.totalAmount}</span>
@@ -121,8 +227,8 @@ export default function CustomerOrderPage(props: any) {
 
                 {/* 运费 */}
                 <div className="flex justify-between">
-                  <span>运费</span>
-                  <span>RM {o.shippingFee || "0.00"}</span>
+                  <span>运费 {hasAddress ? "" : "(待计算)"}</span>
+                  <span>{hasAddress ? `RM ${o.shippingFee || "0.00"}` : "— 填写地址后计算"}</span>
                 </div>
 
                 {/* 额外费用 */}
@@ -176,9 +282,23 @@ export default function CustomerOrderPage(props: any) {
               </CardContent>
             </Card>
 
-            {/* Shipping Address */}
+            {/* Shipping Address - V2.0.3: Show address with edit option */}
             <Card>
-              <CardHeader><CardTitle className="text-base">收件信息</CardTitle></CardHeader>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">收件信息</CardTitle>
+                  {hasAddress && canEditAddress && (
+                    <Button variant="ghost" size="sm" onClick={() => {
+                      setAddressInput(o.shippingAddress || "");
+                      setPhoneInput(o.customerPhone || "");
+                      setShippingMethod(o.shippingMethod || "west_malaysia");
+                      setShowAddressForm(true);
+                    }}>
+                      修改
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
               <CardContent className="space-y-1 text-sm">
                 <div className="flex items-center gap-2"><User className="h-4 w-4 text-muted-foreground" />{o.customerName}</div>
                 {o.customerPhone && (
@@ -186,6 +306,16 @@ export default function CustomerOrderPage(props: any) {
                 )}
                 {o.shippingAddress && (
                   <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />{o.shippingAddress}</div>
+                )}
+                {o.shippingMethod && (
+                  <div className="flex items-center gap-2"><Truck className="h-4 w-4 text-muted-foreground" />
+                    {SHIPPING_METHODS.find(m => m.value === o.shippingMethod)?.label || o.shippingMethod}
+                  </div>
+                )}
+                {!hasAddress && !showAddressForm && (
+                  <div className="flex items-center gap-2 text-amber-600">
+                    <MapPinCheck className="h-4 w-4" /> 尚未填写收货地址
+                  </div>
                 )}
               </CardContent>
             </Card>

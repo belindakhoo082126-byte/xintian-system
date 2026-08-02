@@ -889,7 +889,7 @@ async function processComment(params: {
               ? `${process.env.VITE_PUBLIC_URL || 'https://xintianfb-mkjyuzze.manus.space'}/order/${orderResult.orderNumber}/${orderResult.secureToken}`
               : null;
             const mergeDetailLines = matched.map((m: any) => `• ${m.productName}${m.variationName ? ` (${m.variationName})` : ''} ×${m.quantity} @ RM ${m.unitPrice}`).join('\n');
-            const mergeText = `${commenterName} 您好！已追加到订单 ${orderResult.orderNumber}\n\n新增商品:\n${mergeDetailLines}\n\n当前总额: RM ${orderResult.totalAmount}`;
+            const mergeText = `${commenterName} 您好！已追加到订单 ${orderResult.orderNumber}\n\n新增商品:\n${mergeDetailLines}\n\n目前商品金额: RM ${orderResult.totalAmount}\n（运费将在填写收货地址后自动计算）`;
             if (mergeOrderUrl) {
               await sendButtonMessage(commenterPsid || '', mergeText, [
                 { title: '查询订单及结账', url: mergeOrderUrl },
@@ -903,7 +903,7 @@ async function processComment(params: {
               ? `${process.env.VITE_PUBLIC_URL || 'https://xintianfb-mkjyuzze.manus.space'}/order/${orderResult.orderNumber}/${orderResult.secureToken}`
               : null;
             const detailLines = matched.map((m: any) => `• ${m.productName}${m.variationName ? ` (${m.variationName})` : ''} ×${m.quantity} @ RM ${m.unitPrice} = RM ${(parseFloat(m.unitPrice) * m.quantity).toFixed(2)}`).join('\n');
-            const notifText = `恭喜 ${commenterName} 成功下单 ✅\n\n订单编号: ${orderResult.orderNumber}\n\n${detailLines}\n\n订单总额: RM ${orderResult.totalAmount}\n\n请点击下方按钮查看订单并完成结账~`;
+            const notifText = `恭喜 ${commenterName} 成功下单 ✅\n\n订单编号: ${orderResult.orderNumber}\n\n${detailLines}\n\n目前商品金额: RM ${orderResult.totalAmount}\n（运费将在填写收货地址后自动计算，消费满 RM150 不含特价 10kg 内即可享用免邮福利）\n\n请点击下方按钮查看订单并完成结账~`;
             if (orderUrl) {
               await sendButtonMessage(commenterPsid || '', notifText, [
                 { title: '查询订单及结账', url: orderUrl },

@@ -5559,6 +5559,28 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         }
         return result;
       }),
+    // V2.0.3: Customer updates shipping address from public order page
+    updateAddress: publicProcedure
+      .input(z.object({
+        orderNumber: z.string(),
+        token: z.string(),
+        address: z.string().min(1, '请填写收货地址'),
+        phone: z.string().optional(),
+        shippingMethod: z.enum(['west_malaysia', 'east_malaysia', 'self_pickup', 'lalamove']),
+      }))
+      .mutation(async ({ input }) => {
+        const result = await db.updateOrderShippingAddress(
+          input.orderNumber,
+          input.token,
+          input.address,
+          input.phone || '',
+          input.shippingMethod,
+        );
+        if (!result) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: '订单不存在或链接无效' });
+        }
+        return result;
+      }),
   }),
 });
 

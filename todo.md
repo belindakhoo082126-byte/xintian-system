@@ -1561,3 +1561,14 @@
 - [x] TypeScript 零错误
 - [x] Vitest 全部通过
 - [x] 保存检查点
+
+## V2.0.3: 得标通知文案 + 订单页面地址提醒 + 运费计算
+
+- [x] 得标通知文案改为「目前商品金额」+ 运费说明
+- [x] CustomerOrderPage 顶部黄色提醒（未填地址时显示）
+- [x] CustomerOrderPage 地址填写表单
+- [x] 后端 publicOrder.updateAddress API（更新地址+计算运费）
+- [x] 填写地址后自动重新计算运费并更新金额
+- [x] TypeScript 零错误
+- [x] Vitest 全部通过
+- [x] 保存检查点
