@@ -18,7 +18,7 @@ import {
   Package, DollarSign, ShoppingCart, Boxes, ChevronUp, ChevronDown,
   Search, AlertCircle, Video, BarChart3, Send,
   CheckCircle2, TrendingUp, User, Edit, Radio, Layers,
-  Bot, Monitor, StickyNote, Ban, Link2, ImageIcon,
+  Bot, Monitor, StickyNote, Ban, Link2, ImageIcon, ClipboardPaste,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -148,6 +148,35 @@ export default function LiveRoomDetail(props: any) {
       localStorage.setItem('liveCardMode', cardMode);
     }
   }, [cardMode]);
+
+  // V2.0.11: Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Ctrl+F: focus comment search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        const el = document.getElementById('comment-search') as HTMLInputElement;
+        if (el) el.focus();
+      }
+      // Ctrl+K: focus comment input
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        const el = document.getElementById('comment-input') as HTMLInputElement;
+        if (el) el.focus();
+      }
+      // Esc: close any open dialog
+      if (e.key === 'Escape') {
+        if (selectedComment) setSelectedComment(null);
+        if (addDialogOpen) setAddDialogOpen(false);
+        if (stockDialogOpen) setStockDialogOpen(false);
+        if (priceEditOpen) setPriceEditOpen(false);
+        if (endLiveConfirmOpen) setEndLiveConfirmOpen(false);
+        if (blacklistDialogOpen) setBlacklistDialogOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedComment, addDialogOpen, stockDialogOpen, priceEditOpen, endLiveConfirmOpen, blacklistDialogOpen]);
 
   // V2.0: Filtered orders by search
   const filteredOrders = useMemo(() => {
@@ -647,38 +676,12 @@ export default function LiveRoomDetail(props: any) {
                     )}
                   </CardTitle>
                 </div>
-                {/* Search + Filter */}
-                <div className="space-y-1.5 mt-2">
-                  <div className="relative">
-                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                    <Input
-                      placeholder="搜索客户/内容/关键词/商品..."
-                      value={commentSearch}
-                      onChange={e => setCommentSearch(e.target.value)}
-                      className="h-7 text-xs pl-7"
-                    />
-                  </div>
-                  <div className="flex gap-1">
-                    <Select value={commentFilter} onValueChange={setCommentFilter}>
-                      <SelectTrigger className="h-6 text-xs flex-1"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">全部状态</SelectItem>
-                        <SelectItem value="matched">已捉单</SelectItem>
-                        <SelectItem value="no_match">未匹配</SelectItem>
-                        <SelectItem value="sold_out">已售完</SelectItem>
-                        <SelectItem value="paused">暂停中</SelectItem>
-                        <SelectItem value="preorder">预购</SelectItem>
-                        <SelectItem value="order_merged">已合单</SelectItem>
-                        <SelectItem value="messenger_failed">私聊失败</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
               </CardHeader>
-              {/* V2.0: Send comment input */}
+              {/* Row 1: Send comment (top priority) */}
               <div className="px-3 pb-2">
                 <div className="flex gap-1">
                   <Input
+                    id="comment-input"
                     placeholder="输入留言内容发送到直播..."
                     value={commentInput}
                     onChange={e => setCommentInput(e.target.value)}
@@ -686,15 +689,29 @@ export default function LiveRoomDetail(props: any) {
                     onKeyDown={e => {
                       if (e.key === "Enter" && commentInput.trim() && room.facebookVideoId) {
                         sendCommentMutation.mutate({ videoId: room.facebookVideoId, message: commentInput.trim() });
+                        setCommentInput("");
                       }
                     }}
                   />
+                  <Button
+                    variant="outline" size="sm" className="h-7 px-2 gap-1"
+                    title="贴上剪贴板内容"
+                    onClick={async () => {
+                      try {
+                        const text = await navigator.clipboard.readText();
+                        if (text) setCommentInput(prev => prev ? prev + " " + text : text);
+                      } catch { toast.error("无法读取剪贴板"); }
+                    }}
+                  >
+                    <ClipboardPaste className="h-3 w-3" /> 贴上
+                  </Button>
                   <Button
                     variant="default" size="sm" className="h-7 px-2 gap-1"
                     disabled={!commentInput.trim() || !room.facebookVideoId || sendCommentMutation.isPending}
                     onClick={() => {
                       if (commentInput.trim() && room.facebookVideoId) {
                         sendCommentMutation.mutate({ videoId: room.facebookVideoId, message: commentInput.trim() });
+                        setCommentInput("");
                       }
                     }}
                   >
@@ -704,6 +721,35 @@ export default function LiveRoomDetail(props: any) {
                 {!room.facebookVideoId && (
                   <p className="text-xs text-muted-foreground mt-1">未设置 Facebook 视频 ID，无法发送留言</p>
                 )}
+              </div>
+              {/* Row 2: Search */}
+              <div className="px-3 pb-1.5">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                  <Input
+                    id="comment-search"
+                    placeholder="搜索客户/内容/关键词/商品..."
+                    value={commentSearch}
+                    onChange={e => setCommentSearch(e.target.value)}
+                    className="h-7 text-xs pl-7"
+                  />
+                </div>
+              </div>
+              {/* Row 3: Status filter */}
+              <div className="px-3 pb-2">
+                <Select value={commentFilter} onValueChange={setCommentFilter}>
+                  <SelectTrigger className="h-6 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部状态</SelectItem>
+                    <SelectItem value="matched">已捉单</SelectItem>
+                    <SelectItem value="no_match">未匹配</SelectItem>
+                    <SelectItem value="sold_out">已售完</SelectItem>
+                    <SelectItem value="paused">暂停中</SelectItem>
+                    <SelectItem value="preorder">预购</SelectItem>
+                    <SelectItem value="order_merged">已合单</SelectItem>
+                    <SelectItem value="messenger_failed">私聊失败</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <CardContent className="flex-1 overflow-hidden p-0">
                 <ScrollArea className="h-full" style={{ height: "calc(100vh - 420px)" }}>
