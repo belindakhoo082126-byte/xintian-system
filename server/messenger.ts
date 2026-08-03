@@ -773,6 +773,21 @@ async function processComment(params: {
           return r.status === 'live';
         });
         if (activeRooms.length === 0) {
+          // Check if there's an import_preorder room that has expired (deadline passed)
+          const allImportRooms = await getLiveRooms({});
+          const expiredPreorderRooms = (allImportRooms || []).filter((r: any) =>
+            r.liveType === 'import_preorder' &&
+            r.preorderEndDate &&
+            new Date(r.preorderEndDate) <= now &&
+            r.status !== 'closed'
+          );
+          if (expiredPreorderRooms.length > 0 && keywords.length > 0) {
+            // Preorder deadline has passed - reply with closure message
+            await replyToComment(commentId,
+              `${commenterName} 您好！此代购活动已截止，如有疑问请联系客服，谢谢。`
+            );
+            return;
+          }
           const preparingRooms = await getLiveRooms({ status: 'preparing' });
           const activePreparing = (preparingRooms || []).filter((r: any) => {
             if (r.liveType === 'import_preorder' && r.preorderEndDate) {

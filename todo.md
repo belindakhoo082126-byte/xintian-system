@@ -1692,3 +1692,13 @@
 - [x] Stats Bar 紧凑化（单行 inline 显示）
 - [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
 - [x] 保存检查点
+
+## V2.0.19.1: 中国代购直播业务规则验证
+- [x] 验证直播房创建字段完整性（全部 12 个字段正确保存）
+- [x] 验证代购截止日期控制逻辑（messenger.ts 中 preorderEndDate 检查已实现）
+- [x] 验证直播结束逻辑（仅更新 status=ended + liveEndTime，不影响已成立订单）
+- [x] 验证中国代购与本地直播共用同一套 Live Studio（LiveRoomDetail.tsx 无 liveType 分支）
+- [x] 发现缺失：截止后无"代购活动已截止"回复，需补充
+- [x] 补充截止日期后的客户回复逻辑（messenger.ts 中添加 expiredPreorderRooms 检查和回复）
+- [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
+- [x] 保存检查点
