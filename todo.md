@@ -1767,4 +1767,9 @@
 - [x] 日期显示根据 lang 切换 locale（zh-CN / en-US）
 - [x] TypeScript 零错误
 - [x] Vitest 31 文件 265 项测试通过（1 项 ParcelKing 外部 API 超时，非本次修改）
-- [ ] 保存检查点
+- [x] 保存检查点
+
+## V2.0.28: Campaign 新建模式下 Tab 不可点击修复
+- [x] 修复新建 Campaign 时内容绑定/Messenger Flow/Product Button Tab 被 disabled 的问题
+- [x] 保存新建 Campaign 后自动获取返回的 campaignId，启用所有 Tab
+- [x] TypeScript 检查零错误 + 保存检查点

@@ -247,6 +247,7 @@ function CampaignEditDialog({ campaign, onClose, onSaved }: {
   const [autoReplyText, setAutoReplyText] = useState(campaign?.autoReplyText || "");
   const [messengerFlowEnabled, setMessengerFlowEnabled] = useState(campaign?.messengerFlowEnabled ?? true);
   const [activeTab, setActiveTab] = useState("settings");
+  const [savedCampaignId, setSavedCampaignId] = useState<number | null>(campaign?.id || null);
 
   // Auto-parse preview from Facebook Link
   const parsedPreview = useMemo(() => {
@@ -296,16 +297,23 @@ function CampaignEditDialog({ campaign, onClose, onSaved }: {
         });
         toast.success("Campaign 已更新");
       } else {
-        await createMutation.mutateAsync({
+        const created = await createMutation.mutateAsync({
           name,
           facebookLink,
           autoReplyEnabled,
           autoReplyText,
           messengerFlowEnabled,
         });
-        toast.success("Campaign 已创建");
+        if (created?.id) {
+          setSavedCampaignId(created.id);
+          toast.success("Campaign 已创建，现在可以编辑其他 Tab");
+        } else {
+          toast.success("Campaign 已创建");
+        }
       }
-      onSaved();
+      if (campaign) {
+        onSaved();
+      }
     } catch (err: any) {
       toast.error("保存失败: " + err.message);
     }
@@ -321,9 +329,9 @@ function CampaignEditDialog({ campaign, onClose, onSaved }: {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden flex flex-col">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="settings">基本设置</TabsTrigger>
-            <TabsTrigger value="contentIds" disabled={!campaign}>内容绑定</TabsTrigger>
-            <TabsTrigger value="flows" disabled={!campaign}>Messenger Flow</TabsTrigger>
-            <TabsTrigger value="buttons" disabled={!campaign}>Product Button</TabsTrigger>
+            <TabsTrigger value="contentIds" disabled={!campaign && !savedCampaignId}>内容绑定</TabsTrigger>
+            <TabsTrigger value="flows" disabled={!campaign && !savedCampaignId}>Messenger Flow</TabsTrigger>
+            <TabsTrigger value="buttons" disabled={!campaign && !savedCampaignId}>Product Button</TabsTrigger>
           </TabsList>
 
           {/* Settings Tab */}
@@ -375,23 +383,23 @@ function CampaignEditDialog({ campaign, onClose, onSaved }: {
           </TabsContent>
 
           {/* Content IDs Tab */}
-          {campaign && (
+          {(campaign || savedCampaignId) && (
             <TabsContent value="contentIds" className="flex-1 overflow-y-auto">
-              <ContentIdManager campaignId={campaign.id} />
+              <ContentIdManager campaignId={campaign?.id || savedCampaignId!} />
             </TabsContent>
           )}
 
           {/* Flows Tab */}
-          {campaign && (
+          {(campaign || savedCampaignId) && (
             <TabsContent value="flows" className="flex-1 overflow-hidden">
-              <FlowBuilder campaignId={campaign.id} />
+              <FlowBuilder campaignId={campaign?.id || savedCampaignId!} />
             </TabsContent>
           )}
 
           {/* Buttons Tab */}
-          {campaign && (
+          {(campaign || savedCampaignId) && (
             <TabsContent value="buttons" className="flex-1 overflow-hidden">
-              <ButtonManager campaignId={campaign.id} />
+              <ButtonManager campaignId={campaign?.id || savedCampaignId!} />
             </TabsContent>
           )}
         </Tabs>
