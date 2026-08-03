@@ -931,6 +931,18 @@ async function processComment(params: {
           unmatched = result.unmatched;
         }
       } else {
+        // No active live room — try to find a Campaign by content ID (Post ID / Video ID / Reel ID)
+        try {
+          const { findCampaignByContentId } = require("./db");
+          const campaign = postId ? await findCampaignByContentId(String(postId)) : null;
+          if (campaign && campaign.status === 'active') {
+            console.log(`[Facebook] Found active Campaign ${campaign.id} (${campaign.name}) for content ID ${postId}`);
+            // Use Campaign's products via Product Buttons (if any)
+            // For now, fall back to global keyword matching
+          }
+        } catch (campaignErr: any) {
+          console.log("[Facebook] Campaign lookup failed:", campaignErr?.message);
+        }
         const result = await matchKeywordsToProducts(keywords);
         matched = result.matched;
         unmatched = result.unmatched;

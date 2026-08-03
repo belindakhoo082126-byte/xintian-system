@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import {
-  Megaphone, Plus, Edit, Copy, Trash2, Search, GripVertical,
+  Megaphone, Plus, Edit, Copy, Trash2, Search, GripVertical, Link2,
   Image, Video, FileText, MessageSquare, Package, MousePointerClick,
   Play, Pause, Archive, ArrowUp, ArrowDown,
 } from "lucide-react";
@@ -193,6 +193,10 @@ function CampaignCard({ campaign, onEdit, onDelete, onDuplicate, onStatusChange 
               </a>
             )}
             <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Link2 className="h-3 w-3" />
+                {campaign.contentIdCount || 0} 个内容绑定
+              </span>
               <span>留言: {campaign.commentCount || 0}</span>
               <span>消息: {campaign.messengerCount || 0}</span>
               <span>订单: {campaign.orderCount || 0}</span>

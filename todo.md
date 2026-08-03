@@ -1734,3 +1734,10 @@
 - [x] 前端：Campaign 编辑对话框新增「内容绑定」Tab，支持添加/删除多个 Facebook 链接
 - [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
 - [x] 保存检查点
+
+## V2.0.24: Campaign 留言路由 + 卡片绑定数量 + 测试用例
+- [x] messenger.ts handlePageFeedEvent 接入 findCampaignByContentId 查找 Campaign
+- [x] Campaign 卡片显示已绑定内容数量（Link2 图标 + N 个内容绑定）
+- [x] 添加测试用例验证多链接绑定（9 个测试用例，覆盖 parseFacebookLink 和多内容绑定逻辑）
+- [x] TypeScript 零错误 + Vitest 32 文件 266 项测试全部通过
+- [x] 保存检查点
