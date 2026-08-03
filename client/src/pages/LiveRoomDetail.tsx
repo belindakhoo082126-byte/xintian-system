@@ -639,7 +639,7 @@ export default function LiveRoomDetail(props: any) {
                 </div>
               </CardHeader>
               <CardContent className="flex-1 overflow-hidden p-0">
-                <ScrollArea className="h-full" style={{ height: "calc(100vh - 320px)" }}>
+                <ScrollArea className="h-full" style={{ height: "calc(100vh - 280px)" }}>
                   <div className="p-3 space-y-2">
                     {liveProductGroups.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
@@ -1246,7 +1246,7 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
   );
 
   return (
-    <Card className={`overflow-hidden ${isCompact ? 'py-0' : ''}`}>
+    <Card className={`${isCompact ? 'py-0' : ''}`}>
       <CardContent className={isCompact ? 'p-2' : 'p-3'}>
         <div className="flex gap-3">
           {/* Left: Product image (fixed ratio, no crop) */}

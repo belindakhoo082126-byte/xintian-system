@@ -1662,3 +1662,9 @@
 - [x] 修复 createProductEnhanced：同样的空字符串转 null 处理
 - [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
 - [x] 保存检查点
+
+## V2.0.16: 修复 Live Studio 商品区商品卡片显示不完整
+- [x] 移除 ProductGroupCard 的 overflow-hidden（导致卡片内容被截断）
+- [x] 增加 ScrollArea 高度（从 calc(100vh-320px) 改为 calc(100vh-280px)，增加 40px 可见区域）
+- [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
+- [x] 保存检查点
