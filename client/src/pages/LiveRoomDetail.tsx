@@ -74,6 +74,7 @@ const matchResultColors: Record<string, string> = {
 };
 
 export default function LiveRoomDetail(props: any) {
+  const { t } = useI18n();
   const roomId = props.roomId ?? (props.match?.params?.id ? parseInt(props.match.params.id) : 0);
   const onBack = props.onBack ?? (() => window.history.back());
   const queryClient = trpc.useUtils();
@@ -216,7 +217,7 @@ export default function LiveRoomDetail(props: any) {
   // Mutations
   const batchAddMutation = trpc.liveRooms.batchAddProducts.useMutation({
     onSuccess: (data: any) => {
-      toast.success(`已批量加入 ${data?.count || 0} 个商品`);
+      toast.success(`${t("live.batchAdded")} ${data?.count || 0} ${t("live.productUnit")}`);
       queryClient.liveRooms.getProducts.invalidate({ liveRoomId: roomId });
       queryClient.liveRooms.getStats.invalidate({ liveRoomId: roomId });
       queryClient.liveRooms.getStatsBatch.invalidate();
@@ -226,7 +227,7 @@ export default function LiveRoomDetail(props: any) {
       // batchAddKeyword removed
       setProductSearchQuery("");
     },
-    onError: (e: any) => toast.error("批量加入失败: " + e.message),
+    onError: (e: any) => toast.error(t("live.batchAddFailed") + ": " + e.message),
   });
 
   const updateProductMutation = trpc.liveRooms.updateProduct.useMutation({
@@ -234,50 +235,50 @@ export default function LiveRoomDetail(props: any) {
       queryClient.liveRooms.getProducts.invalidate({ liveRoomId: roomId });
       queryClient.liveRooms.getStats.invalidate({ liveRoomId: roomId });
     },
-    onError: (e: any) => toast.error("操作失败: " + e.message),
+    onError: (e: any) => toast.error(t("live.operationFailed") + ": " + e.message),
   });
 
   const deleteProductMutation = trpc.liveRooms.deleteProduct.useMutation({
     onSuccess: () => {
-      toast.success("已移除");
+      toast.success(t("live.removed"));
       queryClient.liveRooms.getProducts.invalidate({ liveRoomId: roomId });
       queryClient.liveRooms.getStats.invalidate({ liveRoomId: roomId });
     },
-    onError: (e: any) => toast.error("移除失败: " + e.message),
+    onError: (e: any) => toast.error(t("live.removeFailed") + ": " + e.message),
   });
 
   const adjustStockMutation = trpc.liveRooms.adjustProductStock.useMutation({
     onSuccess: (data: any) => {
-      toast.success(`库存已调整，当前库存: ${data.startStock}`);
+      toast.success(`${t("live.stockAdjusted")} ${data.startStock}`);
       queryClient.liveRooms.getProducts.invalidate({ liveRoomId: roomId });
       setStockDialogOpen(false);
       setStockForm({ quantityChange: 0, reason: "other" });
     },
-    onError: (e: any) => toast.error("调整失败: " + e.message),
+    onError: (e: any) => toast.error(t("live.adjustFailed") + ": " + e.message),
   });
 
   const togglePreorderMutation = trpc.liveRooms.togglePreorder.useMutation({
     onSuccess: () => {
       queryClient.liveRooms.getProducts.invalidate({ liveRoomId: roomId });
-      toast.success("预购设置已更新");
+      toast.success(t("live.preorderUpdated"));
     },
-    onError: (e: any) => toast.error("操作失败: " + e.message),
+    onError: (e: any) => toast.error(t("live.operationFailed") + ": " + e.message),
   });
 
   const updateRoomMutation = trpc.liveRooms.update.useMutation({
     onSuccess: () => {
       queryClient.liveRooms.getById.invalidate({ id: roomId });
       queryClient.liveRooms.list.invalidate();
-      toast.success("直播状态已更新");
+      toast.success(t("live.statusUpdated"));
     },
-    onError: (e: any) => toast.error("操作失败: " + e.message),
+    onError: (e: any) => toast.error(t("live.operationFailed") + ": " + e.message),
   });
 
   const startLiveMutation = trpc.liveRooms.startLive.useMutation({
     onSuccess: () => {
       queryClient.liveRooms.getById.invalidate({ id: roomId });
       queryClient.liveRooms.list.invalidate();
-      toast.success("直播已开始");
+      toast.success(t("live.liveStarted"));
     },
   });
   const endLiveMutation = trpc.liveRooms.endLive.useMutation({
@@ -289,16 +290,16 @@ export default function LiveRoomDetail(props: any) {
       queryClient.liveRooms.getOrders.invalidate({ liveRoomId: roomId });
       queryClient.liveRooms.getOrdersByProduct.invalidate({ liveRoomId: roomId });
       setEndLiveConfirmOpen(false);
-      toast.success("直播已结束，捉单已停止");
+      toast.success(t("live.liveEnded"));
     },
-    onError: (e: any) => toast.error("操作失败: " + e.message),
+    onError: (e: any) => toast.error(t("live.operationFailed") + ": " + e.message),
   });
 
   const markCommentHandledMutation = trpc.liveRooms.markCommentHandled.useMutation({
     onSuccess: () => {
       queryClient.liveRooms.getComments.invalidate({ liveRoomId: roomId });
       queryClient.liveRooms.getCommentStats.invalidate({ liveRoomId: roomId });
-      toast.success("留言已标记为已处理");
+      toast.success(t("live.commentMarked"));
     },
   });
 
@@ -306,47 +307,47 @@ export default function LiveRoomDetail(props: any) {
   const sendCommentMutation = trpc.liveRooms.sendComment.useMutation({
     onSuccess: (data: any) => {
       if (data.success) {
-        toast.success("留言已发送到 Facebook 直播");
+        toast.success(t("live.commentSent"));
         setCommentInput("");
         queryClient.liveRooms.getComments.invalidate({ liveRoomId: roomId });
       } else {
-        toast.error("发送失败: " + (data.error || "未知错误"));
+        toast.error("发送失败: " + (data.error || t("live.unknownError")));
       }
     },
-    onError: (e: any) => toast.error("发送失败: " + e.message),
+    onError: (e: any) => toast.error(t("live.sendFailed") + ": " + e.message),
   });
 
   // V2.0: Toggle blacklist mutation
   const toggleBlacklistMutation = trpc.liveRooms.toggleBlacklist.useMutation({
     onSuccess: () => {
-      toast.success("黑名单状态已更新");
+      toast.success(t("live.blacklistUpdated"));
       setBlacklistDialogOpen(false);
       setBlacklistCustomer(null);
       setBlacklistReason("");
     },
-    onError: (e: any) => toast.error("操作失败: " + e.message),
+    onError: (e: any) => toast.error(t("live.operationFailed") + ": " + e.message),
   });
 
   // V2.0: Staff Note mutations
   const createNoteMutation = trpc.liveRooms.createNote.useMutation({
     onSuccess: () => {
-      toast.success("备注已添加");
+      toast.success(t("live.noteAdded"));
       setNoteInput("");
       if (selectedComment) {
         queryClient.liveRooms.getCommentNotes.invalidate({ liveCommentId: selectedComment.id });
       }
     },
-    onError: (e: any) => toast.error("添加失败: " + e.message),
+    onError: (e: any) => toast.error(t("live.addFailed") + ": " + e.message),
   });
 
   const deleteNoteMutation = trpc.liveRooms.deleteNote.useMutation({
     onSuccess: () => {
-      toast.success("备注已删除");
+      toast.success(t("live.noteDeleted"));
       if (selectedComment) {
         queryClient.liveRooms.getCommentNotes.invalidate({ liveCommentId: selectedComment.id });
       }
     },
-    onError: (e: any) => toast.error("删除失败: " + e.message),
+    onError: (e: any) => toast.error(t("live.deleteFailed") + ": " + e.message),
   });
 
   // V2.0: Staff Notes query (for selected comment)
@@ -396,10 +397,10 @@ export default function LiveRoomDetail(props: any) {
       const result = await queryClient.liveRooms.copyKeyword.fetch({ liveRoomProductId: productId });
       if (result) {
         await navigator.clipboard.writeText(result);
-        toast.success("关键词文案已复制到剪贴板");
+        toast.success(t("live.copyKeyword"));
       }
     } catch (e: any) {
-      toast.error("复制失败: " + e.message);
+      toast.error(t("live.copyFailed") + ": " + e.message);
     }
   }
 
@@ -437,7 +438,7 @@ export default function LiveRoomDetail(props: any) {
       };
     }).filter(Boolean);
     if (items.length === 0) {
-      toast.error("请选择至少一个商品");
+      toast.error(t("live.selectProducts"));
       return;
     }
     batchAddMutation.mutate({ liveRoomId: roomId, items: items as any });
@@ -458,10 +459,10 @@ export default function LiveRoomDetail(props: any) {
   }
 
   if (roomQuery.isLoading) {
-    return <div className="p-8 text-center text-muted-foreground">加载中...</div>;
+    return <div className="p-8 text-center text-muted-foreground">{t("live.loading")}</div>;
   }
   if (!room) {
-    return <div className="p-8 text-center text-muted-foreground">直播房间不存在</div>;
+    return <div className="p-8 text-center text-muted-foreground">{t("live.notFound")}</div>;
   }
 
   const isLive = room.status === "live";
@@ -483,15 +484,15 @@ export default function LiveRoomDetail(props: any) {
             </h1>
             <div className="flex items-center gap-2 mt-0.5">
               {room.liveType === "import_preorder" ? (
-                <Badge className="bg-purple-100 text-purple-700 text-xs">中国代购</Badge>
+                <Badge className="bg-purple-100 text-purple-700 text-xs">{t("live.chinaProxy")}</Badge>
               ) : (
-                <Badge variant="secondary" className="text-xs">本地直播</Badge>
+                <Badge variant="secondary" className="text-xs">{t("live.localLive")}</Badge>
               )}
               <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${roomStatusColors[room.status] || ""}`}>
                 {roomStatusLabels[room.status] || room.status}
               </span>
               {room.streamerName && (
-                <span className="text-xs text-muted-foreground">主播: {room.streamerName}</span>
+                <span className="text-xs text-muted-foreground">{t("live.streamer")} {room.streamerName}</span>
               )}
             </div>
           </div>
@@ -501,23 +502,23 @@ export default function LiveRoomDetail(props: any) {
             <Button variant="default" size="sm" className="gap-2"
               onClick={() => startLiveMutation.mutate({ liveRoomId: roomId })}
               disabled={startLiveMutation.isPending}>
-              <Play className="h-4 w-4" /> 开始直播
+              <Play className="h-4 w-4" /> {t("live.startLive")}
             </Button>
           )}
           {isLive && (
             <Button variant="destructive" size="sm" className="gap-2"
               onClick={() => setEndLiveConfirmOpen(true)}>
-              <XCircle className="h-4 w-4" /> 结束直播
+              <XCircle className="h-4 w-4" /> {t("live.endLive")}
             </Button>
           )}
           {isEnded && (
             <Button variant="outline" size="sm" className="gap-2"
               onClick={() => setShowReport(!showReport)}>
-              <BarChart3 className="h-4 w-4" /> {showReport ? "返回控制台" : "查看报告"}
+              <BarChart3 className="h-4 w-4" /> {showReport ? t("live.backToConsole") : t("live.viewReport")}
             </Button>
           )}
           <Button variant="outline" size="sm" className="gap-2" onClick={() => setAddDialogOpen(true)}>
-            <Plus className="h-4 w-4" /> 加入商品
+            <Plus className="h-4 w-4" /> {t("live.addProducts")}
           </Button>
         </div>
       </div>
@@ -536,7 +537,7 @@ export default function LiveRoomDetail(props: any) {
                   <CardHeader className="pb-2 cursor-pointer hover:bg-muted/50 transition-colors py-2">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm flex items-center gap-2">
-                        <Video className="h-4 w-4" /> 直播画面
+                        <Video className="h-4 w-4" /> {t("live.liveVideo")}
                       </CardTitle>
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="sm" className="h-6 gap-1 text-xs" onClick={(e) => { e.stopPropagation(); setVideoClosed(true); }}>
@@ -554,7 +555,7 @@ export default function LiveRoomDetail(props: any) {
                     {videoError ? (
                       <div className="w-full flex flex-col items-center justify-center py-4 text-muted-foreground">
                         <AlertCircle className="h-6 w-6 mb-1 text-orange-500" />
-                        <p className="text-xs">直播画面加载失败，捉单功能不受影响</p>
+                        <p className="text-xs">{t("live.videoLoadFailed")}</p>
                         <Button variant="outline" size="sm" className="mt-1 text-xs gap-1" onClick={() => setVideoError(false)}>
                           <Video className="h-3 w-3" /> 重试
                         </Button>
@@ -577,23 +578,23 @@ export default function LiveRoomDetail(props: any) {
           )}
           {room.facebookVideoId && videoClosed && (
             <Button variant="outline" size="sm" className="gap-2 flex-shrink-0" onClick={() => { setVideoClosed(false); setVideoError(false); }}>
-              <Video className="h-4 w-4" /> 显示直播画面
+              <Video className="h-4 w-4" /> {t("live.showVideo")}
             </Button>
           )}
 
           {/* Stats Bar - inline compact */}
           <div className="flex items-center gap-4 text-xs flex-shrink-0 px-1">
-            <span className="flex items-center gap-1"><Package className="h-3.5 w-3.5 text-blue-500" /><span className="text-muted-foreground">商品</span> <span className="font-bold">{stats.productCount || 0}</span></span>
-            <span className="flex items-center gap-1"><ShoppingCart className="h-3.5 w-3.5 text-green-500" /><span className="text-muted-foreground">订单</span> <span className="font-bold">{stats.orderCount || 0}</span></span>
-            <span className="flex items-center gap-1"><Boxes className="h-3.5 w-3.5 text-orange-500" /><span className="text-muted-foreground">件数</span> <span className="font-bold">{stats.totalItems || 0}</span></span>
-            <span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5 text-emerald-500" /><span className="text-muted-foreground">业绩</span> <span className="font-bold">RM{(Number(stats.totalRevenue) || 0).toFixed(2)}</span></span>
+            <span className="flex items-center gap-1"><Package className="h-3.5 w-3.5 text-blue-500" /><span className="text-muted-foreground">{t("live.products")}</span> <span className="font-bold">{stats.productCount || 0}</span></span>
+            <span className="flex items-center gap-1"><ShoppingCart className="h-3.5 w-3.5 text-green-500" /><span className="text-muted-foreground">{t("live.orders")}</span> <span className="font-bold">{stats.orderCount || 0}</span></span>
+            <span className="flex items-center gap-1"><Boxes className="h-3.5 w-3.5 text-orange-500" /><span className="text-muted-foreground">{t("live.items")}</span> <span className="font-bold">{stats.totalItems || 0}</span></span>
+            <span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5 text-emerald-500" /><span className="text-muted-foreground">{t("live.revenue")}</span> <span className="font-bold">RM{(Number(stats.totalRevenue) || 0).toFixed(2)}</span></span>
           </div>
 
           {/* V2.0: AI Reply & Continue Monitor Toggles - compact */}
           <div className="flex items-center gap-4 text-xs flex-shrink-0">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-purple-500" />
-              <span className="text-muted-foreground">AI 自动回复</span>
+              <span className="text-muted-foreground">{t("live.aiAutoReply")}</span>
               <Switch
                 checked={room.aiReplyEnabled ?? true}
                 onCheckedChange={(val) => updateRoomMutation.mutate({ id: roomId, aiReplyEnabled: val })}
@@ -602,13 +603,13 @@ export default function LiveRoomDetail(props: any) {
             </div>
             <div className="flex items-center gap-2">
               <Monitor className="h-4 w-4 text-blue-500" />
-              <span className="text-muted-foreground">持续监控留言</span>
+              <span className="text-muted-foreground">{t("live.continuousMonitor")}</span>
               <Switch
                 checked={room.continueMonitor ?? true}
                 onCheckedChange={(val) => updateRoomMutation.mutate({ id: roomId, continueMonitor: val })}
                 className="scale-75"
               />
-              <span className="text-muted-foreground">（直播结束后继续捉单）</span>
+              <span className="text-muted-foreground">({t("live.keepCapturing")})</span>
             </div>
           </div>
 
@@ -619,16 +620,16 @@ export default function LiveRoomDetail(props: any) {
               <CardHeader className="pb-2 py-2 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
-                    <Package className="h-4 w-4" /> {tt("商品区", "Products")}
+                    <Package className="h-4 w-4" /> {tt(t("live.productArea"), "Products")}
                   </CardTitle>
                   <div className="flex items-center gap-2">
                     <div className="flex items-center gap-0.5 rounded-md border p-0.5">
                       <Button variant={cardMode === 'large' ? 'default' : 'ghost'} size="sm" className="h-6 px-2 text-xs"
-                        onClick={() => setCardMode('large')}>{tt("大卡", "Large")}</Button>
+                        onClick={() => setCardMode('large')}>{tt(t("live.largeCard"), "Large")}</Button>
                       <Button variant={cardMode === 'compact' ? 'default' : 'ghost'} size="sm" className="h-6 px-2 text-xs"
-                        onClick={() => setCardMode('compact')}>{tt("紧凑", "Compact")}</Button>
+                        onClick={() => setCardMode('compact')}>{tt(t("live.compact"), "Compact")}</Button>
                     </div>
-                    <Badge variant="secondary" className="text-xs">{liveProductGroups.length} 个</Badge>
+                    <Badge variant="secondary" className="text-xs">{liveProductGroups.length} {t("live.productUnit")}</Badge>
                   </div>
                 </div>
               </CardHeader>
@@ -639,7 +640,7 @@ export default function LiveRoomDetail(props: any) {
                   <Input
                     value={liveProductSearch}
                     onChange={(e) => setLiveProductSearch(e.target.value)}
-                    placeholder={tt("搜索商品名称/SKU/关键词...", "Search name/SKU/keyword...")}
+                    placeholder={tt(t("live.searchProducts"), "Search name/SKU/keyword...")}
                     className="h-7 pl-7 text-xs"
                   />
                 </div>
@@ -650,7 +651,7 @@ export default function LiveRoomDetail(props: any) {
                     {liveProductGroups.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
                         <Package className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                        <p className="text-xs">{tt("暂无商品，点击「加入商品」", "No products yet. Click Add Products")}</p>
+                        <p className="text-xs">{tt(t("live.noProducts"), "No products yet. Click Add Products")}</p>
                       </div>
                     ) : (
                       liveProductGroups.map((group: any) => (
@@ -678,7 +679,7 @@ export default function LiveRoomDetail(props: any) {
               <CardHeader className="pb-2 py-2 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4" /> {tt("留言区", "Comments")}
+                    <MessageSquare className="h-4 w-4" /> {tt(t("live.commentArea"), "Comments")}
                     {commentStatsMap["matched"] > 0 && (
                       <Badge variant="secondary" className="text-xs">{commentStatsMap["matched"]}</Badge>
                     )}
@@ -686,14 +687,14 @@ export default function LiveRoomDetail(props: any) {
                   <Select value={commentFilter} onValueChange={setCommentFilter}>
                     <SelectTrigger className="h-6 text-xs w-28"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">{tt("全部状态", "All Status")}</SelectItem>
+                      <SelectItem value="all">{tt(t("live.allStatus"), "All Status")}</SelectItem>
                       <SelectItem value="matched">{tt("已捉单", "Captured")}</SelectItem>
                       <SelectItem value="no_match">{tt("未匹配", "No Match")}</SelectItem>
                       <SelectItem value="sold_out">{tt("已售完", "Sold Out")}</SelectItem>
                       <SelectItem value="paused">{tt("暂停中", "Paused")}</SelectItem>
                       <SelectItem value="preorder">{tt("预购", "Preorder")}</SelectItem>
                       <SelectItem value="order_merged">{tt("已合单", "Merged")}</SelectItem>
-                      <SelectItem value="messenger_failed">{tt("私聊失败", "DM Failed")}</SelectItem>
+                      <SelectItem value="messenger_failed">{tt(t("live.dmFailed"), "DM Failed")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -703,7 +704,7 @@ export default function LiveRoomDetail(props: any) {
                 <div className="flex gap-1">
                   <Input
                     id="comment-input"
-                    placeholder={tt("输入留言内容发送到直播...", "Type comment to send to live...")}
+                    placeholder={tt(t("live.inputComment"), "Type comment to send to live...")}
                     value={commentInput}
                     onChange={e => setCommentInput(e.target.value)}
                     className="h-7 text-xs"
@@ -716,12 +717,12 @@ export default function LiveRoomDetail(props: any) {
                   />
                   <Button
                     variant="outline" size="sm" className="h-7 px-2 gap-1"
-                    title="贴上剪贴板内容"
+                    title={t("live.pasteClipboard")}
                     onClick={async () => {
                       try {
                         const text = await navigator.clipboard.readText();
                         if (text) setCommentInput(prev => prev ? prev + " " + text : text);
-                      } catch { toast.error("无法读取剪贴板"); }
+                      } catch { toast.error(t("live.clipboardReadFailed")); }
                     }}
                   >
                     <ClipboardPaste className="h-3 w-3" /> {tt("贴上", "Paste")}
@@ -740,7 +741,7 @@ export default function LiveRoomDetail(props: any) {
                   </Button>
                 </div>
                 {!room.facebookVideoId && (
-                  <p className="text-xs text-muted-foreground mt-1">未设置 Facebook 视频 ID，无法发送留言</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t("live.noVideoId")}</p>
                 )}
               </div>
               {/* Row 2: Search */}
@@ -749,7 +750,7 @@ export default function LiveRoomDetail(props: any) {
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                   <Input
                     id="comment-search"
-                    placeholder={tt("搜索客户/内容/关键词/商品...", "Search customer/content/keyword/product...")}
+                    placeholder={tt(t("live.searchComments"), "Search customer/content/keyword/product...")}
                     value={commentSearch}
                     onChange={e => setCommentSearch(e.target.value)}
                     className="h-7 text-xs pl-7"
@@ -762,7 +763,7 @@ export default function LiveRoomDetail(props: any) {
                     {filteredComments.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
                         <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                        <p className="text-xs">{tt("暂无留言", "No comments")}</p>
+                        <p className="text-xs">{tt(t("live.noComments"), "No comments")}</p>
                       </div>
                     ) : (
                       filteredComments.map((comment: any) => (
@@ -785,20 +786,20 @@ export default function LiveRoomDetail(props: any) {
             <CardHeader className="pb-2 py-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <ShoppingCart className="h-4 w-4" /> {tt("得标订单", "Winning Orders")}
+                  <ShoppingCart className="h-4 w-4" /> {tt(t("live.winningOrders"), "Winning Orders")}
                 </CardTitle>
                 <div className="flex gap-1">
                   <Button
                     variant={orderViewMode === "byCustomer" ? "default" : "outline"}
                     size="sm" className="h-6 text-xs px-2"
 onClick={() => setOrderViewMode("byCustomer")}>
-                      {tt("按客户", "By Customer")}
+                      {tt(t("live.byCustomer"), "By Customer")}
                   </Button>
                   <Button
                     variant={orderViewMode === "byProduct" ? "default" : "outline"}
                     size="sm" className="h-6 text-xs px-2"
                     onClick={() => setOrderViewMode("byProduct")}>
-                    {tt("按商品", "By Product")}
+                    {tt(t("live.byProduct"), "By Product")}
                   </Button>
                   <Button
                     variant="outline" size="sm" className="h-6 text-xs px-2 gap-1"
@@ -807,9 +808,9 @@ onClick={() => setOrderViewMode("byCustomer")}>
                         `${o.customerName || o.facebookName || "未知"} - ${o.orderNumber} - RM${Number(o.totalAmount || 0).toFixed(2)}`
                       ).join("\n");
                       navigator.clipboard.writeText(text);
-                      toast.success(tt("得标名单已复制", "Winner list copied"));
+                      toast.success(tt(t("live.copyWinningList"), "Winner list copied"));
                     }}
-                    title="复制得标名单"
+                    title={t("live.copyWinningList")}
                   >
                     <Copy className="h-3 w-3" /> 复制
                   </Button>
@@ -819,7 +820,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
                 <div className="relative flex-1">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                   <Input
-                    placeholder={tt("搜索订单号/客户名...", "Search order#/customer...")}
+                    placeholder={tt(t("live.searchOrders"), "Search order#/customer...")}
                     value={orderSearch}
                     onChange={e => setOrderSearch(e.target.value)}
                     className="h-7 text-xs pl-7"
@@ -834,7 +835,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
                     filteredOrders.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
                         <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                        <p className="text-xs">{orderSearch ? tt("未找到匹配订单", "No matching orders") : tt("暂无订单", "No orders yet")}</p>
+                        <p className="text-xs">{orderSearch ? tt(t("live.noMatchingOrder"), "No matching orders") : tt(t("live.noOrders"), "No orders yet")}</p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
@@ -847,7 +848,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
                     ordersByProduct.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
                         <Layers className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                        <p className="text-xs">{tt("暂无商品订单", "No product orders")}</p>
+                        <p className="text-xs">{tt(t("live.noProductOrders"), "No product orders")}</p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
@@ -867,7 +868,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>加入商品到直播房</DialogTitle>
+            <DialogTitle>{t("live.addProductsToRoom")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-3">
             {/* Search + Category Filter */}
@@ -875,16 +876,16 @@ onClick={() => setOrderViewMode("byCustomer")}>
               <div className="relative flex-1">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="搜索商品名称/SKU/关键词..."
+                  placeholder={t("live.searchProducts")}
                   value={productSearchQuery}
                   onChange={e => setProductSearchQuery(e.target.value)}
                   className="pl-8"
                 />
               </div>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-40"><SelectValue placeholder="全部分类" /></SelectTrigger>
+                <SelectTrigger className="w-40"><SelectValue placeholder={t("live.allCategories")} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">全部分类</SelectItem>
+                  <SelectItem value="all">{t("live.allCategories")}</SelectItem>
                   {(categoriesQuery.data || []).map((c: any) => (
                     <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                   )) as any}
@@ -895,18 +896,18 @@ onClick={() => setOrderViewMode("byCustomer")}>
             {/* Live price override (optional) */}
             <div className="flex gap-2 items-end">
               <div>
-                <Label className="text-xs">直播售价</Label>
+                <Label className="text-xs">{t("live.livePrice")}</Label>
                 <Select value={batchAddPriceMode} onValueChange={(v) => setBatchAddPriceMode(v as any)}>
                   <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="original">使用原价</SelectItem>
-                    <SelectItem value="custom">自定义价</SelectItem>
+                    <SelectItem value="original">{t("live.useOriginalPrice")}</SelectItem>
+                    <SelectItem value="custom">{t("live.customPrice")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               {batchAddPriceMode === "custom" && (
                 <div>
-                  <Label className="text-xs">价格</Label>
+                  <Label className="text-xs">{t("live.price")}</Label>
                   <Input
                     type="number"
                     placeholder="RM"
@@ -923,7 +924,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
             {productSearchQuery.length > 0 && (
               <div className="border rounded-lg max-h-[300px] overflow-y-auto">
                 {(productSearchResults.data || []).length === 0 ? (
-                  <div className="p-4 text-center text-sm text-muted-foreground">未找到商品</div>
+                  <div className="p-4 text-center text-sm text-muted-foreground">{t("live.notFoundProduct")}</div>
                 ) : (
                   (productSearchResults.data || []).map((p: any) => {
                     const isAdded = !!p.alreadyAdded;
@@ -947,7 +948,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
                         {p.coverImageUrl ? (
                           <img src={p.coverImageUrl} alt="" className="h-10 w-10 rounded object-cover flex-shrink-0" />
                         ) : (
-                          <div className="h-10 w-10 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground flex-shrink-0">无图</div>
+                          <div className="h-10 w-10 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground flex-shrink-0">{t("live.noImage")}</div>
                         )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{p.name}</p>
@@ -955,11 +956,11 @@ onClick={() => setOrderViewMode("byCustomer")}>
                             SKU: {p.sku || "-"} · On Hand: {onHand} · Reserved: {reserved} · Available: {available}
                           </p>
                           {p.keywords && (
-                            <p className="text-xs text-muted-foreground truncate">关键词: {p.keywords}</p>
+                            <p className="text-xs text-muted-foreground truncate">{t("live.keywords")} {p.keywords}</p>
                           )}
                         </div>
                         {isAdded ? (
-                          <Badge variant="outline" className="text-xs text-green-600">✓ 已加入</Badge>
+                          <Badge variant="outline" className="text-xs text-green-600">{t("live.added")}</Badge>
                         ) : (
                           <span className="text-sm font-medium">RM{Number(p.sellingPrice || 0).toFixed(2)}</span>
                         )}
@@ -973,14 +974,14 @@ onClick={() => setOrderViewMode("byCustomer")}>
             {/* Selected products summary */}
             {batchSelectedIds.length > 0 && (
               <div className="text-sm text-muted-foreground">
-                已选 {batchSelectedIds.length} 个商品
+                {t("live.selected")} {batchSelectedIds.length} {t("live.productUnit")}
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>{t("live.removeProduct")}</Button>
             <Button onClick={handleBatchSubmit} disabled={batchAddMutation.isPending || batchSelectedIds.length === 0}>
-              批量加入 ({batchSelectedIds.length})
+              {t("live.batchAdd")} ({batchSelectedIds.length})
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -990,25 +991,25 @@ onClick={() => setOrderViewMode("byCustomer")}>
       <Dialog open={priceEditOpen} onOpenChange={setPriceEditOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>修改直播售价</DialogTitle>
+            <DialogTitle>{t("live.changePriceTitle")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-3">
             <div>
-              <Label>直播售价（RM）</Label>
+              <Label>{t("live.livePrice")}</Label>
               <Input
                 type="number"
                 step="0.01"
                 value={priceEditValue}
                 onChange={e => setPriceEditValue(e.target.value)}
-                placeholder="输入直播特价"
+                placeholder={t("live.inputLivePrice")}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                此价格仅影响当前直播，不会修改正式商品售价。
+                {t("live.priceNote")}
               </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPriceEditOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setPriceEditOpen(false)}>{t("live.removeProduct")}</Button>
             <Button onClick={handlePriceSave} disabled={updateProductMutation.isPending || !priceEditValue}>
               保存
             </Button>
@@ -1020,11 +1021,11 @@ onClick={() => setOrderViewMode("byCustomer")}>
       <Dialog open={stockDialogOpen} onOpenChange={setStockDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>调整库存</DialogTitle>
+            <DialogTitle>{t("live.adjustStockTitle")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-3">
             <div>
-              <Label>数量变化（正数增加，负数减少）</Label>
+              <Label>{t("live.stockChangeReason")}</Label>
               <Input
                 type="number"
                 value={stockForm.quantityChange}
@@ -1032,21 +1033,21 @@ onClick={() => setOrderViewMode("byCustomer")}>
               />
             </div>
             <div>
-              <Label>原因</Label>
+              <Label>{t("live.reason")}</Label>
               <Select value={stockForm.reason} onValueChange={v => setStockForm({ ...stockForm, reason: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="other">其他</SelectItem>
-                  <SelectItem value="damaged">损坏</SelectItem>
-                  <SelectItem value="scrap">报废</SelectItem>
-                  <SelectItem value="restock">补货</SelectItem>
-                  <SelectItem value="correction">库存修正</SelectItem>
+                  <SelectItem value="other">{t("live.other")}</SelectItem>
+                  <SelectItem value="damaged">{t("live.damaged")}</SelectItem>
+                  <SelectItem value="scrap">{t("live.scrap")}</SelectItem>
+                  <SelectItem value="restock">{t("live.restock")}</SelectItem>
+                  <SelectItem value="correction">{t("live.stockCorrection")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStockDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setStockDialogOpen(false)}>{t("live.removeProduct")}</Button>
             <Button
               onClick={() => {
                 if (stockProductId && stockForm.quantityChange !== 0) {
@@ -1064,13 +1065,13 @@ onClick={() => setOrderViewMode("byCustomer")}>
       <Dialog open={endLiveConfirmOpen} onOpenChange={setEndLiveConfirmOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>确认结束直播？</DialogTitle>
+            <DialogTitle>{t("live.confirmEnd")}</DialogTitle>
           </DialogHeader>
           <div className="py-3 text-sm text-muted-foreground">
-            结束后将停止捉单，所有订单将自动整理。客户将收到结单通知。
+            {t("live.confirmEndDesc")}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEndLiveConfirmOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setEndLiveConfirmOpen(false)}>{t("live.removeProduct")}</Button>
             <Button variant="destructive" onClick={() => endLiveMutation.mutate({ liveRoomId: roomId })} disabled={endLiveMutation.isPending}>
               确认结束
             </Button>
@@ -1083,7 +1084,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
         <Dialog open={!!selectedComment} onOpenChange={(open) => !open && setSelectedComment(null)}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>留言详情</DialogTitle>
+              <DialogTitle>{t("live.commentDetail")}</DialogTitle>
             </DialogHeader>
             <div className="space-y-3 py-3">
               <div className="flex items-center gap-2">
@@ -1095,16 +1096,16 @@ onClick={() => setOrderViewMode("byCustomer")}>
               </div>
               <div className="bg-muted/50 rounded p-2 text-sm">{selectedComment.commentMessage}</div>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <div><span className="text-muted-foreground">关键词:</span> {selectedComment.parsedKeyword || "-"}</div>
-                <div><span className="text-muted-foreground">数量:</span> {selectedComment.parsedQuantity || "-"}</div>
-                <div><span className="text-muted-foreground">匹配结果:</span>
+                <div><span className="text-muted-foreground">{t("live.keywords")}</span> {selectedComment.parsedKeyword || "-"}</div>
+                <div><span className="text-muted-foreground">{t("live.quantity")}</span> {selectedComment.parsedQuantity || "-"}</div>
+                <div><span className="text-muted-foreground">{t("live.matchResult")}</span>
                   <span className={`ml-1 inline-flex px-1.5 py-0.5 rounded text-xs ${matchResultColors[selectedComment.matchResult] || ""}`}>
                     {matchResultLabels[selectedComment.matchResult] || selectedComment.matchResult}
                   </span>
                 </div>
-                <div><span className="text-muted-foreground">商品:</span> {selectedComment.matchedProductName || "-"}</div>
+                <div><span className="text-muted-foreground">{t("live.product")}</span> {selectedComment.matchedProductName || "-"}</div>
                 {selectedComment.orderNumber && (
-                  <div className="col-span-2"><span className="text-muted-foreground">订单号:</span> {selectedComment.orderNumber}</div>
+                  <div className="col-span-2"><span className="text-muted-foreground">{t("live.orderNo")}</span> {selectedComment.orderNumber}</div>
                 )}
               </div>
             </div>
@@ -1112,7 +1113,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
             <div className="border-t pt-3">
               <div className="flex items-center gap-2 mb-2">
                 <StickyNote className="h-4 w-4 text-amber-500" />
-                <span className="text-sm font-medium">工作人员备注</span>
+                <span className="text-sm font-medium">{t("live.staffNote")}</span>
               </div>
               {/* Existing notes */}
               <div className="space-y-1.5 mb-2 max-h-32 overflow-y-auto">
@@ -1129,13 +1130,13 @@ onClick={() => setOrderViewMode("byCustomer")}>
                   </div>
                 ))}
                 {(commentNotesQuery.data || []).length === 0 && (
-                  <p className="text-xs text-muted-foreground">暂无备注</p>
+                  <p className="text-xs text-muted-foreground">{t("live.noNotes")}</p>
                 )}
               </div>
               {/* Add note input */}
               <div className="flex gap-1">
                 <Input
-                  placeholder="添加备注..."
+                  placeholder={t("live.addNote")}
                   value={noteInput}
                   onChange={e => setNoteInput(e.target.value)}
                   className="h-7 text-xs"
@@ -1174,15 +1175,15 @@ onClick={() => setOrderViewMode("byCustomer")}>
                   setBlacklistCustomer({ name: selectedComment.commenterName, psid: selectedComment.commenterPsid });
                   setBlacklistDialogOpen(true);
                 }}>
-                <Ban className="h-4 w-4" /> 加入黑名单
+                <Ban className="h-4 w-4" /> {t("live.addToBlacklist")}
               </Button>
               {!selectedComment.isHandled && (
                 <Button variant="outline" size="sm" className="gap-1"
                   onClick={() => { markCommentHandledMutation.mutate({ commentId: selectedComment.id }); setSelectedComment(null); }}>
-                  <CheckCircle2 className="h-4 w-4" /> 标记已处理
+                  <CheckCircle2 className="h-4 w-4" /> {t("live.markProcessed")}
                 </Button>
               )}
-              <Button variant="outline" size="sm" onClick={() => setSelectedComment(null)}>关闭</Button>
+              <Button variant="outline" size="sm" onClick={() => setSelectedComment(null)}>{t("live.close")}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1192,33 +1193,33 @@ onClick={() => setOrderViewMode("byCustomer")}>
       <Dialog open={blacklistDialogOpen} onOpenChange={setBlacklistDialogOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>加入黑名单</DialogTitle>
+            <DialogTitle>{t("live.addToBlacklist")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-3">
             <div className="text-sm text-muted-foreground">
-              客户: {blacklistCustomer?.name || "未知"}
+              {t("live.customer")} {blacklistCustomer?.name || t("live.unknown")}
             </div>
             <div>
-              <Label>原因</Label>
+              <Label>{t("live.reason")}</Label>
               <Textarea
                 value={blacklistReason}
                 onChange={e => setBlacklistReason(e.target.value)}
-                placeholder="请输入加入黑名单的原因..."
+                placeholder={t("live.blacklistReason")}
                 className="text-sm"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBlacklistDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setBlacklistDialogOpen(false)}>{t("live.removeProduct")}</Button>
             <Button variant="destructive"
               disabled={toggleBlacklistMutation.isPending || !blacklistReason.trim()}
               onClick={() => {
                 if (blacklistCustomer && blacklistReason.trim()) {
-                  toast.info("黑名单功能需要客户ID，请通过客户管理页面操作");
+                  toast.info(t("live.blacklistNeedCustomerId"));
                   setBlacklistDialogOpen(false);
                 }
               }}>
-              <Ban className="h-4 w-4" /> 确认加入
+              <Ban className="h-4 w-4" /> {t("live.confirmAdd")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1230,6 +1231,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
 // ============ Sub Components ============
 
 function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePreorder, onAdjustStock, onPriceEdit, onDelete, onCopyKeyword }: any) {
+  const { t } = useI18n();
   const variations = group.variations || [];
   const hasMultiple = variations.length > 1;
   const totalAvailable = variations.reduce((sum: number, v: any) => sum + (v.availableStock || 0), 0);
@@ -1284,13 +1286,13 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
                   <code className="text-xs bg-primary/10 text-primary px-1 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
-                  {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length}规格</Badge>}
-                  {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">预购</Badge>}
+                  {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length} {t("live.spec")}</Badge>}
+                  {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">{t("live.preorder")}</Badge>}
                 </div>
                 <div className="flex items-center gap-2 text-xs mt-0.5">
-                  <span className="text-muted-foreground">现:<b className="text-foreground ml-0.5">{onHand}</b></span>
-                  <span className="text-muted-foreground">喊:<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>
-                  <span className="text-muted-foreground">卖:<b className={`${stockColor} ml-0.5`}>{totalAvailable}</b></span>
+                  <span className="text-muted-foreground">{t("live.inStock")}<b className="text-foreground ml-0.5">{onHand}</b></span>
+                  <span className="text-muted-foreground">{t("live.called")}<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>
+                  <span className="text-muted-foreground">{t("live.available")}<b className={`${stockColor} ml-0.5`}>{totalAvailable}</b></span>
                 </div>
               </>
             ) : (
@@ -1299,8 +1301,8 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
                   <p className="font-bold truncate text-sm">{group.productName}</p>
                   <div className="flex items-center gap-1.5 mt-1">
                     <code className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
-                    {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length}规格</Badge>}
-                    {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">预购</Badge>}
+                    {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length} {t("live.spec")}</Badge>}
+                    {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">{t("live.preorder")}</Badge>}
                   </div>
                 </div>
                 <div className="flex items-baseline gap-2 mt-1">
@@ -1313,9 +1315,9 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
                   )}
                 </div>
                 <div className="flex items-center gap-3 mt-1 text-sm">
-                  <span className="text-muted-foreground">现货:<b className="text-foreground ml-0.5">{onHand}</b></span>
-                  <span className="text-muted-foreground">已喊:<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>
-                  <span className="text-muted-foreground">可卖:<b className={`${stockColor} ml-0.5`}>{totalAvailable}</b></span>
+                  <span className="text-muted-foreground">{t("live.inStock")}<b className="text-foreground ml-0.5">{onHand}</b></span>
+                  <span className="text-muted-foreground">{t("live.called")}<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>
+                  <span className="text-muted-foreground">{t("live.available")}<b className={`${stockColor} ml-0.5`}>{totalAvailable}</b></span>
                 </div>
               </>
             )}
@@ -1324,19 +1326,19 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
           {/* Right: Action buttons - horizontal in compact, vertical in large */}
           {isCompact ? (
             <div className="flex items-center gap-0.5 flex-shrink-0">
-              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center" title="修改价格"
+              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center" title={t("live.changePriceTitle")}
                 onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
                 <DollarSign className="h-3 w-3" />
               </Button>
-              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center" title="调整库存"
+              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center" title={t("live.adjustStockTitle")}
                 onClick={() => onAdjustStock(variations[0]?.id)}>
                 <Package className="h-3 w-3" />
               </Button>
-              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center" title="复制关键词"
+              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center" title={t("live.copyKeyword")}
                 onClick={() => onCopyKeyword(variations[0]?.id)}>
                 <Copy className="h-3 w-3" />
               </Button>
-              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center text-destructive" title="移除商品"
+              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center text-destructive" title={t("live.removeProduct")}
                 onClick={() => onDelete(variations[0]?.id)}>
                 <Trash2 className="h-3 w-3" />
               </Button>
@@ -1348,19 +1350,19 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
             </div>
           ) : (
             <div className="flex flex-col gap-1 flex-shrink-0">
-              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title="修改价格"
+              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title={t("live.changePriceTitle")}
                 onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
                 <DollarSign className="h-3.5 w-3.5" />
               </Button>
-              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title="调整库存"
+              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title={t("live.adjustStockTitle")}
                 onClick={() => onAdjustStock(variations[0]?.id)}>
                 <Package className="h-3.5 w-3.5" />
               </Button>
-              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title="复制关键词"
+              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title={t("live.copyKeyword")}
                 onClick={() => onCopyKeyword(variations[0]?.id)}>
                 <Copy className="h-3.5 w-3.5" />
               </Button>
-              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center text-destructive" title="移除商品"
+              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center text-destructive" title={t("live.removeProduct")}
                 onClick={() => onDelete(variations[0]?.id)}>
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
@@ -1397,25 +1399,25 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
                     <div className="flex items-center gap-1.5 text-xs">
                       <code className="text-xs bg-muted px-1 rounded">{v.keyword}</code>
                       <span className="font-medium">RM{Number(v.price || 0).toFixed(2)}</span>
-                      <span className={vColor}>可卖:{vAvail}</span>
-                      {v.allowPreorder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">预购</Badge>}
+                      <span className={vColor}>{t("live.available")}{vAvail}</span>
+                      {v.allowPreorder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">{t("live.preorder")}</Badge>}
                     </div>
                   </div>
                   <div className="flex items-center gap-0.5 flex-shrink-0">
                     {isLive && v.status === "active" && (
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="暂停"
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title={t("live.pause")}
                         onClick={() => onStatusChange(v.id, "paused")}>
                         <Pause className="h-3 w-3" />
                       </Button>
                     )}
                     {isLive && v.status === "paused" && (
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="恢复"
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title={t("live.resume")}
                         onClick={() => onStatusChange(v.id, "active")}>
                         <Play className="h-3 w-3" />
                       </Button>
                     )}
                     {isLive && v.status !== "sold_out" && (
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="售完"
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title={t("live.soldOut")}
                         onClick={() => onStatusChange(v.id, "sold_out")}>
                         <XCircle className="h-3 w-3" />
                       </Button>
@@ -1432,6 +1434,7 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
 }
 
 function CommentRow({ comment, onClick, onMarkHandled }: any) {
+  const { t } = useI18n();
   return (
     <div
       className={`flex items-start gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer ${comment.isHandled ? "opacity-60" : ""}`}
@@ -1462,6 +1465,7 @@ function CommentRow({ comment, onClick, onMarkHandled }: any) {
 }
 
 function OrderRow({ order }: any) {
+  const { t } = useI18n();
   return (
     <div className="p-2 rounded border bg-card hover:bg-muted/50 transition-colors">
       <div className="flex items-center justify-between">
@@ -1469,7 +1473,7 @@ function OrderRow({ order }: any) {
         <Badge variant="outline" className="text-xs">{order.physicalStatus}</Badge>
       </div>
       <div className="text-xs text-muted-foreground mt-0.5">
-        {order.customerName || order.facebookName || "未知客户"}
+        {order.customerName || order.facebookName || t("live.unknownCustomer")}
       </div>
       <div className="text-xs mt-0.5">
         {order.items?.map((item: any, idx: number) => (
@@ -1492,6 +1496,7 @@ function OrderRow({ order }: any) {
 }
 
 function ProductOrderRow({ item }: any) {
+  const { t } = useI18n();
   return (
     <div className="p-2 rounded border bg-card">
       <div className="flex items-center justify-between">
@@ -1502,13 +1507,14 @@ function ProductOrderRow({ item }: any) {
         <div className="text-xs text-muted-foreground">{item.variationName}</div>
       )}
       <div className="text-xs text-muted-foreground mt-0.5">
-        {item.orders.length} 笔订单 · {item.orders.filter((o: any) => o.paymentStatus === "paid").length} 已付
+        {item.orders.length} {t("live.orderUnit")} · {item.orders.filter((o: any) => o.paymentStatus === "paid").length} 已付
       </div>
     </div>
   );
 }
 
 function ReportView({ report }: any) {
+  const { t } = useI18n();
   const formatTime = (t: any) => {
     if (!t) return "-";
     return new Date(t).toLocaleString("zh-CN", { hour: "2-digit", minute: "2-digit", month: "2-digit", day: "2-digit" });
@@ -1517,29 +1523,29 @@ function ReportView({ report }: any) {
     if (!mins) return "-";
     const h = Math.floor(mins / 60);
     const m = mins % 60;
-    return h > 0 ? `${h} 小时 ${m} 分钟` : `${m} 分钟`;
+    return h > 0 ? `${h} {t("live.hours")} ${m} {t("live.minutes")}` : `${m} {t("live.minutes")}`;
   };
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-semibold flex items-center gap-2">
-        <BarChart3 className="h-5 w-5" /> 直播报告
+        <BarChart3 className="h-5 w-5" /> {t("live.liveReport")}
       </h2>
       {/* Live time summary */}
       <Card><CardContent className="p-3">
         <div className="grid grid-cols-3 gap-2 text-center">
-          <div><p className="text-xs text-muted-foreground">开始时间</p><p className="text-sm font-bold">{formatTime(report.liveStartTime)}</p></div>
-          <div><p className="text-xs text-muted-foreground">结束时间</p><p className="text-sm font-bold">{formatTime(report.liveEndTime)}</p></div>
-          <div><p className="text-xs text-muted-foreground">直播时长</p><p className="text-sm font-bold text-blue-600">{formatDuration(report.durationMinutes || 0)}</p></div>
+          <div><p className="text-xs text-muted-foreground">{t("live.startTime")}</p><p className="text-sm font-bold">{formatTime(report.liveStartTime)}</p></div>
+          <div><p className="text-xs text-muted-foreground">{t("live.endTime")}</p><p className="text-sm font-bold">{formatTime(report.liveEndTime)}</p></div>
+          <div><p className="text-xs text-muted-foreground">{t("live.duration")}</p><p className="text-sm font-bold text-blue-600">{formatDuration(report.durationMinutes || 0)}</p></div>
         </div>
       </CardContent></Card>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">总留言数</p><p className="text-xl font-bold">{report.totalComments || 0}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">自动捉单数</p><p className="text-xl font-bold">{report.captureCount || 0}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">成功订单数</p><p className="text-xl font-bold">{report.totalOrders || 0}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">商品销售件数</p><p className="text-xl font-bold">{report.totalItems || 0}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">销售总额</p><p className="text-xl font-bold">RM{Number(report.totalRevenue || 0).toFixed(2)}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">已付款金额</p><p className="text-xl font-bold text-green-600">{report.paidOrders || 0}</p></CardContent></Card>
-        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">新客户数量</p><p className="text-xl font-bold">{report.newCustomers || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">{t("live.totalComments")}</p><p className="text-xl font-bold">{report.totalComments || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">{t("live.orderCount")}</p><p className="text-xl font-bold">{report.captureCount || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">{t("live.successOrders")}</p><p className="text-xl font-bold">{report.totalOrders || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">{t("live.productItems")}</p><p className="text-xl font-bold">{report.totalItems || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">{t("live.totalSales")}</p><p className="text-xl font-bold">RM{Number(report.totalRevenue || 0).toFixed(2)}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">{t("live.paidAmount")}</p><p className="text-xl font-bold text-green-600">{report.paidOrders || 0}</p></CardContent></Card>
+        <Card className="py-2"><CardContent className="p-3"><p className="text-xs text-muted-foreground">{t("live.newCustomers")}</p><p className="text-xl font-bold">{report.newCustomers || 0}</p></CardContent></Card>
       </div>
 
       {/* Hot Products */}
@@ -1564,9 +1570,9 @@ function ReportView({ report }: any) {
         <CardHeader className="py-2"><CardTitle className="text-sm flex items-center gap-2"><Send className="h-4 w-4" /> Messenger 通知</CardTitle></CardHeader>
         <CardContent className="p-3">
           <div className="grid grid-cols-3 gap-2 text-center">
-            <div><p className="text-xs text-muted-foreground">已发送</p><p className="text-lg font-bold text-green-600">{report.messengerSent || 0}</p></div>
-            <div><p className="text-xs text-muted-foreground">发送失败</p><p className="text-lg font-bold text-red-600">{report.messengerFailed || 0}</p></div>
-            <div><p className="text-xs text-muted-foreground">成功率</p><p className="text-lg font-bold">
+            <div><p className="text-xs text-muted-foreground">{t("live.sent")}</p><p className="text-lg font-bold text-green-600">{report.messengerSent || 0}</p></div>
+            <div><p className="text-xs text-muted-foreground">{t("live.sendFailed")}</p><p className="text-lg font-bold text-red-600">{report.messengerFailed || 0}</p></div>
+            <div><p className="text-xs text-muted-foreground">{t("live.successRate")}</p><p className="text-lg font-bold">
               {report.messengerSent + report.messengerFailed > 0
                 ? Math.round((report.messengerSent / (report.messengerSent + report.messengerFailed)) * 100)
                 : 0}%

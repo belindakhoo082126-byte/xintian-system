@@ -1741,3 +1741,10 @@
 - [x] 添加测试用例验证多链接绑定（9 个测试用例，覆盖 parseFacebookLink 和多内容绑定逻辑）
 - [x] TypeScript 零错误 + Vitest 32 文件 266 项测试全部通过
 - [x] 保存检查点
+
+## V2.0.25: Live Studio 国际化 (i18n)
+- [x] 在 I18nContext.tsx 中添加 Live Studio 相关翻译 key（100+ 条）
+- [x] LiveRoomDetail.tsx 中所有 UI 文字替换为 t() 调用
+- [x] 所有子组件（ProductGroupCard、CommentRow、OrderRow、ProductOrderRow、ReportView）添加 useI18n hook
+- [x] TypeScript 零错误 + Vitest 32 文件 266 项测试全部通过
+- [x] 保存检查点
