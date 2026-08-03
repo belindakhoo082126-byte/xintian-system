@@ -1656,3 +1656,9 @@
 - [x] 商品管理图片上传增加本地预览（封面和规格图片使用 URL.createObjectURL 立即预览）
 - [x] TypeScript 零错误 + Vitest 全部通过（31 文件 257 项测试）
 - [x] 保存检查点
+
+## V2.0.15: 修复商品编辑保存失败（DECIMAL 空字符串）
+- [x] 修复 updateProductEnhanced：空字符串 decimal 字段转为 null（MySQL 拒绝 '' 写入 DECIMAL 列）
+- [x] 修复 createProductEnhanced：同样的空字符串转 null 处理
+- [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
+- [x] 保存检查点

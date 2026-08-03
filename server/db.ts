@@ -1723,6 +1723,16 @@ export async function createProductEnhanced(data: {
   if (!db) throw new Error('Database not available');
   const normalizedKeyword = data.keyword.toUpperCase().replace(/\s+/g, '');
   const sku = data.sku || await generateSku(data.productMode);
+  // Convert empty strings to null for decimal columns (MySQL rejects '' for DECIMAL type)
+  const decimalFields = ['sellingPrice', 'compareAtPrice', 'memberPrice', 'currentCost', 'specialPrice', 'weightKg', 'standaloneShippingFee', 'wholesalePrice', 'agentPrice'];
+  const normalizedData: any = {};
+  for (const field of decimalFields) {
+    if (field in data && (data as any)[field] === '') {
+      normalizedData[field] = null;
+    } else {
+      normalizedData[field] = (data as any)[field];
+    }
+  }
   const result = await db.insert(products).values({
     name: data.name,
     type: data.type,
@@ -1740,13 +1750,13 @@ export async function createProductEnhanced(data: {
     fullDescEn: data.fullDescEn,
     careZh: data.careZh,
     careEn: data.careEn,
-    sellingPrice: data.sellingPrice,
-    compareAtPrice: data.compareAtPrice,
-    memberPrice: data.memberPrice,
-    specialPrice: data.specialPrice,
-    currentCost: data.currentCost,
+    sellingPrice: normalizedData.sellingPrice,
+    compareAtPrice: normalizedData.compareAtPrice,
+    memberPrice: normalizedData.memberPrice,
+    specialPrice: normalizedData.specialPrice,
+    currentCost: normalizedData.currentCost,
     dimensions: data.dimensions,
-    weightKg: data.weightKg,
+    weightKg: normalizedData.weightKg,
     stockQuantity: data.stockQuantity,
     isFeatured: data.isFeatured ?? false,
     featuredSortOrder: data.featuredSortOrder ?? 0,
@@ -1763,7 +1773,7 @@ export async function createProductEnhanced(data: {
     allowPresale: data.allowPresale ?? false,
     allowStandaloneShipping: data.allowStandaloneShipping ?? false,
     standaloneShippingMethod: (data.standaloneShippingMethod as any) || 'fixed_fee',
-    standaloneShippingFee: data.standaloneShippingFee,
+    standaloneShippingFee: normalizedData.standaloneShippingFee,
     lightDesc: data.lightDesc,
     waterDesc: data.waterDesc,
     fertilizerDesc: data.fertilizerDesc,
@@ -1773,8 +1783,8 @@ export async function createProductEnhanced(data: {
     isPot: data.isPot ?? false,
     potCapacity: data.potCapacity,
     // V4: Wholesale & Agent
-    wholesalePrice: data.wholesalePrice as any,
-    agentPrice: data.agentPrice as any,
+    wholesalePrice: normalizedData.wholesalePrice as any,
+    agentPrice: normalizedData.agentPrice as any,
     moq: data.moq ?? 0,
     visibleTo: data.visibleTo,
     specialPriceStartDate: data.specialPriceStartDate ? new Date(data.specialPriceStartDate) : null,
@@ -1863,6 +1873,13 @@ export async function updateProductEnhanced(id: number, data: Partial<{
   const { productImages: imageUrls, ...updateData } = data;
   if (data.keyword) {
     updateData.keyword = data.keyword.toUpperCase().replace(/\s+/g, '');
+  }
+  // Convert empty strings to null for decimal columns (MySQL rejects '' for DECIMAL type)
+  const decimalFields = ['sellingPrice', 'compareAtPrice', 'memberPrice', 'currentCost', 'specialPrice', 'weightKg', 'standaloneShippingFee', 'wholesalePrice', 'agentPrice'];
+  for (const field of decimalFields) {
+    if (field in updateData && (updateData as any)[field] === '') {
+      (updateData as any)[field] = null;
+    }
   }
   // V4: Convert date strings to Date objects for timestamp fields
   if (updateData.specialPriceStartDate !== undefined) {
