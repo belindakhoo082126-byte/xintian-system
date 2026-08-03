@@ -4514,6 +4514,106 @@ export async function matchKeywordsToProducts(keywords: Array<{ keyword: string;
   return { matched, unmatched };
 }
 
+// --- Match keywords to Campaign-specific products only ---
+export async function matchKeywordsToCampaignProducts(
+  keywords: Array<{ keyword: string; quantity: number }>,
+  campaignId: number
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Get all product IDs bound to this Campaign via campaign_buttons
+  const buttons = await db.select({
+    productId: campaignButtons.productId,
+  }).from(campaignButtons)
+    .where(eq(campaignButtons.campaignId, campaignId));
+
+  const campaignProductIds = buttons.map((b: any) => b.productId);
+
+  // Also get product IDs from campaign_flows that have associated buttons
+  const flowButtons = await db.select({
+    productId: campaignButtons.productId,
+  }).from(campaignButtons)
+    .innerJoin(campaignFlows, eq(campaignButtons.flowId, campaignFlows.id))
+    .where(eq(campaignFlows.campaignId, campaignId));
+
+  flowButtons.forEach((b: any) => {
+    if (!campaignProductIds.includes(b.productId)) {
+      campaignProductIds.push(b.productId);
+    }
+  });
+
+  const matched: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string; coverImageUrl: string | null }> = [];
+  const unmatched: Array<{ keyword: string; quantity: number }> = [];
+
+  for (const { keyword, quantity } of keywords) {
+    // Try to match product keyword within Campaign products only
+    let product: any[] = [];
+    if (campaignProductIds.length > 0) {
+      product = await db.select({
+        id: products.id,
+        name: products.name,
+        sku: products.sku,
+        sellingPrice: products.sellingPrice,
+        coverImageUrl: products.coverImageUrl,
+        keyword: products.keyword,
+        status: products.status,
+      }).from(products)
+        .where(and(eq(products.keyword, keyword), inArray(products.id, campaignProductIds)))
+        .limit(1);
+    }
+
+    if (product.length > 0 && product[0].status !== "out_of_stock" && product[0].status !== "inactive") {
+      matched.push({
+        keyword, quantity,
+        productId: product[0].id,
+        productName: product[0].name,
+        productSku: product[0].sku || "",
+        unitPrice: product[0].sellingPrice || "0",
+        coverImageUrl: product[0].coverImageUrl || null,
+      });
+    } else {
+      // Try variant keyword within Campaign products
+      let variant: any[] = [];
+      if (campaignProductIds.length > 0) {
+        variant = await db.select({
+          id: variants.id,
+          productId: variants.productId,
+          variationName: variants.name,
+          sellingPrice: variants.sellingPrice,
+          keyword: variants.keyword,
+        }).from(variants)
+          .where(and(eq(variants.keyword, keyword), inArray(variants.productId, campaignProductIds)))
+          .limit(1);
+      }
+
+      if (variant.length > 0) {
+        const parentProduct = await db.select({
+          id: products.id, name: products.name, sku: products.sku, coverImageUrl: products.coverImageUrl, status: products.status,
+        }).from(products).where(eq(products.id, variant[0].productId)).limit(1);
+
+        if (parentProduct.length > 0 && parentProduct[0].status !== "out_of_stock" && parentProduct[0].status !== "inactive") {
+          matched.push({
+            keyword, quantity,
+            productId: parentProduct[0].id,
+            productName: `${parentProduct[0].name} - ${variant[0].variationName}`,
+            productSku: parentProduct[0].sku || "",
+            unitPrice: variant[0].sellingPrice || "0",
+            coverImageUrl: parentProduct[0].coverImageUrl || null,
+          });
+        } else {
+          unmatched.push({ keyword, quantity });
+        }
+      } else {
+        // Keyword not in Campaign products — do NOT fallback to global
+        unmatched.push({ keyword, quantity });
+      }
+    }
+  }
+
+  return { matched, unmatched };
+}
+
 // --- Create order from live capture ---
 export async function createOrderFromLiveCapture(data: {
   commenterName: string;
@@ -4524,6 +4624,9 @@ export async function createOrderFromLiveCapture(data: {
   liveVideoId?: string;
   matchedProducts: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string }>;
   sourceName?: string;
+  campaignId?: number;
+  campaignName?: string;
+  sourceType?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -4648,6 +4751,9 @@ export async function createOrderFromLiveCapture(data: {
     originalCustomerComment: data.commentMessage,
     commentDate: new Date(),
     secureToken,
+    campaignId: data.campaignId || null,
+    campaignName: data.campaignName || null,
+    sourceType: data.sourceType || null,
   });
   
   const orderId = (orderResult as any)[0].insertId;
@@ -10509,6 +10615,7 @@ export async function executeAutoOrderCapture(params: {
   sourceType?: "facebook_live" | "facebook_post" | "facebook_reel" | "messenger" | "campaign_button";
   sourceName?: string;
   campaignId?: number;
+  campaignName?: string;
   // For campaign button clicks: pre-matched product (skip keyword parsing)
   preMatchedProducts?: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string }>;
 }): Promise<{
@@ -10564,6 +10671,9 @@ export async function executeAutoOrderCapture(params: {
     liveVideoId: params.liveVideoId,
     matchedProducts,
     sourceName: params.sourceName || "Facebook",
+    campaignId: params.campaignId,
+    campaignName: params.campaignName,
+    sourceType: params.sourceType,
   });
 
   // Build reply message with order details
@@ -10593,11 +10703,48 @@ export async function executeAutoOrderCapture(params: {
 export async function getCampaigns(includeArchived = false) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const query = db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+  let query = db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
   if (!includeArchived) {
-    return await query.where(eq(campaigns.status, "archived" as any)).then(() => query) as any;
+    query = query.where(ne(campaigns.status, "archived" as any)) as any;
   }
   return await query;
+}
+
+/**
+ * Get aggregated statistics for a single Campaign.
+ * Returns: commentCount, messengerCount, autoOrderCount, mergedOrderCount,
+ *          totalQuantity, totalRevenue
+ */
+export async function getCampaignStats(campaignId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Aggregate orders linked to this campaign
+  const stats = await db.select({
+    autoOrderCount: sql`COUNT(CASE WHEN ${orders.sourceType} IS NOT NULL AND ${orders.sourceType} != 'manual' THEN 1 END)`,
+    mergedOrderCount: sql`COUNT(CASE WHEN ${orders.sourceType} IS NOT NULL AND ${orders.sourceType} != 'manual' AND ${orders.physicalStatus} != 'pending' THEN 1 END)`,
+    totalQuantity: sql`COALESCE(SUM((SELECT COALESCE(SUM(${orderItems.quantity}), 0) FROM ${orderItems} WHERE ${orderItems.orderId} = ${orders.id})), 0)`,
+    totalRevenue: sql`COALESCE(SUM(${orders.totalAmount}), 0)`,
+  }).from(orders).where(eq(orders.campaignId, campaignId));
+  return stats[0] || { autoOrderCount: 0, mergedOrderCount: 0, totalQuantity: 0, totalRevenue: '0' };
+}
+
+/**
+ * Get statistics for all campaigns in a single query.
+ * Returns array of { campaignId, autoOrderCount, mergedOrderCount, totalQuantity, totalRevenue }
+ */
+export async function getAllCampaignStats() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const stats = await db.select({
+    campaignId: orders.campaignId,
+    autoOrderCount: sql`COUNT(*)`,
+    mergedOrderCount: sql`COUNT(CASE WHEN ${orders.physicalStatus} != 'pending' THEN 1 END)`,
+    totalQuantity: sql`COALESCE(SUM((SELECT COALESCE(SUM(${orderItems.quantity}), 0) FROM ${orderItems} WHERE ${orderItems.orderId} = ${orders.id})), 0)`,
+    totalRevenue: sql`COALESCE(SUM(${orders.totalAmount}), 0)`,
+  }).from(orders)
+    .where(sql`${orders.campaignId} IS NOT NULL`)
+    .groupBy(orders.campaignId);
+  return stats;
 }
 
 export async function getCampaignById(id: number) {

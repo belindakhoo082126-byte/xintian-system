@@ -197,10 +197,10 @@ function CampaignCard({ campaign, onEdit, onDelete, onDuplicate, onStatusChange 
                 <Link2 className="h-3 w-3" />
                 {campaign.contentIdCount || 0} 个内容绑定
               </span>
-              <span>留言: {campaign.commentCount || 0}</span>
-              <span>消息: {campaign.messengerCount || 0}</span>
-              <span>订单: {campaign.orderCount || 0}</span>
-              <span>收入: RM{campaign.totalRevenue || "0.00"}</span>
+              <span>建单: {campaign.stats?.autoOrderCount || 0}</span>
+              <span>合并: {campaign.stats?.mergedOrderCount || 0}</span>
+              <span>销量: {campaign.stats?.totalQuantity || 0}</span>
+              <span>营业额: RM{campaign.stats?.totalRevenue || "0"}</span>
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">

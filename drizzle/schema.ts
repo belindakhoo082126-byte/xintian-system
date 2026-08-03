@@ -606,6 +606,10 @@ export const orders = mysqlTable("orders", {
   ]).default("waiting_payment"),
   // V2.0: Secure token for public order access (customer order page)
   secureToken: varchar("secureToken", { length: 64 }).unique(),
+  // V2.0.26: Campaign tracking (订单来源 Campaign 记录)
+  campaignId: int("campaignId"),
+  campaignName: varchar("campaignName", { length: 255 }),
+  sourceType: varchar("sourceType", { length: 50 }),
 });
 
 export type Order = typeof orders.$inferSelect;

@@ -709,6 +709,7 @@ async function processComment(params: {
 }): Promise<void> {
   const { commentId, commenterName, commenterPsid, commentMessage, postId, sourceType } = params;
   const lowerMsg = commentMessage.toLowerCase();
+  let campaign: any = null;
 
   // Flow comments intentionally use no chat conversation. Their platform event and matched
   // Flow ID are persisted directly so audit records never create a fake private chat.
@@ -932,20 +933,28 @@ async function processComment(params: {
         }
       } else {
         // No active live room — try to find a Campaign by content ID (Post ID / Video ID / Reel ID)
+        campaign = null;
         try {
           const { findCampaignByContentId } = require("./db");
-          const campaign = postId ? await findCampaignByContentId(String(postId)) : null;
+          campaign = postId ? await findCampaignByContentId(String(postId)) : null;
           if (campaign && campaign.status === 'active') {
             console.log(`[Facebook] Found active Campaign ${campaign.id} (${campaign.name}) for content ID ${postId}`);
-            // Use Campaign's products via Product Buttons (if any)
-            // For now, fall back to global keyword matching
           }
         } catch (campaignErr: any) {
           console.log("[Facebook] Campaign lookup failed:", campaignErr?.message);
         }
-        const result = await matchKeywordsToProducts(keywords);
-        matched = result.matched;
-        unmatched = result.unmatched;
+        if (campaign && campaign.status === 'active') {
+          // Match keywords ONLY against Campaign's bound products (no global fallback)
+          const { matchKeywordsToCampaignProducts } = require("./db");
+          const result = await matchKeywordsToCampaignProducts(keywords, campaign.id);
+          matched = result.matched;
+          unmatched = result.unmatched;
+        } else {
+          // No Campaign found — use global keyword matching as before
+          const result = await matchKeywordsToProducts(keywords);
+          matched = result.matched;
+          unmatched = result.unmatched;
+        }
       }
 
       if (matched.length > 0) {
@@ -962,7 +971,10 @@ async function processComment(params: {
             productSku: m.productSku,
             unitPrice: m.unitPrice,
           })),
-          sourceName: "Facebook Live",
+          sourceName: campaign ? campaign.name : "Facebook Live",
+          campaignId: campaign?.id,
+          campaignName: campaign?.name,
+          sourceType: campaign ? "facebook_post" : "facebook_live",
         });
         const itemList = matched.map((m: any) => `${m.keyword}+${m.quantity}`).join(", ");
         await replyToComment(

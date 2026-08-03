@@ -553,3 +553,27 @@
 ### Notes
 - Live Studio 商品区图片显示已验证：后端 getLiveRoomProducts 正确返回 coverImageUrl，前端 ProductGroupCard 有 onError 回退到 Placeholder
 - TypeScript 零错误，Vitest 31 文件 257 项测试全部通过
+
+## V2.0.26: Campaign 商品独立 + Messenger 建单 + 订单来源 + 统计 (2026-08-03)
+### Added
+- 新增 `matchKeywordsToCampaignProducts` 函数：Campaign 专属商品匹配，仅匹配该 Campaign 通过 Product Button 绑定的商品，不再 fallback 到全局商品
+- 新增 `getCampaignStats` 函数：单个 Campaign 统计聚合（自动建单数、合并订单数、商品销量、营业额）
+- 新增 `getAllCampaignStats` 函数：批量查询所有 Campaign 统计数据
+- 新增 tRPC 路由 `campaigns.getStats`：查询单个 Campaign 统计
+- 前端 Campaign 卡片显示建单数、合并数、销量、营业额统计
+### Changed
+- `createOrderFromLiveCapture` 函数签名新增 `campaignId`、`campaignName`、`sourceType` 参数
+- `createOrderFromLiveCapture` 函数体内 `db.insert(orders)` 写入 `campaignId`、`campaignName`、`sourceType` 字段
+- `executeAutoOrderCapture` 函数签名新增 `campaignName` 参数，并将 `campaignId`、`campaignName`、`sourceType` 传递给 `createOrderFromLiveCapture`
+- `processComment` 中 Campaign 留言改用 `matchKeywordsToCampaignProducts`（仅匹配 Campaign 绑定商品）
+- `processComment` 中 `createOrderFromLiveCapture` 调用传入 `campaignId`、`campaignName`、`sourceType`
+- `getCampaigns` 修复 archived 过滤逻辑（使用 `ne` 而非 `eq`）
+- `campaigns.list` tRPC 路由附带每个 Campaign 的统计数据
+### Database
+- `orders` 表新增 `campaignId`（INT, NULL）、`campaignName`（VARCHAR(255), NULL）、`sourceType`（VARCHAR(50), NULL）字段
+- `drizzle/schema.ts` 中 orders 表对应添加以上三个字段
+### Notes
+- Campaign 商品独立匹配：如果 Campaign 没有绑定任何商品，所有关键词将 unmatched，这是正确行为
+- Messenger 私聊已有 Auto Order Engine 接入（V2.0.21 实现），关键词+数量直接建单跳过 AI 流程
+- 无关键词时继续执行 AI 回复流程（Campaign Messenger Flow 通过 AI 引擎处理）
+- TypeScript 零错误，Vitest 32 文件 266 项测试全部通过

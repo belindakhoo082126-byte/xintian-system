@@ -1748,3 +1748,15 @@
 - [x] 所有子组件（ProductGroupCard、CommentRow、OrderRow、ProductOrderRow、ReportView）添加 useI18n hook
 - [x] TypeScript 零错误 + Vitest 32 文件 266 项测试全部通过
 - [x] 保存检查点
+
+## V2.0.26: Campaign 商品独立 + Messenger 建单 + 订单来源 + 统计
+- [x] Campaign 留言仅匹配 Campaign 绑定商品，不 fallback 全局（matchKeywordsToCampaignProducts）
+- [x] Messenger 私聊关键词+数量直接建单，跳过 AI 流程（executeAutoOrderCapture 已接入 handleIncomingMessage）
+- [x] 无关键词时执行 Campaign Messenger Flow（AI 回复流程保留）
+- [x] 订单 schema 添加 campaignId/campaignName/sourceType 字段（schema.ts + ALTER TABLE 已执行）
+- [x] createOrderFromLiveCapture 函数体写入 campaignId/campaignName/sourceType 到 orders 表
+- [x] executeAutoOrderCapture 传递 campaignId/campaignName/sourceType 到 createOrderFromLiveCapture
+- [x] Campaign 统计聚合（getCampaignStats + getAllCampaignStats，tRPC list 附带 stats）
+- [x] 前端 Campaign 卡片显示建单/合并/销量/营业额统计
+- [x] TypeScript 零错误 + Vitest 32 文件 266 项测试全部通过
+- [ ] 保存检查点

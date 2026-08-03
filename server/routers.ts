@@ -5602,7 +5602,19 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
     list: adminProcedure
       .input(z.object({ includeArchived: z.boolean().optional() }).optional())
       .query(async ({ input }) => {
-        return await db.getCampaigns(input?.includeArchived || false);
+        const campaignList = await db.getCampaigns(input?.includeArchived || false);
+        // Attach stats for each campaign
+        const allStats = await db.getAllCampaignStats();
+        const statsMap = new Map(allStats.map((s: any) => [s.campaignId, s]));
+        return campaignList.map((c: any) => ({
+          ...c,
+          stats: statsMap.get(c.id) || { autoOrderCount: 0, mergedOrderCount: 0, totalQuantity: 0, totalRevenue: '0' },
+        }));
+      }),
+    getStats: adminProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCampaignStats(input.campaignId);
       }),
     getById: adminProcedure
       .input(z.object({ id: z.number() }))
