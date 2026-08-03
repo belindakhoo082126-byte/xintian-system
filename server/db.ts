@@ -10607,9 +10607,87 @@ export async function getCampaignById(id: number) {
   return result[0] || null;
 }
 
+/**
+ * Parse a Facebook URL to extract Post ID, Video ID, Page ID, and content type.
+ * Supports formats:
+ * - https://www.facebook.com/{page}/posts/{post_id}
+ * - https://www.facebook.com/{page}/videos/{video_id}
+ * - https://www.facebook.com/{page}/reel/{reel_id}
+ * - https://fb.watch/{short_code}/
+ * - https://www.facebook.com/share/v/{share_code}
+ * - https://www.facebook.com/{page}/posts/pfbid{post_fbid}
+ */
+export function parseFacebookLink(link: string): {
+  facebookPostId: string | null;
+  facebookVideoId: string | null;
+  facebookPageId: string | null;
+  contentType: "post" | "reel" | "video";
+  hasPostAndReel: boolean;
+} {
+  const result = {
+    facebookPostId: null as string | null,
+    facebookVideoId: null as string | null,
+    facebookPageId: null as string | null,
+    contentType: "post" as "post" | "reel" | "video",
+    hasPostAndReel: false,
+  };
+  if (!link) return result;
+  try {
+    const url = new URL(link);
+    const pathParts = url.pathname.split("/").filter(Boolean);
+    // Extract page name/id from first path segment
+    if (pathParts.length > 0) {
+      result.facebookPageId = pathParts[0];
+    }
+    // Check for /posts/{id} pattern
+    const postsIdx = pathParts.indexOf("posts");
+    if (postsIdx >= 0 && pathParts[postsIdx + 1]) {
+      result.facebookPostId = pathParts[postsIdx + 1];
+      result.contentType = "post";
+    }
+    // Check for /videos/{id} pattern
+    const videosIdx = pathParts.indexOf("videos");
+    if (videosIdx >= 0 && pathParts[videosIdx + 1]) {
+      result.facebookVideoId = pathParts[videosIdx + 1];
+      result.contentType = "video";
+    }
+    // Check for /reel/{id} pattern
+    const reelIdx = pathParts.indexOf("reel");
+    if (reelIdx >= 0 && pathParts[reelIdx + 1]) {
+      result.facebookVideoId = pathParts[reelIdx + 1];
+      result.contentType = "reel";
+    }
+    // Check for /share/v/{code} pattern (often Reels)
+    const shareIdx = pathParts.indexOf("share");
+    if (shareIdx >= 0 && pathParts[shareIdx + 1] === "v" && pathParts[shareIdx + 2]) {
+      result.facebookVideoId = pathParts[shareIdx + 2];
+      result.contentType = "reel";
+      result.hasPostAndReel = true; // Share links may be post or reel
+    }
+    // Check for fb.watch short links
+    if (url.hostname === "fb.watch") {
+      result.facebookVideoId = pathParts[0] || null;
+      result.contentType = "video";
+    }
+    // Check for /permalink.php or story_fbid pattern
+    const storyFbid = url.searchParams.get("story_fbid");
+    if (storyFbid) {
+      result.facebookPostId = storyFbid;
+      result.contentType = "post";
+    }
+    const pageIdParam = url.searchParams.get("id");
+    if (pageIdParam) {
+      result.facebookPageId = pageIdParam;
+    }
+  } catch {
+    // Not a valid URL, return defaults
+  }
+  return result;
+}
+
 export async function createCampaign(data: {
   name: string;
-  type: "post" | "reel" | "video";
+  type?: "post" | "reel" | "video";
   facebookLink?: string;
   facebookPostId?: string;
   startDate?: Date;
@@ -10620,11 +10698,25 @@ export async function createCampaign(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // Auto-parse Facebook Link if provided
+  let type = data.type || "post";
+  let facebookPostId = data.facebookPostId || null;
+  let facebookVideoId: string | null = null;
+  let facebookPageId: string | null = null;
+  if (data.facebookLink) {
+    const parsed = parseFacebookLink(data.facebookLink);
+    if (parsed.facebookPostId) facebookPostId = parsed.facebookPostId;
+    if (parsed.facebookVideoId) facebookVideoId = parsed.facebookVideoId;
+    if (parsed.facebookPageId) facebookPageId = parsed.facebookPageId;
+    if (parsed.contentType) type = parsed.contentType;
+  }
   const result = await db.insert(campaigns).values({
     name: data.name,
-    type: data.type,
+    type,
     facebookLink: data.facebookLink || null,
-    facebookPostId: data.facebookPostId || null,
+    facebookPostId,
+    facebookVideoId,
+    facebookPageId,
     startDate: data.startDate || null,
     endDate: data.endDate || null,
     status: "draft",
@@ -10642,6 +10734,8 @@ export async function updateCampaign(id: number, data: Partial<{
   type: "post" | "reel" | "video";
   facebookLink: string;
   facebookPostId: string;
+  facebookVideoId: string;
+  facebookPageId: string;
   startDate: Date;
   endDate: Date;
   status: "draft" | "active" | "ended" | "archived";
@@ -10651,7 +10745,16 @@ export async function updateCampaign(id: number, data: Partial<{
 }>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(campaigns).set(data as any).where(eq(campaigns.id, id));
+  // Auto-parse Facebook Link if provided but no explicit IDs
+  const updateData: any = { ...data };
+  if (data.facebookLink && !data.facebookPostId && !data.type) {
+    const parsed = parseFacebookLink(data.facebookLink);
+    if (parsed.facebookPostId) updateData.facebookPostId = parsed.facebookPostId;
+    if (parsed.facebookVideoId) updateData.facebookVideoId = parsed.facebookVideoId;
+    if (parsed.facebookPageId) updateData.facebookPageId = parsed.facebookPageId;
+    if (parsed.contentType) updateData.type = parsed.contentType;
+  }
+  await db.update(campaigns).set(updateData).where(eq(campaigns.id, id));
   broadcastChanges(["campaigns"]);
   return { success: true };
 }

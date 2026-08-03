@@ -2514,6 +2514,8 @@ export const campaigns = mysqlTable("campaigns", {
   type: mysqlEnum("type", ["post", "reel", "video"]).notNull().default("post"),
   facebookLink: varchar("facebookLink", { length: 500 }),
   facebookPostId: varchar("facebookPostId", { length: 200 }),
+  facebookVideoId: varchar("facebookVideoId", { length: 200 }),
+  facebookPageId: varchar("facebookPageId", { length: 200 }),
   startDate: timestamp("startDate"),
   endDate: timestamp("endDate"),
   status: mysqlEnum("status", ["draft", "active", "ended", "archived"]).notNull().default("draft"),

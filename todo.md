@@ -1717,3 +1717,12 @@
 - [x] Campaign 前端页面（列表 + 编辑 + Flow Builder + Product Button 管理）
 - [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
 - [x] 保存检查点
+
+## V2.0.22: Campaign 创建简化 - Facebook Link 自动解析
+- [x] 后端实现 parseFacebookLink 函数（自动提取 Post ID/Video ID/Page ID/内容类型）
+- [x] campaigns 表新增 facebookVideoId 和 facebookPageId 字段
+- [x] createCampaign/updateCampaign 自动解析 Facebook Link
+- [x] 前端表单简化：仅需名称+Link，移除手动类型选择和 Post ID 输入
+- [x] 前端实时预览解析结果（Badge 显示类型/Post ID/Video ID/Page）
+- [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
+- [x] 保存检查点

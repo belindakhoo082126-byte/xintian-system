@@ -238,13 +238,38 @@ function CampaignEditDialog({ campaign, onClose, onSaved }: {
   onSaved: () => void;
 }) {
   const [name, setName] = useState(campaign?.name || "");
-  const [type, setType] = useState(campaign?.type || "post");
   const [facebookLink, setFacebookLink] = useState(campaign?.facebookLink || "");
-  const [facebookPostId, setFacebookPostId] = useState(campaign?.facebookPostId || "");
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(campaign?.autoReplyEnabled ?? true);
   const [autoReplyText, setAutoReplyText] = useState(campaign?.autoReplyText || "");
   const [messengerFlowEnabled, setMessengerFlowEnabled] = useState(campaign?.messengerFlowEnabled ?? true);
   const [activeTab, setActiveTab] = useState("settings");
+
+  // Auto-parse preview from Facebook Link
+  const parsedPreview = useMemo(() => {
+    if (!facebookLink) return null;
+    try {
+      const url = new URL(facebookLink);
+      const pathParts = url.pathname.split("/").filter(Boolean);
+      let contentType: string = "post";
+      let postId: string | null = null;
+      let videoId: string | null = null;
+      let pageId: string | null = pathParts[0] || null;
+      const postsIdx = pathParts.indexOf("posts");
+      if (postsIdx >= 0 && pathParts[postsIdx + 1]) { postId = pathParts[postsIdx + 1]; contentType = "post"; }
+      const videosIdx = pathParts.indexOf("videos");
+      if (videosIdx >= 0 && pathParts[videosIdx + 1]) { videoId = pathParts[videosIdx + 1]; contentType = "video"; }
+      const reelIdx = pathParts.indexOf("reel");
+      if (reelIdx >= 0 && pathParts[reelIdx + 1]) { videoId = pathParts[reelIdx + 1]; contentType = "reel"; }
+      const shareIdx = pathParts.indexOf("share");
+      if (shareIdx >= 0 && pathParts[shareIdx + 1] === "v" && pathParts[shareIdx + 2]) { videoId = pathParts[shareIdx + 2]; contentType = "reel"; }
+      if (url.hostname === "fb.watch") { videoId = pathParts[0] || null; contentType = "video"; }
+      const storyFbid = url.searchParams.get("story_fbid");
+      if (storyFbid) { postId = storyFbid; contentType = "post"; }
+      const pageIdParam = url.searchParams.get("id");
+      if (pageIdParam) pageId = pageIdParam;
+      return { contentType, postId, videoId, pageId };
+    } catch { return null; }
+  }, [facebookLink]);
 
   const utils = trpc.useUtils();
   const createMutation = trpc.campaigns.create.useMutation();
@@ -260,9 +285,7 @@ function CampaignEditDialog({ campaign, onClose, onSaved }: {
         await updateMutation.mutateAsync({
           id: campaign.id,
           name,
-          type: type as any,
           facebookLink,
-          facebookPostId,
           autoReplyEnabled,
           autoReplyText,
           messengerFlowEnabled,
@@ -271,9 +294,7 @@ function CampaignEditDialog({ campaign, onClose, onSaved }: {
       } else {
         await createMutation.mutateAsync({
           name,
-          type: type as any,
           facebookLink,
-          facebookPostId,
           autoReplyEnabled,
           autoReplyText,
           messengerFlowEnabled,
@@ -303,28 +324,24 @@ function CampaignEditDialog({ campaign, onClose, onSaved }: {
           {/* Settings Tab */}
           <TabsContent value="settings" className="flex-1 overflow-y-auto">
             <div className="space-y-4 p-2">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Campaign 名称</Label>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例: 8月新品发布" />
-                </div>
-                <div>
-                  <Label>类型</Label>
-                  <Select value={type} onValueChange={(v) => setType(v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {CAMPAIGN_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div>
+                <Label>Campaign 名称</Label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例: 8月新品发布" />
               </div>
               <div>
                 <Label>Facebook 链接</Label>
-                <Input value={facebookLink} onChange={(e) => setFacebookLink(e.target.value)} placeholder="https://www.facebook.com/..." />
-              </div>
-              <div>
-                <Label>Facebook Post ID</Label>
-                <Input value={facebookPostId} onChange={(e) => setFacebookPostId(e.target.value)} placeholder="例: 123456789_987654321" />
+                <Input value={facebookLink} onChange={(e) => setFacebookLink(e.target.value)} placeholder="贴上 Facebook Post / Reel / Video 链接，系统自动识别" />
+                {parsedPreview && (
+                  <div className="mt-2 p-3 bg-muted/50 rounded-md space-y-1 text-sm">
+                    <p className="font-medium text-muted-foreground">系统自动解析结果：</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="outline">类型: {parsedPreview.contentType}</Badge>
+                      {parsedPreview.postId && <Badge variant="outline">Post ID: {parsedPreview.postId.substring(0, 20)}{parsedPreview.postId.length > 20 ? "..." : ""}</Badge>}
+                      {parsedPreview.videoId && <Badge variant="outline">Video ID: {parsedPreview.videoId.substring(0, 20)}{parsedPreview.videoId.length > 20 ? "..." : ""}</Badge>}
+                      {parsedPreview.pageId && <Badge variant="outline">Page: {parsedPreview.pageId}</Badge>}
+                    </div>
+                  </div>
+                )}
               </div>
               <Separator />
               <div className="flex items-center justify-between">

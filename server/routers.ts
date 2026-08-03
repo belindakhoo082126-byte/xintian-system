@@ -5614,7 +5614,7 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
     create: adminProcedure
       .input(z.object({
         name: z.string().min(1),
-        type: z.enum(['post', 'reel', 'video']),
+        type: z.enum(['post', 'reel', 'video']).optional(),
         facebookLink: z.string().optional(),
         facebookPostId: z.string().optional(),
         startDate: z.number().optional(),
@@ -5626,7 +5626,7 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
       .mutation(async ({ input }) => {
         return await db.createCampaign({
           name: input.name,
-          type: input.type,
+          type: input.type as any,
           facebookLink: input.facebookLink,
           facebookPostId: input.facebookPostId,
           startDate: input.startDate ? new Date(input.startDate) : undefined,
