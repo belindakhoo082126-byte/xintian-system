@@ -280,6 +280,67 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
     console.error("[Messenger] Failed to store chat message:", err);
   }
 
+  // === Unified Auto Order Engine: check for keyword+quantity pattern first ===
+  // If the message matches keyword patterns (e.g. "MON+2", "J5+1"), execute auto order capture
+  // before any AI reply logic. This ensures Messenger private chat uses the same Auto Order Engine
+  // as Facebook Live comments.
+  if (text) {
+    try {
+      const { executeAutoOrderCapture } = require("./db");
+      const orderResult = await executeAutoOrderCapture({
+        customerName: storeResult?.customerName || psid,
+        customerPsid: psid,
+        message: text,
+        sourceType: "messenger",
+        sourceName: "Messenger 私聊",
+      });
+
+      if (orderResult.matched && orderResult.success) {
+        // Keyword matched and order created/merged — send winning notification via Messenger
+        console.log("[Messenger] Auto order captured:", orderResult.orderNumber, "for PSID:", psid);
+
+        // Send the winning notification message
+        await sendTextMessage(psid, orderResult.replyMessage || `🎉 得标通知！\n订单号：${orderResult.orderNumber}\n小计：RM${orderResult.totalAmount}\n\n请点击下方按钮查看订单详情。`);
+
+        // Send the "查询订单及结账" button
+        if (orderResult.secureToken && orderResult.orderNumber) {
+          const checkoutUrl = `${process.env.VITE_FRONTEND_FORGE_API_URL?.replace('/api', '') || ''}/order/${orderResult.orderNumber}?token=${orderResult.secureToken}`;
+          await sendButtonMessage(psid, "查询订单及结账", [
+            { title: "查询订单及结账", url: checkoutUrl },
+          ]);
+        }
+
+        // Store the auto-reply in chat system
+        if (conversation?.id) {
+          try {
+            await addChatMessage({
+              conversationId: conversation.id,
+              senderType: "ai",
+              senderName: "自动捉单",
+              messageType: "text",
+              content: orderResult.replyMessage || `得标通知 - 订单号：${orderResult.orderNumber}`,
+              status: "sent",
+              aiResponseSource: "auto_order_engine",
+            });
+          } catch (err) {
+            console.error("[Messenger] Failed to store auto order reply:", err);
+          }
+        }
+        return; // Order captured — skip AI reply
+      }
+
+      // If keyword was detected but no product matched, still skip AI and send the unmatched reply
+      if (!orderResult.matched && orderResult.replyMessage && orderResult.unmatchedKeywords && orderResult.unmatchedKeywords.length > 0) {
+        console.log("[Messenger] Keywords unmatched:", orderResult.unmatchedKeywords, "for PSID:", psid);
+        await sendTextMessage(psid, orderResult.replyMessage);
+        return;
+      }
+    } catch (orderErr) {
+      console.error("[Messenger] Auto Order Engine error:", orderErr);
+      // Continue to AI reply on error
+    }
+  }
+
   // Check if AI reply is enabled for this conversation
   const aiEnabled = conversation?.aiReplyEnabled !== false;
   const handoverStatus = conversation?.handoverStatus || "none";

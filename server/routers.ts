@@ -5594,6 +5594,162 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         return result;
       }),
   }),
+
+  // ===========================================================================
+  // Facebook Campaign Module (V2.0.21)
+  // ===========================================================================
+  campaigns: router({
+    list: adminProcedure
+      .input(z.object({ includeArchived: z.boolean().optional() }).optional())
+      .query(async ({ input }) => {
+        return await db.getCampaigns(input?.includeArchived || false);
+      }),
+    getById: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const campaign = await db.getCampaignById(input.id);
+        if (!campaign) throw new TRPCError({ code: 'NOT_FOUND', message: 'Campaign not found' });
+        return campaign;
+      }),
+    create: adminProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        type: z.enum(['post', 'reel', 'video']),
+        facebookLink: z.string().optional(),
+        facebookPostId: z.string().optional(),
+        startDate: z.number().optional(),
+        endDate: z.number().optional(),
+        autoReplyEnabled: z.boolean().optional(),
+        autoReplyText: z.string().optional(),
+        messengerFlowEnabled: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createCampaign({
+          name: input.name,
+          type: input.type,
+          facebookLink: input.facebookLink,
+          facebookPostId: input.facebookPostId,
+          startDate: input.startDate ? new Date(input.startDate) : undefined,
+          endDate: input.endDate ? new Date(input.endDate) : undefined,
+          autoReplyEnabled: input.autoReplyEnabled,
+          autoReplyText: input.autoReplyText,
+          messengerFlowEnabled: input.messengerFlowEnabled,
+        });
+      }),
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        type: z.enum(['post', 'reel', 'video']).optional(),
+        facebookLink: z.string().optional(),
+        facebookPostId: z.string().optional(),
+        startDate: z.number().optional(),
+        endDate: z.number().optional(),
+        status: z.enum(['draft', 'active', 'ended', 'archived']).optional(),
+        autoReplyEnabled: z.boolean().optional(),
+        autoReplyText: z.string().optional(),
+        messengerFlowEnabled: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, startDate, endDate, ...rest } = input;
+        const data: any = { ...rest };
+        if (startDate !== undefined) data.startDate = new Date(startDate);
+        if (endDate !== undefined) data.endDate = new Date(endDate);
+        await db.updateCampaign(id, data);
+        return { success: true };
+      }),
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteCampaign(input.id);
+        return { success: true };
+      }),
+    duplicate: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.duplicateCampaign(input.id);
+      }),
+    listFlows: adminProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCampaignFlows(input.campaignId);
+      }),
+    createFlow: adminProcedure
+      .input(z.object({
+        campaignId: z.number(),
+        sortOrder: z.number().default(0),
+        type: z.enum(['text', 'image', 'video', 'audio', 'file', 'product_intro', 'button']),
+        text: z.string().optional(),
+        mediaUrl: z.string().optional(),
+        mediaType: z.string().optional(),
+        buttonConfig: z.string().optional(),
+        productId: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createCampaignFlow(input as any);
+      }),
+    updateFlow: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        sortOrder: z.number().optional(),
+        type: z.enum(['text', 'image', 'video', 'audio', 'file', 'product_intro', 'button']).optional(),
+        text: z.string().optional(),
+        mediaUrl: z.string().optional(),
+        mediaType: z.string().optional(),
+        buttonConfig: z.string().optional(),
+        productId: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateCampaignFlow(id, data as any);
+        return { success: true };
+      }),
+    deleteFlow: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteCampaignFlow(input.id);
+        return { success: true };
+      }),
+    listButtons: adminProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCampaignButtons(input.campaignId);
+      }),
+    createButton: adminProcedure
+      .input(z.object({
+        campaignId: z.number(),
+        flowId: z.number().optional(),
+        name: z.string().min(1),
+        productId: z.number(),
+        variantId: z.number().optional(),
+        quantity: z.number().min(1).default(1),
+        sortOrder: z.number().default(0),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createCampaignButton(input as any);
+      }),
+    updateButton: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        productId: z.number().optional(),
+        variantId: z.number().optional(),
+        quantity: z.number().optional(),
+        sortOrder: z.number().optional(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateCampaignButton(id, data as any);
+        return { success: true };
+      }),
+    deleteButton: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteCampaignButton(input.id);
+        return { success: true };
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

@@ -35,6 +35,7 @@ import {
   FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings,
   Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle, AlertCircle,
   ClipboardList, Video, Plane, ChevronDown, Bot, Home, FileText, Receipt, Brain, FileEdit,
+  Megaphone,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -68,6 +69,13 @@ const menuStructure: MenuEntry[] = [
     icon: Video,
     label: { zh: "直播管理", en: "Live Management" },
     path: "/live-rooms",
+  },
+
+  // 2b. Facebook Campaign
+  {
+    icon: Megaphone,
+    label: { zh: "FB Campaign", en: "FB Campaign" },
+    path: "/campaigns",
   },
 
   // 3. 订单管理

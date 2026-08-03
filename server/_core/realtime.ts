@@ -36,6 +36,7 @@ export type SyncCategory =
   | "liveAiFlows"
   | "chat"
   | "aiLog"
+  | "campaigns"
   | "all";
 
 interface SyncEvent {

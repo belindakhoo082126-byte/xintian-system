@@ -43,6 +43,10 @@ import {
   aiTestRuns, aiKnowledge,
   // V4.3 imports - AI Brain Phase 2 Task 5 (Regression Test & AI Version)
   regressionSets, regressionQuestions, regressionRuns, regressionRunDetails, aiVersions,
+  // V2.0.21 imports - Facebook Campaign Module
+  campaigns, campaignFlows, campaignButtons,
+  // V2.0 imports - Reservation Records
+  reservationRecords,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -10482,4 +10486,361 @@ export async function sendLiveComment(videoId: string, message: string): Promise
   } catch (err: any) {
     return { success: false, error: err.message };
   }
+}
+
+
+// =============================================================================
+// Unified Facebook Auto Order Engine
+// Shared by: Facebook Live, Messenger, Post, Reel, Video
+// =============================================================================
+
+/**
+ * Execute auto order capture — the unified entry point for all Facebook sources.
+ * Flow: parse keywords → match products → check stock → create/merge order → deduct stock → return result
+ * Caller is responsible for sending the notification (reply to comment or Messenger message).
+ */
+export async function executeAutoOrderCapture(params: {
+  customerName: string;
+  customerPsid?: string;
+  message: string;
+  commentId?: string;
+  postId?: string;
+  liveVideoId?: string;
+  sourceType?: "facebook_live" | "facebook_post" | "facebook_reel" | "messenger" | "campaign_button";
+  sourceName?: string;
+  campaignId?: number;
+  // For campaign button clicks: pre-matched product (skip keyword parsing)
+  preMatchedProducts?: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string }>;
+}): Promise<{
+  success: boolean;
+  matched: boolean;
+  orderNumber?: string;
+  orderId?: number;
+  totalAmount?: string;
+  secureToken?: string | null;
+  merged?: boolean;
+  duplicate?: boolean;
+  matchedProducts?: Array<{ keyword: string; quantity: number; productName: string; unitPrice: string }>;
+  unmatchedKeywords?: string[];
+  replyMessage?: string;
+}> {
+  const { parseCommentKeywords, matchKeywordsToProducts, createOrderFromLiveCapture } = exports;
+
+  // If pre-matched products (e.g., from campaign button click), skip keyword parsing
+  let matchedProducts: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string }> = [];
+  let unmatchedKeywords: string[] = [];
+
+  if (params.preMatchedProducts && params.preMatchedProducts.length > 0) {
+    matchedProducts = params.preMatchedProducts;
+  } else {
+    // Parse keywords from message
+    const keywords = (parseCommentKeywords as typeof import("./db").parseCommentKeywords)(params.message);
+    if (keywords.length === 0) {
+      return { success: false, matched: false };
+    }
+
+    // Match keywords to products
+    const result = await (matchKeywordsToProducts as typeof import("./db").matchKeywordsToProducts)(keywords);
+    matchedProducts = result.matched;
+    unmatchedKeywords = result.unmatched.map((u: any) => u.keyword);
+
+    if (matchedProducts.length === 0) {
+      return {
+        success: false,
+        matched: false,
+        unmatchedKeywords,
+        replyMessage: `抱歉，未找到对应商品。请确认关键词是否正确。`,
+      };
+    }
+  }
+
+  // Create or merge order
+  const orderResult = await (createOrderFromLiveCapture as typeof import("./db").createOrderFromLiveCapture)({
+    commenterName: params.customerName,
+    commenterPsid: params.customerPsid,
+    commentMessage: params.message,
+    commentId: params.commentId,
+    postId: params.postId,
+    liveVideoId: params.liveVideoId,
+    matchedProducts,
+    sourceName: params.sourceName || "Facebook",
+  });
+
+  // Build reply message with order details
+  const itemList = matchedProducts.map((m) => `${m.productName} x${m.quantity} (RM${m.unitPrice})`).join("\n");
+  const totalAmount = orderResult.totalAmount || "0";
+  const replyMessage = `🎉 得标通知！\n\n${itemList}\n\n小计：RM${totalAmount}\n\n请点击下方【查询订单及结账】按钮查看订单详情并完成付款。`;
+
+  return {
+    success: true,
+    matched: true,
+    orderNumber: orderResult.orderNumber,
+    orderId: orderResult.orderId,
+    totalAmount,
+    secureToken: orderResult.secureToken ?? null,
+    merged: (orderResult as any).merged || false,
+    duplicate: (orderResult as any).duplicate || false,
+    matchedProducts: matchedProducts.map((m) => ({ keyword: m.keyword, quantity: m.quantity, productName: m.productName, unitPrice: m.unitPrice })),
+    unmatchedKeywords,
+    replyMessage,
+  };
+}
+
+// =============================================================================
+// Campaign CRUD helpers
+// =============================================================================
+
+export async function getCampaigns(includeArchived = false) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const query = db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+  if (!includeArchived) {
+    return await query.where(eq(campaigns.status, "archived" as any)).then(() => query) as any;
+  }
+  return await query;
+}
+
+export async function getCampaignById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
+  return result[0] || null;
+}
+
+export async function createCampaign(data: {
+  name: string;
+  type: "post" | "reel" | "video";
+  facebookLink?: string;
+  facebookPostId?: string;
+  startDate?: Date;
+  endDate?: Date;
+  autoReplyEnabled?: boolean;
+  autoReplyText?: string;
+  messengerFlowEnabled?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(campaigns).values({
+    name: data.name,
+    type: data.type,
+    facebookLink: data.facebookLink || null,
+    facebookPostId: data.facebookPostId || null,
+    startDate: data.startDate || null,
+    endDate: data.endDate || null,
+    status: "draft",
+    autoReplyEnabled: data.autoReplyEnabled ?? true,
+    autoReplyText: data.autoReplyText || null,
+    messengerFlowEnabled: data.messengerFlowEnabled ?? true,
+  });
+  const insertId = (result as any)[0].insertId;
+  broadcastChanges(["campaigns"]);
+  return { id: insertId };
+}
+
+export async function updateCampaign(id: number, data: Partial<{
+  name: string;
+  type: "post" | "reel" | "video";
+  facebookLink: string;
+  facebookPostId: string;
+  startDate: Date;
+  endDate: Date;
+  status: "draft" | "active" | "ended" | "archived";
+  autoReplyEnabled: boolean;
+  autoReplyText: string;
+  messengerFlowEnabled: boolean;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(campaigns).set(data as any).where(eq(campaigns.id, id));
+  broadcastChanges(["campaigns"]);
+  return { success: true };
+}
+
+export async function deleteCampaign(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Delete related flows and buttons first
+  await db.delete(campaignButtons).where(eq(campaignButtons.campaignId, id));
+  await db.delete(campaignFlows).where(eq(campaignFlows.campaignId, id));
+  await db.delete(campaigns).where(eq(campaigns.id, id));
+  broadcastChanges(["campaigns"]);
+  return { success: true };
+}
+
+export async function duplicateCampaign(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const original = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
+  if (!original[0]) throw new Error("Campaign not found");
+
+  const orig = original[0];
+  const newCampaign = await db.insert(campaigns).values({
+    name: `${orig.name} (副本)`,
+    type: orig.type,
+    facebookLink: orig.facebookLink,
+    facebookPostId: orig.facebookPostId,
+    startDate: null,
+    endDate: null,
+    status: "draft",
+    autoReplyEnabled: orig.autoReplyEnabled,
+    autoReplyText: orig.autoReplyText,
+    messengerFlowEnabled: orig.messengerFlowEnabled,
+  });
+  const newCampaignId = (newCampaign as any)[0].insertId;
+
+  // Copy flows
+  const flows = await db.select().from(campaignFlows).where(eq(campaignFlows.campaignId, id));
+  const flowIdMap = new Map<number, number>();
+  for (const flow of flows) {
+    const newFlow = await db.insert(campaignFlows).values({
+      campaignId: newCampaignId,
+      sortOrder: flow.sortOrder,
+      type: flow.type,
+      text: flow.text,
+      mediaUrl: flow.mediaUrl,
+      mediaType: flow.mediaType,
+      buttonConfig: flow.buttonConfig,
+      productId: flow.productId,
+    });
+    const newFlowId = (newFlow as any)[0].insertId;
+    flowIdMap.set(flow.id, newFlowId);
+  }
+
+  // Copy buttons
+  const buttons = await db.select().from(campaignButtons).where(eq(campaignButtons.campaignId, id));
+  for (const btn of buttons) {
+    await db.insert(campaignButtons).values({
+      campaignId: newCampaignId,
+      flowId: btn.flowId ? (flowIdMap.get(btn.flowId) || null) : null,
+      name: btn.name,
+      productId: btn.productId,
+      variantId: btn.variantId,
+      quantity: btn.quantity,
+      sortOrder: btn.sortOrder,
+      isActive: btn.isActive,
+    });
+  }
+
+  broadcastChanges(["campaigns"]);
+  return { id: newCampaignId };
+}
+
+// --- Campaign Flow helpers ---
+
+export async function getCampaignFlows(campaignId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.select().from(campaignFlows)
+    .where(eq(campaignFlows.campaignId, campaignId))
+    .orderBy(campaignFlows.sortOrder);
+}
+
+export async function createCampaignFlow(data: {
+  campaignId: number;
+  sortOrder: number;
+  type: "text" | "image" | "video" | "audio" | "file" | "product_intro" | "button";
+  text?: string;
+  mediaUrl?: string;
+  mediaType?: string;
+  buttonConfig?: string;
+  productId?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(campaignFlows).values({
+    campaignId: data.campaignId,
+    sortOrder: data.sortOrder,
+    type: data.type,
+    text: data.text || null,
+    mediaUrl: data.mediaUrl || null,
+    mediaType: data.mediaType || null,
+    buttonConfig: data.buttonConfig || null,
+    productId: data.productId || null,
+  });
+  broadcastChanges(["campaigns"]);
+  return { id: (result as any)[0].insertId };
+}
+
+export async function updateCampaignFlow(id: number, data: Partial<{
+  sortOrder: number;
+  type: "text" | "image" | "video" | "audio" | "file" | "product_intro" | "button";
+  text: string;
+  mediaUrl: string;
+  mediaType: string;
+  buttonConfig: string;
+  productId: number;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(campaignFlows).set(data as any).where(eq(campaignFlows.id, id));
+  broadcastChanges(["campaigns"]);
+  return { success: true };
+}
+
+export async function deleteCampaignFlow(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Delete related buttons
+  await db.delete(campaignButtons).where(eq(campaignButtons.flowId, id));
+  await db.delete(campaignFlows).where(eq(campaignFlows.id, id));
+  broadcastChanges(["campaigns"]);
+  return { success: true };
+}
+
+// --- Campaign Button helpers ---
+
+export async function getCampaignButtons(campaignId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.select().from(campaignButtons)
+    .where(eq(campaignButtons.campaignId, campaignId))
+    .orderBy(campaignButtons.sortOrder);
+}
+
+export async function createCampaignButton(data: {
+  campaignId: number;
+  flowId?: number;
+  name: string;
+  productId: number;
+  variantId?: number;
+  quantity: number;
+  sortOrder: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(campaignButtons).values({
+    campaignId: data.campaignId,
+    flowId: data.flowId || null,
+    name: data.name,
+    productId: data.productId,
+    variantId: data.variantId || null,
+    quantity: data.quantity,
+    sortOrder: data.sortOrder,
+    isActive: true,
+  });
+  broadcastChanges(["campaigns"]);
+  return { id: (result as any)[0].insertId };
+}
+
+export async function updateCampaignButton(id: number, data: Partial<{
+  name: string;
+  productId: number;
+  variantId: number;
+  quantity: number;
+  sortOrder: number;
+  isActive: boolean;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(campaignButtons).set(data as any).where(eq(campaignButtons.id, id));
+  broadcastChanges(["campaigns"]);
+  return { success: true };
+}
+
+export async function deleteCampaignButton(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(campaignButtons).where(eq(campaignButtons.id, id));
+  broadcastChanges(["campaigns"]);
+  return { success: true };
 }

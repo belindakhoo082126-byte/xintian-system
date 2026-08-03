@@ -2500,3 +2500,85 @@ export const reservationRecords = mysqlTable("reservation_records", {
 
 export type ReservationRecord = typeof reservationRecords.$inferSelect;
 export type InsertReservationRecord = typeof reservationRecords.$inferInsert;
+
+// =============================================================================
+// Facebook Campaign Module
+// Manages Facebook Post / Reel / Video marketing campaigns with Messenger Flow
+// and Product Button ordering. Shares the same Auto Order Engine with Live Studio.
+// =============================================================================
+
+// --- Campaigns table ---
+export const campaigns = mysqlTable("campaigns", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),
+  type: mysqlEnum("type", ["post", "reel", "video"]).notNull().default("post"),
+  facebookLink: varchar("facebookLink", { length: 500 }),
+  facebookPostId: varchar("facebookPostId", { length: 200 }),
+  startDate: timestamp("startDate"),
+  endDate: timestamp("endDate"),
+  status: mysqlEnum("status", ["draft", "active", "ended", "archived"]).notNull().default("draft"),
+  // Auto-reply public comment when no keyword matched
+  autoReplyEnabled: boolean("autoReplyEnabled").notNull().default(true),
+  autoReplyText: text("autoReplyText"),
+  // Send Messenger Flow when no keyword matched
+  messengerFlowEnabled: boolean("messengerFlowEnabled").notNull().default(true),
+  // Stats
+  commentCount: int("commentCount").notNull().default(0),
+  messengerCount: int("messengerCount").notNull().default(0),
+  orderCount: int("orderCount").notNull().default(0),
+  totalRevenue: decimal("totalRevenue", { precision: 12, scale: 2 }).default("0.00").notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type Campaign = typeof campaigns.$inferSelect;
+export type InsertCampaign = typeof campaigns.$inferInsert;
+
+// --- Campaign Flows table ---
+// Messenger Flow steps for a campaign (ordered sequence of messages)
+export const campaignFlows = mysqlTable("campaign_flows", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaignId").notNull(),
+  sortOrder: int("sortOrder").notNull().default(0),
+  // Flow step type
+  type: mysqlEnum("type", ["text", "image", "video", "audio", "file", "product_intro", "button"]).notNull(),
+  // Content for text/product_intro/button types
+  text: text("text"),
+  // Media URL for image/video/audio/file types
+  mediaUrl: varchar("mediaUrl", { length: 500 }),
+  mediaType: varchar("mediaType", { length: 100 }),
+  // For button type: JSON array of button configs
+  buttonConfig: text("buttonConfig"),
+  // For product_intro type: product ID to introduce
+  productId: int("productId"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CampaignFlow = typeof campaignFlows.$inferSelect;
+export type InsertCampaignFlow = typeof campaignFlows.$inferInsert;
+
+// --- Campaign Buttons table ---
+// Product buttons that customers can click to place orders directly
+export const campaignButtons = mysqlTable("campaign_buttons", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaignId").notNull(),
+  flowId: int("flowId"),
+  // Button display name (free text)
+  name: varchar("name", { length: 100 }).notNull(),
+  // Bound product
+  productId: int("productId").notNull(),
+  // Bound variant (optional)
+  variantId: int("variantId"),
+  // Quantity to order when clicked
+  quantity: int("quantity").notNull().default(1),
+  // Button sort order within flow
+  sortOrder: int("sortOrder").notNull().default(0),
+  // Whether button is active
+  isActive: boolean("isActive").notNull().default(true),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CampaignButton = typeof campaignButtons.$inferSelect;
+export type InsertCampaignButton = typeof campaignButtons.$inferInsert;

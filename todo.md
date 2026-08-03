@@ -1702,3 +1702,18 @@
 - [x] 补充截止日期后的客户回复逻辑（messenger.ts 中添加 expiredPreorderRooms 检查和回复）
 - [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
 - [x] 保存检查点
+
+## V2.0.20: Facebook Auto Order Engine 统一架构审查
+- [x] 审查 Live 评论自动捉单逻辑（processComment → parseCommentKeywords → matchKeywordsToProducts → createOrderFromLiveCapture）
+- [x] 审查 Messenger 私聊自动捉单逻辑（handleIncomingMessage → processChatAI → runProductMatchEngine，仅商品信息回复，不自动建单）
+- [x] 审查 Post/Reel/Video 评论处理（handlePageFeedEvent → inferCommentSourceType → processComment，已共用同一套 processComment）
+- [x] 汇总分析结果并报告
+
+## V2.0.21: Facebook Campaign 模块 + 统一 Auto Order Engine
+- [x] 数据库 schema：campaigns、campaign_flows、campaign_buttons 表（已创建并执行 SQL）
+- [x] 统一 Auto Order Engine：executeAutoOrderCapture 函数（Live/Messenger/Post/Reel/Video 共用）
+- [x] Messenger 私聊接入 Auto Order Engine（handleIncomingMessage 优先检测关键词+数量，自动建单+发通知）
+- [x] Campaign 后端 tRPC 路由（CRUD + Duplicate + Archive + Flow CRUD + Button CRUD）
+- [x] Campaign 前端页面（列表 + 编辑 + Flow Builder + Product Button 管理）
+- [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
+- [x] 保存检查点

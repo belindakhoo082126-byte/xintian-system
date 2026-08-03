@@ -53,6 +53,7 @@ import LiveRooms from "@/pages/LiveRooms";
 import LiveRoomDetail from "@/pages/LiveRoomDetail";
 import LiveAiFlows from "@/pages/LiveAiFlows";
 import ImportBatches from "@/pages/ImportBatches";
+import Campaigns from "@/pages/Campaigns";
 import LossAnalysisReport from "@/pages/LossAnalysisReport";
 import InventoryLog from "@/pages/InventoryLog";
 import OrderCreatePage from "@/pages/OrderCreatePage";
@@ -117,6 +118,7 @@ function DashboardRoutes() {
       <Route path="/live-room/:id" component={LiveRoomDetail} />
       <Route path="/live-ai-flows" component={LiveAiFlows} />
       <Route path="/import-batches" component={ImportBatches} />
+      <Route path="/campaigns" component={Campaigns} />
       <Route path={"/facebook-settings"} component={FacebookSettings} />
       <Route path={"/system-settings"} component={SystemSettings} />
       <Route path={"/shipping-rules"} component={ShippingRules} />
