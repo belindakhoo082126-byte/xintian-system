@@ -532,3 +532,24 @@
 - 直播房不建立第二套商品资料，仅引用商品管理的正式商品数据
 - 客户订单公开页面通过 secureToken 验证，无需登录，Token 在订单创建时自动生成
 - Staff Note 独立于客户可见的订单备注，仅工作人员可见
+
+## V2.0.14: Live Studio 图片显示验证 + 上传进度提示 (2026-08-03)
+
+### Added
+- 商品管理图片上传全面增加上传进度提示和本地预览功能
+- 封面图片上传：选择文件后立即显示本地预览（URL.createObjectURL），上传中显示 Spinner + 半透明预览图，上传完成后切换为服务器 URL 图片
+- 多图上传：上传中显示 Loader2 旋转动画，上传区域禁用重复点击
+- 视频上传：上传中显示 Loader2 旋转动画 + 「上传中...」文字，按钮禁用
+- 规格图片上传：与封面图片相同的本地预览 + Spinner 体验
+- 所有上传按钮在上传中自动禁用（pointer-events-none + opacity-50），防止重复上传
+
+### Changed
+- 导入 Spinner 组件和 Loader2 图标
+- 新增 5 个 state 变量：uploadingCover, uploadingImages, uploadingVideo, uploadingVariant, coverPreview
+
+### Fixed
+- 无
+
+### Notes
+- Live Studio 商品区图片显示已验证：后端 getLiveRoomProducts 正确返回 coverImageUrl，前端 ProductGroupCard 有 onError 回退到 Placeholder
+- TypeScript 零错误，Vitest 31 文件 257 项测试全部通过

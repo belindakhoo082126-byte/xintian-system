@@ -1649,3 +1649,10 @@
 - [x] 修复规格图片上传按钮（相同 asChild 问题）
 - [x] TypeScript 零错误 + Vitest 全部通过
 - [x] 保存检查点
+
+## V2.0.14: Live Studio 图片显示验证 + 上传进度提示
+- [x] 验证 Live Studio 商品区正确读取并显示商品管理上传的图片（后端 getLiveRoomProducts 已正确返回 coverImageUrl，前端 ProductGroupCard 有 onError 回退）
+- [x] 商品管理图片上传增加上传进度提示（封面/多图/视频/规格图片四处均添加 Spinner）
+- [x] 商品管理图片上传增加本地预览（封面和规格图片使用 URL.createObjectURL 立即预览）
+- [x] TypeScript 零错误 + Vitest 全部通过（31 文件 257 项测试）
+- [x] 保存检查点

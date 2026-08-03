@@ -13,7 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Upload, Bot } from "lucide-react";
+import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Upload, Bot, Loader2 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 
 const RAW_PRODUCT_TYPES = [
   { value: "physical", zh: "实体商品", en: "Physical Product" },
@@ -174,6 +175,11 @@ export default function ProductsV2() {
   const [showMemberLinkDialog, setShowMemberLinkDialog] = useState(false);
   const [currentProductId, setCurrentProductId] = useState<number | null>(null);
   const [simulatorPrice, setSimulatorPrice] = useState("");
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [uploadingVariant, setUploadingVariant] = useState(false);
+  const [coverPreview, setCoverPreview] = useState("");
   const hydratedEditingIdRef = useRef<number | null>(null);
   const utils = trpc.useUtils();
 
@@ -947,11 +953,16 @@ export default function ProductsV2() {
                       <Label>{translate("封面图片", "Cover Image")}</Label>
                       <div className="flex items-center gap-3">
                         <Input value={form.coverImageUrl} onChange={(e) => setForm({ ...form, coverImageUrl: e.target.value })} placeholder={translate("https://... 或点击上传", "https://... or click to upload")} />
-                        <label className="cursor-pointer inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground">
-                          <Upload className="h-4 w-4" />{translate("上传", "Upload")}
+                        <label className={`cursor-pointer inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground ${uploadingCover ? "pointer-events-none opacity-50" : ""}`}>
+                          {uploadingCover ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                          {uploadingCover ? translate("上传中...", "Uploading...") : translate("上传", "Upload")}
                           <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (!file) return;
+                            // 立即显示本地预览
+                            const localPreviewUrl = URL.createObjectURL(file);
+                            setCoverPreview(localPreviewUrl);
+                            setUploadingCover(true);
                             const reader = new FileReader();
                             reader.onload = async (ev) => {
                               const base64 = ev.target?.result as string;
@@ -969,12 +980,30 @@ export default function ProductsV2() {
                                   toast.error(translate("上传失败", "Upload failed"));
                                 }
                               } catch { toast.error(translate("上传失败，请重试", "Upload failed, please try again")); }
+                              finally {
+                                setUploadingCover(false);
+                                setCoverPreview("");
+                                URL.revokeObjectURL(localPreviewUrl);
+                              }
                             };
                             reader.readAsDataURL(file);
                           }} />
                         </label>
                       </div>
-                      {form.coverImageUrl && (
+                      {/* 上传中显示 Spinner + 本地预览 */}
+                      {uploadingCover && (
+                        <div className="mt-2 flex items-center gap-2">
+                          {coverPreview && (
+                            <img src={coverPreview} alt={translate("上传中预览", "Uploading preview")} className="h-32 w-32 rounded-lg object-cover border opacity-60" />
+                          )}
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Spinner className="h-4 w-4" />
+                            {translate("正在上传图片...", "Uploading image...")}
+                          </div>
+                        </div>
+                      )}
+                      {/* 上传完成后显示服务器图片 */}
+                      {!uploadingCover && form.coverImageUrl && (
                         <img src={form.coverImageUrl} alt={translate("封面预览", "Cover Preview")} className="mt-2 h-32 w-32 rounded-lg object-cover border" />
                       )}
                     </div>
@@ -993,13 +1022,14 @@ export default function ProductsV2() {
                             >×</button>
                           </div>
                         ))}
-                        <label className="cursor-pointer">
+                        <label className={`cursor-pointer ${uploadingImages ? "pointer-events-none" : ""}`}>
                           <div className="h-20 w-20 rounded-lg border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground hover:border-primary transition-colors">
-                            <Upload className="h-5 w-5" />
+                            {uploadingImages ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Upload className="h-5 w-5" />}
                           </div>
                           <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (!file) return;
+                            setUploadingImages(true);
                             const reader = new FileReader();
                             reader.onload = async (ev) => {
                               const base64 = ev.target?.result as string;
@@ -1015,6 +1045,7 @@ export default function ProductsV2() {
                                   toast.success(translate("图片已上传", "Image uploaded"));
                                 } else { toast.error(translate("上传失败", "Upload failed")); }
                               } catch { toast.error(translate("上传失败，请重试", "Upload failed, please try again")); }
+                              finally { setUploadingImages(false); }
                             };
                             reader.readAsDataURL(file);
                           }} />
@@ -1027,8 +1058,9 @@ export default function ProductsV2() {
                       <Label>{translate("商品影片", "Product Video")}</Label>
                       <div className="flex items-center gap-3">
                         <Input value={form.videoUrl} onChange={(e) => setForm({ ...form, videoUrl: e.target.value })} placeholder={translate("https://... 或点击上传影片", "https://... or click to upload video")} />
-                        <label className="cursor-pointer inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground">
-                          {translate("上传影片", "Upload Video")}
+                        <label className={`cursor-pointer inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground ${uploadingVideo ? "pointer-events-none opacity-50" : ""}`}>
+                          {uploadingVideo ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                          {uploadingVideo ? translate("上传中...", "Uploading...") : translate("上传影片", "Upload Video")}
                           <input type="file" accept="video/*" className="hidden" onChange={async (ev) => {
                             const file = ev.target.files?.[0];
                             if (!file) return;
@@ -1036,6 +1068,7 @@ export default function ProductsV2() {
                               toast.error(translate("影片大小不能超过 50MB", "Video size cannot exceed 50MB"));
                               return;
                             }
+                            setUploadingVideo(true);
                             const reader = new FileReader();
                             reader.onload = async () => {
                               const base64 = reader.result as string;
@@ -1055,6 +1088,7 @@ export default function ProductsV2() {
                               } catch {
                                 toast.error(translate("上传失败，请重试", "Upload failed, please try again"));
                               }
+                              finally { setUploadingVideo(false); }
                             };
                             reader.readAsDataURL(file);
                           }} />
@@ -1718,11 +1752,16 @@ export default function ProductsV2() {
               <Label>{translate("规格图片", "Variant Image")}</Label>
               <div className="flex items-center gap-3">
                 <Input value={variantForm.imageUrl} onChange={(e) => setVariantForm({ ...variantForm, imageUrl: e.target.value })} placeholder={translate("https://... 或点击上传", "https://... or click to upload")} />
-                <label className="cursor-pointer inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground">
-                  <Upload className="h-4 w-4" />{translate("上传", "Upload")}
+                <label className={`cursor-pointer inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground ${uploadingVariant ? "pointer-events-none opacity-50" : ""}`}>
+                  {uploadingVariant ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {uploadingVariant ? translate("上传中...", "Uploading...") : translate("上传", "Upload")}
                   <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
+                    // 立即显示本地预览
+                    const localPreviewUrl = URL.createObjectURL(file);
+                    setCoverPreview(localPreviewUrl);
+                    setUploadingVariant(true);
                     const reader = new FileReader();
                     reader.onload = async (ev) => {
                       const base64 = ev.target?.result as string;
@@ -1738,12 +1777,30 @@ export default function ProductsV2() {
                           toast.success(translate("图片已上传", "Image uploaded"));
                         } else { toast.error(translate("上传失败", "Upload failed")); }
                       } catch { toast.error(translate("上传失败，请重试", "Upload failed, please try again")); }
+                      finally {
+                        setUploadingVariant(false);
+                        setCoverPreview("");
+                        URL.revokeObjectURL(localPreviewUrl);
+                      }
                     };
                     reader.readAsDataURL(file);
                   }} />
                 </label>
               </div>
-              {variantForm.imageUrl && (
+              {/* 上传中显示 Spinner + 本地预览 */}
+              {uploadingVariant && (
+                <div className="mt-2 flex items-center gap-2">
+                  {coverPreview && (
+                    <img src={coverPreview} alt={translate("上传中预览", "Uploading preview")} className="h-20 w-20 rounded-lg object-cover border opacity-60" />
+                  )}
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Spinner className="h-4 w-4" />
+                    {translate("正在上传图片...", "Uploading image...")}
+                  </div>
+                </div>
+              )}
+              {/* 上传完成后显示服务器图片 */}
+              {!uploadingVariant && variantForm.imageUrl && (
                 <img src={variantForm.imageUrl} alt="" className="mt-2 h-20 w-20 rounded-lg object-cover border" />
               )}
             </div>
