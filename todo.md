@@ -1726,3 +1726,11 @@
 - [x] 前端实时预览解析结果（Badge 显示类型/Post ID/Video ID/Page）
 - [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
 - [x] 保存检查点
+
+## V2.0.23: Campaign 多内容 ID 绑定
+- [x] 数据库：新增 campaign_content_ids 表（campaignId, contentType, contentId, facebookLink）
+- [x] 后端：getCampaignContentIds, addCampaignContentId, removeCampaignContentId, findCampaignByContentId
+- [x] 后端：tRPC 路由 listContentIds, addContentId, removeContentId
+- [x] 前端：Campaign 编辑对话框新增「内容绑定」Tab，支持添加/删除多个 Facebook 链接
+- [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
+- [x] 保存检查点

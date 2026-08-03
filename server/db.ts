@@ -44,7 +44,7 @@ import {
   // V4.3 imports - AI Brain Phase 2 Task 5 (Regression Test & AI Version)
   regressionSets, regressionQuestions, regressionRuns, regressionRunDetails, aiVersions,
   // V2.0.21 imports - Facebook Campaign Module
-  campaigns, campaignFlows, campaignButtons,
+  campaigns, campaignFlows, campaignButtons, campaignContentIds,
   // V2.0 imports - Reservation Records
   reservationRecords,
 } from "../drizzle/schema";
@@ -10725,8 +10725,77 @@ export async function createCampaign(data: {
     messengerFlowEnabled: data.messengerFlowEnabled ?? true,
   });
   const insertId = (result as any)[0].insertId;
+  // Auto-create content ID binding from parsed link
+  if (data.facebookLink) {
+    const parsed = parseFacebookLink(data.facebookLink);
+    const contentId = parsed.facebookPostId || parsed.facebookVideoId;
+    if (contentId) {
+      await db.insert(campaignContentIds).values({
+        campaignId: insertId,
+        contentType: parsed.contentType,
+        contentId,
+        facebookLink: data.facebookLink,
+      }).catch(() => {}); // Ignore duplicate errors
+    }
+  }
   broadcastChanges(["campaigns"]);
   return { id: insertId };
+}
+
+// --- Campaign Content IDs management ---
+export async function getCampaignContentIds(campaignId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.select().from(campaignContentIds).where(eq(campaignContentIds.campaignId, campaignId)).orderBy(asc(campaignContentIds.id));
+}
+
+export async function addCampaignContentId(data: {
+  campaignId: number;
+  contentType: "post" | "reel" | "video";
+  contentId: string;
+  facebookLink?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+ // Parse link if provided to auto-detect type and ID
+  let contentType = data.contentType;
+  let contentId = data.contentId;
+  let facebookLink = data.facebookLink || null;
+  if (data.facebookLink) {
+    const parsed = parseFacebookLink(data.facebookLink);
+    if (parsed.facebookPostId) contentId = parsed.facebookPostId;
+    else if (parsed.facebookVideoId) contentId = parsed.facebookVideoId;
+    if (parsed.contentType) contentType = parsed.contentType;
+  }
+  await db.insert(campaignContentIds).values({
+    campaignId: data.campaignId,
+    contentType,
+    contentId,
+    facebookLink,
+  }).catch(() => {}); // Ignore duplicate errors
+  broadcastChanges(["campaigns"]);
+  return { success: true };
+}
+
+export async function removeCampaignContentId(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(campaignContentIds).where(eq(campaignContentIds.id, id));
+  broadcastChanges(["campaigns"]);
+  return { success: true };
+}
+
+// Find campaign by any content ID (Post ID, Video ID, Reel ID)
+export async function findCampaignByContentId(contentId: string): Promise<any | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const results = await db.select({
+    campaign: campaigns,
+  }).from(campaignContentIds)
+    .innerJoin(campaigns, eq(campaignContentIds.campaignId, campaigns.id))
+    .where(eq(campaignContentIds.contentId, contentId))
+    .limit(1);
+  return results[0]?.campaign || null;
 }
 
 export async function updateCampaign(id: number, data: Partial<{
@@ -10762,7 +10831,8 @@ export async function updateCampaign(id: number, data: Partial<{
 export async function deleteCampaign(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  // Delete related flows and buttons first
+  // Delete related content IDs, flows and buttons first
+  await db.delete(campaignContentIds).where(eq(campaignContentIds.campaignId, id));
   await db.delete(campaignButtons).where(eq(campaignButtons.campaignId, id));
   await db.delete(campaignFlows).where(eq(campaignFlows.campaignId, id));
   await db.delete(campaigns).where(eq(campaigns.id, id));

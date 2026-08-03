@@ -5749,6 +5749,45 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         await db.deleteCampaignButton(input.id);
         return { success: true };
       }),
+    // Content ID management
+    listContentIds: adminProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCampaignContentIds(input.campaignId);
+      }),
+    addContentId: adminProcedure
+      .input(z.object({
+        campaignId: z.number(),
+        contentType: z.enum(['post', 'reel', 'video']).optional(),
+        contentId: z.string().optional(),
+        facebookLink: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        // If only link provided, auto-parse
+        if (input.facebookLink && !input.contentId) {
+          const parsed = db.parseFacebookLink(input.facebookLink);
+          const contentId = parsed.facebookPostId || parsed.facebookVideoId || '';
+          if (!contentId) throw new TRPCError({ code: 'BAD_REQUEST', message: '无法从链接中解析出内容 ID' });
+          return await db.addCampaignContentId({
+            campaignId: input.campaignId,
+            contentType: parsed.contentType as any,
+            contentId,
+            facebookLink: input.facebookLink,
+          });
+        }
+        return await db.addCampaignContentId({
+          campaignId: input.campaignId,
+          contentType: (input.contentType || 'post') as any,
+          contentId: input.contentId || '',
+          facebookLink: input.facebookLink,
+        });
+      }),
+    removeContentId: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.removeCampaignContentId(input.id);
+        return { success: true };
+      }),
   }),
 });
 

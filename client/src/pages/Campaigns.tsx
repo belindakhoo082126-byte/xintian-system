@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -315,8 +315,9 @@ function CampaignEditDialog({ campaign, onClose, onSaved }: {
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="settings">基本设置</TabsTrigger>
+            <TabsTrigger value="contentIds" disabled={!campaign}>内容绑定</TabsTrigger>
             <TabsTrigger value="flows" disabled={!campaign}>Messenger Flow</TabsTrigger>
             <TabsTrigger value="buttons" disabled={!campaign}>Product Button</TabsTrigger>
           </TabsList>
@@ -369,6 +370,13 @@ function CampaignEditDialog({ campaign, onClose, onSaved }: {
             </div>
           </TabsContent>
 
+          {/* Content IDs Tab */}
+          {campaign && (
+            <TabsContent value="contentIds" className="flex-1 overflow-y-auto">
+              <ContentIdManager campaignId={campaign.id} />
+            </TabsContent>
+          )}
+
           {/* Flows Tab */}
           {campaign && (
             <TabsContent value="flows" className="flex-1 overflow-hidden">
@@ -396,6 +404,87 @@ function CampaignEditDialog({ campaign, onClose, onSaved }: {
 }
 
 // --- Flow Builder ---
+// --- Content ID Manager ---
+function ContentIdManager({ campaignId }: { campaignId: number }) {
+  const [contentIds, setContentIds] = useState<any[]>([]);
+  const [newLink, setNewLink] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const utils = trpc.useUtils();
+  const listQuery = trpc.campaigns.listContentIds.useQuery({ campaignId });
+  const addMutation = trpc.campaigns.addContentId.useMutation({
+    onSuccess: () => { utils.campaigns.listContentIds.invalidate(); setNewLink(""); },
+  });
+  const removeMutation = trpc.campaigns.removeContentId.useMutation({
+    onSuccess: () => { utils.campaigns.listContentIds.invalidate(); },
+  });
+
+  useEffect(() => {
+    if (listQuery.data) { setContentIds(listQuery.data as any[]); setLoading(false); }
+  }, [listQuery.data]);
+
+  const handleAdd = async () => {
+    if (!newLink.trim()) { toast.error("请输入 Facebook 链接"); return; }
+    try {
+      await addMutation.mutateAsync({ campaignId, facebookLink: newLink });
+      toast.success("内容已绑定");
+    } catch (err: any) {
+      toast.error("绑定失败: " + err.message);
+    }
+  };
+
+  return (
+    <div className="space-y-4 p-2">
+      <div>
+        <Label>添加 Facebook 内容链接</Label>
+        <p className="text-xs text-muted-foreground mb-2">贴上 Facebook Post / Reel / Video 链接，系统自动识别类型和 ID。一个 Campaign 可绑定多个内容。</p>
+        <div className="flex gap-2">
+          <Input
+            value={newLink}
+            onChange={(e) => setNewLink(e.target.value)}
+            placeholder="https://www.facebook.com/..."
+            onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+          />
+          <Button size="sm" onClick={handleAdd} disabled={addMutation.isPending}>
+            {addMutation.isPending ? "添加中..." : "添加"}
+          </Button>
+        </div>
+      </div>
+      <Separator />
+      <div>
+        <Label>已绑定的 Facebook 内容</Label>
+        {loading ? (
+          <p className="text-sm text-muted-foreground p-4">加载中...</p>
+        ) : contentIds.length === 0 ? (
+          <p className="text-sm text-muted-foreground p-4">尚未绑定任何 Facebook 内容。请在上方添加链接。</p>
+        ) : (
+          <div className="space-y-2">
+            {contentIds.map((item: any) => (
+              <div key={item.id} className="flex items-center justify-between p-3 border rounded-md">
+                <div className="flex items-center gap-3">
+                  <Badge variant="outline">{item.contentType}</Badge>
+                  <span className="text-sm font-mono">{item.contentId}</span>
+                  {item.facebookLink && (
+                    <a href={item.facebookLink} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline">打开链接</a>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => removeMutation.mutate({ id: item.id })}
+                  disabled={removeMutation.isPending}
+                >
+                  <Trash2 className="h-3 w-3 text-red-500" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function FlowBuilder({ campaignId }: { campaignId: number }) {
   const { data: flows, refetch } = trpc.campaigns.listFlows.useQuery({ campaignId });
   const [showAddFlow, setShowAddFlow] = useState(false);

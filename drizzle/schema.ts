@@ -2536,6 +2536,19 @@ export const campaigns = mysqlTable("campaigns", {
 export type Campaign = typeof campaigns.$inferSelect;
 export type InsertCampaign = typeof campaigns.$inferInsert;
 
+// --- Campaign Content IDs table ---
+// One Campaign can bind multiple Facebook content IDs (Post ID, Reel ID, Video ID)
+// All comments/messages from any bound content go to the same Campaign
+export const campaignContentIds = mysqlTable("campaign_content_ids", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaignId").notNull(),
+  contentType: mysqlEnum("contentType", ["post", "reel", "video"]).notNull(),
+  contentId: varchar("contentId", { length: 200 }).notNull(),
+  facebookLink: varchar("facebookLink", { length: 500 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type CampaignContentId = typeof campaignContentIds.$inferSelect;
+
 // --- Campaign Flows table ---
 // Messenger Flow steps for a campaign (ordered sequence of messages)
 export const campaignFlows = mysqlTable("campaign_flows", {
