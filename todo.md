@@ -1668,3 +1668,12 @@
 - [x] 增加 ScrollArea 高度（从 calc(100vh-320px) 改为 calc(100vh-280px)，增加 40px 可见区域）
 - [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
 - [x] 保存检查点
+
+## V2.0.17: Live Studio 控制台布局重构
+- [x] 页面改为固定高度控制台模式（h-[calc(100vh-2rem)] + flex-col），页面不滚动
+- [x] 商品区内部滚动（flex-1 + min-h-0 + ScrollArea），占满可用空间
+- [x] 留言区内部滚动，与商品区等高（flex-1 + min-h-0）
+- [x] 得标订单区固定在底部（flex-shrink-0 + 固定 200px 高度），内部滚动
+- [x] 紧凑模式优化：图片缩小至 40x40，操作按钮横向排列，库存标签简化为单字，一页可显示 8-12 个商品
+- [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
+- [x] 保存检查点

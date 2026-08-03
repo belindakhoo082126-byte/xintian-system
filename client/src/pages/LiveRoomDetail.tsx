@@ -454,9 +454,9 @@ export default function LiveRoomDetail(props: any) {
   const isEnded = room.status === "ended" || room.status === "closed";
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col h-[calc(100vh-2rem)] gap-2">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={onBack} className="gap-2">
             <ArrowLeft className="h-4 w-4" />
@@ -513,13 +513,13 @@ export default function LiveRoomDetail(props: any) {
         <ReportView report={report} />
       ) : (
         <>
-          {/* Four-Region Layout: Top = Video + Stats, Bottom = 3-column grid */}
-          {/* Region 1: Live Video (collapsible/closable) */}
+          {/* Fixed-height console layout: Top = Header+Video+Stats (compact), Middle = Products+Comments (flex-1), Bottom = Orders (fixed) */}
+          {/* Region 1: Live Video (collapsible/closable) - compact */}
           {room.facebookVideoId && !videoClosed && (
             <Collapsible open={!videoCollapsed} onOpenChange={(open) => setVideoCollapsed(!open)}>
-              <Card>
+              <Card className="flex-shrink-0">
                 <CollapsibleTrigger asChild>
-                  <CardHeader className="pb-2 cursor-pointer hover:bg-muted/50 transition-colors py-3">
+                  <CardHeader className="pb-2 cursor-pointer hover:bg-muted/50 transition-colors py-2">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm flex items-center gap-2">
                         <Video className="h-4 w-4" /> 直播画面
@@ -536,9 +536,9 @@ export default function LiveRoomDetail(props: any) {
                   </CardHeader>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <CardContent className="pt-0 pb-3">
+                  <CardContent className="pt-0 pb-2">
                     {videoError ? (
-                      <div className="w-full flex flex-col items-center justify-center py-8 text-muted-foreground">
+                      <div className="w-full flex flex-col items-center justify-center py-4 text-muted-foreground">
                         <AlertCircle className="h-6 w-6 mb-1 text-orange-500" />
                         <p className="text-xs">直播画面加载失败，捉单功能不受影响</p>
                         <Button variant="outline" size="sm" className="mt-1 text-xs gap-1" onClick={() => setVideoError(false)}>
@@ -546,7 +546,7 @@ export default function LiveRoomDetail(props: any) {
                         </Button>
                       </div>
                     ) : (
-                      <div className="relative w-full max-h-[300px]" style={{ paddingBottom: "33.75%" }}>
+                      <div className="relative w-full" style={{ paddingBottom: "25%" }}>
                         <iframe
                           src={`https://www.facebook.com/plugins/video.php?height=476&href=https://www.facebook.com/facebook/videos/${room.facebookVideoId}&show_text=false&width=560&t=0`}
                           className="absolute top-0 left-0 w-full h-full rounded-lg border-0"
@@ -562,13 +562,13 @@ export default function LiveRoomDetail(props: any) {
             </Collapsible>
           )}
           {room.facebookVideoId && videoClosed && (
-            <Button variant="outline" size="sm" className="gap-2" onClick={() => { setVideoClosed(false); setVideoError(false); }}>
+            <Button variant="outline" size="sm" className="gap-2 flex-shrink-0" onClick={() => { setVideoClosed(false); setVideoError(false); }}>
               <Video className="h-4 w-4" /> 显示直播画面
             </Button>
           )}
 
-          {/* Stats Bar */}
-          <div className="grid grid-cols-4 gap-2">
+          {/* Stats Bar - compact */}
+          <div className="grid grid-cols-4 gap-2 flex-shrink-0">
             <Card className="py-2">
               <CardContent className="flex items-center gap-2 p-2">
                 <Package className="h-6 w-6 text-blue-500" />
@@ -595,8 +595,8 @@ export default function LiveRoomDetail(props: any) {
             </Card>
           </div>
 
-          {/* V2.0: AI Reply & Continue Monitor Toggles */}
-          <div className="flex items-center gap-4 text-xs">
+          {/* V2.0: AI Reply & Continue Monitor Toggles - compact */}
+          <div className="flex items-center gap-4 text-xs flex-shrink-0">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-purple-500" />
               <span className="text-muted-foreground">AI 自动回复</span>
@@ -618,11 +618,11 @@ export default function LiveRoomDetail(props: any) {
             </div>
           </div>
 
-          {/* Two-Column Layout: Products 55% | Comments 45% */}
-          <div className="grid grid-cols-1 gap-3" style={{ minHeight: "400px", gridTemplateColumns: 'minmax(0, 55fr) minmax(0, 45fr)' }}>
+          {/* Two-Column Layout: Products 55% | Comments 45% - flex-1 to fill remaining space */}
+          <div className="grid grid-cols-1 gap-2 flex-1 min-h-0" style={{ gridTemplateColumns: 'minmax(0, 55fr) minmax(0, 45fr)' }}>
             {/* Region 2: Products Area (55%) */}
-            <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
-              <CardHeader className="pb-2 py-3">
+            <Card className="flex flex-col min-h-0">
+              <CardHeader className="pb-2 py-2 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <Package className="h-4 w-4" /> {tt("商品区", "Products")}
@@ -638,9 +638,9 @@ export default function LiveRoomDetail(props: any) {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="flex-1 overflow-hidden p-0">
-                <ScrollArea className="h-full" style={{ height: "calc(100vh - 280px)" }}>
-                  <div className="p-3 space-y-2">
+              <CardContent className="flex-1 overflow-hidden p-0 min-h-0">
+                <ScrollArea className="h-full w-full">
+                  <div className="p-2 space-y-1.5">
                     {liveProductGroups.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
                         <Package className="h-8 w-8 mx-auto mb-2 opacity-30" />
@@ -668,8 +668,8 @@ export default function LiveRoomDetail(props: any) {
             </Card>
 
             {/* Region 3: Comments Area (45%) */}
-            <Card className="flex flex-col" style={{ maxHeight: "calc(100vh - 280px)" }}>
-              <CardHeader className="pb-2 py-3">
+            <Card className="flex flex-col min-h-0">
+              <CardHeader className="pb-2 py-2 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <MessageSquare className="h-4 w-4" /> {tt("留言区", "Comments")}
@@ -750,8 +750,8 @@ export default function LiveRoomDetail(props: any) {
                   />
                 </div>
               </div>
-              <CardContent className="flex-1 overflow-hidden p-0">
-                <ScrollArea className="h-full" style={{ height: "calc(100vh - 380px)" }}>
+              <CardContent className="flex-1 overflow-hidden p-0 min-h-0">
+                <ScrollArea className="h-full w-full">
                   <div className="p-2 space-y-1">
                     {filteredComments.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
@@ -774,9 +774,9 @@ export default function LiveRoomDetail(props: any) {
             </Card>
           </div>
 
-          {/* Region 4: Orders Area (Full Width Bottom) */}
-          <Card className="flex flex-col mt-3" style={{ maxHeight: "300px" }}>
-            <CardHeader className="pb-2 py-3">
+          {/* Region 4: Orders Area (Full Width Bottom) - fixed height */}
+          <Card className="flex flex-col flex-shrink-0" style={{ height: "200px" }}>
+            <CardHeader className="pb-2 py-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <ShoppingCart className="h-4 w-4" /> {tt("得标订单", "Winning Orders")}
@@ -821,8 +821,8 @@ onClick={() => setOrderViewMode("byCustomer")}>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="flex-1 overflow-hidden p-0">
-              <ScrollArea className="h-full" style={{ height: "220px" }}>
+            <CardContent className="flex-1 overflow-hidden p-0 min-h-0">
+                <ScrollArea className="h-full w-full">
                 <div className="p-2 space-y-1.5">
                   {orderViewMode === "byCustomer" ? (
                     filteredOrders.length === 0 ? (
@@ -857,7 +857,6 @@ onClick={() => setOrderViewMode("byCustomer")}>
           </Card>
         </>
       )}
-
       {/* Add Products Dialog */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -1235,7 +1234,7 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
   const stockColor = totalAvailable > 10 ? "text-green-600" : totalAvailable > 0 ? "text-yellow-600" : "text-red-600";
   const stockBg = totalAvailable > 10 ? "bg-green-50" : totalAvailable > 0 ? "bg-yellow-50" : "bg-red-50";
   const isCompact = cardMode === 'compact';
-  const imgSize = isCompact ? 'w-14 h-14' : 'w-[100px] h-[100px]';
+  const imgSize = isCompact ? 'w-10 h-10' : 'w-[100px] h-[100px]';
   const imgUrl = group.coverImageUrl || variations[0]?.imageUrl;
 
   // Placeholder image component (no text, just icon)
@@ -1247,8 +1246,8 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
 
   return (
     <Card className={`${isCompact ? 'py-0' : ''}`}>
-      <CardContent className={isCompact ? 'p-2' : 'p-3'}>
-        <div className="flex gap-3">
+      <CardContent className={isCompact ? 'p-1.5' : 'p-3'}>
+        <div className={`flex ${isCompact ? 'gap-1.5' : 'gap-3'}`}>
           {/* Left: Product image (fixed ratio, no crop) */}
           <div className={`${imgSize} rounded-lg overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center`}>
             {imgUrl ? (
@@ -1271,57 +1270,103 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
 
           {/* Middle: Product info */}
           <div className="flex-1 min-w-0 flex flex-col justify-between">
-            <div>
-              <p className={`font-bold truncate ${isCompact ? 'text-xs' : 'text-sm'}`}>{group.productName}</p>
-              <div className="flex items-center gap-1.5 mt-1">
-                <code className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
-                {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length}规格</Badge>}
-                {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">预购</Badge>}
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2 mt-1">
-              {group.productSellingPrice != null && Number(variations[0]?.price || 0) !== Number(group.productSellingPrice) ? (
-                <span className={`${isCompact ? 'text-base' : 'text-lg'} font-bold text-orange-600`}>RM{Number(variations[0]?.price || 0).toFixed(2)}
-                  <span className="line-through text-xs text-muted-foreground/60 ml-1">RM{Number(group.productSellingPrice).toFixed(2)}</span>
-                </span>
-              ) : (
-                <span className={`${isCompact ? 'text-base' : 'text-lg'} font-bold`}>RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
-              )}
-            </div>
-            {/* Stock: Chinese labels, inline */}
-            <div className={`flex items-center gap-3 mt-1 ${isCompact ? 'text-xs' : 'text-sm'}`}>
-              <span className="text-muted-foreground">现货:<b className="text-foreground ml-0.5">{onHand}</b></span>
-              <span className="text-muted-foreground">已喊:<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>
-              <span className="text-muted-foreground">可卖:<b className={`${stockColor} ml-0.5`}>{totalAvailable}</b></span>
-            </div>
+            {isCompact ? (
+              <>
+                <div className="flex items-center gap-1">
+                  <p className="font-bold truncate text-xs flex-1">{group.productName}</p>
+                  <span className="font-bold text-sm whitespace-nowrap">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
+                </div>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <code className="text-xs bg-primary/10 text-primary px-1 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
+                  {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length}规格</Badge>}
+                  {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">预购</Badge>}
+                </div>
+                <div className="flex items-center gap-2 text-xs mt-0.5">
+                  <span className="text-muted-foreground">现:<b className="text-foreground ml-0.5">{onHand}</b></span>
+                  <span className="text-muted-foreground">喊:<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>
+                  <span className="text-muted-foreground">卖:<b className={`${stockColor} ml-0.5`}>{totalAvailable}</b></span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <p className="font-bold truncate text-sm">{group.productName}</p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <code className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
+                    {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length}规格</Badge>}
+                    {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">预购</Badge>}
+                  </div>
+                </div>
+                <div className="flex items-baseline gap-2 mt-1">
+                  {group.productSellingPrice != null && Number(variations[0]?.price || 0) !== Number(group.productSellingPrice) ? (
+                    <span className="text-lg font-bold text-orange-600">RM{Number(variations[0]?.price || 0).toFixed(2)}
+                      <span className="line-through text-xs text-muted-foreground/60 ml-1">RM{Number(group.productSellingPrice).toFixed(2)}</span>
+                    </span>
+                  ) : (
+                    <span className="text-lg font-bold">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 mt-1 text-sm">
+                  <span className="text-muted-foreground">现货:<b className="text-foreground ml-0.5">{onHand}</b></span>
+                  <span className="text-muted-foreground">已喊:<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>
+                  <span className="text-muted-foreground">可卖:<b className={`${stockColor} ml-0.5`}>{totalAvailable}</b></span>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Right: Vertical action buttons */}
-          <div className="flex flex-col gap-1 flex-shrink-0">
-            <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title="修改价格"
-              onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
-              <DollarSign className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title="调整库存"
-              onClick={() => onAdjustStock(variations[0]?.id)}>
-              <Package className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title="复制关键词"
-              onClick={() => onCopyKeyword(variations[0]?.id)}>
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center text-destructive" title="移除商品"
-              onClick={() => onDelete(variations[0]?.id)}>
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-            <div className="flex items-center justify-center mt-0.5">
+          {/* Right: Action buttons - horizontal in compact, vertical in large */}
+          {isCompact ? (
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center" title="修改价格"
+                onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
+                <DollarSign className="h-3 w-3" />
+              </Button>
+              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center" title="调整库存"
+                onClick={() => onAdjustStock(variations[0]?.id)}>
+                <Package className="h-3 w-3" />
+              </Button>
+              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center" title="复制关键词"
+                onClick={() => onCopyKeyword(variations[0]?.id)}>
+                <Copy className="h-3 w-3" />
+              </Button>
+              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center text-destructive" title="移除商品"
+                onClick={() => onDelete(variations[0]?.id)}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
               <Switch
                 checked={variations[0]?.allowPreorder || false}
                 onCheckedChange={(val) => onTogglePreorder(variations[0]?.id, val)}
-                className="scale-[0.6]"
+                className="scale-[0.5]"
               />
             </div>
-          </div>
+          ) : (
+            <div className="flex flex-col gap-1 flex-shrink-0">
+              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title="修改价格"
+                onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
+                <DollarSign className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title="调整库存"
+                onClick={() => onAdjustStock(variations[0]?.id)}>
+                <Package className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title="复制关键词"
+                onClick={() => onCopyKeyword(variations[0]?.id)}>
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center text-destructive" title="移除商品"
+                onClick={() => onDelete(variations[0]?.id)}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+              <div className="flex items-center justify-center mt-0.5">
+                <Switch
+                  checked={variations[0]?.allowPreorder || false}
+                  onCheckedChange={(val) => onTogglePreorder(variations[0]?.id, val)}
+                  className="scale-[0.6]"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Multi-variation: show each variation with image + keyword + price */}
