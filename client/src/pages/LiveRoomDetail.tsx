@@ -118,7 +118,7 @@ export default function LiveRoomDetail(props: any) {
   const report = (reportQuery.data || {}) as any;
 
   // State
-  const [videoCollapsed, setVideoCollapsed] = useState(false);
+  const [videoCollapsed, setVideoCollapsed] = useState(true); // Default collapsed to maximize product/comment space
   const [videoClosed, setVideoClosed] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -581,32 +581,12 @@ export default function LiveRoomDetail(props: any) {
             </Button>
           )}
 
-          {/* Stats Bar - compact */}
-          <div className="grid grid-cols-4 gap-2 flex-shrink-0">
-            <Card className="py-2">
-              <CardContent className="flex items-center gap-2 p-2">
-                <Package className="h-6 w-6 text-blue-500" />
-                <div><p className="text-xs text-muted-foreground">商品</p><p className="text-base font-bold">{stats.productCount || 0}</p></div>
-              </CardContent>
-            </Card>
-            <Card className="py-2">
-              <CardContent className="flex items-center gap-2 p-2">
-                <ShoppingCart className="h-6 w-6 text-green-500" />
-                <div><p className="text-xs text-muted-foreground">订单</p><p className="text-base font-bold">{stats.orderCount || 0}</p></div>
-              </CardContent>
-            </Card>
-            <Card className="py-2">
-              <CardContent className="flex items-center gap-2 p-2">
-                <Boxes className="h-6 w-6 text-orange-500" />
-                <div><p className="text-xs text-muted-foreground">件数</p><p className="text-base font-bold">{stats.totalItems || 0}</p></div>
-              </CardContent>
-            </Card>
-            <Card className="py-2">
-              <CardContent className="flex items-center gap-2 p-2">
-                <DollarSign className="h-6 w-6 text-emerald-500" />
-                <div><p className="text-xs text-muted-foreground">业绩</p><p className="text-base font-bold">RM{(Number(stats.totalRevenue) || 0).toFixed(2)}</p></div>
-              </CardContent>
-            </Card>
+          {/* Stats Bar - inline compact */}
+          <div className="flex items-center gap-4 text-xs flex-shrink-0 px-1">
+            <span className="flex items-center gap-1"><Package className="h-3.5 w-3.5 text-blue-500" /><span className="text-muted-foreground">商品</span> <span className="font-bold">{stats.productCount || 0}</span></span>
+            <span className="flex items-center gap-1"><ShoppingCart className="h-3.5 w-3.5 text-green-500" /><span className="text-muted-foreground">订单</span> <span className="font-bold">{stats.orderCount || 0}</span></span>
+            <span className="flex items-center gap-1"><Boxes className="h-3.5 w-3.5 text-orange-500" /><span className="text-muted-foreground">件数</span> <span className="font-bold">{stats.totalItems || 0}</span></span>
+            <span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5 text-emerald-500" /><span className="text-muted-foreground">业绩</span> <span className="font-bold">RM{(Number(stats.totalRevenue) || 0).toFixed(2)}</span></span>
           </div>
 
           {/* V2.0: AI Reply & Continue Monitor Toggles - compact */}
@@ -632,8 +612,8 @@ export default function LiveRoomDetail(props: any) {
             </div>
           </div>
 
-          {/* Two-Column Layout: Products 55% | Comments 45% - flex-1 to fill remaining space */}
-          <div className="grid grid-cols-1 gap-2 flex-1 min-h-0" style={{ gridTemplateColumns: 'minmax(0, 55fr) minmax(0, 45fr)' }}>
+          {/* Two-Column Layout: Products 45% | Comments 55% - flex-1 to fill remaining space */}
+          <div className="grid grid-cols-1 gap-2 flex-1 min-h-0" style={{ gridTemplateColumns: 'minmax(0, 45fr) minmax(0, 55fr)' }}>
             {/* Region 2: Products Area (55%) */}
             <Card className="flex flex-col min-h-0">
               <CardHeader className="pb-2 py-2 flex-shrink-0">
@@ -801,7 +781,7 @@ export default function LiveRoomDetail(props: any) {
           </div>
 
           {/* Region 4: Orders Area (Full Width Bottom) - fixed height */}
-          <Card className="flex flex-col flex-shrink-0" style={{ height: "200px" }}>
+          <Card className="flex flex-col flex-shrink-0" style={{ height: "160px" }}>
             <CardHeader className="pb-2 py-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm flex items-center gap-2">
