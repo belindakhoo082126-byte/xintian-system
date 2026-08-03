@@ -1677,3 +1677,10 @@
 - [x] 紧凑模式优化：图片缩小至 40x40，操作按钮横向排列，库存标签简化为单字，一页可显示 8-12 个商品
 - [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
 - [x] 保存检查点
+
+## V2.0.18: 商品区搜索 + 图片同步修复
+- [x] 修复商品图片不同步：updateProductEnhanced 中同步更新 live_room_products.imageUrl（coverImageUrl 变更时自动同步到所有直播间商品）
+- [x] 修复商品图片不同步：getLiveRoomProducts 已优先使用 products.coverImageUrl（Single Source of Truth），fallback 到 product_images 表
+- [x] 商品区增加实时搜索功能（名称/SKU/关键词），搜索框位于商品区顶部，实时过滤无需按按钮
+- [x] TypeScript 零错误 + Vitest 31 文件 257 项测试全部通过
+- [x] 保存检查点

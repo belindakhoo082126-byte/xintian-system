@@ -95,7 +95,21 @@ export default function LiveRoomDetail(props: any) {
   const reportQuery = trpc.liveRooms.getReport.useQuery({ liveRoomId: roomId });
 
   const room = roomQuery.data as any;
-  const liveProductGroups = (productsQuery.data || []) as any[];
+  const [liveProductSearch, setLiveProductSearch] = useState("");
+  const liveProductGroups = (() => {
+    const all = (productsQuery.data || []) as any[];
+    if (!liveProductSearch.trim()) return all;
+    const q = liveProductSearch.trim().toLowerCase();
+    return all.filter((g: any) =>
+      (g.productName || '').toLowerCase().includes(q) ||
+      (g.productSku || '').toLowerCase().includes(q) ||
+      (g.productKeyword || '').toLowerCase().includes(q) ||
+      (g.variations || []).some((v: any) =>
+        (v.keyword || '').toLowerCase().includes(q) ||
+        (v.displayName || '').toLowerCase().includes(q)
+      )
+    );
+  })();
   const stats = (statsQuery.data || {}) as any;
   const liveOrders = (liveOrdersQuery.data || []) as any[];
   const ordersByProduct = (ordersByProductQuery.data || []) as any[];
@@ -638,6 +652,18 @@ export default function LiveRoomDetail(props: any) {
                   </div>
                 </div>
               </CardHeader>
+              {/* Product search bar */}
+              <div className="px-3 pb-1 flex-shrink-0">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    value={liveProductSearch}
+                    onChange={(e) => setLiveProductSearch(e.target.value)}
+                    placeholder={tt("搜索商品名称/SKU/关键词...", "Search name/SKU/keyword...")}
+                    className="h-7 pl-7 text-xs"
+                  />
+                </div>
+              </div>
               <CardContent className="flex-1 overflow-hidden p-0 min-h-0">
                 <ScrollArea className="h-full w-full">
                   <div className="p-2 space-y-1.5">

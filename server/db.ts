@@ -1889,6 +1889,10 @@ export async function updateProductEnhanced(id: number, data: Partial<{
     (updateData as any).specialPriceEndDate = updateData.specialPriceEndDate ? new Date(updateData.specialPriceEndDate) : null;
   }
   await db.update(products).set(updateData as any).where(eq(products.id, id));
+  // Sync coverImageUrl to live_room_products.imageUrl so Live Studio always shows the latest product image
+  if (updateData.coverImageUrl !== undefined) {
+    await db.update(liveRoomProducts).set({ imageUrl: updateData.coverImageUrl || null }).where(eq(liveRoomProducts.productId, id));
+  }
   // Sync product images if provided
   if (imageUrls) {
     // Delete existing images and re-insert
