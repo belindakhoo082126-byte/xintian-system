@@ -11,19 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Pencil, Trash2, Video, Calendar, Plane, ChevronRight, Package, ShoppingCart, DollarSign, Boxes, Radio } from "lucide-react";
 import { toast } from "sonner";
+import { useI18n } from "@/contexts/I18nContext";
 import LiveRoomDetail from "./LiveRoomDetail";
-
-const liveTypeLabels: Record<string, string> = {
-  normal: "本地直播",
-  import_preorder: "中国代购",
-};
-
-const statusLabels: Record<string, string> = {
-  preparing: "准备中",
-  live: "直播中",
-  ended: "已结束",
-  closed: "已截止",
-};
 
 const statusColors: Record<string, string> = {
   preparing: "bg-blue-100 text-blue-700",
@@ -33,6 +22,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function LiveRooms() {
+  const { t, lang } = useI18n();
   const queryClient = trpc.useUtils();
   const liveRoomsQuery = trpc.liveRooms.list.useQuery({});
   const batchesQuery = trpc.importBatches.list.useQuery({});
@@ -92,7 +82,7 @@ export default function LiveRooms() {
 
   const createMutation = trpc.liveRooms.create.useMutation({
     onSuccess: (data: any) => {
-      toast.success("直播房创建成功，正在进入直播房...");
+      toast.success(t("liveRooms.createSuccess"));
       queryClient.liveRooms.list.invalidate();
       setDialogOpen(false);
       resetForm();
@@ -104,25 +94,25 @@ export default function LiveRooms() {
         window.history.pushState({}, '', `${window.location.pathname}?${params}`);
       }
     },
-    onError: (e: any) => toast.error("创建失败: " + e.message),
+    onError: (e: any) => toast.error(t("liveRooms.createFailed") + ": " + e.message),
   });
 
   const updateMutation = trpc.liveRooms.update.useMutation({
     onSuccess: () => {
-      toast.success("直播房间更新成功");
+      toast.success(t("liveRooms.updateSuccess"));
       queryClient.liveRooms.list.invalidate();
       setDialogOpen(false);
       resetForm();
     },
-    onError: (e: any) => toast.error("更新失败: " + e.message),
+    onError: (e: any) => toast.error(t("liveRooms.updateFailed") + ": " + e.message),
   });
 
   const deleteMutation = trpc.liveRooms.delete.useMutation({
     onSuccess: () => {
-      toast.success("已删除");
+      toast.success(t("liveRooms.deleted"));
       queryClient.liveRooms.list.invalidate();
     },
-    onError: (e: any) => toast.error("删除失败: " + e.message),
+    onError: (e: any) => toast.error(t("liveRooms.deleteFailed") + ": " + e.message),
   });
 
   function resetForm() {
@@ -155,7 +145,7 @@ export default function LiveRooms() {
 
   function handleSubmit() {
     if (!formData.name || !formData.liveDate) {
-      toast.error("请填写直播名称和日期");
+      toast.error(t("liveRooms.fillRequired"));
       return;
     }
     const payload: any = {
@@ -201,68 +191,77 @@ export default function LiveRooms() {
     return <LiveRoomDetail roomId={detailRoomId} onBack={closeDetail} />;
   }
 
+  const statusLabelMap: Record<string, string> = {
+    preparing: t("liveRooms.statusPreparing"),
+    live: t("liveRooms.statusLive"),
+    ended: t("liveRooms.statusEnded"),
+    closed: t("liveRooms.statusClosed"),
+  };
+
+  const localeStr = lang === "en" ? "en-US" : "zh-CN";
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <Radio className="h-6 w-6 text-green-600" />
-            直播控制中心
+            {t("liveRooms.title")}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">开播前整理商品 · 直播期间自动捉单 · 直播结束自动结算</p>
+          <p className="text-sm text-muted-foreground mt-1">{t("liveRooms.subtitle")}</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={resetForm} className="gap-2">
               <Plus className="h-4 w-4" />
-              建立直播房
+              {t("liveRooms.createRoom")}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editingId ? "编辑直播房" : "建立直播房"}</DialogTitle>
+              <DialogTitle>{editingId ? t("liveRooms.editRoom") : t("liveRooms.createRoom")}</DialogTitle>
             </DialogHeader>
             <div className="grid grid-cols-2 gap-4 py-4">
               <div className="col-span-2">
-                <Label>直播名称 *</Label>
-                <Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="例如: 7月直播" />
+                <Label>{t("liveRooms.roomName")} *</Label>
+                <Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder={t("liveRooms.roomNamePlaceholder")} />
               </div>
               <div>
-                <Label>直播日期 *</Label>
+                <Label>{t("liveRooms.liveDate")} *</Label>
                 <Input type="datetime-local" value={formData.liveDate} onChange={e => setFormData({ ...formData, liveDate: e.target.value })} />
               </div>
               <div>
-                <Label>直播类型</Label>
+                <Label>{t("liveRooms.liveType")}</Label>
                 <Select value={formData.liveType} onValueChange={v => setFormData({ ...formData, liveType: v as any })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="normal">本地直播</SelectItem>
-                    <SelectItem value="import_preorder">中国代购</SelectItem>
+                    <SelectItem value="normal">{t("liveRooms.localLive")}</SelectItem>
+                    <SelectItem value="import_preorder">{t("liveRooms.importPreorder")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Facebook Live Link</Label>
-                <Input value={formData.facebookLiveUrl} onChange={e => setFormData({ ...formData, facebookLiveUrl: e.target.value })} placeholder="https://www.facebook.com/...（可填写，也可自动取得）" />
+                <Label>{t("liveRooms.fbLiveLink")}</Label>
+                <Input value={formData.facebookLiveUrl} onChange={e => setFormData({ ...formData, facebookLiveUrl: e.target.value })} placeholder={t("liveRooms.fbLiveLinkPlaceholder")} />
               </div>
               <div>
-                <Label>Facebook Video ID</Label>
-                <Input value={formData.facebookVideoId} onChange={e => setFormData({ ...formData, facebookVideoId: e.target.value })} placeholder="系统自动取得" disabled />
+                <Label>{t("liveRooms.fbVideoId")}</Label>
+                <Input value={formData.facebookVideoId} onChange={e => setFormData({ ...formData, facebookVideoId: e.target.value })} placeholder={t("liveRooms.fbVideoIdPlaceholder")} disabled />
               </div>
               <div>
-                <Label>主播（可选）</Label>
-                <Input value={formData.streamerName} onChange={e => setFormData({ ...formData, streamerName: e.target.value })} placeholder="主播名称" />
+                <Label>{t("liveRooms.streamerOptional")}</Label>
+                <Input value={formData.streamerName} onChange={e => setFormData({ ...formData, streamerName: e.target.value })} placeholder={t("liveRooms.streamerPlaceholder")} />
               </div>
               <div>
-                <Label>Facebook Page</Label>
-                <Input value={formData.facebookPageId} onChange={e => setFormData({ ...formData, facebookPageId: e.target.value })} placeholder="Facebook Page ID" />
+                <Label>{t("liveRooms.fbPageId")}</Label>
+                <Input value={formData.facebookPageId} onChange={e => setFormData({ ...formData, facebookPageId: e.target.value })} placeholder={t("liveRooms.fbPageIdPlaceholder")} />
               </div>
               {formData.liveType === "import_preorder" && (
                 <>
                   <div>
-                    <Label>所属采购批次 *</Label>
+                    <Label>{t("liveRooms.importBatch")} *</Label>
                     <Select value={formData.importBatchId} onValueChange={v => setFormData({ ...formData, importBatchId: v })}>
-                      <SelectTrigger><SelectValue placeholder="选择批次" /></SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder={t("liveRooms.selectBatch")} /></SelectTrigger>
                       <SelectContent>
                         {(batches || []).map((b: any) => (
                           <SelectItem key={b.id} value={String(b.id)}>{b.batchNumber} - {b.batchName}</SelectItem>
@@ -271,28 +270,28 @@ export default function LiveRooms() {
                     </Select>
                   </div>
                   <div>
-                    <Label>预计等待时间 *</Label>
-                    <Input value={formData.estimatedWaitDays} onChange={e => setFormData({ ...formData, estimatedWaitDays: e.target.value })} placeholder="例如: 30~45天" />
+                    <Label>{t("liveRooms.estimatedWait")} *</Label>
+                    <Input value={formData.estimatedWaitDays} onChange={e => setFormData({ ...formData, estimatedWaitDays: e.target.value })} placeholder={t("liveRooms.estimatedWaitPlaceholder")} />
                   </div>
                   <div>
-                    <Label>代购开始日期</Label>
+                    <Label>{t("liveRooms.preorderStart")}</Label>
                     <Input type="datetime-local" value={formData.preorderStartDate} onChange={e => setFormData({ ...formData, preorderStartDate: e.target.value })} />
                   </div>
                   <div>
-                    <Label>代购截止日期 *</Label>
+                    <Label>{t("liveRooms.preorderEnd")} *</Label>
                     <Input type="datetime-local" value={formData.preorderEndDate} onChange={e => setFormData({ ...formData, preorderEndDate: e.target.value })} />
                   </div>
                 </>
               )}
               <div className="col-span-2">
-                <Label>备注</Label>
+                <Label>{t("liveRooms.notes")}</Label>
                 <Textarea value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} rows={2} />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>{t("liveRooms.cancel")}</Button>
               <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
-                {editingId ? "保存" : "建立并进入直播房"}
+                {editingId ? t("liveRooms.save") : t("liveRooms.createAndEnter")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -302,9 +301,9 @@ export default function LiveRooms() {
       {/* Type filter tabs */}
       <div className="flex gap-2">
         {[
-          { value: 'all', label: '全部' },
-          { value: 'normal', label: '本地直播' },
-          { value: 'import_preorder', label: '中国代购' },
+          { value: 'all', label: t("liveRooms.all") },
+          { value: 'normal', label: t("liveRooms.localLive") },
+          { value: 'import_preorder', label: t("liveRooms.importPreorder") },
         ].map(tab => (
           <Button
             key={tab.value}
@@ -327,26 +326,26 @@ export default function LiveRooms() {
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="p-8 text-center text-muted-foreground">加载中...</div>
+            <div className="p-8 text-center text-muted-foreground">{t("liveRooms.loading")}</div>
           ) : !filteredRooms || filteredRooms.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <Video className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p>{typeFilter === 'import_preorder' ? '暂无中国代购直播' : typeFilter === 'normal' ? '暂无本地直播' : '暂无直播，点击右上角建立直播房'}</p>
+              <p>{typeFilter === 'import_preorder' ? t("liveRooms.noImportPreorder") : typeFilter === 'normal' ? t("liveRooms.noLocalLive") : t("liveRooms.noLiveAtAll")}</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>直播名称</TableHead>
-                  <TableHead>类型</TableHead>
-                  <TableHead>直播日期</TableHead>
-                  <TableHead>主播</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-center">商品数</TableHead>
-                  <TableHead className="text-center">订单数</TableHead>
-                  <TableHead className="text-center">商品数量</TableHead>
-                  <TableHead className="text-right">喊单业绩</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                  <TableHead>{t("liveRooms.colName")}</TableHead>
+                  <TableHead>{t("liveRooms.colType")}</TableHead>
+                  <TableHead>{t("liveRooms.colDate")}</TableHead>
+                  <TableHead>{t("liveRooms.colStreamer")}</TableHead>
+                  <TableHead>{t("liveRooms.colStatus")}</TableHead>
+                  <TableHead className="text-center">{t("liveRooms.colProductCount")}</TableHead>
+                  <TableHead className="text-center">{t("liveRooms.colOrderCount")}</TableHead>
+                  <TableHead className="text-center">{t("liveRooms.colTotalItems")}</TableHead>
+                  <TableHead className="text-right">{t("liveRooms.colRevenue")}</TableHead>
+                  <TableHead className="text-right">{t("liveRooms.colActions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -362,15 +361,15 @@ export default function LiveRooms() {
                       </TableCell>
                       <TableCell>
                         {room.liveType === "import_preorder" ? (
-                          <Badge className="gap-1 bg-purple-100 text-purple-700"><Plane className="h-3 w-3" />中国代购</Badge>
+                          <Badge className="gap-1 bg-purple-100 text-purple-700"><Plane className="h-3 w-3" />{t("liveRooms.importPreorder")}</Badge>
                         ) : (
-                          <Badge variant="secondary">本地直播</Badge>
+                          <Badge variant="secondary">{t("liveRooms.localLive")}</Badge>
                         )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1 text-sm">
                           <Calendar className="h-3 w-3 text-muted-foreground" />
-                          {room.liveDate ? new Date(room.liveDate).toLocaleDateString("zh-CN") : "-"}
+                          {room.liveDate ? new Date(room.liveDate).toLocaleDateString(localeStr) : "-"}
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
@@ -378,7 +377,7 @@ export default function LiveRooms() {
                       </TableCell>
                       <TableCell>
                         <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${statusColors[room.status] || ""}`}>
-                          {statusLabels[room.status] || room.status}
+                          {statusLabelMap[room.status] || room.status}
                         </span>
                       </TableCell>
                       <TableCell className="text-center">
@@ -409,7 +408,7 @@ export default function LiveRooms() {
                         <Button variant="ghost" size="sm" onClick={() => openEdit(room)} className="h-8 w-8 p-0">
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => { if (confirm("确认删除？")) deleteMutation.mutate({ id: room.id } as any); }} className="h-8 w-8 p-0 text-destructive">
+                        <Button variant="ghost" size="sm" onClick={() => { if (confirm(t("liveRooms.confirmDelete"))) deleteMutation.mutate({ id: room.id } as any); }} className="h-8 w-8 p-0 text-destructive">
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </TableCell>

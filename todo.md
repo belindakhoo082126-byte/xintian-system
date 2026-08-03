@@ -1759,4 +1759,12 @@
 - [x] Campaign 统计聚合（getCampaignStats + getAllCampaignStats，tRPC list 附带 stats）
 - [x] 前端 Campaign 卡片显示建单/合并/销量/营业额统计
 - [x] TypeScript 零错误 + Vitest 32 文件 266 项测试全部通过
+- [x] 保存检查点
+
+## V2.0.27: LiveRooms 页面国际化修复
+- [x] I18nContext.tsx 添加 liveRooms.* 翻译 key（共 55 个 key）
+- [x] LiveRooms.tsx 接入 useI18n，所有中文文字替换为 t() 调用
+- [x] 日期显示根据 lang 切换 locale（zh-CN / en-US）
+- [x] TypeScript 零错误
+- [x] Vitest 31 文件 265 项测试通过（1 项 ParcelKing 外部 API 超时，非本次修改）
 - [ ] 保存检查点
