@@ -134,8 +134,15 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
 
   // Preview mode
   const [previewMode, setPreviewMode] = useState(false);
-  // Product image preview (lightbox)
+  // Product image preview (lightbox) with multi-image support
   const [previewProduct, setPreviewProduct] = useState<ManualOrderItem | null>(null);
+  const [previewImageIndex, setPreviewImageIndex] = useState(0);
+  // Helper: get all images for a product (currently single image, but architecture supports multiple)
+  const getProductImages = (item: ManualOrderItem | null): string[] => {
+    if (!item || !item.image) return [];
+    // Future: return item.images || [item.image]
+    return [item.image];
+  };
 
   // ===== Queries =====
   const utils = trpc.useUtils();
@@ -831,15 +838,16 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                 {/* Product info display */}
                 {item.productId && (
                   <div className="flex items-start gap-3 p-2 bg-muted/50 rounded-lg">
-                    {/* Clickable image with preview */}
+                    {/* Clickable image with preview - entire image area is clickable */}
                     {item.image ? (
                       <button
                         onClick={() => setPreviewProduct(item)}
-                        className="relative shrink-0 group"
+                        className="relative shrink-0 cursor-pointer rounded-lg overflow-hidden border hover:border-primary transition-colors"
+                        title={translate("点击预览大图", "Click to preview")}
                       >
-                        <img src={item.image} alt={item.productName} className="w-20 h-20 rounded-lg object-cover border" />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded-lg flex items-center justify-center transition-colors">
-                          <Maximize2 className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <img src={item.image} alt={item.productName} className="w-20 h-20 object-cover" />
+                        <div className="absolute bottom-0 right-0 bg-black/50 rounded-tl px-1.5 py-0.5">
+                          <Maximize2 className="h-3 w-3 text-white" />
                         </div>
                       </button>
                     ) : (
@@ -1028,21 +1036,58 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         </Button>
       </div>
       {/* Product Image Preview Modal (Lightbox) */}
-      <Dialog open={!!previewProduct} onOpenChange={(open) => !open && setPreviewProduct(null)}>
+      <Dialog open={!!previewProduct} onOpenChange={(open) => { if (!open) { setPreviewProduct(null); setPreviewImageIndex(0); } }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">{previewProduct?.productName || ""}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {previewProduct?.image ? (
-              <div className="flex justify-center">
-                <img src={previewProduct.image} alt={previewProduct.productName} className="max-w-[600px] max-h-[600px] w-full h-auto object-contain rounded-lg border" />
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-64 bg-muted rounded-lg">
-                <Package className="h-16 w-16 text-muted-foreground" />
-              </div>
-            )}
+            {(() => {
+              const images = getProductImages(previewProduct);
+              if (images.length === 0) {
+                return (
+                  <div className="flex items-center justify-center h-64 bg-muted rounded-lg">
+                    <Package className="h-16 w-16 text-muted-foreground" />
+                  </div>
+                );
+              }
+              return (
+                <div className="relative">
+                  <div className="flex justify-center">
+                    <img src={images[previewImageIndex]} alt={previewProduct?.productName} className="max-w-[600px] max-h-[600px] w-full h-auto object-contain rounded-lg border" />
+                  </div>
+                  {/* Left/Right navigation (shown when multiple images) */}
+                  {images.length > 1 && (
+                    <>
+                      <button
+                        onClick={() => setPreviewImageIndex((i) => (i - 1 + images.length) % images.length)}
+                        className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-colors"
+                      >
+                        <X className="h-5 w-5 rotate-45" />
+                      </button>
+                      <button
+                        onClick={() => setPreviewImageIndex((i) => (i + 1) % images.length)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-colors"
+                      >
+                        <X className="h-5 w-5 -rotate-45" />
+                      </button>
+                      {/* Thumbnail list */}
+                      <div className="flex justify-center gap-2 mt-3">
+                        {images.map((img, i) => (
+                          <button
+                            key={i}
+                            onClick={() => setPreviewImageIndex(i)}
+                            className={`w-16 h-16 rounded-lg object-cover border-2 transition-colors ${i === previewImageIndex ? "border-primary" : "border-transparent opacity-60 hover:opacity-100"}`}
+                          >
+                            <img src={img} alt={`Thumbnail ${i + 1}`} className="w-full h-full rounded-lg object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-2 gap-3 text-sm">
               {previewProduct?.sku && (
                 <div><span className="font-medium text-muted-foreground">SKU:</span> <span className="font-mono">{previewProduct.sku}</span></div>
