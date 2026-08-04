@@ -1808,3 +1808,8 @@
 - [x] 确认 Customer Search 全字段搜索（已确认支持 Facebook名称/Messenger名称/电话/Email/Customer ID）
 - [x] Checkout Notification 管理：批量发送、状态跟踪（Pending/Sent/Failed）、失败重发
 - [x] TypeScript 零错误 + Vitest 32 文件 266 项测试全部通过 + 保存检查点
+
+## V2.0.34: 修复 V2.0.33 前端问题
+- [x] 修复 getOrderItems JOIN products 表获取 coverImageUrl，返回 productImage 字段
+- [x] 确认前端 Orders.tsx 代码正确（PHYSICAL_STATUS 已更新、Checkout Link 按钮已存在）
+- [x] TypeScript 检查零错误 + 保存检查点

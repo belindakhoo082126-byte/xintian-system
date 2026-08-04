@@ -451,7 +451,33 @@ export async function getOrderById(id: number) {
 export async function getOrderItems(orderId: number) {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  // V2.0.34: JOIN products table to get imageUrl for order detail display
+  const result = await db.select({
+    id: orderItems.id,
+    orderId: orderItems.orderId,
+    productId: orderItems.productId,
+    productName: orderItems.productName,
+    productSku: orderItems.productSku,
+    productType: orderItems.productType,
+    variationId: orderItems.variationId,
+    variationName: orderItems.variationName,
+    facebookKeyword: orderItems.facebookKeyword,
+    quantity: orderItems.quantity,
+    unitPrice: orderItems.unitPrice,
+    discount: orderItems.discount,
+    subtotal: orderItems.subtotal,
+    unitWeight: orderItems.unitWeight,
+    itemSource: orderItems.itemSource,
+    salesMode: orderItems.salesMode,
+    priceType: orderItems.priceType,
+    unitCost: orderItems.unitCost,
+    originalUnitPrice: orderItems.originalUnitPrice,
+    createdAt: orderItems.createdAt,
+    productImage: products.coverImageUrl,
+  }).from(orderItems)
+    .leftJoin(products, eq(orderItems.productId, products.id))
+    .where(eq(orderItems.orderId, orderId));
+  return result;
 }
 
 export async function createOrderWithSplit(data: {
