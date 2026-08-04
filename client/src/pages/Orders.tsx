@@ -75,17 +75,14 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const urlStatus = new URLSearchParams(searchParams).get("status");
   const urlToday = new URLSearchParams(searchParams).get("today");
   const urlNature = new URLSearchParams(searchParams).get("nature");
-  const urlSpecial = new URLSearchParams(searchParams).get("special");
-  const urlSpecialType = new URLSearchParams(searchParams).get("type");
   const urlChannel = new URLSearchParams(searchParams).get("channel");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(urlStatus || "all");
   const [todayOnly, setTodayOnly] = useState(urlToday === "1");
   const [natureFilter, setNatureFilter] = useState(urlNature || "all");
-  const [specialOnly, setSpecialOnly] = useState(urlSpecial === "1");
-  const [specialType, setSpecialType] = useState(urlSpecialType || "");
   const [channelFilter, setChannelFilter] = useState(urlChannel || "all");
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [remarkFilter, setRemarkFilter] = useState("all");
 
   useEffect(() => {
     const handlePopState = () => {
@@ -93,14 +90,10 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       const newStatus = params.get('status');
       const newToday = params.get('today');
       const newNature = params.get('nature');
-      const newSpecial = params.get('special');
-      const newSpecialType = params.get('type');
       const newChannel = params.get('channel');
       if (newStatus !== null) setStatusFilter(newStatus);
       if (newToday !== null) setTodayOnly(newToday === '1');
       if (newNature !== null) setNatureFilter(newNature);
-      if (newSpecial !== null) setSpecialOnly(newSpecial === '1');
-      if (newSpecialType !== null) setSpecialType(newSpecialType);
       if (newChannel !== null) setChannelFilter(newChannel);
     };
     window.addEventListener('popstate', handlePopState);
@@ -141,9 +134,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     todayOnly: todayOnly || undefined,
     orderNature: natureFilter !== "all" ? natureFilter : undefined,
     orderCategory: orderCategory && orderCategory !== "all" ? orderCategory : undefined,
-    isSpecialOrder: specialOnly || undefined,
-    specialOrderType: (specialOnly && specialType && specialType !== "all") ? specialType : undefined,
     salesChannel: channelFilter !== "all" ? channelFilter : undefined,
+    hasRemark: remarkFilter !== "all" ? (remarkFilter === "with" ? true : false) : undefined,
   } as any);
 
   // Get order detail with items, payments, and logs
@@ -487,50 +479,16 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             ))}
           </SelectContent>
         </Select>
-        <Select value={channelFilter} onValueChange={setChannelFilter}>
+        <Select value={remarkFilter} onValueChange={setRemarkFilter}>
           <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder={translate("销售渠道", "Sales Channel")} />
+            <SelectValue placeholder={translate("订单备注", "Order Remarks")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{translate("全部渠道", "All Channels")}</SelectItem>
-            <SelectItem value="retail">{translate("零售", "Retail")}</SelectItem>
-            <SelectItem value="wholesale">{translate("批发", "Wholesale")}</SelectItem>
-            <SelectItem value="agent">{translate("代理", "Agent")}</SelectItem>
-            <SelectItem value="import_preorder">{translate("中国代购", "Import Pre-order")}</SelectItem>
+            <SelectItem value="all">{translate("全部备注", "All Remarks")}</SelectItem>
+            <SelectItem value="with">{translate("有备注", "With Remarks")}</SelectItem>
+            <SelectItem value="without">{translate("无备注", "No Remarks")}</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={specialOnly ? "special" : "all"} onValueChange={(v) => setSpecialOnly(v === "special")}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder={translate("特别状态", "Special Status")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{translate("全部", "All")}</SelectItem>
-            <SelectItem value="special">{translate("特别状态订单", "Special Status Orders")}</SelectItem>
-          </SelectContent>
-        </Select>
-        {specialOnly && (
-          <>
-            <Badge variant="secondary" className="gap-1 bg-orange-100 text-orange-700">
-              {translate("特别状态订单", "Special Status Orders")}
-              <button onClick={() => { setSpecialOnly(false); setSpecialType(""); }} className="ml-1 rounded-full hover:bg-orange-200">×</button>
-            </Badge>
-            <Select value={specialType || "all"} onValueChange={(v) => setSpecialType(v)}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder={translate("全部特别状态", "All Special Types")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{translate("全部特别状态", "All Special Types")}</SelectItem>
-                <SelectItem value="pending_shipping">{translate("待补运费", "Pending Shipping")}</SelectItem>
-                <SelectItem value="pending_refund">{translate("待退款", "Pending Refund")}</SelectItem>
-                <SelectItem value="logistics_error">{translate("物流异常", "Logistics Error")}</SelectItem>
-                <SelectItem value="incomplete_info">{translate("客户资料不完整", "Incomplete Info")}</SelectItem>
-                <SelectItem value="notification_failed">{translate("自动通知失败", "Notification Failed")}</SelectItem>
-                <SelectItem value="stock_exception">{translate("库存异常", "Stock Exception")}</SelectItem>
-                <SelectItem value="overdue">{translate("超过24小时未处理", "Overdue >24h")}</SelectItem>
-              </SelectContent>
-            </Select>
-          </>
-        )}
       </div>
 
       <Card>

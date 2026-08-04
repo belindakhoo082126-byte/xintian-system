@@ -393,6 +393,7 @@ export async function getOrders(filters?: {
   specialOrderStatus?: string;
   specialOrderType?: string;
   salesChannel?: string;
+  hasRemark?: boolean;
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -407,6 +408,18 @@ export async function getOrders(filters?: {
   if (filters?.specialOrderStatus) conditions.push(eq((orders as any).specialOrderStatus, filters.specialOrderStatus as any));
   if (filters?.specialOrderType && filters.specialOrderType !== "all") conditions.push(eq((orders as any).specialOrderType, filters.specialOrderType as any));
   if (filters?.salesChannel) conditions.push(eq((orders as any).salesChannel, filters.salesChannel as any));
+  if (filters?.hasRemark !== undefined) {
+    const remarkRows = await db.select({ orderId: orderRemarks.orderId }).from(orderRemarks);
+    const remarkOrderIds = Array.from(new Set(remarkRows.map(r => r.orderId)));
+    if (filters.hasRemark) {
+      if (remarkOrderIds.length === 0) return [];
+      conditions.push(inArray(orders.id, remarkOrderIds) as any);
+    } else {
+      if (remarkOrderIds.length > 0) {
+        conditions.push(sql`${orders.id} NOT IN (${sql.join(remarkOrderIds.map(id => sql`${id}`), sql`, `)})`);
+      }
+    }
+  }
   if (filters?.todayOnly) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);

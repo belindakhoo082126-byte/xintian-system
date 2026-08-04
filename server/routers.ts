@@ -1065,6 +1065,7 @@ export const appRouter = router({
         specialOrderStatus: z.string().optional(),
         specialOrderType: z.string().optional(),
         salesChannel: z.string().optional(),
+        hasRemark: z.boolean().optional(),
       }).optional())
       .query(async ({ input }) => {
         return await db.getOrders(input || {});

@@ -1787,3 +1787,9 @@
 - [x] 后端 settings.update procedure 添加 localOrderPrefix/importOrderPrefix/liveCommentFooter
 - [x] 前端编号规则 UI 拆分本地/代购订单前缀，位数默认5，拆分为4个独立卡片
 - [x] TypeScript 检查零错误 + 保存检查点
+
+## V2.0.31: 订单页面筛选器优化
+- [x] 移除「全部渠道」筛选（与「全部来源」功能重复）
+- [x] 将「特别状态订单」筛选改为「订单备注」（全部备注/有备注/无备注）
+- [x] 后端 getOrders 添加 hasRemark 过滤逻辑（inArray / NOT IN）
+- [x] TypeScript 检查零错误 + 保存检查点
