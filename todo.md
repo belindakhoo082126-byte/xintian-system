@@ -1839,3 +1839,11 @@
 - [x] 确认前端商品列表显示图片/名称/SKU/规格/数量/单价/小计（getOrderItems JOIN products）
 - [x] 添加批量发送 Checkout 按钮到订单列表工具栏
 - [x] TypeScript 零错误 + 保存检查点
+
+## V2.0.37: 区域二客户搜索 UAT 确认
+- [x] 确认搜索支持全字段（name/facebookName/displayName/phoneNumber/email/facebookId/messengerId/customerId/whatsappPhone）
+- [x] 确认模糊搜索（like %search%）
+- [x] 确认自动捉单客户可被 Admin 搜索到（findOrCreateCustomer 在捉单时创建客户）
+- [x] 修复 Messenger 私聊不创建客户 Bug（storeIncomingMessengerMessage 现在在客户不存在时自动创建）
+- [x] 确认防止重复客户（findOrCreateCustomer 按 facebookId→messengerId→phoneNumber 顺序查找已有客户）
+- [x] TypeScript 零错误 + 保存检查点

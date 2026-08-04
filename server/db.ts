@@ -8526,13 +8526,28 @@ export async function storeIncomingMessengerMessage(psid: string, text: string, 
   const db = await getDb();
   if (!db) return { conversationId: 0, customerMessageId: null, customerId: null, customerName: null };
   
-  // Find customer by messengerId
-  const customer = await db.select().from(customers)
+  // Find or create customer by messengerId (PSID)
+  // This ensures every Messenger user gets a customer record, even if they just say "Hi"
+  let customer: any[] = await db.select().from(customers)
     .where(eq(customers.messengerId, psid))
     .limit(1);
-  
-  const customerId = customer.length > 0 ? customer[0].id : null;
-  
+  let customerId: number | null;
+  if (customer.length > 0) {
+    customerId = customer[0].id;
+  } else {
+    // Customer not found — create one so Admin can search for them later
+    try {
+      const newCustomer = await findOrCreateCustomer({
+        messengerId: psid,
+        name: psid, // Will be updated when we get their profile name
+      });
+      customerId = newCustomer.id;
+      customer = [newCustomer];
+    } catch (err) {
+      console.error("[storeIncomingMessengerMessage] Failed to create customer for PSID:", psid, err);
+      customerId = null;
+    }
+  }
   // Get or create conversation
   const conversation = await getOrCreateConversation(customerId, "messenger", psid);
   
