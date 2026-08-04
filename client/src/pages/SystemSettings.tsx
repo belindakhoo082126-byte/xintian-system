@@ -132,48 +132,72 @@ export default function SystemSettings() {
 
         {/* Numbering Rules */}
         <TabsContent value="numbering" className="space-y-4">
+          {/* 订单编号 */}
           <Card>
-            <CardHeader><CardTitle className="text-base">编号规则</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">订单编号</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>订单编号前缀</Label>
-                <Input value={form.orderPrefix || "ORD"} onChange={(e) => update("orderPrefix", e.target.value)} />
-                <p className="text-xs text-muted-foreground">例: ORD-202607-000001</p>
+                <Label>本地订单前缀</Label>
+                <Input value={form.localOrderPrefix || "XT"} onChange={(e) => update("localOrderPrefix", e.target.value)} />
+                <p className="text-xs text-muted-foreground">例: XT-00001</p>
+              </div>
+              <div className="space-y-2">
+                <Label>代购订单前缀</Label>
+                <Input value={form.importOrderPrefix || "XTC"} onChange={(e) => update("importOrderPrefix", e.target.value)} />
+                <p className="text-xs text-muted-foreground">例: XTC-00001</p>
               </div>
               <div className="space-y-2">
                 <Label>订单编号位数</Label>
-                <Input type="number" value={form.orderNumberPadding || 6} onChange={(e) => update("orderNumberPadding", parseInt(e.target.value))} />
+                <Input type="number" value={form.orderNumberPadding || 5} onChange={(e) => update("orderNumberPadding", parseInt(e.target.value))} />
               </div>
-              <div></div>
-              <div className="space-y-2">
-                <Label>进货单前缀</Label>
-                <Input value={form.poPrefix || "PO"} onChange={(e) => update("poPrefix", e.target.value)} />
-                <p className="text-xs text-muted-foreground">例: PO-202607-000001</p>
-              </div>
-              <div className="space-y-2">
-                <Label>进货单位数</Label>
-                <Input type="number" value={form.poNumberPadding || 6} onChange={(e) => update("poNumberPadding", parseInt(e.target.value))} />
-              </div>
-              <div></div>
+            </CardContent>
+          </Card>
+          {/* 客户编号 */}
+          <Card>
+            <CardHeader><CardTitle className="text-base">客户编号</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>客户编号前缀</Label>
                 <Input value={form.customerPrefix || "CUS"} onChange={(e) => update("customerPrefix", e.target.value)} />
-                <p className="text-xs text-muted-foreground">例: CUS-000001</p>
+                <p className="text-xs text-muted-foreground">例: CUS-00001</p>
               </div>
               <div className="space-y-2">
                 <Label>客户编号位数</Label>
-                <Input type="number" value={form.customerNumberPadding || 6} onChange={(e) => update("customerNumberPadding", parseInt(e.target.value))} />
+                <Input type="number" value={form.customerNumberPadding || 5} onChange={(e) => update("customerNumberPadding", parseInt(e.target.value))} />
               </div>
               <div></div>
+            </CardContent>
+          </Card>
+          {/* 商品编号 */}
+          <Card>
+            <CardHeader><CardTitle className="text-base">商品编号</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>商品编号前缀</Label>
                 <Input value={form.skuPrefix || "SKU"} onChange={(e) => update("skuPrefix", e.target.value)} />
-                <p className="text-xs text-muted-foreground">例: SKU-000001</p>
+                <p className="text-xs text-muted-foreground">例: SKU-00001</p>
               </div>
               <div className="space-y-2">
                 <Label>商品编号位数</Label>
-                <Input type="number" value={form.skuNumberPadding || 6} onChange={(e) => update("skuNumberPadding", parseInt(e.target.value))} />
+                <Input type="number" value={form.skuNumberPadding || 5} onChange={(e) => update("skuNumberPadding", parseInt(e.target.value))} />
               </div>
+              <div></div>
+            </CardContent>
+          </Card>
+          {/* 采购编号 */}
+          <Card>
+            <CardHeader><CardTitle className="text-base">采购编号</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>采购编号前缀</Label>
+                <Input value={form.poPrefix || "PO"} onChange={(e) => update("poPrefix", e.target.value)} />
+                <p className="text-xs text-muted-foreground">例: PO-00001</p>
+              </div>
+              <div className="space-y-2">
+                <Label>采购编号位数</Label>
+                <Input type="number" value={form.poNumberPadding || 5} onChange={(e) => update("poNumberPadding", parseInt(e.target.value))} />
+              </div>
+              <div></div>
             </CardContent>
           </Card>
         </TabsContent>

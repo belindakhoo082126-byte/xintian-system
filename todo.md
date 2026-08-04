@@ -1780,3 +1780,10 @@
 - [x] Archive 与 Delete 分开，Archived 状态显示 Restore 按钮
 - [x] Archive 提示文字国际化（中英文）
 - [x] TypeScript 检查零错误 + 保存检查点
+
+## V2.0.30: 编号规则系统修复
+- [x] schema 添加 localOrderPrefix/importOrderPrefix 字段，默认位数改为5
+- [x] 后端 validation 允许 Company Profile 字段为 null（修复 Validation Error Bug）
+- [x] 后端 settings.update procedure 添加 localOrderPrefix/importOrderPrefix/liveCommentFooter
+- [x] 前端编号规则 UI 拆分本地/代购订单前缀，位数默认5，拆分为4个独立卡片
+- [x] TypeScript 检查零错误 + 保存检查点
