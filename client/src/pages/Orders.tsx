@@ -498,7 +498,6 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               <TableRow>
                 <TableHead>{translate("订单号", "Order No.")}</TableHead>
                 <TableHead>{translate("客户", "Customer")}</TableHead>
-                <TableHead>{translate("类型", "Type")}</TableHead>
                 <TableHead>{translate("来源", "Source")}</TableHead>
                 <TableHead>{translate("性质", "Nature")}</TableHead>
                 <TableHead>{translate("已付", "Paid")}</TableHead>
@@ -509,9 +508,9 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
               ) : orders?.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{translate("暂无订单", "No orders yet")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{translate("暂无订单", "No orders yet")}</TableCell></TableRow>
               ) : orders?.filter((o: any) => {
                 if (sourceFilter === "all") return true;
                 return (o as any).orderSource === sourceFilter;
@@ -519,11 +518,6 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                 <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openDetail(o.id)}>
                   <TableCell className="font-mono text-sm">{o.orderNumber}</TableCell>
                   <TableCell>{o.facebookName || "-"}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {o.orderType === "mixed" ? translate("混合", "Mixed") : o.orderType === "membership" ? translate("会员", "Membership") : translate("实体", "Physical")}
-                    </Badge>
-                  </TableCell>
                   <TableCell>
                     <span className="text-xs text-muted-foreground">
                       {ORDER_SOURCE[(o as any).orderSource as keyof typeof ORDER_SOURCE]
