@@ -12,9 +12,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
 import { useSearch, useLocation } from "wouter";
 
 const PHYSICAL_STATUS = {
@@ -123,10 +123,15 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const [remarkForm, setRemarkForm] = useState({ remarkCategory: "", content: "", desiredDeliveryDate: "", desiredDeliveryReason: "", repottingData: "" });
   const [showRemarkForm, setShowRemarkForm] = useState(false);
   const [editingRemarkId, setEditingRemarkId] = useState<number | null>(null);
+  // V2.0.42: Custom message template dialog
+  const [messageDialogOpen, setMessageDialogOpen] = useState(false);
+  const [messageDialogMode, setMessageDialogMode] = useState<"messenger" | "whatsapp">("messenger");
+  const [editableMessage, setEditableMessage] = useState("");
 
   const utils = trpc.useUtils();
 
   const { data: products } = trpc.products.list.useQuery({});
+  const { data: systemSettings } = trpc.settings.get.useQuery();
 
   const { data: orders, isLoading } = trpc.orders.list.useQuery({
     search: search || undefined,
@@ -748,13 +753,31 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         const link = (orderDetail as any).checkoutLink || "";
                         const phone = (orderDetail as any).phoneNumber || "";
                         if (link && phone) {
-                          const msg = encodeURIComponent(`${translate("老板娘您好，这是您的订单，请点击以下链接完成资料填写及付款，谢谢。", "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.")}\nhttps://xintian.com.my${link}`);
-                          window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+                          const fullLink = `https://xintian.com.my${link}`;
+                          const template = (systemSettings as any)?.checkoutMessageTemplate ||
+                            "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
+                          const msg = template.replace(/\{link\}/g, fullLink);
+                          setMessageDialogMode("whatsapp");
+                          setEditableMessage(msg);
+                          setMessageDialogOpen(true);
+                        } else if (!phone) {
+                          toast.error(translate("客户没有电话号码", "Customer has no phone number"));
                         }
                       }}>
                         {translate("WhatsApp 分享", "Share via WhatsApp")}
                       </Button>
-                      <Button size="sm" onClick={() => sendCheckoutMutation.mutate({ orderId: orderDetail.id })} disabled={sendCheckoutMutation.isPending}>
+                      <Button size="sm" onClick={() => {
+                        const link = (orderDetail as any).checkoutLink || "";
+                        if (link) {
+                          const fullLink = `https://xintian.com.my${link}`;
+                          const template = (systemSettings as any)?.checkoutMessageTemplate ||
+                            "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
+                          const msg = template.replace(/\{link\}/g, fullLink);
+                          setMessageDialogMode("messenger");
+                          setEditableMessage(msg);
+                          setMessageDialogOpen(true);
+                        }
+                      }} disabled={sendCheckoutMutation.isPending}>
                         {translate("发送 Checkout 到 Messenger", "Send Checkout to Messenger")}
                       </Button>
                     </div>
@@ -775,7 +798,18 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                           )}
                         </Badge>
                         {(orderDetail as any).notificationStatus === "failed" && (
-                          <Button size="sm" variant="outline" onClick={() => resendCheckoutMutation.mutate({ orderId: orderDetail.id })} disabled={resendCheckoutMutation.isPending}>
+                          <Button size="sm" variant="outline" onClick={() => {
+                            const link = (orderDetail as any).checkoutLink || "";
+                            if (link) {
+                              const fullLink = `https://xintian.com.my${link}`;
+                              const template = (systemSettings as any)?.checkoutMessageTemplate ||
+                                "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
+                              const msg = template.replace(/\{link\}/g, fullLink);
+                              setMessageDialogMode("messenger");
+                              setEditableMessage(msg);
+                              setMessageDialogOpen(true);
+                            }
+                          }} disabled={resendCheckoutMutation.isPending}>
                             {translate("重新发送", "Resend")}
                           </Button>
                         )}
@@ -1487,6 +1521,61 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             <Button onClick={handleCreateOrder} disabled={findCustomerMutation.isPending || createOrderMutation.isPending}>
               {translate("创建订单", "Create Order")}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* V2.0.42: Custom message template dialog */}
+      <Dialog open={messageDialogOpen} onOpenChange={setMessageDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {messageDialogMode === "messenger"
+                ? translate("编辑 Messenger 消息", "Edit Messenger Message")
+                : translate("编辑 WhatsApp 消息", "Edit WhatsApp Message")}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {translate("发送前可以修改消息内容。", "You can edit the message before sending.")}
+            </p>
+            <Textarea
+              value={editableMessage}
+              onChange={(e) => setEditableMessage(e.target.value)}
+              rows={6}
+              className="resize-none"
+            />
+            <p className="text-xs text-muted-foreground">
+              {translate("提示：链接已自动填入消息中，可直接修改文字内容。", "Tip: The link is auto-filled. You can edit the text directly.")}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMessageDialogOpen(false)}>
+              {translate("取消", "Cancel")}
+            </Button>
+            {messageDialogMode === "whatsapp" ? (
+              <Button onClick={() => {
+                const phone = (orderDetail as any).phoneNumber || "";
+                if (!phone) {
+                  toast.error(translate("客户没有电话号码", "Customer has no phone number"));
+                  return;
+                }
+                const msg = encodeURIComponent(editableMessage);
+                window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+                setMessageDialogOpen(false);
+              }}>
+                {translate("发送", "Send")}
+              </Button>
+            ) : (
+              <Button onClick={() => {
+                sendCheckoutMutation.mutate(
+                  { orderId: orderDetail!.id, customMessage: editableMessage },
+                  { onSuccess: () => setMessageDialogOpen(false) }
+                );
+              }} disabled={sendCheckoutMutation.isPending}>
+                {translate("发送", "Send")}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

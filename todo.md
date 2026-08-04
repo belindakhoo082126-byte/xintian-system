@@ -1877,3 +1877,11 @@
 - [x] 6. 订单列表增加通知状态筛选（全部/未发送/已发送/发送失败）
 - [x] 7. 批量发送完成后显示统计结果（总数/成功/失败/跳过 + 失败名单）
 - [x] 8. 确认商品图片预览功能完整（V2.0.39/V2.0.40 已完成：80px 图片、名称两行显示、SKU/Keyword、Modal 预览 600x600、多图切换架构、整个图片区域可点击）
+
+## V2.0.42: 自定义消息模板
+- [x] 1. schema 新增 checkoutMessageTemplate 字段（存储默认消息模板）
+- [x] 2. 后端 sendCheckout/resendCheckout/batchSendCheckout 支持自定义 message 参数
+- [x] 3. 前端订单详情：WhatsApp 分享前弹出编辑对话框
+- [x] 4. 前端订单详情：Send to Messenger 前弹出编辑对话框（Resend 也支持）
+- [x] 5. 系统设置页面新增消息模板编辑
+- [x] 6. TypeScript 检查 + 保存检查点

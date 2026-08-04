@@ -276,6 +276,27 @@ export default function SystemSettings() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Checkout Message Template */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Checkout 消息模板</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                <Label>发送给客户的消息模板</Label>
+                <Textarea
+                  value={form.checkoutMessageTemplate || ""}
+                  onChange={(e) => update("checkoutMessageTemplate", e.target.value)}
+                  rows={5}
+                  placeholder="Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.&#10;&#10;{link}"
+                />
+                <p className="text-xs text-muted-foreground">
+                  发送 Messenger 或 WhatsApp 时使用的默认消息。使用 <code className="px-1 py-0.5 bg-muted rounded">{"{link}"}</code> 作为 Checkout 链接占位符，系统会自动替换为实际链接。
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

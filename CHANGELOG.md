@@ -594,3 +594,18 @@
 ### Notes
 - 商品图片预览功能已在 V2.0.39/V2.0.40 完成（80px 图片、名称两行显示、SKU/Keyword、Modal 预览 600x600、多图切换架构、整个图片区域可点击）
 - TypeScript 零错误
+
+## V2.0.42: 自定义消息模板 (2026-08-05)
+### Added
+- `system_settings` 表新增 `checkoutMessageTemplate` 字段（TEXT），用于存储默认 Checkout 消息模板
+- 系统设置页面新增「Checkout 消息模板」编辑卡片，支持 `{link}` 占位符
+- 订单详情页 WhatsApp 分享和 Send to Messenger 按钮点击后弹出消息编辑对话框，允许用户在发送前修改消息内容
+- Resend（重新发送）按钮也支持编辑对话框
+- 后端 `sendCheckout`、`resendCheckout` procedure 新增 `customMessage` 可选参数，支持自定义消息内容
+- `batchSendCheckout` 使用系统设置中的消息模板（支持 `{link}` 占位符自动替换）
+- `settings.update` procedure 新增 `checkoutMessageTemplate` 参数
+### Changed
+- 消息模板使用 `{link}` 作为 Checkout 链接占位符，系统自动替换为完整 URL
+- 默认模板：`Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}`
+### Notes
+- TypeScript 零错误

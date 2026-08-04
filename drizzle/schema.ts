@@ -820,6 +820,8 @@ export const systemSettings = mysqlTable("system_settings", {
   autoCompleteDays: int("autoCompleteDays").default(7).notNull(),
   // Live comment footer (used in keyword copy & live post)
   liveCommentFooter: text("liveCommentFooter"),
+  // V2.0.42: Custom checkout message template (supports {link} placeholder)
+  checkoutMessageTemplate: text("checkoutMessageTemplate"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 

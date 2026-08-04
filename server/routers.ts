@@ -1372,7 +1372,7 @@ export const appRouter = router({
       }),
     // V2.0.33: Send checkout link to Messenger
     sendCheckout: adminProcedure
-      .input(z.object({ orderId: z.number() }))
+      .input(z.object({ orderId: z.number(), customMessage: z.string().optional() }))
       .mutation(async ({ input }) => {
         const order = await db.getOrderById(input.orderId);
         if (!order) throw new Error("Order not found");
@@ -1382,7 +1382,10 @@ export const appRouter = router({
           const { sendTextMessage } = await import("./messenger");
           const baseUrl = "https://xintian.com.my";
           const fullLink = `${baseUrl}${order.checkoutLink}`;
-          const message = `Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n${fullLink}`;
+          const settings = await db.getSystemSettings();
+          const template = (settings as any)?.checkoutMessageTemplate ||
+            "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
+          const message = (input.customMessage || template).replace(/\{link\}/g, fullLink);
           await sendTextMessage(order.messengerId, message);
           await db.updateOrderNotificationStatus(input.orderId, "sent", null);
           return { success: true };
@@ -1407,6 +1410,9 @@ export const appRouter = router({
           o.notificationStatus === "pending" || o.notificationStatus === "failed" || !o.notificationStatus
         );
         const results = { sent: 0, failed: 0, skipped: 0, total: pendingOrders.length, failedOrders: [] as any[] };
+        const settings = await db.getSystemSettings();
+        const template = (settings as any)?.checkoutMessageTemplate ||
+          "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
         for (const order of pendingOrders) {
           if (!order.messengerId || !order.checkoutLink) {
             results.skipped++;
@@ -1416,7 +1422,7 @@ export const appRouter = router({
             const { sendTextMessage } = await import("./messenger");
             const baseUrl = "https://xintian.com.my";
             const fullLink = `${baseUrl}${order.checkoutLink}`;
-            const message = `Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n${fullLink}`;
+            const message = template.replace(/\{link\}/g, fullLink);
             await sendTextMessage(order.messengerId, message);
             await db.updateOrderNotificationStatus(order.id, "sent", null);
             results.sent++;
@@ -1430,7 +1436,7 @@ export const appRouter = router({
       }),
     // V2.0.33: Resend checkout link
     resendCheckout: adminProcedure
-      .input(z.object({ orderId: z.number() }))
+      .input(z.object({ orderId: z.number(), customMessage: z.string().optional() }))
       .mutation(async ({ input }) => {
         const order = await db.getOrderById(input.orderId);
         if (!order) throw new Error("Order not found");
@@ -1440,7 +1446,10 @@ export const appRouter = router({
           const { sendTextMessage } = await import("./messenger");
           const baseUrl = "https://xintian.com.my";
           const fullLink = `${baseUrl}${order.checkoutLink}`;
-          const message = `Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n${fullLink}`;
+          const settings = await db.getSystemSettings();
+          const template = (settings as any)?.checkoutMessageTemplate ||
+            "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
+          const message = (input.customMessage || template).replace(/\{link\}/g, fullLink);
           await sendTextMessage(order.messengerId, message);
           await db.updateOrderNotificationStatus(input.orderId, "sent", null);
           return { success: true };
@@ -2102,6 +2111,7 @@ export const appRouter = router({
       requireStaffLogin: z.boolean().optional(),
       autoCompleteDays: z.number().optional(),
       liveCommentFooter: z.string().nullable().optional(),
+      checkoutMessageTemplate: z.string().nullable().optional(),
     })).mutation(async ({ input }) => {
       return await db.updateSystemSettings(input);
     }),
