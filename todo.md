@@ -1900,3 +1900,9 @@
 - [x] 3. OrderBrowsePage增加"打印"按钮（window.print）
 - [x] 4. 添加打印样式（no-print class隐藏按钮和导航元素）
 - [x] 5. TypeScript 检查 + 保存检查点
+
+## V2.0.45: 导出图片添加Logo和水印
+- [x] 1. 去除Logo白底制作透明背景PNG
+- [x] 2. 上传透明Logo到webdev storage
+- [x] 3. OrderBrowsePage导出图片时自动添加Logo和水印
+- [x] 4. TypeScript 检查 + 保存检查点

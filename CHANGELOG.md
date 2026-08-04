@@ -632,3 +632,12 @@
 - 安装html2canvas 1.4.1依赖
 ### Notes
 - TypeScript 零错误
+
+## V2.0.45: 导出图片添加Logo和水印 (2026-08-05)
+### Added
+- 去除Logo白底，制作透明背景PNG（保留圆形深绿边框和内部图案，移除米色/白色背景）
+- 导出订单图片时自动在顶部添加心田Logo和品牌名称
+- 导出订单图片时自动在底部添加半透明水印文字
+- Logo已上传至webdev storage: /manus-storage/xintian-logo-transparent_58bbaf5e.png
+### Notes
+- TypeScript 零错误

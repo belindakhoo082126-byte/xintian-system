@@ -57,23 +57,76 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const exportRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
 
-  // V2.0.44: Export order as image
+  // V2.0.45: Logo URL for watermark
+  const LOGO_URL = "/manus-storage/xintian-logo-transparent_58bbaf5e.png";
+
+  // V2.0.44: Export order as image with logo and watermark
   async function handleExportImage() {
     if (!exportRef.current) return;
     setExporting(true);
     try {
-      const canvas = await html2canvas(exportRef.current, {
+      // First capture the order content
+      const contentCanvas = await html2canvas(exportRef.current, {
         scale: 2,
         backgroundColor: "#ffffff",
         useCORS: true,
       });
+
+      // Create a new canvas with extra space for header (logo) and footer (watermark)
+      const logoHeight = 100;
+      const watermarkHeight = 50;
+      const padding = 30;
+      const finalCanvas = document.createElement("canvas");
+      finalCanvas.width = contentCanvas.width + padding * 2;
+      finalCanvas.height = contentCanvas.height + logoHeight + watermarkHeight + padding * 2;
+      const ctx = finalCanvas.getContext("2d")!;
+
+      // Fill white background
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+
+      // Load logo image
+      const logoImg = new Image();
+      logoImg.crossOrigin = "anonymous";
+      await new Promise((resolve, reject) => {
+        logoImg.onload = resolve;
+        logoImg.onerror = reject;
+        logoImg.src = LOGO_URL;
+      });
+
+      // Draw logo at top-left, sized to fit logoHeight
+      const logoSize = logoHeight;
+      ctx.drawImage(logoImg, padding, padding, logoSize, logoSize);
+
+      // Draw brand name next to logo
+      ctx.fillStyle = "#1E3F20";
+      ctx.font = "bold 28px sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.fillText("\u5fc3\u7530 Xin Tian", padding + logoSize + 20, padding + logoHeight / 2);
+
+      // Draw order number next to brand
+      ctx.fillStyle = "#666666";
+      ctx.font = "18px sans-serif";
+      ctx.fillText(`#${o.orderNumber}`, padding + logoSize + 20 + 200, padding + logoHeight / 2);
+
+      // Draw content canvas below header
+      ctx.drawImage(contentCanvas, padding, padding + logoHeight + 10);
+
+      // Draw watermark at bottom
+      const watermarkY = finalCanvas.height - watermarkHeight / 2 - 10;
+      ctx.fillStyle = "rgba(30, 63, 32, 0.15)";
+      ctx.font = "bold 24px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("\u5fc3\u7530 Xin Tian \u00b7 \u878d\u5408\u690d\u7269\u3001\u8349\u672cDIY\u3001\u60c5\u7eea\u7597\u6108\u4e0e\u624b\u4f5c\u521b\u4f5c\u7684\u5171\u521b\u5e73\u53f0", finalCanvas.width / 2, watermarkY);
+      ctx.textAlign = "left";
+
       const link = document.createElement("a");
       link.download = `order_${o.orderNumber}.png`;
-      link.href = canvas.toDataURL("image/png");
+      link.href = finalCanvas.toDataURL("image/png");
       link.click();
-      toast.success(translate("图片已下载", "Image downloaded"));
+      toast.success(translate("\u56fe\u7247\u5df2\u4e0b\u8f7d", "Image downloaded"));
     } catch (e: any) {
-      toast.error(translate("导出失败: {message}", "Export failed: {message}", { message: e.message }));
+      toast.error(translate("\u5bfc\u51fa\u5931\u8d25: {message}", "Export failed: {message}", { message: e.message }));
     } finally {
       setExporting(false);
     }
