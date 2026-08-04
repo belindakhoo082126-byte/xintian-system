@@ -394,6 +394,7 @@ export async function getOrders(filters?: {
   specialOrderType?: string;
   salesChannel?: string;
   hasRemark?: boolean;
+  notificationStatus?: string;
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -408,6 +409,13 @@ export async function getOrders(filters?: {
   if (filters?.specialOrderStatus) conditions.push(eq((orders as any).specialOrderStatus, filters.specialOrderStatus as any));
   if (filters?.specialOrderType && filters.specialOrderType !== "all") conditions.push(eq((orders as any).specialOrderType, filters.specialOrderType as any));
   if (filters?.salesChannel) conditions.push(eq((orders as any).salesChannel, filters.salesChannel as any));
+  if (filters?.notificationStatus && filters.notificationStatus !== "all") {
+    if (filters.notificationStatus === "unsent") {
+      conditions.push(or(eq(orders.notificationStatus, "pending"), sql`${orders.notificationStatus} IS NULL`) as any);
+    } else {
+      conditions.push(eq(orders.notificationStatus, filters.notificationStatus as any));
+    }
+  }
   if (filters?.hasRemark !== undefined) {
     const remarkRows = await db.select({ orderId: orderRemarks.orderId }).from(orderRemarks);
     const remarkOrderIds = Array.from(new Set(remarkRows.map(r => r.orderId)));

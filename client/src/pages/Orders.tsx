@@ -82,6 +82,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const [channelFilter, setChannelFilter] = useState(urlChannel || "all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [remarkFilter, setRemarkFilter] = useState("all");
+  const [notificationFilter, setNotificationFilter] = useState("all");
 
   useEffect(() => {
     const handlePopState = () => {
@@ -135,6 +136,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     orderCategory: orderCategory && orderCategory !== "all" ? orderCategory : undefined,
     salesChannel: channelFilter !== "all" ? channelFilter : undefined,
     hasRemark: remarkFilter !== "all" ? (remarkFilter === "with" ? true : false) : undefined,
+    notificationStatus: notificationFilter !== "all" ? notificationFilter : undefined,
   } as any);
 
   // Get order detail with items, payments, and logs
@@ -286,9 +288,21 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     onError: (e) => toast.error(translate("发送失败: {message}", "Send failed: {message}", { message: e.message })),
   });
   const batchSendCheckoutMutation = trpc.orders.batchSendCheckout.useMutation({
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       utils.orders.invalidate();
-      toast.success(translate("批量发送完成: {sent} 成功, {failed} 失败, {skipped} 跳过", "Batch sent: {sent} success, {failed} failed, {skipped} skipped", data));
+      const total = data.total || 0;
+      const sent = data.sent || 0;
+      const failed = data.failed || 0;
+      const skipped = data.skipped || 0;
+      const failedList = (data.failedOrders || []).map((o: any) => `${o.orderNumber} - ${o.customerName} (${o.error})`).join("\n");
+      const summary = lang === "zh"
+        ? `共找到 ${total} 张未汇款订单\n发送成功: ${sent}\n发送失败: ${failed}\n跳过: ${skipped}`
+        : `Found ${total} unpaid orders\nSent: ${sent}\nFailed: ${failed}\nSkipped: ${skipped}`;
+      if (failed > 0 && failedList) {
+        toast.error(`${summary}\n\n${lang === "zh" ? "失败名单:" : "Failed orders:"}\n${failedList}`, { duration: 10000 });
+      } else {
+        toast.success(summary, { duration: 6000 });
+      }
     },
     onError: (e) => toast.error(translate("批量发送失败: {message}", "Batch send failed: {message}", { message: e.message })),
   });
@@ -512,6 +526,17 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             <SelectItem value="without">{translate("无备注", "No Remarks")}</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={notificationFilter} onValueChange={setNotificationFilter}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder={translate("通知状态", "Notification")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{translate("全部通知", "All Notifications")}</SelectItem>
+            <SelectItem value="unsent">{translate("未发送", "Not Sent")}</SelectItem>
+            <SelectItem value="sent">{translate("已发送", "Sent")}</SelectItem>
+            <SelectItem value="failed">{translate("发送失败", "Failed")}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {orderCategory !== "all" && (
@@ -544,14 +569,15 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                 <TableHead>{translate("已付", "Paid")}</TableHead>
                 <TableHead>{translate("总金额", "Total")}</TableHead>
                 <TableHead>{translate("状态", "Status")}</TableHead>
+                <TableHead>{translate("通知", "Notification")}</TableHead>
                 <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
               ) : orders?.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{translate("暂无订单", "No orders yet")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{translate("暂无订单", "No orders yet")}</TableCell></TableRow>
               ) : orders?.filter((o: any) => {
                 if (sourceFilter === "all") return true;
                 return (o as any).orderSource === sourceFilter;
@@ -584,6 +610,24 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                     <Badge variant={PHYSICAL_STATUS[o.physicalStatus as keyof typeof PHYSICAL_STATUS]?.variant || "outline"}>
                       {translate(PHYSICAL_STATUS[o.physicalStatus as keyof typeof PHYSICAL_STATUS]?.label || o.physicalStatus, PHYSICAL_STATUS[o.physicalStatus as keyof typeof PHYSICAL_STATUS]?.enLabel || o.physicalStatus)}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {(o as any).notificationStatus === "sent" ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-green-600">
+                        <span className="h-2 w-2 rounded-full bg-green-500" />
+                        {translate("已发送", "Sent")}
+                      </span>
+                    ) : (o as any).notificationStatus === "failed" ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-red-600">
+                        <span className="h-2 w-2 rounded-full bg-red-500" />
+                        {translate("发送失败", "Failed")}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <span className="h-2 w-2 rounded-full bg-gray-300" />
+                        {translate("未发送", "Not Sent")}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openDetail(o.id); }}>
@@ -716,26 +760,35 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                     </div>
                   </div>
                   {(orderDetail as any).notificationStatus && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-muted-foreground">{translate("通知状态", "Notification Status")}:</span>
-                      <Badge variant={
-                        (orderDetail as any).notificationStatus === "sent" ? "default" :
-                        (orderDetail as any).notificationStatus === "failed" ? "destructive" : "outline"
-                      }>
-                        {translate(
-                          (orderDetail as any).notificationStatus === "sent" ? "已发送" :
-                          (orderDetail as any).notificationStatus === "failed" ? "发送失败" : "待发送",
-                          (orderDetail as any).notificationStatus === "sent" ? "Sent" :
-                          (orderDetail as any).notificationStatus === "failed" ? "Failed" : "Pending"
+                    <div className="flex flex-col gap-1 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">{translate("通知状态", "Notification Status")}:</span>
+                        <Badge variant={
+                          (orderDetail as any).notificationStatus === "sent" ? "default" :
+                          (orderDetail as any).notificationStatus === "failed" ? "destructive" : "outline"
+                        }>
+                          {translate(
+                            (orderDetail as any).notificationStatus === "sent" ? "已发送" :
+                            (orderDetail as any).notificationStatus === "failed" ? "发送失败" : "待发送",
+                            (orderDetail as any).notificationStatus === "sent" ? "Sent" :
+                            (orderDetail as any).notificationStatus === "failed" ? "Failed" : "Pending"
+                          )}
+                        </Badge>
+                        {(orderDetail as any).notificationStatus === "failed" && (
+                          <Button size="sm" variant="outline" onClick={() => resendCheckoutMutation.mutate({ orderId: orderDetail.id })} disabled={resendCheckoutMutation.isPending}>
+                            {translate("重新发送", "Resend")}
+                          </Button>
                         )}
-                      </Badge>
-                      {(orderDetail as any).notificationStatus === "failed" && (orderDetail as any).notificationError && (
-                        <span className="text-xs text-destructive">{(orderDetail as any).notificationError}</span>
+                      </div>
+                      {(orderDetail as any).notificationSentAt && (
+                        <div className="text-xs text-muted-foreground">
+                          {translate("最后发送时间", "Last Sent")}: {new Date((orderDetail as any).notificationSentAt).toLocaleString()}
+                        </div>
                       )}
-                      {(orderDetail as any).notificationStatus === "failed" && (
-                        <Button size="sm" variant="outline" onClick={() => resendCheckoutMutation.mutate({ orderId: orderDetail.id })} disabled={resendCheckoutMutation.isPending}>
-                          {translate("重新发送", "Resend")}
-                        </Button>
+                      {(orderDetail as any).notificationStatus === "failed" && (orderDetail as any).notificationError && (
+                        <div className="text-xs text-destructive">
+                          {translate("失败原因", "Error")}: {(orderDetail as any).notificationError}
+                        </div>
                       )}
                     </div>
                   )}

@@ -577,3 +577,20 @@
 - Messenger 私聊已有 Auto Order Engine 接入（V2.0.21 实现），关键词+数量直接建单跳过 AI 流程
 - 无关键词时继续执行 AI 回复流程（Campaign Messenger Flow 通过 AI 引擎处理）
 - TypeScript 零错误，Vitest 32 文件 266 项测试全部通过
+
+## V2.0.41: Checkout Link 功能逐项完善 (2026-08-05)
+### Added
+- 订单详情通知状态区域新增「最后发送时间」(notificationSentAt) 显示
+- 订单详情通知状态区域新增「失败原因」(notificationError) 独立行显示
+- 订单列表表格新增「通知」列，显示通知状态 Badge（🟢已发送 / 🔴发送失败 / ⚪未发送）
+- 订单列表筛选器新增「通知状态」下拉筛选（全部通知 / 未发送 / 已发送 / 发送失败）
+- 后端 `getOrders` 函数新增 `notificationStatus` 过滤参数，支持 unsent（pending + null）/ sent / failed 筛选
+- `orders.list` tRPC procedure input schema 新增 `notificationStatus` 参数
+### Changed
+- `batchSendCheckout` procedure 改为只查询 `physicalStatus="pending"` 的订单，过滤 `notificationStatus` 为 pending/failed/null 的订单
+- `batchSendCheckout` 返回结果新增 `failedOrders` 数组，包含失败订单的编号和客户名
+- 前端 `batchSendCheckoutMutation` onSuccess 显示完整统计（总数/成功/失败/跳过 + 失败名单，失败时用 toast.error 显示 10 秒）
+- 订单列表表格 `colSpan` 从 8 改为 9（新增通知状态列）
+### Notes
+- 商品图片预览功能已在 V2.0.39/V2.0.40 完成（80px 图片、名称两行显示、SKU/Keyword、Modal 预览 600x600、多图切换架构、整个图片区域可点击）
+- TypeScript 零错误

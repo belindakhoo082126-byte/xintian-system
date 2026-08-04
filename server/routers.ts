@@ -1066,6 +1066,7 @@ export const appRouter = router({
         specialOrderType: z.string().optional(),
         salesChannel: z.string().optional(),
         hasRemark: z.boolean().optional(),
+        notificationStatus: z.string().optional(),
       }).optional())
       .query(async ({ input }) => {
         return await db.getOrders(input || {});
@@ -1397,14 +1398,15 @@ export const appRouter = router({
         source: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
+        // V2.0.41: Only send to unpaid orders (pending) with notificationStatus pending/failed/null
         const allOrders = await db.getOrders({
-          physicalStatus: input.status,
+          physicalStatus: "pending",
           hasRemark: undefined,
         });
         const pendingOrders = (allOrders as any[]).filter((o: any) =>
-          o.notificationStatus === "pending" || o.notificationStatus === "failed"
+          o.notificationStatus === "pending" || o.notificationStatus === "failed" || !o.notificationStatus
         );
-        const results = { sent: 0, failed: 0, skipped: 0 };
+        const results = { sent: 0, failed: 0, skipped: 0, total: pendingOrders.length, failedOrders: [] as any[] };
         for (const order of pendingOrders) {
           if (!order.messengerId || !order.checkoutLink) {
             results.skipped++;
@@ -1421,6 +1423,7 @@ export const appRouter = router({
           } catch (error: any) {
             await db.updateOrderNotificationStatus(order.id, "failed", error.message || "Unknown error");
             results.failed++;
+            results.failedOrders.push({ id: order.id, orderNumber: order.orderNumber, customerName: order.facebookName || order.customerName || "Unknown", error: error.message || "Unknown error" });
           }
         }
         return results;

@@ -1867,3 +1867,13 @@
 - [x] Preview Modal 支持多图切换架构（左右按钮/缩图列表预留）
 - [x] 整个商品图片区域可点击 Preview（触控友好）
 - [x] TypeScript 零错误 + 保存检查点
+
+## V2.0.41: Checkout Link 功能逐项完善
+- [x] 1. 订单详情页 Checkout 按钮（Copy/Open/Send to Messenger/Share WhatsApp）— 已确认存在
+- [x] 2. 批量发送只发送未汇款订单（pending + notificationStatus pending/failed/null）
+- [x] 3. 通知状态记录完整（Pending/Sent/Failed + Last Sent Time + Error Message）
+- [x] 4. 发送失败处理流程（Resend + Copy + Open）— 已确认存在
+- [x] 5. 订单列表显示通知状态 Badge（🟢已发送/🔴发送失败/⚪未发送）
+- [x] 6. 订单列表增加通知状态筛选（全部/未发送/已发送/发送失败）
+- [x] 7. 批量发送完成后显示统计结果（总数/成功/失败/跳过 + 失败名单）
+- [x] 8. 确认商品图片预览功能完整（V2.0.39/V2.0.40 已完成：80px 图片、名称两行显示、SKU/Keyword、Modal 预览 600x600、多图切换架构、整个图片区域可点击）
