@@ -1369,6 +1369,83 @@ export const appRouter = router({
         const result = db.calculateWestMalaysiaShipping(input.totalWeight, input.orderTotal);
         return { ...result, threshold: 150 };
       }),
+    // V2.0.33: Send checkout link to Messenger
+    sendCheckout: adminProcedure
+      .input(z.object({ orderId: z.number() }))
+      .mutation(async ({ input }) => {
+        const order = await db.getOrderById(input.orderId);
+        if (!order) throw new Error("Order not found");
+        if (!order.checkoutLink) throw new Error("Checkout link not generated");
+        if (!order.messengerId) throw new Error("No Messenger ID for this order");
+        try {
+          const { sendTextMessage } = await import("./messenger");
+          const baseUrl = "https://xintian.com.my";
+          const fullLink = `${baseUrl}${order.checkoutLink}`;
+          const message = `Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n${fullLink}`;
+          await sendTextMessage(order.messengerId, message);
+          await db.updateOrderNotificationStatus(input.orderId, "sent", null);
+          return { success: true };
+        } catch (error: any) {
+          await db.updateOrderNotificationStatus(input.orderId, "failed", error.message || "Unknown error");
+          throw new Error(`Failed to send: ${error.message}`);
+        }
+      }),
+    // V2.0.33: Batch send checkout links to all pending orders
+    batchSendCheckout: adminProcedure
+      .input(z.object({
+        status: z.string().optional(),
+        source: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const allOrders = await db.getOrders({
+          physicalStatus: input.status,
+          hasRemark: undefined,
+        });
+        const pendingOrders = (allOrders as any[]).filter((o: any) =>
+          o.notificationStatus === "pending" || o.notificationStatus === "failed"
+        );
+        const results = { sent: 0, failed: 0, skipped: 0 };
+        for (const order of pendingOrders) {
+          if (!order.messengerId || !order.checkoutLink) {
+            results.skipped++;
+            continue;
+          }
+          try {
+            const { sendTextMessage } = await import("./messenger");
+            const baseUrl = "https://xintian.com.my";
+            const fullLink = `${baseUrl}${order.checkoutLink}`;
+            const message = `Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n${fullLink}`;
+            await sendTextMessage(order.messengerId, message);
+            await db.updateOrderNotificationStatus(order.id, "sent", null);
+            results.sent++;
+          } catch (error: any) {
+            await db.updateOrderNotificationStatus(order.id, "failed", error.message || "Unknown error");
+            results.failed++;
+          }
+        }
+        return results;
+      }),
+    // V2.0.33: Resend checkout link
+    resendCheckout: adminProcedure
+      .input(z.object({ orderId: z.number() }))
+      .mutation(async ({ input }) => {
+        const order = await db.getOrderById(input.orderId);
+        if (!order) throw new Error("Order not found");
+        if (!order.checkoutLink) throw new Error("Checkout link not generated");
+        if (!order.messengerId) throw new Error("No Messenger ID for this order");
+        try {
+          const { sendTextMessage } = await import("./messenger");
+          const baseUrl = "https://xintian.com.my";
+          const fullLink = `${baseUrl}${order.checkoutLink}`;
+          const message = `Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n${fullLink}`;
+          await sendTextMessage(order.messengerId, message);
+          await db.updateOrderNotificationStatus(input.orderId, "sent", null);
+          return { success: true };
+        } catch (error: any) {
+          await db.updateOrderNotificationStatus(input.orderId, "failed", error.message || "Unknown error");
+          throw new Error(`Failed to send: ${error.message}`);
+        }
+      }),
   }),
   // ===========================================================================
   // Membership Fee Reviews

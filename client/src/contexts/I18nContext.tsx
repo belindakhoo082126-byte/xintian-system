@@ -71,15 +71,16 @@ const translations: Record<string, Record<Lang, string>> = {
   "common.total": { zh: "总计", en: "Total" },
 
   // Order Status
-  "status.pending": { zh: "挂单", en: "Pending" },
-  "status.receipt_uploaded": { zh: "确认汇款", en: "Payment Confirmed" },
-  "status.partial_payment": { zh: "部分汇款", en: "Partial Payment" },
+  "status.pending": { zh: "未汇款订单", en: "Unpaid Order" },
+  "status.receipt_uploaded": { zh: "待审核付款凭证", en: "Pending Payment Verification" },
   "status.hold_order": { zh: "保留订单", en: "Hold Order" },
-  "status.packing": { zh: "待包货", en: "Packing" },
+  "status.packing": { zh: "待包货", en: "Pending Packing" },
   "status.shipped": { zh: "已发货", en: "Shipped" },
   "status.partial_shipped": { zh: "部分发货", en: "Partial Shipped" },
-  "status.completed": { zh: "完成订单", en: "Completed" },
+  "status.completed": { zh: "已完成", en: "Completed" },
   "status.cancelled": { zh: "已取消", en: "Cancelled" },
+  "status.scheduled": { zh: "预约发货", en: "Scheduled Shipping" },
+  "status.special": { zh: "特别订单", en: "Special Order" },
 
   // Order Detail
   "order.detail": { zh: "订单详情", en: "Order Detail" },
@@ -423,6 +424,27 @@ const translations: Record<string, Record<Lang, string>> = {
   "campaigns.buttonProductPlaceholder": { zh: "选择商品", en: "Select product" },
   "campaigns.buttonQtyLabel": { zh: "数量", en: "Quantity" },
   "campaigns.buttonQty": { zh: "数量", en: "Qty" },
+  // Checkout & Notification
+  "orders.checkoutLink": { zh: "Checkout 链接", en: "Checkout Link" },
+  "orders.copyLink": { zh: "复制链接", en: "Copy Link" },
+  "orders.openLink": { zh: "打开链接", en: "Open Link" },
+  "orders.shareWhatsApp": { zh: "WhatsApp 分享", en: "Share via WhatsApp" },
+  "orders.shareMessenger": { zh: "Messenger 分享", en: "Share via Messenger" },
+  "orders.sendCheckoutMessenger": { zh: "发送 Checkout 到 Messenger", en: "Send Checkout to Messenger" },
+  "orders.sendCheckoutSuccess": { zh: "Checkout 链接已发送到 Messenger", en: "Checkout link sent to Messenger" },
+  "orders.sendCheckoutFailed": { zh: "发送失败: {message}", en: "Send failed: {message}" },
+  "orders.checkoutCopied": { zh: "链接已复制到剪贴板", en: "Link copied to clipboard" },
+  "orders.notifStatus": { zh: "通知状态", en: "Notification Status" },
+  "orders.notifPending": { zh: "待发送", en: "Pending" },
+  "orders.notifSent": { zh: "已发送", en: "Sent" },
+  "orders.notifFailed": { zh: "发送失败", en: "Failed" },
+  "orders.batchSendCheckout": { zh: "批量发送 Checkout 链接", en: "Batch Send Checkout Links" },
+  "orders.sendAllPending": { zh: "发送全部未发送订单", en: "Send All Pending" },
+  "orders.resendCheckout": { zh: "重新发送", en: "Resend" },
+  "orders.notifError": { zh: "失败原因", en: "Error" },
+  "orders.checkoutMessage": { zh: "老板娘您好，这是您的订单，请点击以下链接完成资料填写及付款，谢谢。", en: "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you." },
+  "orders.productImage": { zh: "商品图片", en: "Image" },
+  "orders.sku": { zh: "SKU", en: "SKU" },
 };
 interface I18nContextType {
   lang: Lang;

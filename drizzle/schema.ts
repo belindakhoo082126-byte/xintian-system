@@ -607,11 +607,15 @@ export const orders = mysqlTable("orders", {
   // V2.0: Secure token for public order access (customer order page)
   secureToken: varchar("secureToken", { length: 64 }).unique(),
   // V2.0.26: Campaign tracking (订单来源 Campaign 记录)
-  campaignId: int("campaignId"),
+    campaignId: int("campaignId"),
   campaignName: varchar("campaignName", { length: 255 }),
   sourceType: varchar("sourceType", { length: 50 }),
+  // V2.0.33: Checkout Link & Notification tracking
+  checkoutLink: varchar("checkoutLink", { length: 255 }),
+  notificationStatus: mysqlEnum("notificationStatus", ["pending", "sent", "failed"]).default("pending"),
+  notificationError: text("notificationError"),
+  notificationSentAt: timestamp("notificationSentAt"),
 });
-
 export type Order = typeof orders.$inferSelect;
 export type InsertOrder = typeof orders.$inferInsert;
 

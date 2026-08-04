@@ -575,8 +575,10 @@ export async function createOrderWithSplit(data: {
     creditUsed: data.creditUsed || null,
   });
 
-  const orderId = (orderResult as any)[0].insertId;
-
+    const orderId = (orderResult as any)[0].insertId;
+  // V2.0.33: Generate checkout link
+  const checkoutLink = `/checkout/${orderNumber}`;
+  await db.update(orders).set({ checkoutLink }).where(eq(orders.id, orderId));
   // Log operation
   await logOrderOperation(orderId, "create", `Order created with ${data.items.length} items`, null, null);
 
@@ -642,9 +644,22 @@ export async function updateOrderStatus(id: number, data: {
     await logOrderOperation(id, "status_change", `Status changed to ${data.physicalStatus || data.membershipStatus}`, null, null);
   }
 
-  broadcastChanges(["orders", "dashboard"]);
+    broadcastChanges(["orders", "dashboard"]);
 }
-
+// V2.0.33: Update order notification status
+export async function updateOrderNotificationStatus(orderId: number, status: "pending" | "sent" | "failed", error: string | null) {
+  const db = await getDb();
+  if (!db) return;
+  const updateData: any = { notificationStatus: status };
+  if (status === "sent") {
+    updateData.notificationSentAt = new Date();
+    updateData.notificationError = null;
+  } else if (status === "failed") {
+    updateData.notificationError = error;
+  }
+  await db.update(orders).set(updateData).where(eq(orders.id, orderId));
+  broadcastChanges(["orders"]);
+}
 // ============================================================================
 // V2.2: Update order details (for OrderEditPage)
 // ============================================================================
@@ -4769,8 +4784,10 @@ export async function createOrderFromLiveCapture(data: {
     sourceType: data.sourceType || null,
   });
   
-  const orderId = (orderResult as any)[0].insertId;
-  
+    const orderId = (orderResult as any)[0].insertId;
+  // V2.0.33: Generate checkout link
+  const checkoutLink = `/checkout/${orderNumber}`;
+  await db.update(orders).set({ checkoutLink }).where(eq(orders.id, orderId));
   // Create order items
   for (const p of data.matchedProducts) {
     const itemSubtotal = (parseFloat(p.unitPrice) * p.quantity).toFixed(2);

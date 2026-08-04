@@ -18,9 +18,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useSearch, useLocation } from "wouter";
 
 const PHYSICAL_STATUS = {
-  pending: { label: "待付款", enLabel: "Pending Payment", variant: "outline" },
+  pending: { label: "未汇款订单", enLabel: "Unpaid Order", variant: "outline" },
   receipt_uploaded: { label: "待审核付款凭证", enLabel: "Pending Payment Verification", variant: "secondary" },
-  partial_payment: { label: "部分付款", enLabel: "Partial Payment", variant: "secondary" },
   hold_order: { label: "保留订单", enLabel: "Hold Order", variant: "outline" },
   packing: { label: "待包货", enLabel: "Pending Packing", variant: "default" },
   partial_shipped: { label: "部分发货", enLabel: "Partial Shipped", variant: "secondary" },
@@ -268,6 +267,30 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       setDetailOpen(false);
     },
     onError: (e) => toast.error(translate("取消失败: {message}", "Cancel failed: {message}", { message: e.message })),
+  });
+  // V2.0.33: Send checkout to Messenger
+  const sendCheckoutMutation = trpc.orders.sendCheckout.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      if (detailOrderId) refetchDetail();
+      toast.success(translate("Checkout 链接已发送到 Messenger", "Checkout link sent to Messenger"));
+    },
+    onError: (e) => toast.error(translate("发送失败: {message}", "Send failed: {message}", { message: e.message })),
+  });
+  const resendCheckoutMutation = trpc.orders.resendCheckout.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      if (detailOrderId) refetchDetail();
+      toast.success(translate("Checkout 链接已发送到 Messenger", "Checkout link sent to Messenger"));
+    },
+    onError: (e) => toast.error(translate("发送失败: {message}", "Send failed: {message}", { message: e.message })),
+  });
+  const batchSendCheckoutMutation = trpc.orders.batchSendCheckout.useMutation({
+    onSuccess: (data) => {
+      utils.orders.invalidate();
+      toast.success(translate("批量发送完成: {sent} 成功, {failed} 失败, {skipped} 跳过", "Batch sent: {sent} success, {failed} failed, {skipped} skipped", data));
+    },
+    onError: (e) => toast.error(translate("批量发送失败: {message}", "Batch send failed: {message}", { message: e.message })),
   });
 
   function addManualItem() {
@@ -636,9 +659,73 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                   )}
                 </div>
 
+                {/* V2.0.33: Checkout Link section */}
+                <div className="p-4 border rounded-lg bg-muted/30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">{translate("Checkout 链接", "Checkout Link")}</p>
+                      <p className="font-mono text-sm break-all">{(orderDetail as any).checkoutLink || "-"}</p>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="outline" onClick={() => {
+                        const link = (orderDetail as any).checkoutLink || "";
+                        if (link) {
+                          navigator.clipboard.writeText(`https://xintian.com.my${link}`);
+                          toast.success(translate("链接已复制到剪贴板", "Link copied to clipboard"));
+                        }
+                      }}>
+                        {translate("复制链接", "Copy Link")}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => {
+                        const link = (orderDetail as any).checkoutLink || "";
+                        if (link) window.open(`https://xintian.com.my${link}`, "_blank");
+                      }}>
+                        {translate("打开链接", "Open Link")}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => {
+                        const link = (orderDetail as any).checkoutLink || "";
+                        const phone = (orderDetail as any).phoneNumber || "";
+                        if (link && phone) {
+                          const msg = encodeURIComponent(`${translate("老板娘您好，这是您的订单，请点击以下链接完成资料填写及付款，谢谢。", "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.")}\nhttps://xintian.com.my${link}`);
+                          window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+                        }
+                      }}>
+                        {translate("WhatsApp 分享", "Share via WhatsApp")}
+                      </Button>
+                      <Button size="sm" onClick={() => sendCheckoutMutation.mutate({ orderId: orderDetail.id })} disabled={sendCheckoutMutation.isPending}>
+                        {translate("发送 Checkout 到 Messenger", "Send Checkout to Messenger")}
+                      </Button>
+                    </div>
+                  </div>
+                  {(orderDetail as any).notificationStatus && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">{translate("通知状态", "Notification Status")}:</span>
+                      <Badge variant={
+                        (orderDetail as any).notificationStatus === "sent" ? "default" :
+                        (orderDetail as any).notificationStatus === "failed" ? "destructive" : "outline"
+                      }>
+                        {translate(
+                          (orderDetail as any).notificationStatus === "sent" ? "已发送" :
+                          (orderDetail as any).notificationStatus === "failed" ? "发送失败" : "待发送",
+                          (orderDetail as any).notificationStatus === "sent" ? "Sent" :
+                          (orderDetail as any).notificationStatus === "failed" ? "Failed" : "Pending"
+                        )}
+                      </Badge>
+                      {(orderDetail as any).notificationStatus === "failed" && (orderDetail as any).notificationError && (
+                        <span className="text-xs text-destructive">{(orderDetail as any).notificationError}</span>
+                      )}
+                      {(orderDetail as any).notificationStatus === "failed" && (
+                        <Button size="sm" variant="outline" onClick={() => resendCheckoutMutation.mutate({ orderId: orderDetail.id })} disabled={resendCheckoutMutation.isPending}>
+                          {translate("重新发送", "Resend")}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {/* Status actions */}
                 <div className="flex flex-wrap gap-2 pt-4 border-t">
-                  {(orderDetail.physicalStatus === "pending" || orderDetail.physicalStatus === "receipt_uploaded" || orderDetail.physicalStatus === "partial_payment") && (
+                  {(orderDetail.physicalStatus === "pending" || orderDetail.physicalStatus === "receipt_uploaded") && (
                     <Button size="sm"
                       onClick={() => {
                         updateStatusMutation.mutate({ id: orderDetail.id, physicalStatus: "packing" });
@@ -676,25 +763,31 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-16">{translate("商品图片", "Image")}</TableHead>
                       <TableHead>{translate("商品名称", "Product Name")}</TableHead>
+                      <TableHead>{translate("SKU", "SKU")}</TableHead>
                       <TableHead>{translate("规格", "Variant")}</TableHead>
                       <TableHead>{translate("数量", "Qty")}</TableHead>
                       <TableHead>{translate("单价", "Unit Price")}</TableHead>
                       <TableHead>{translate("小计", "Subtotal")}</TableHead>
-                      <TableHead>{translate("价格类型", "Price Type")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {orderDetail.items?.map((item: any) => (
                       <TableRow key={item.id}>
+                        <TableCell>
+                          {item.productImage ? (
+                            <img src={item.productImage} alt={item.productName} className="h-12 w-12 rounded object-cover" />
+                          ) : (
+                            <div className="h-12 w-12 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground">{translate("无图", "No Img")}</div>
+                          )}
+                        </TableCell>
                         <TableCell className="font-medium">{item.productName}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground font-mono">{item.productSku || "-"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{item.variationName || "-"}</TableCell>
                         <TableCell>{item.quantity}</TableCell>
                         <TableCell>RM {item.unitPrice}</TableCell>
                         <TableCell className="font-semibold">RM {item.subtotal}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">{item.priceType || "retail"}</Badge>
-                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

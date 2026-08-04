@@ -1797,3 +1797,14 @@
 ## V2.0.32: 移除订单列表类型栏位
 - [x] 移除订单列表中 Type（类型）栏位及对应筛选
 - [x] TypeScript 检查零错误 + 保存检查点
+
+## V2.0.33: 本地订单页面优化
+- [x] 统一订单状态：pending 改为「未汇款订单」，移除 partial_payment，全系统同步
+- [x] schema 添加 checkoutLink/notificationStatus/notificationError/notificationSentAt 字段，ALTER TABLE 已执行
+- [x] createOrderWithSplit 和 createOrderFromLiveCapture 创建订单时自动生成 Checkout Link
+- [x] 订单详情添加 Copy/Open/WhatsApp/Messenger 分享按钮
+- [x] 一键发送 Messenger Checkout 功能（sendCheckout/resendCheckout/batchSendCheckout procedure）
+- [x] 订单商品显示优化：图片/名称/SKU/规格/数量/单价/小计
+- [x] 确认 Customer Search 全字段搜索（已确认支持 Facebook名称/Messenger名称/电话/Email/Customer ID）
+- [x] Checkout Notification 管理：批量发送、状态跟踪（Pending/Sent/Failed）、失败重发
+- [x] TypeScript 零错误 + Vitest 32 文件 266 项测试全部通过 + 保存检查点
