@@ -1854,3 +1854,11 @@
 - [x] 修复 manualItems 列表显示商品图片和完整信息
 - [x] 确认 Order Detail 也显示完整商品资料（已确认：图片/名称/SKU/规格/数量/单价/小计）
 - [x] TypeScript 零错误 + 保存检查点
+
+## V2.0.39: 区域四商品显示全面优化
+- [x] 商品图片放大到 80px（OrderCreatePage）和 80px（Order Detail），名称支持两行显示不省略
+- [x] 添加 SKU/Keyword 显示到商品卡片（OrderCreatePage + Order Detail）
+- [x] 点击图片 Modal/Lightbox 预览（600x600）含商品名称/SKU/Keyword/规格/售价
+- [x] 商品下拉选择器优化显示图片/名称/SKU/售价
+- [x] Order Detail 商品列表同步优化显示（图片放大/名称完整/SKU/Keyword/规格）
+- [x] TypeScript 零错误 + 保存检查点

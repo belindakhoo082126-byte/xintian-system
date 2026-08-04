@@ -10,12 +10,13 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   Search, Plus, Trash2, X, ArrowLeft, Eye, Save, ClipboardPaste,
-  User, Package, DollarSign, Truck, FileText, Sparkles, CreditCard,
+  User, Package, DollarSign, Truck, FileText, Sparkles, CreditCard, Maximize2,
 } from "lucide-react";
 
 const ORDER_NATURE = {
@@ -69,6 +70,8 @@ interface ManualOrderItem {
   unitCost?: string;
   image?: string;
   sku?: string;
+  keyword?: string;
+  sellingPrice?: string;
 }
 
 export default function OrderCreatePage({ orderCategory = "local" }: { orderCategory?: "local" | "import" }) {
@@ -131,6 +134,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
 
   // Preview mode
   const [previewMode, setPreviewMode] = useState(false);
+  // Product image preview (lightbox)
+  const [previewProduct, setPreviewProduct] = useState<ManualOrderItem | null>(null);
 
   // ===== Queries =====
   const utils = trpc.useUtils();
@@ -347,6 +352,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         priceType: orderNature,
         image: (product as any).coverImageUrl || (product as any).imageUrl || (product as any).image,
         sku: (product as any).sku,
+        keyword: (product as any).keyword || "",
+        sellingPrice: (product as any).sellingPrice || (product as any).regularPrice || "0",
       };
     }));
   }
@@ -787,6 +794,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                         unitCost: p.costPrice || p.supplierCost || "0",
                         image: p.coverImageUrl || p.imageUrl || p.image,
                         sku: p.sku,
+                        keyword: p.keyword || "",
+                        sellingPrice: p.sellingPrice || p.regularPrice || "0",
                       }]);
                       setProductSearchQuery("");
                     }}
@@ -821,22 +830,38 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               <div key={idx} className="p-3 border rounded-lg space-y-3">
                 {/* Product info display */}
                 {item.productId && (
-                  <div className="flex items-center gap-3 p-2 bg-muted/50 rounded-lg">
+                  <div className="flex items-start gap-3 p-2 bg-muted/50 rounded-lg">
+                    {/* Clickable image with preview */}
                     {item.image ? (
-                      <img src={item.image} alt={item.productName} className="w-12 h-12 rounded-lg object-cover border" />
+                      <button
+                        onClick={() => setPreviewProduct(item)}
+                        className="relative shrink-0 group"
+                      >
+                        <img src={item.image} alt={item.productName} className="w-20 h-20 rounded-lg object-cover border" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded-lg flex items-center justify-center transition-colors">
+                          <Maximize2 className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </button>
                     ) : (
-                      <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
-                        <Package className="h-6 w-6 text-muted-foreground" />
+                      <div className="w-20 h-20 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                        <Package className="h-8 w-8 text-muted-foreground" />
                       </div>
                     )}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm truncate">{item.productName}</div>
-                      <div className="text-xs text-muted-foreground flex items-center gap-2">
-                        {item.sku && <span>SKU: {item.sku}</span>}
-                        {item.variationName && <span>· {translate("规格", "Variant")}: {item.variationName}</span>}
+                    {/* Product details */}
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="font-medium text-sm leading-snug" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{item.productName}</div>
+                      <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                        {item.sku && <span><span className="font-medium">SKU:</span> {item.sku}</span>}
+                        {item.keyword && <span><span className="font-medium">{translate("关键字", "Keyword")}:</span> {item.keyword}</span>}
+                      </div>
+                      {item.variationName && (
+                        <div className="text-xs text-muted-foreground"><span className="font-medium">{translate("规格", "Variant")}:</span> {item.variationName}</div>
+                      )}
+                      <div className="text-xs text-muted-foreground">
+                        <span className="font-medium">{translate("售价", "Price")}:</span> RM {item.sellingPrice || item.unitPrice}
                       </div>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={() => removeManualItem(idx)}>
+                    <Button variant="ghost" size="icon" className="shrink-0" onClick={() => removeManualItem(idx)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
@@ -1002,6 +1027,37 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
           {isSubmitting ? translate("保存中...", "Saving...") : translate("确认建立订单", "Confirm Create Order")}
         </Button>
       </div>
+      {/* Product Image Preview Modal (Lightbox) */}
+      <Dialog open={!!previewProduct} onOpenChange={(open) => !open && setPreviewProduct(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold">{previewProduct?.productName || ""}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {previewProduct?.image ? (
+              <div className="flex justify-center">
+                <img src={previewProduct.image} alt={previewProduct.productName} className="max-w-[600px] max-h-[600px] w-full h-auto object-contain rounded-lg border" />
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-64 bg-muted rounded-lg">
+                <Package className="h-16 w-16 text-muted-foreground" />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {previewProduct?.sku && (
+                <div><span className="font-medium text-muted-foreground">SKU:</span> <span className="font-mono">{previewProduct.sku}</span></div>
+              )}
+              {previewProduct?.keyword && (
+                <div><span className="font-medium text-muted-foreground">{translate("关键字", "Keyword")}:</span> {previewProduct.keyword}</div>
+              )}
+              {previewProduct?.variationName && (
+                <div><span className="font-medium text-muted-foreground">{translate("规格", "Variant")}:</span> {previewProduct.variationName}</div>
+              )}
+              <div><span className="font-medium text-muted-foreground">{translate("售价", "Price")}:</span> RM {previewProduct?.sellingPrice || previewProduct?.unitPrice || "0"}</div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

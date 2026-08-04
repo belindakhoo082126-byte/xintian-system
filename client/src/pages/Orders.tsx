@@ -781,9 +781,10 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-16">{translate("商品图片", "Image")}</TableHead>
-                      <TableHead>{translate("商品名称", "Product Name")}</TableHead>
+                      <TableHead className="w-24">{translate("商品图片", "Image")}</TableHead>
+                      <TableHead className="min-w-[200px]">{translate("商品名称", "Product Name")}</TableHead>
                       <TableHead>{translate("SKU", "SKU")}</TableHead>
+                      <TableHead>{translate("关键字", "Keyword")}</TableHead>
                       <TableHead>{translate("规格", "Variant")}</TableHead>
                       <TableHead>{translate("数量", "Qty")}</TableHead>
                       <TableHead>{translate("单价", "Unit Price")}</TableHead>
@@ -795,13 +796,14 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                       <TableRow key={item.id}>
                         <TableCell>
                           {item.productImage ? (
-                            <img src={item.productImage} alt={item.productName} className="h-12 w-12 rounded object-cover" />
+                            <img src={item.productImage} alt={item.productName} className="h-20 w-20 rounded-lg object-cover border" />
                           ) : (
-                            <div className="h-12 w-12 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground">{translate("无图", "No Img")}</div>
+                            <div className="h-20 w-20 rounded-lg bg-muted flex items-center justify-center text-xs text-muted-foreground">{translate("无图", "No Img")}</div>
                           )}
                         </TableCell>
-                        <TableCell className="font-medium">{item.productName}</TableCell>
+                        <TableCell className="font-medium" style={{ whiteSpace: "normal", wordBreak: "break-word", maxWidth: "300px" }}>{item.productName}</TableCell>
                         <TableCell className="text-sm text-muted-foreground font-mono">{item.productSku || "-"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{item.keyword || "-"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{item.variationName || "-"}</TableCell>
                         <TableCell>{item.quantity}</TableCell>
                         <TableCell>RM {item.unitPrice}</TableCell>
