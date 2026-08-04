@@ -1831,3 +1831,11 @@
 - [x] 修复 server/routers.ts 中的 partial_payment 引用（2处）
 - [x] 修复 I18nContext.tsx 中的状态翻译
 - [x] TypeScript 零错误 + 保存检查点
+
+## V2.0.36: Checkout Link 功能完善
+- [x] 确认后端 checkoutLink 生成逻辑（createOrderWithSplit + createOrderFromLiveCapture）
+- [x] 确认 getDetail 返回 checkoutLink 和 notificationStatus（getOrderById select *）
+- [x] 确认前端订单详情显示 Copy/Open/WhatsApp/Messenger 按钮
+- [x] 确认前端商品列表显示图片/名称/SKU/规格/数量/单价/小计（getOrderItems JOIN products）
+- [x] 添加批量发送 Checkout 按钮到订单列表工具栏
+- [x] TypeScript 零错误 + 保存检查点

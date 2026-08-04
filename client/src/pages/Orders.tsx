@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout } from "lucide-react";
+import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useSearch, useLocation } from "wouter";
 
@@ -513,6 +513,24 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           </SelectContent>
         </Select>
       </div>
+
+      {orderCategory !== "all" && (
+        <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3">
+          <div>
+            <p className="text-sm font-medium">{translate("Checkout 通知管理", "Checkout Notification Management")}</p>
+            <p className="text-xs text-muted-foreground">{translate("一键发送 Checkout Link 给所有未发送或发送失败的订单", "Send Checkout Link to all pending or failed orders")}</p>
+          </div>
+          <Button
+            size="sm"
+            variant="default"
+            onClick={() => batchSendCheckoutMutation.mutate({ status: statusFilter === "all" ? undefined : statusFilter })}
+            disabled={batchSendCheckoutMutation.isPending}
+          >
+            <Send className="h-4 w-4 mr-1" />
+            {translate("发送全部未发送订单", "Send All Pending")}
+          </Button>
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-0">
