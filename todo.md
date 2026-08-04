@@ -1847,3 +1847,10 @@
 - [x] 修复 Messenger 私聊不创建客户 Bug（storeIncomingMessengerMessage 现在在客户不存在时自动创建）
 - [x] 确认防止重复客户（findOrCreateCustomer 按 facebookId→messengerId→phoneNumber 顺序查找已有客户）
 - [x] TypeScript 零错误 + 保存检查点
+
+## V2.0.38: 区域四商品搜索与显示修复
+- [x] 修复商品选择后显示完整资料（图片/名称/SKU/规格/数量/单价/小计）
+- [x] 修复商品下拉选择器使用 coverImageUrl 而非 imageUrl
+- [x] 修复 manualItems 列表显示商品图片和完整信息
+- [x] 确认 Order Detail 也显示完整商品资料（已确认：图片/名称/SKU/规格/数量/单价/小计）
+- [x] TypeScript 零错误 + 保存检查点

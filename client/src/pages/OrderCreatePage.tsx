@@ -68,6 +68,7 @@ interface ManualOrderItem {
   priceType?: string;
   unitCost?: string;
   image?: string;
+  sku?: string;
 }
 
 export default function OrderCreatePage({ orderCategory = "local" }: { orderCategory?: "local" | "import" }) {
@@ -325,15 +326,13 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     }));
   }
 
-  function handleProductSelect(idx: number, productId: string) {
+    function handleProductSelect(idx: number, productId: string) {
     if (productId === "none") return;
     const product = (productSearchResults as any)?.find((p: any) => p.id === parseInt(productId));
     if (!product) return;
-
     const priceField = orderNature === "wholesale" ? "wholesalePrice" : orderNature === "agent" ? "agentPrice" : "sellingPrice";
     const unitPrice = (product as any)[priceField] || product.sellingPrice || product.regularPrice || "0";
     const quantity = 1;
-
     setManualItems(prev => prev.map((item, i) => {
       if (i !== idx) return item;
       const price = parseFloat(unitPrice) || 0;
@@ -346,7 +345,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         subtotal: (quantity * price).toFixed(2),
         unitCost: (product as any).costPrice || (product as any).supplierCost || "0",
         priceType: orderNature,
-        image: (product as any).imageUrl || (product as any).image,
+        image: (product as any).coverImageUrl || (product as any).imageUrl || (product as any).image,
+        sku: (product as any).sku,
       };
     }));
   }
@@ -775,31 +775,33 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                   <button
                     key={p.id}
                     onClick={() => {
+                      const unitPrice = orderNature === "wholesale" ? (p.wholesalePrice || p.sellingPrice || "0") : orderNature === "agent" ? (p.agentPrice || p.sellingPrice || "0") : (p.sellingPrice || p.regularPrice || "0");
                       setManualItems(prev => [...prev, {
                         productId: p.id,
                         productName: p.name,
                         productType: p.type || "physical",
                         quantity: 1,
-                        unitPrice: orderNature === "wholesale" ? (p.wholesalePrice || p.sellingPrice || "0") : orderNature === "agent" ? (p.agentPrice || p.sellingPrice || "0") : (p.sellingPrice || p.regularPrice || "0"),
-                        subtotal: orderNature === "wholesale" ? (p.wholesalePrice || p.sellingPrice || "0") : orderNature === "agent" ? (p.agentPrice || p.sellingPrice || "0") : (p.sellingPrice || p.regularPrice || "0"),
+                        unitPrice,
+                        subtotal: unitPrice,
                         priceType: orderNature,
                         unitCost: p.costPrice || p.supplierCost || "0",
-                        image: p.imageUrl || p.image,
+                        image: p.coverImageUrl || p.imageUrl || p.image,
+                        sku: p.sku,
                       }]);
                       setProductSearchQuery("");
                     }}
                     className="w-full text-left p-2 rounded hover:bg-muted text-sm flex items-center justify-between"
                   >
                     <div className="flex items-center gap-2">
-                      {p.imageUrl && <img src={p.imageUrl} alt="" className="w-8 h-8 rounded object-cover" />}
+                      {(p.coverImageUrl || p.imageUrl) && <img src={p.coverImageUrl || p.imageUrl} alt="" className="w-10 h-10 rounded object-cover" />}
                       <div>
                         <div className="font-medium">{p.name}</div>
-                        <div className="text-xs text-muted-foreground">{p.sku} {p.keywords && `· ${p.keywords}`}</div>
+                        <div className="text-xs text-muted-foreground">SKU: {p.sku} {p.keywords && `· ${p.keywords}`}</div>
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="font-medium">RM {p.sellingPrice || p.regularPrice || "0"}</div>
-                      {p.wholesalePrice && <div className="text-xs text-muted-foreground">批发: RM {p.wholesalePrice}</div>}
+                      {p.wholesalePrice && <div className="text-xs text-muted-foreground">{translate("批发", "Wholesale")}: RM {p.wholesalePrice}</div>}
                     </div>
                   </button>
                 ))}
@@ -816,38 +818,68 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               </Button>
             </div>
             {manualItems.map((item, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 items-end p-3 border rounded-lg">
-                <div className="col-span-4">
-                  <Label className="text-xs">{translate("商品", "Product")}</Label>
-                  <Select
-                    value={item.productId?.toString() || "none"}
-                    onValueChange={(v) => handleProductSelect(idx, v)}
-                  >
-                    <SelectTrigger className="h-9"><SelectValue placeholder={translate("选择商品", "Select Product")} /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">{translate("请选择...", "Please select...")}</SelectItem>
-                      {(productSearchResults as any[] || [])?.slice(0, 50).map((p: any) => (
-                        <SelectItem key={p.id} value={p.id.toString()}>{p.name} ({p.sku})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="col-span-2">
-                  <Label className="text-xs">{translate("数量", "Quantity")}</Label>
-                  <Input type="number" className="h-9" value={item.quantity} onChange={(e) => updateManualItem(idx, "quantity", parseInt(e.target.value) || 0)} />
-                </div>
-                <div className="col-span-2">
-                  <Label className="text-xs">{translate("单价", "Unit Price")}</Label>
-                  <Input type="number" className="h-9" value={item.unitPrice} onChange={(e) => updateManualItem(idx, "unitPrice", e.target.value)} />
-                </div>
-                <div className="col-span-3">
-                  <Label className="text-xs">{translate("小计", "Subtotal")}</Label>
-                  <Input className="h-9" value={`RM ${parseFloat(item.subtotal).toFixed(2)}`} disabled />
-                </div>
-                <div className="col-span-1">
-                  <Button variant="ghost" size="icon" onClick={() => removeManualItem(idx)}>
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+              <div key={idx} className="p-3 border rounded-lg space-y-3">
+                {/* Product info display */}
+                {item.productId && (
+                  <div className="flex items-center gap-3 p-2 bg-muted/50 rounded-lg">
+                    {item.image ? (
+                      <img src={item.image} alt={item.productName} className="w-12 h-12 rounded-lg object-cover border" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
+                        <Package className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm truncate">{item.productName}</div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-2">
+                        {item.sku && <span>SKU: {item.sku}</span>}
+                        {item.variationName && <span>· {translate("规格", "Variant")}: {item.variationName}</span>}
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={() => removeManualItem(idx)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                )}
+                {/* Product selector (only shown when no product selected) */}
+                {!item.productId && (
+                  <div>
+                    <Label className="text-xs">{translate("选择商品", "Select Product")}</Label>
+                    <Select
+                      value={item.productId?.toString() || "none"}
+                      onValueChange={(v) => handleProductSelect(idx, v)}
+                    >
+                      <SelectTrigger className="h-9"><SelectValue placeholder={translate("选择商品", "Select Product")} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">{translate("请选择...", "Please select...")}</SelectItem>
+                        {(productSearchResults as any[] || [])?.slice(0, 50).map((p: any) => (
+                          <SelectItem key={p.id} value={p.id.toString()}>{p.name} ({p.sku})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {/* Quantity / Price / Subtotal */}
+                <div className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-3">
+                    <Label className="text-xs">{translate("数量", "Quantity")}</Label>
+                    <Input type="number" className="h-9" value={item.quantity} onChange={(e) => updateManualItem(idx, "quantity", parseInt(e.target.value) || 0)} />
+                  </div>
+                  <div className="col-span-3">
+                    <Label className="text-xs">{translate("单价", "Unit Price")}</Label>
+                    <Input type="number" className="h-9" value={item.unitPrice} onChange={(e) => updateManualItem(idx, "unitPrice", e.target.value)} />
+                  </div>
+                  <div className="col-span-4">
+                    <Label className="text-xs">{translate("小计", "Subtotal")}</Label>
+                    <Input className="h-9" value={`RM ${parseFloat(item.subtotal).toFixed(2)}`} disabled />
+                  </div>
+                  <div className="col-span-2">
+                    {item.productId && (
+                      <Button variant="outline" size="sm" className="w-full" onClick={() => removeManualItem(idx)}>
+                        <Trash2 className="h-3 w-3 mr-1" />{translate("移除", "Remove")}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
