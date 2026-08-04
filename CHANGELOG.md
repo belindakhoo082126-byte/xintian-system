@@ -623,3 +623,12 @@
 - `generateOrderNumber()` 函数生成XT00001格式的订单号
 ### Notes
 - TypeScript 零错误
+
+## V2.0.44: 订单浏览页面导出/打印功能 (2026-08-05)
+### Added
+- 订单浏览页面新增「导出图片」按钮，使用html2canvas将订单详情截图为PNG下载
+- 订单浏览页面新增「打印」按钮，调用window.print()打印订单
+- 添加打印CSS样式，打印时隐藏导航按钮和操作按钮（.no-print class）
+- 安装html2canvas 1.4.1依赖
+### Notes
+- TypeScript 零错误

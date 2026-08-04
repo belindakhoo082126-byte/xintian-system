@@ -1893,3 +1893,10 @@
 - [x] 4. 区域五折扣原因和收费说明显示在订单浏览（schema新增discountReason列，OrderBrowsePage显示原因）
 - [x] 5. 区域六备注显示在订单浏览（创建订单时保存remark到order_remarks，OrderBrowsePage显示）
 - [x] 6. TypeScript 检查 + 保存检查点
+
+## V2.0.44: 订单浏览页面导出/打印功能
+- [x] 1. 安装html2canvas依赖
+- [x] 2. OrderBrowsePage增加"导出为图片"按钮（html2canvas截图下载PNG）
+- [x] 3. OrderBrowsePage增加"打印"按钮（window.print）
+- [x] 4. 添加打印样式（no-print class隐藏按钮和导航元素）
+- [x] 5. TypeScript 检查 + 保存检查点

@@ -231,3 +231,17 @@
     }
   }
 }
+
+/* V2.0.44: Print styles for order browse */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+  }
+  .container {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+}

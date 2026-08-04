@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
@@ -11,8 +11,9 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Edit, FileText, User, Package, DollarSign, Truck,
   CreditCard, History, MessageSquare, PackageCheck, Calendar,
-  Sprout, TreePine, AlertCircle, Link2,
+  Sprout, TreePine, AlertCircle, Link2, Download, Printer,
 } from "lucide-react";
+import html2canvas from "html2canvas";
 
 const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
   pending: { zh: "未汇款订单", en: "Unpaid Order", variant: "outline" },
@@ -53,6 +54,35 @@ const SHIPPING_LABELS: Record<string, { zh: string; en: string }> = {
 export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; onBack: () => void }) {
   const { translate, lang } = useI18n();
   const [_, setLocation] = useLocation();
+  const exportRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+
+  // V2.0.44: Export order as image
+  async function handleExportImage() {
+    if (!exportRef.current) return;
+    setExporting(true);
+    try {
+      const canvas = await html2canvas(exportRef.current, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+      });
+      const link = document.createElement("a");
+      link.download = `order_${o.orderNumber}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      toast.success(translate("图片已下载", "Image downloaded"));
+    } catch (e: any) {
+      toast.error(translate("导出失败: {message}", "Export failed: {message}", { message: e.message }));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // V2.0.44: Print order
+  function handlePrint() {
+    window.print();
+  }
 
   const { data: order, isLoading } = trpc.orders.getDetail.useQuery({ id: orderId });
   const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
@@ -113,7 +143,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   return (
     <div className="container max-w-5xl mx-auto px-4 py-6 space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between no-print">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" />
@@ -128,8 +158,14 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <Badge variant={statusCfg.variant}>{translate(statusCfg.zh, statusCfg.en)}</Badge>
+          <Button variant="outline" size="sm" onClick={handleExportImage} disabled={exporting}>
+            <Download className="h-3 w-3 mr-1" />{exporting ? translate("导出中...", "Exporting...") : translate("导出图片", "Export Image")}
+          </Button>
+          <Button variant="outline" size="sm" onClick={handlePrint}>
+            <Printer className="h-3 w-3 mr-1" />{translate("打印", "Print")}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setLocation(`/orders/${orderId}/edit`)}>
             <Edit className="h-3 w-3 mr-1" />{translate("编辑", "Edit")}
           </Button>
@@ -144,6 +180,9 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           )}
         </div>
       </div>
+
+      {/* Export/Print content wrapper */}
+      <div ref={exportRef} className="space-y-4">
 
       {/* Section 1: Order Basic Info */}
       <Card>
@@ -414,8 +453,10 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
         </CardContent>
       </Card>
 
+      </div>
+
       {/* Footer Actions */}
-      <div className="flex justify-end gap-3 pt-4 pb-8">
+      <div className="flex justify-end gap-3 pt-4 pb-8 no-print">
         <Button variant="outline" onClick={onBack}>
           <ArrowLeft className="h-4 w-4 mr-1" />{translate("返回", "Back")}
         </Button>
