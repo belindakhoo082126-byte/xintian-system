@@ -1773,3 +1773,10 @@
 - [x] 修复新建 Campaign 时内容绑定/Messenger Flow/Product Button Tab 被 disabled 的问题
 - [x] 保存新建 Campaign 后自动获取返回的 campaignId，启用所有 Tab
 - [x] TypeScript 检查零错误 + 保存检查点
+
+## V2.0.29: Campaign UI 流程优化
+- [x] 移除基本设置中的 Facebook Link 输入框，统一到内容绑定管理
+- [x] 增加 All/Active/Ended/Archived 状态筛选 Tab
+- [x] Archive 与 Delete 分开，Archived 状态显示 Restore 按钮
+- [x] Archive 提示文字国际化（中英文）
+- [x] TypeScript 检查零错误 + 保存检查点
