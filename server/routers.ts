@@ -2680,7 +2680,7 @@ export const appRouter = router({
     
     transition: adminProcedure.input(z.object({
       orderId: z.number(),
-      toStatus: z.enum(["pending", "receipt_uploaded", "partial_payment", "hold_order", "packing", "shipped", "partial_shipped", "completed", "cancelled"]),
+      toStatus: z.enum(["pending", "receipt_uploaded", "hold_order", "packing", "shipped", "partial_shipped", "completed", "cancelled", "scheduled"]),
       notes: z.string().optional(),
     })).mutation(async ({ input, ctx }) => {
       const changedBy = ctx.user?.name || ctx.user?.openId || "admin";
@@ -3119,7 +3119,7 @@ export const appRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "请选择有效的付款方式" });
       }
 
-      const permittedStatuses = ["pending", "partial_payment"];
+      const permittedStatuses = ["pending", "receipt_uploaded"];
       if (!permittedStatuses.includes(result[0].physicalStatus || "")) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "当前订单状态不允许上传付款凭证" });
       }

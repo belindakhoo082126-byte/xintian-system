@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { Crown, Check, X, Send, Copy, Phone, Ban, Search, Eye } from "lucide-react";
 
 const MEMBERSHIP_STATUS_MAP = {
-  pending: { zh: "待付款", en: "Pending Payment", variant: "outline" },
+  pending: { zh: "未汇款", en: "Unpaid", variant: "outline" },
   receipt_uploaded: { zh: "已上传单据", en: "Receipt Uploaded", variant: "secondary" },
   pending_review: { zh: "待审核", en: "Pending Review", variant: "secondary" },
   fee_confirmed: { zh: "已确认会员费", en: "Fee Confirmed", variant: "default" },
@@ -74,7 +74,7 @@ export default function Membership() {
     onSuccess: () => {
       utils.membership.invalidate();
       utils.orders.invalidate();
-      toast.success(translate("单据已拒绝，订单已退回待付款状态", "Receipt rejected, order returned to pending payment status"));
+      toast.success(translate("单据已拒绝，订单已退回未汇款状态", "Receipt rejected, order returned to unpaid status"));
       setDetailOpen(false);
       setReviewNotes("");
     },

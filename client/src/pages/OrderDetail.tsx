@@ -22,15 +22,15 @@ const HOLD_TYPE_LABELS_RAW: Record<string, { zh: string; en: string }> = {
 };
 
 const STATUS_CONFIG_RAW: Record<string, { zh: string; en: string; variant: any; color: string }> = {
-  pending: { zh: "挂单", en: "Pending", variant: "outline", color: "text-yellow-600" },
-  receipt_uploaded: { zh: "确认汇款", en: "Payment Confirmed", variant: "secondary", color: "text-blue-600" },
-  partial_payment: { zh: "部分汇款", en: "Partial Payment", variant: "secondary", color: "text-orange-600" },
+  pending: { zh: "未汇款订单", en: "Unpaid Order", variant: "outline", color: "text-yellow-600" },
+  receipt_uploaded: { zh: "待审核付款凭证", en: "Pending Payment Verification", variant: "secondary", color: "text-blue-600" },
   hold_order: { zh: "保留订单", en: "Hold Order", variant: "secondary", color: "text-purple-600" },
-  packing: { zh: "待包货", en: "Packing", variant: "default", color: "text-cyan-600" },
-  shipped: { zh: "已发货", en: "Shipped", variant: "default", color: "text-green-600" },
+  packing: { zh: "待包货", en: "Pending Packing", variant: "default", color: "text-cyan-600" },
   partial_shipped: { zh: "部分发货", en: "Partial Shipped", variant: "secondary", color: "text-teal-600" },
-  completed: { zh: "完成订单", en: "Completed", variant: "default", color: "text-green-700" },
+  shipped: { zh: "已发货", en: "Shipped", variant: "default", color: "text-green-600" },
+  completed: { zh: "已完成", en: "Completed", variant: "default", color: "text-green-700" },
   cancelled: { zh: "已取消", en: "Cancelled", variant: "destructive", color: "text-red-600" },
+  scheduled: { zh: "预约发货", en: "Scheduled Shipping", variant: "secondary", color: "text-indigo-600" },
 };
 
 const SOURCE_LABELS_RAW: Record<string, { zh: string; en: string }> = {

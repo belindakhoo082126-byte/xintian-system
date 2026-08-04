@@ -621,7 +621,7 @@ export default function ProductsV2() {
                       <div className="text-sm">
                         <span>{translate("现货", "Stock")}: {p.availableQuantity ?? p.stockQuantity ?? 0}</span>
                         {(p.pendingQuantity > 0) && (
-                          <span className="text-muted-foreground ml-1">({p.pendingQuantity}{translate("挂单", "pending")})</span>
+                          <span className="text-muted-foreground ml-1">({p.pendingQuantity}{translate("未付款", "unpaid")})</span>
                         )}
                       </div>
                     ) : translate("—", "—")}

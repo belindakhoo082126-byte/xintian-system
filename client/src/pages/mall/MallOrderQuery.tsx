@@ -10,14 +10,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ChevronLeft, Search, Package, Truck, CheckCircle, Clock, XCircle, ExternalLink } from "lucide-react";
 
 const STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = {
-  pending: { label: "挂单", color: "bg-yellow-100 text-yellow-800", icon: Clock },
-  receipt_uploaded: { label: "确认汇款", color: "bg-blue-100 text-blue-800", icon: Clock },
-  partial_payment: { label: "部分汇款", color: "bg-orange-100 text-orange-800", icon: Clock },
+  pending: { label: "未汇款订单", color: "bg-yellow-100 text-yellow-800", icon: Clock },
+  receipt_uploaded: { label: "待审核付款凭证", color: "bg-blue-100 text-blue-800", icon: Clock },
   hold_order: { label: "保留订单", color: "bg-purple-100 text-purple-800", icon: Clock },
   packing: { label: "待包货", color: "bg-green-100 text-green-800", icon: Package },
-  shipped: { label: "已发货", color: "bg-indigo-100 text-indigo-800", icon: Truck },
   partial_shipped: { label: "部分发货", color: "bg-cyan-100 text-cyan-800", icon: Truck },
-  completed: { label: "完成", color: "bg-green-100 text-green-800", icon: CheckCircle },
+  shipped: { label: "已发货", color: "bg-indigo-100 text-indigo-800", icon: Truck },
+  completed: { label: "已完成", color: "bg-green-100 text-green-800", icon: CheckCircle },
   cancelled: { label: "已取消", color: "bg-red-100 text-red-800", icon: XCircle },
 };
 

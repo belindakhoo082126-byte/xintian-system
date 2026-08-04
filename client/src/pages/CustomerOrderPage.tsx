@@ -18,7 +18,7 @@ import { Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink,
 import { toast } from "sonner";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
-  "Pending Payment": { label: "待付款", color: "bg-amber-100 text-amber-900", icon: Clock },
+  "Pending Payment": { label: "未汇款订单", color: "bg-amber-100 text-amber-900", icon: Clock },
   "Payment Review": { label: "付款审核中", color: "bg-sky-100 text-sky-900", icon: Clock },
   "Payment Confirmed": { label: "已确认付款", color: "bg-emerald-100 text-emerald-900", icon: CheckCircle2 },
   "Preparing Goods": { label: "配货中", color: "bg-sky-100 text-sky-900", icon: Package },
@@ -283,10 +283,10 @@ export default function CustomerOrderPage(props: any) {
                   <span>RM {o.totalAmount}</span>
                 </div>
 
-                {/* 已付款 */}
+                {/* 已付 */}
                 {parseFloat(o.paidAmount || "0") > 0 && (
                   <div className="flex justify-between text-emerald-600">
-                    <span>已付款</span>
+                    <span>已付</span>
                     <span>RM {o.paidAmount}</span>
                   </div>
                 )}

@@ -1041,7 +1041,7 @@ export default function PackingDetail() {
             </div>
           )}
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>{translate("已付款:", "Paid:")}</span><span>RM {data.summary.paidAmount}</span>
+            <span>{translate("已付:", "Paid:")}</span><span>RM {data.summary.paidAmount}</span>
           </div>
           {parseFloat(data.summary.balance) > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between" }}>

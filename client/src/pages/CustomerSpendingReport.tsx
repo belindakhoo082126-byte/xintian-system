@@ -145,7 +145,7 @@ export default function CustomerSpendingReport() {
                 <DollarSign className="h-5 w-5 text-emerald-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">{translate("已付款", "Paid")}</p>
+                <p className="text-xs text-muted-foreground">{translate("已付", "Paid")}</p>
                 <p className="text-lg font-bold text-emerald-600">{formatRM(summary.totalPaid)}</p>
               </div>
             </div>
@@ -182,7 +182,7 @@ export default function CustomerSpendingReport() {
                   <TableHead>{translate("电话", "Phone")}</TableHead>
                   <TableHead className="text-right">{translate("订单数", "Orders")}</TableHead>
                   <TableHead className="text-right">{translate("总消费", "Total Spending")}</TableHead>
-                  <TableHead className="text-right">{translate("已付款", "Paid")}</TableHead>
+                  <TableHead className="text-right">{translate("已付", "Paid")}</TableHead>
                   <TableHead className="text-right">{translate("未付款", "Unpaid")}</TableHead>
                   <TableHead>{translate("最近下单", "Last Order")}</TableHead>
                 </TableRow>

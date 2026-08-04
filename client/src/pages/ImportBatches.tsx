@@ -381,14 +381,14 @@ export default function ImportBatches() {
                   ) : !batchItems || batchItems.length === 0 ? (
                     <div className="p-8 text-center text-muted-foreground">
                       <Package className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                      <p>暂无商品明细，代购截止后系统将自动汇总已付款商品</p>
+                      <p>暂无商品明细，代购截止后系统将自动汇总已付商品</p>
                     </div>
                   ) : (
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>商品名称</TableHead>
-                          <TableHead>已付款数量</TableHead>
+                          <TableHead>已付数量</TableHead>
                           <TableHead>最终采购量</TableHead>
                           <TableHead>实际到货</TableHead>
                           <TableHead>健康</TableHead>

@@ -10,7 +10,7 @@ import { Search, Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, Exter
 import { useI18n } from "@/contexts/I18nContext";
 
 const STATUS_CONFIG_MAP = {
-  "等待付款": "pendingPayment",
+  "未汇款": "pendingPayment",
   "付款审核中": "paymentReview",
   "已确认付款": "paymentConfirmed",
   "正在准备商品": "preparingGoods",
@@ -21,7 +21,7 @@ const STATUS_CONFIG_MAP = {
 };
 
 const STATUS_CONFIG = {
-  "pendingPayment": { zh: "等待付款", en: "Pending Payment", color: "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200", icon: Clock },
+  "pendingPayment": { zh: "未汇款", en: "Unpaid", color: "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200", icon: Clock },
   "paymentReview": { zh: "付款审核中", en: "Payment Review", color: "bg-sky-100 text-sky-900 dark:bg-sky-900/30 dark:text-sky-200", icon: Clock },
   "paymentConfirmed": { zh: "已确认付款", en: "Payment Confirmed", color: "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200", icon: CheckCircle2 },
   "preparingGoods": { zh: "正在准备商品", en: "Preparing Goods", color: "bg-sky-100 text-sky-900 dark:bg-sky-900/30 dark:text-sky-200", icon: Package },
@@ -155,7 +155,7 @@ export default function CustomerOrderTracking() {
               <CardContent className="space-y-1 text-sm">
                 <div className="flex justify-between"><span>{translate("商品总额", "Subtotal")}</span><span>RM {(order as any).totalAmount}</span></div>
                 <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")}</span><span>RM {(order as any).shippingFee || "0.00"}</span></div>
-                <div className="flex justify-between"><span>{translate("已付款", "Paid Amount")}</span><span>RM {(order as any).paidAmount || "0.00"}</span></div>
+                <div className="flex justify-between"><span>{translate("已付", "Paid Amount")}</span><span>RM {(order as any).paidAmount || "0.00"}</span></div>
                 <Separator className="my-2" />
                 <div className="flex justify-between font-semibold"><span>{translate("订单总额", "Total Order Amount")}</span><span>RM {(order as any).totalAmount}</span></div>
               </CardContent>

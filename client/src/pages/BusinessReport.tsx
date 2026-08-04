@@ -162,7 +162,7 @@ export default function BusinessReport() {
                 <p className="text-xl font-bold">{overview.orderStats.total}</p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-muted-foreground">{translate("已付款", "Paid")}</p>
+                <p className="text-xs text-muted-foreground">{translate("已付", "Paid")}</p>
                 <p className="text-xl font-bold text-green-600">{overview.orderStats.paid}</p>
               </div>
               <div className="text-center">

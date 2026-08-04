@@ -33,21 +33,27 @@ const SHIPPING_METHODS = {
 } as const;
 
 const LOCAL_ORDER_STATUSES = [
-  { value: "pending", label: "挂单", enLabel: "Pending" },
-  { value: "receipt_uploaded", label: "待付款", enLabel: "Pending Payment" },
-  { value: "partial_payment", label: "部分付款", enLabel: "Partial Payment" },
-  { value: "packing", label: "已付款", enLabel: "Paid" },
-  { value: "receipt_uploaded", label: "待汇款核实", enLabel: "Pending Verification" },
+  { value: "pending", label: "未汇款订单", enLabel: "Unpaid Order" },
+  { value: "receipt_uploaded", label: "待审核付款凭证", enLabel: "Pending Payment Verification" },
+  { value: "packing", label: "待包货", enLabel: "Pending Packing" },
+  { value: "partial_shipped", label: "部分发货", enLabel: "Partial Shipped" },
+  { value: "shipped", label: "已发货", enLabel: "Shipped" },
+  { value: "completed", label: "已完成", enLabel: "Completed" },
+  { value: "cancelled", label: "已取消", enLabel: "Cancelled" },
+  { value: "scheduled", label: "预约发货", enLabel: "Scheduled Shipping" },
+  { value: "hold_order", label: "保留订单", enLabel: "Hold Order" },
 ];
 
 const IMPORT_ORDER_STATUSES = [
-  { value: "pending", label: "挂单", enLabel: "Pending" },
-  { value: "receipt_uploaded", label: "待付款", enLabel: "Pending Payment" },
-  { value: "partial_payment", label: "部分付款", enLabel: "Partial Payment" },
-  { value: "packing", label: "已付款", enLabel: "Paid" },
-  { value: "receipt_uploaded", label: "待汇款核实", enLabel: "Pending Verification" },
-  { value: "hold_order", label: "等待截单", enLabel: "Waiting Cut-off" },
-  { value: "hold_order", label: "等待采购", enLabel: "Waiting Purchase" },
+  { value: "pending", label: "未汇款订单", enLabel: "Unpaid Order" },
+  { value: "receipt_uploaded", label: "待审核付款凭证", enLabel: "Pending Payment Verification" },
+  { value: "packing", label: "待包货", enLabel: "Pending Packing" },
+  { value: "partial_shipped", label: "部分发货", enLabel: "Partial Shipped" },
+  { value: "shipped", label: "已发货", enLabel: "Shipped" },
+  { value: "completed", label: "已完成", enLabel: "Completed" },
+  { value: "cancelled", label: "已取消", enLabel: "Cancelled" },
+  { value: "scheduled", label: "预约发货", enLabel: "Scheduled Shipping" },
+  { value: "hold_order", label: "保留订单", enLabel: "Hold Order" },
 ];
 
 interface ManualOrderItem {
@@ -434,7 +440,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             <div><span className="text-muted-foreground">{translate("订单类型", "Order Type")}:</span> {orderTypeLabel}</div>
             <div><span className="text-muted-foreground">{translate("订单性质", "Order Nature")}:</span> {translate(ORDER_NATURE[orderNature as keyof typeof ORDER_NATURE]?.label || "零售", ORDER_NATURE[orderNature as keyof typeof ORDER_NATURE]?.enLabel || "Retail")}</div>
             <div><span className="text-muted-foreground">{translate("订单来源", "Order Source")}:</span> {translate("Admin手动", "Admin Manual")}</div>
-            <div><span className="text-muted-foreground">{translate("初始状态", "Initial Status")}:</span> {translate(statusOptions.find(s => s.value === initialStatus)?.label || "挂单", statusOptions.find(s => s.value === initialStatus)?.enLabel || "Pending")}</div>
+            <div><span className="text-muted-foreground">{translate("初始状态", "Initial Status")}:</span> {translate(statusOptions.find(s => s.value === initialStatus)?.label || "未汇款订单", statusOptions.find(s => s.value === initialStatus)?.enLabel || "Unpaid Order")}</div>
           </CardContent>
         </Card>
 

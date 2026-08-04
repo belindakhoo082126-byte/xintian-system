@@ -54,7 +54,7 @@ export default function Dashboard() {
     },
     {
       title: lang === "zh" ? "中国代购销售额" : "Import Pre-order Sales",
-      subtitle: lang === "zh" ? "本月已付款" : "Paid This Month",
+      subtitle: lang === "zh" ? "本月销售额" : "Sales This Month",
       value: `RM ${Number((stats as any).salesBreakdown?.importSalesMonth || 0).toFixed(2)}`,
       icon: Plane,
       color: "text-purple-600",

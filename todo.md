@@ -1813,3 +1813,21 @@
 - [x] 修复 getOrderItems JOIN products 表获取 coverImageUrl，返回 productImage 字段
 - [x] 确认前端 Orders.tsx 代码正确（PHYSICAL_STATUS 已更新、Checkout Link 按钮已存在）
 - [x] TypeScript 检查零错误 + 保存检查点
+
+## V2.0.35: UAT 第一阶段 - 统一订单状态
+- [x] 修复 OrderCreatePage.tsx 中的旧状态选项（挂单/待付款/部分付款/已付款/待汇款核实）
+- [x] 修复 OrderBrowsePage.tsx 中的旧状态标签
+- [x] 修复 OrderDetail.tsx 中的旧状态标签
+- [x] 修复 mall/MallOrderQuery.tsx 中的旧状态标签
+- [x] 修复 mall/MallPayment.tsx 中的 partial_payment 引用
+- [x] 修复 CustomerOrderPage.tsx 中的旧状态标签
+- [x] 修复 ProductsV2.tsx 中的"挂单"文字
+- [x] 修复 Membership.tsx 中的"待付款"文字
+- [x] 修复 Customers.tsx 中的"挂单"/"部分付款"文字
+- [x] 修复 CustomerOrderTracking.tsx 中的"等待付款"文字
+- [x] 修复 Dashboard.tsx 中的"已付款"文字
+- [x] 修复 BusinessReport.tsx/CustomerSpendingReport.tsx/ImportBatches.tsx/PackingDetail.tsx 中的"已付款"文字
+- [x] 修复 server/db.ts 中的 partial_payment 状态流转逻辑（3处）
+- [x] 修复 server/routers.ts 中的 partial_payment 引用（2处）
+- [x] 修复 I18nContext.tsx 中的状态翻译
+- [x] TypeScript 零错误 + 保存检查点

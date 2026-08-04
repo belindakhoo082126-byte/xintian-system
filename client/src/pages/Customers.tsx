@@ -24,11 +24,10 @@ export default function Customers() {
   }), [translate]);
 
   const PHYSICAL_STATUS_LABELS = useMemo<Record<string, string>>(() => ({
-    pending: translate("挂单", "Pending"),
-    receipt_uploaded: translate("已上传收据", "Receipt Uploaded"),
-    partial_payment: translate("部分付款", "Partial Payment"),
+    pending: translate("未汇款订单", "Unpaid Order"),
+    receipt_uploaded: translate("待审核付款凭证", "Pending Payment Verification"),
     hold_order: translate("保留订单", "Hold Order"),
-    packing: translate("待包货", "Packing"),
+    packing: translate("待包货", "Pending Packing"),
     shipped: translate("已发货", "Shipped"),
     partial_shipped: translate("部分发货", "Partial Shipped"),
     completed: translate("已完成", "Completed"),

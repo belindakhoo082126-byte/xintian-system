@@ -62,7 +62,7 @@ export default function MallPayment() {
   const paidAmount = Number(order.paidAmount || 0);
   const remaining = totalAmount - paidAmount;
   const receiptAlreadyUploaded = order.physicalStatus === "receipt_uploaded";
-  const canUploadReceipt = ["pending", "partial_payment"].includes(order.physicalStatus ?? "");
+  const canUploadReceipt = ["pending", "receipt_uploaded"].includes(order.physicalStatus ?? "");
 
   async function handleUploadReceipt() {
     if (!selectedMethod) {

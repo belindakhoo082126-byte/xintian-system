@@ -658,7 +658,8 @@ export async function updateOrderStatus(id: number, data: {
   if (data.paymentMethodName !== undefined) updateData.paymentMethodName = data.paymentMethodName;
 
   if (data.physicalStatus === "receipt_uploaded") updateData.paymentUploadedAt = new Date();
-  if (data.physicalStatus === "payment_confirmed") updateData.paymentConfirmedAt = new Date();
+  // payment_confirmed is deprecated; use packing for confirmed payments
+if (data.physicalStatus === "packing") updateData.paymentConfirmedAt = new Date();
   if (data.physicalStatus === "shipped") updateData.shippedAt = new Date();
   if (data.physicalStatus === "completed") updateData.completedAt = new Date();
 
@@ -810,7 +811,7 @@ export async function addOrderPayment(data: {
     if (totalPaid >= totalAmount) {
       newStatus = "packing";
     } else if (totalPaid > 0) {
-      newStatus = "partial_payment";
+      newStatus = "receipt_uploaded";
     }
     await db.update(orders).set({
       paidAmount: totalPaid.toFixed(2),
@@ -3327,7 +3328,7 @@ export async function recalculateOrderTotals(orderId: number) {
   // Determine new status based on payment
   let newStatus = order[0].physicalStatus;
   if (paidAmount < totalAmount && paidAmount > 0) {
-    newStatus = "partial_payment" as any;
+    newStatus = "receipt_uploaded" as any;
   } else if (paidAmount >= totalAmount && paidAmount > 0) {
     // Keep as hold_order if it was hold_order
     if (order[0].physicalStatus === "hold_order") {
@@ -3721,7 +3722,7 @@ export async function mallCheckout(data: {
       totalWeight: newWeight.toFixed(2),
     }).where(eq(orders.id, data.mergeIntoOrderId));
 
-    const nextStatus = paidAmount > 0 && paidAmount < newTotal ? "partial_payment" : "receipt_uploaded";
+    const nextStatus = paidAmount > 0 && paidAmount < newTotal ? "receipt_uploaded" : "receipt_uploaded";
     await transitionOrderStatus(
       data.mergeIntoOrderId,
       nextStatus,
@@ -4449,15 +4450,15 @@ export async function getCustomerOrderTracking(orderNumber: string, contactNumbe
   
   // Map status to customer-friendly labels
   const statusMap: Record<string, string> = {
-    "pending": "等待付款",
+    "pending": "未汇款",
     "receipt_uploaded": "付款审核中",
-    "partial_payment": "付款审核中",
-    "hold_order": "等待付款",
-    "packing": "已确认付款",
+    "hold_order": "保留订单",
+    "packing": "待包货",
     "shipped": "已发货",
     "partial_shipped": "部分发货",
     "completed": "已完成",
     "cancelled": "已取消",
+    "scheduled": "预约发货",
   };
   
   return {
@@ -10420,10 +10421,9 @@ export async function getOrderBySecureToken(orderNumber: string, token: string) 
 
   // Map status to customer-friendly labels
   const statusMap: Record<string, string> = {
-    "pending": "Pending Payment",
+    "pending": "Unpaid",
     "receipt_uploaded": "Payment Review",
-    "partial_payment": "Payment Review",
-    "hold_order": "Pending Payment",
+    "hold_order": "Hold Order",
     "packing": "Payment Confirmed",
     "shipped": "Shipped",
     "partial_shipped": "Partial Shipped",
