@@ -455,7 +455,16 @@ export async function getOrderById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  if (result.length === 0) return undefined;
+
+  const order = result[0];
+  // 兼容旧订单：管理员第一次打开详情时，自动补齐安全令牌和真实可访问的结单路径。
+  const secureToken = order.secureToken || generateSecureToken();
+  const checkoutLink = `/order/${order.orderNumber}/${secureToken}`;
+  if (!order.secureToken || order.checkoutLink !== checkoutLink) {
+    await db.update(orders).set({ secureToken, checkoutLink }).where(eq(orders.id, id));
+  }
+  return { ...order, secureToken, checkoutLink };
 }
 
 export async function getOrderItems(orderId: number) {
@@ -596,9 +605,13 @@ export async function createOrderWithSplit(data: {
   // V2.0.43: Generate sequential order number with XT/CXT prefix (XT00001, CXT00001)
   const prefix = data.orderCategory === "import" ? "CXT" : "XT";
   const orderNumber = await generateOrderNumber(prefix);
+  const secureToken = generateSecureToken();
+  const checkoutLink = `/order/${orderNumber}/${secureToken}`;
 
   const orderResult = await db.insert(orders).values({
     orderNumber,
+    secureToken,
+    checkoutLink,
     customerId: data.customerId,
     facebookName: data.facebookName || null,
     facebookId: data.facebookId || null,
@@ -630,9 +643,6 @@ export async function createOrderWithSplit(data: {
   });
 
     const orderId = (orderResult as any)[0].insertId;
-  // V2.0.33: Generate checkout link
-  const checkoutLink = `/checkout/${orderNumber}`;
-  await db.update(orders).set({ checkoutLink }).where(eq(orders.id, orderId));
   // Log operation
   await logOrderOperation(orderId, "create", `Order created with ${data.items.length} items`, null, null);
 
@@ -3764,8 +3774,12 @@ export async function mallCheckout(data: {
 
   // Create new order
   const orderNumber = await generateOrderNumber("XT");
+  const secureToken = generateSecureToken();
+  const checkoutLink = `/order/${orderNumber}/${secureToken}`;
   const orderResult = await db.insert(orders).values({
     orderNumber,
+    secureToken,
+    checkoutLink,
     customerId: customer.id,
     orderType: "physical",
     physicalSubtotal: subtotal.toFixed(2),
@@ -3845,9 +3859,115 @@ export async function mallCheckout(data: {
     });
   }
 
-  return { orderId, orderNumber, merged: false, totalAmount: totalAmount.toFixed(2) };
+    return { orderId, orderNumber, merged: false, totalAmount: totalAmount.toFixed(2) };
 }
 
+// 客户通过专属结单链接从商城加购时，将商品追加到原未付款订单。
+export async function addMallItemsToOrder(orderId: number, items: Array<{
+  productId: number;
+  productName: string;
+  productSku?: string;
+  variationId?: number;
+  variationName?: string;
+  facebookKeyword?: string;
+  quantity: number;
+  unitPrice: string;
+  subtotal: string;
+  isSpecial?: boolean;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const target = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    secureToken: orders.secureToken,
+    physicalStatus: orders.physicalStatus,
+    membershipSubtotal: orders.membershipSubtotal,
+    promotionDiscount: orders.promotionDiscount,
+    discountAmount: orders.discountAmount,
+    extraCharge: orders.extraCharge,
+    creditUsed: orders.creditUsed,
+    shippingMethod: orders.shippingMethod,
+  }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!target[0]) throw new Error("Order not found");
+  if (target[0].physicalStatus !== "pending") throw new Error("Order is not available for add-on");
+
+  for (const item of items) {
+    await db.insert(orderItems).values({
+      orderId,
+      productId: item.productId,
+      productName: item.productName,
+      productSku: item.productSku || null,
+      productType: "physical",
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      subtotal: item.subtotal,
+      variationId: item.variationId || null,
+      variationName: item.variationName || null,
+      facebookKeyword: item.facebookKeyword || null,
+      priceType: item.isSpecial ? "special" : "retail",
+      discount: "0.00",
+    });
+
+    if (item.variationId) {
+      await db.update(productVariations).set({
+        stockQuantity: sql`${productVariations.stockQuantity} - ${item.quantity}`,
+      }).where(eq(productVariations.id, item.variationId));
+    }
+    await db.update(products).set({
+      stockQuantity: sql`${products.stockQuantity} - ${item.quantity}`,
+    }).where(eq(products.id, item.productId));
+  }
+
+  const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const physicalSubtotal = allItems
+    .filter((item: any) => item.productType === "physical" || item.productType === "gift")
+    .reduce((sum, item) => sum + parseFloat(item.subtotal || "0"), 0);
+  const totalWeight = allItems
+    .filter((item: any) => item.productType === "physical" || item.productType === "gift")
+    .reduce((sum, item) => sum + 0.5 * Number(item.quantity || 0), 0);
+  const specialSubtotal = allItems
+    .filter((item: any) => item.priceType === "special")
+    .reduce((sum, item) => sum + parseFloat(item.subtotal || "0"), 0);
+
+  const membershipSubtotal = parseFloat(target[0].membershipSubtotal || "0");
+  const promotionDiscount = parseFloat(target[0].promotionDiscount || "0");
+  const discountAmount = parseFloat(target[0].discountAmount || "0");
+  const extraCharge = parseFloat(target[0].extraCharge || "0");
+  const creditUsed = parseFloat(target[0].creditUsed || "0");
+  const eligibleSubtotal = physicalSubtotal + membershipSubtotal - specialSubtotal - promotionDiscount - discountAmount;
+
+  let shippingFee = 0;
+  if (target[0].shippingMethod === "west_malaysia") {
+    shippingFee = calculateWestMalaysiaShipping(totalWeight, eligibleSubtotal).shippingFee;
+  } else if (target[0].shippingMethod === "east_malaysia_shopee" || target[0].shippingMethod === "east_malaysia_poslaju") {
+    shippingFee = 15;
+  }
+
+  const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
+  await db.update(orders).set({
+    physicalSubtotal: physicalSubtotal.toFixed(2),
+    shippingFee: shippingFee.toFixed(2),
+    totalWeight: totalWeight.toFixed(2),
+    totalAmount: totalAmount.toFixed(2),
+  }).where(eq(orders.id, orderId));
+  await db.insert(orderRemarks).values({
+    orderId,
+    type: "customer",
+    content: `客户商城加单：${items.map((item) => `${item.productName} ×${item.quantity}`).join("、")}`,
+    remarkCategory: "other",
+    createdBy: "客户结单页",
+  });
+  broadcastChanges(["orders", "inventory", "dashboard", "customers"]);
+
+  return {
+    orderId,
+    orderNumber: target[0].orderNumber,
+    secureToken: target[0].secureToken,
+    totalAmount: totalAmount.toFixed(2),
+  };
+}
 // --- Mall Order Query (Guest) ---
 export async function queryOrderByNumber(orderNumber: string, contactNumber: string) {
   const db = await getDb();
@@ -4817,8 +4937,11 @@ export async function createOrderFromLiveCapture(data: {
   // Create new order
   const orderNumber = await generateOrderNumber("XT");
   const secureToken = generateSecureToken();
+  const checkoutLink = `/order/${orderNumber}/${secureToken}`;
   const orderResult = await db.insert(orders).values({
     orderNumber,
+    secureToken,
+    checkoutLink,
     customerId: customer.id,
     facebookName: data.commenterName,
     messengerId: data.commenterPsid || null,
@@ -4833,16 +4956,12 @@ export async function createOrderFromLiveCapture(data: {
     sourceName: data.sourceName || "Facebook Live",
     originalCustomerComment: data.commentMessage,
     commentDate: new Date(),
-    secureToken,
     campaignId: data.campaignId || null,
     campaignName: data.campaignName || null,
     sourceType: data.sourceType || null,
   });
   
     const orderId = (orderResult as any)[0].insertId;
-  // V2.0.33: Generate checkout link
-  const checkoutLink = `/checkout/${orderNumber}`;
-  await db.update(orders).set({ checkoutLink }).where(eq(orders.id, orderId));
   // Create order items
   for (const p of data.matchedProducts) {
     const itemSubtotal = (parseFloat(p.unitPrice) * p.quantity).toFixed(2);
@@ -10464,7 +10583,7 @@ export async function getOrderBySecureToken(orderNumber: string, token: string) 
 
   // Map status to customer-friendly labels
   const statusMap: Record<string, string> = {
-    "pending": "Unpaid",
+    "pending": "Pending Payment",
     "receipt_uploaded": "Payment Review",
     "hold_order": "Hold Order",
     "packing": "Payment Confirmed",

@@ -33,6 +33,14 @@ export default function MallCheckout() {
   const [showSmartPaste, setShowSmartPaste] = useState(false);
   const [orderResult, setOrderResult] = useState<any>(null);
   const [importAgreed, setImportAgreed] = useState(false);
+  const [secureAddOnOrder, setSecureAddOnOrder] = useState<{
+    orderNumber: string;
+    token: string;
+    customerName: string;
+    contactNumber: string;
+    shippingAddress: string;
+    shippingMethod: "west_malaysia" | "east_malaysia" | "self_pickup" | "lalamove";
+  } | null>(null);
 
   const utils = trpc.useUtils();
   const { data: settings } = trpc.mall.settings.useQuery();
@@ -55,8 +63,34 @@ export default function MallCheckout() {
     onError: (e: any) => toast.error(`下单失败: ${e.message}`),
   });
 
+  const secureAddOnMutation = trpc.mall.addToSecureOrder.useMutation({
+    onSuccess: (data: any) => {
+      localStorage.removeItem("mall_cart");
+      setOrderResult({ ...data, added: true });
+      toast.success("商品已加入原订单，请返回订单链接完成付款");
+    },
+    onError: (e: any) => toast.error(`加单失败: ${e.message}`),
+  });
+
   useEffect(() => {
     try { setCart(JSON.parse(localStorage.getItem("mall_cart") || "[]")); } catch { setCart([]); }
+    try {
+      const saved = sessionStorage.getItem("xintian_mall_add_on_order");
+      if (saved) {
+        const context = JSON.parse(saved);
+        setSecureAddOnOrder(context);
+        setForm((current) => ({
+          ...current,
+          customerName: context.customerName || current.customerName,
+          contactNumber: context.contactNumber || current.contactNumber,
+          addressLine1: context.shippingAddress || current.addressLine1,
+          shippingMethod: context.shippingMethod || current.shippingMethod,
+        }));
+        sessionStorage.removeItem("xintian_mall_add_on_order");
+      }
+    } catch {
+      sessionStorage.removeItem("xintian_mall_add_on_order");
+    }
   }, []);
 
   const subtotal = cart.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
@@ -124,12 +158,23 @@ export default function MallCheckout() {
   }
 
   function handleCheckout() {
+    if (cart.length === 0) { toast.error("购物车为空"); return; }
+    if (secureAddOnOrder) {
+      secureAddOnMutation.mutate({
+        orderNumber: secureAddOnOrder.orderNumber,
+        token: secureAddOnOrder.token,
+        items: cart.map((item) => ({
+          productId: item.productId,
+          variationId: item.variationId || undefined,
+          quantity: item.quantity,
+        })),
+      });
+      return;
+    }
     if (!form.customerName || !form.contactNumber || !form.addressLine1 || !form.postcode || !form.city || !form.state) {
       toast.error("请填写完整的收货信息");
       return;
     }
-    if (cart.length === 0) { toast.error("购物车为空"); return; }
-
     const selectedPayment = paymentMethods?.find((p: any) => p.id === paymentMethodId);
 
     checkoutMutation.mutate({
@@ -162,14 +207,20 @@ export default function MallCheckout() {
             <div className="w-16 h-16 mx-auto bg-green-100 rounded-full flex items-center justify-center">
               <Package className="h-8 w-8 text-green-600" />
             </div>
-            <h2 className="text-xl font-semibold">订单已创建</h2>
+            <h2 className="text-xl font-semibold">{orderResult.added ? "商品已加入原订单" : "订单已创建"}</h2>
             <p className="text-muted-foreground">订单号: {orderResult.orderNumber}</p>
             <p className="text-lg font-bold text-[#2d6a4f]">RM {orderResult.totalAmount}</p>
             {orderResult.merged && <Badge>已合并到保留订单</Badge>}
             <div className="pt-4 space-y-2">
+              {orderResult.added && secureAddOnOrder ? (
+                <a href={`/order/${orderResult.orderNumber}/${secureAddOnOrder.token}`}>
+                  <Button className="w-full bg-[#2d6a4f] hover:bg-[#40916c]">返回原订单完成付款</Button>
+                </a>
+              ) : (
                 <Link href={`/mall/payment/${orderResult.orderNumber}?phone=${encodeURIComponent(form.contactNumber || '')}`}>
-                <Button className="w-full bg-[#2d6a4f] hover:bg-[#40916c]">去付款</Button>
-              </Link>
+                  <Button className="w-full bg-[#2d6a4f] hover:bg-[#40916c]">去付款</Button>
+                </Link>
+              )}
               <Link href="/mall/order-query">
                 <Button variant="outline" className="w-full">查询订单</Button>
               </Link>
@@ -193,6 +244,18 @@ export default function MallCheckout() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-4">
+        {secureAddOnOrder && (
+          <Card className="border-[#2d6a4f] bg-[#f0f7f2]">
+            <CardContent className="flex items-start gap-3 p-4">
+              <Merge className="mt-0.5 h-5 w-5 shrink-0 text-[#2d6a4f]" />
+              <div>
+                <p className="font-semibold text-[#1b4332]">正在为原订单加单</p>
+                <p className="mt-1 text-sm text-[#35634e]">新商品将加入订单 <strong>{secureAddOnOrder.orderNumber}</strong>；原收货资料、运费与付款状态会保留，无需再次填写。</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {!secureAddOnOrder && (<>
         {/* Smart Paste */}
         <Card>
           <CardContent className="p-4">
@@ -398,6 +461,8 @@ export default function MallCheckout() {
           </CardContent>
         </Card>
 
+        </>)}
+
         {/* Order Summary */}
         <Card>
           <CardHeader><CardTitle>订单摘要</CardTitle></CardHeader>
@@ -421,23 +486,36 @@ export default function MallCheckout() {
             <div className="border-t pt-2 flex justify-between text-sm">
               <span>商品小计</span><span>RM {subtotal.toFixed(2)}</span>
             </div>
-            {needsSplit ? (
+            {secureAddOnOrder ? (
               <>
-                <div className="flex justify-between text-sm">
-                  <span>包裹一运费</span><span>{shippingFee === 0 ? "免邮" : `RM ${shippingFee.toFixed(2)}`}</span>
+                <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+                  这是加购商品小计。确认加单后，系统会按原订单的配送方式重新计算总额与运费。
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span>包裹二运费（单独邮寄）</span><span>RM {standaloneShippingFee.toFixed(2)}</span>
+                <div className="border-t pt-2 flex justify-between font-semibold text-lg">
+                  <span>本次加购</span><span className="text-[#2d6a4f]">RM {subtotal.toFixed(2)}</span>
                 </div>
               </>
             ) : (
-              <div className="flex justify-between text-sm">
-                <span>运费</span><span>{totalShipping === 0 ? "免邮" : `RM ${totalShipping.toFixed(2)}`}</span>
-              </div>
+              <>
+                {needsSplit ? (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span>包裹一运费</span><span>{shippingFee === 0 ? "免邮" : `RM ${shippingFee.toFixed(2)}`}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>包裹二运费（单独邮寄）</span><span>RM {standaloneShippingFee.toFixed(2)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex justify-between text-sm">
+                    <span>运费</span><span>{totalShipping === 0 ? "免邮" : `RM ${totalShipping.toFixed(2)}`}</span>
+                  </div>
+                )}
+                <div className="border-t pt-2 flex justify-between font-semibold text-lg">
+                  <span>合计</span><span className="text-[#2d6a4f]">RM {total.toFixed(2)}</span>
+                </div>
+              </>
             )}
-            <div className="border-t pt-2 flex justify-between font-semibold text-lg">
-              <span>合计</span><span className="text-[#2d6a4f]">RM {total.toFixed(2)}</span>
-            </div>
           </CardContent>
         </Card>
 
@@ -460,9 +538,13 @@ export default function MallCheckout() {
         <Button
           className="w-full bg-[#2d6a4f] hover:bg-[#40916c] text-lg py-6"
           onClick={handleCheckout}
-          disabled={checkoutMutation.isPending || (cart.some((i: any) => i.salesMode === "import_preorder") && !importAgreed)}
+          disabled={checkoutMutation.isPending || secureAddOnMutation.isPending || (cart.some((i: any) => i.salesMode === "import_preorder") && !importAgreed)}
         >
-          {checkoutMutation.isPending ? "提交中..." : `确认下单 · RM ${total.toFixed(2)}`}
+          {checkoutMutation.isPending || secureAddOnMutation.isPending
+            ? "提交中..."
+            : secureAddOnOrder
+              ? `确认加入原订单 · RM ${subtotal.toFixed(2)}`
+              : `确认下单 · RM ${total.toFixed(2)}`}
         </Button>
       </main>
     </div>

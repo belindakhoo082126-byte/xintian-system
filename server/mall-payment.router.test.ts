@@ -117,7 +117,7 @@ describe("mall.uploadReceipt authorization and audit", () => {
   });
 
   it("rejects a replayed upload after a receipt has already been submitted", async () => {
-    mockOrderAndCustomerQuery(matchingCustomer, { ...order, physicalStatus: "receipt_uploaded" });
+    mockOrderAndCustomerQuery(matchingCustomer, { ...order, physicalStatus: "shipped" });
 
     const caller = appRouter.createCaller(createPublicContext());
 

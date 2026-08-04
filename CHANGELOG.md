@@ -641,3 +641,19 @@
 - Logo已上传至webdev storage: /manus-storage/xintian-logo-transparent_58bbaf5e.png
 ### Notes
 - TypeScript 零错误
+
+## V2.0.46 (2026-08-05) — 专属结单链接与客户结账页完善
+
+### Added
+- 历史订单自动补齐专属结单链接：管理员打开旧订单详情时，自动生成 secureToken 和 checkoutLink
+- 客户结单页新增「完成结单」操作区：直接汇款按钮 + 前往商城加单按钮
+- 直接汇款流程：选择付款方式（QR码/银行转账）→ 查看付款信息 → 上传付款凭证 → 状态自动流转
+- 商城加单流程：从客户结单页跳转商城 → 选购商品 → 结账页自动识别加单模式 → 确认加入原订单 → 自动重算运费和总额
+- 新增 `mall.addToSecureOrder` 公开接口：服务端校验商品状态/库存/价格，安全合并到未付款原订单
+- 新增 `publicOrder.submitPaymentReceipt` 公开接口：客户通过专属链接上传付款凭证
+- 新增 3 个单元测试覆盖客户结单页付款凭证接口
+
+### Fixed
+- 客户结单页状态映射修正：`pending` → `Pending Payment`（与前端 STATUS_CONFIG 对齐）
+- 商城付款测试修正：`receipt_uploaded` 状态允许重复上传，测试改用 `shipped` 状态验证拒绝逻辑
+- 直播订单创建修复：移除重复的 secureToken 字段

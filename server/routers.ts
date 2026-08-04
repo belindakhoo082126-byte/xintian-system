@@ -3081,6 +3081,61 @@ export const appRouter = router({
       }
     }),
 
+    // 客户从专属结单链接进入商城后的安全加单接口。
+    addToSecureOrder: publicProcedure.input(z.object({
+      orderNumber: z.string().min(1).max(50),
+      token: z.string().min(1).max(128),
+      items: z.array(z.object({
+        productId: z.number().int().positive(),
+        variationId: z.number().int().positive().optional(),
+        quantity: z.number().int().min(1).max(99),
+      })).min(1),
+    })).mutation(async ({ input }) => {
+      const order = await db.getOrderBySecureToken(input.orderNumber, input.token);
+      if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "订单不存在或链接无效" });
+      if (order.physicalStatus !== "pending") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "只有未付款订单可以继续加单" });
+      }
+
+      const checkedItems = await Promise.all(input.items.map(async (item) => {
+        const product = await db.getMallProductById(item.productId);
+        if (!product || product.status !== "active") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "商品已下架，无法加入订单" });
+        }
+        let variation: any;
+        if (item.variationId) {
+          const variants = await db.getMallProductVariants(item.productId);
+          variation = variants.find((v: any) => v.id === item.variationId && v.status === "active");
+          if (!variation) throw new TRPCError({ code: "BAD_REQUEST", message: "所选商品规格已不可用" });
+          if (Number(variation.stockQuantity || 0) < item.quantity) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `${product.name} 库存不足` });
+          }
+        } else if (!product.isPreOrder && Number(product.stockQuantity || 0) < item.quantity) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `${product.name} 库存不足` });
+        }
+
+        const basePrice = variation?.sellingPrice
+          ?? ((product.isSpecial || product.isSpecialItem) && product.specialPrice ? product.specialPrice : product.sellingPrice)
+          ?? product.regularPrice
+          ?? "0.00";
+        const price = Number(basePrice).toFixed(2);
+        return {
+          productId: product.id,
+          productName: product.name,
+          productSku: variation?.sku || product.sku,
+          variationId: variation?.id,
+          variationName: variation?.name,
+          facebookKeyword: variation?.keyword || product.keyword,
+          quantity: item.quantity,
+          unitPrice: price,
+          subtotal: (Number(price) * item.quantity).toFixed(2),
+          isSpecial: Boolean(product.isSpecial || product.isSpecialItem),
+        };
+      }));
+
+      return await db.addMallItemsToOrder(order.id, checkedItems);
+    }),
+
     // Smart Paste (public)
     smartPaste: publicProcedure.input(z.object({ text: z.string() })).query(async ({ input }) => {
       return db.parseSmartPaste(input.text);
@@ -5697,6 +5752,40 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
           throw new TRPCError({ code: 'NOT_FOUND', message: '订单不存在或链接无效' });
         }
         return result;
+      }),
+    // 客户使用专属订单链接提交付款凭证；令牌本身即为订单访问授权。
+    submitPaymentReceipt: publicProcedure
+      .input(z.object({
+        orderNumber: z.string().min(1).max(50),
+        token: z.string().min(32).max(128),
+        receiptUrl: z.string().min(1).max(500),
+        paymentMethodId: z.number().int().positive(),
+      }))
+      .mutation(async ({ input }) => {
+        if (!/^\/manus-storage\/uploads\/[A-Za-z0-9._/-]+$/.test(input.receiptUrl)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '付款凭证必须来自系统上传服务' });
+        }
+
+        const order = await db.getOrderBySecureToken(input.orderNumber, input.token);
+        if (!order) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: '订单不存在或链接无效' });
+        }
+        if (order.physicalStatus !== 'pending') {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '当前订单状态不允许上传付款凭证' });
+        }
+
+        const paymentMethod = await db.getPaymentMethodById(input.paymentMethodId);
+        if (!paymentMethod?.isEnabled) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '请选择有效的付款方式' });
+        }
+
+        await db.transitionOrderStatus(order.id, 'receipt_uploaded', '客户结单页', '客户已上传付款凭证');
+        await db.updateOrderStatus(order.id, {
+          receiptUrl: input.receiptUrl,
+          paymentMethodId: paymentMethod.id,
+          paymentMethodName: paymentMethod.name,
+        });
+        return { success: true };
       }),
   }),
 

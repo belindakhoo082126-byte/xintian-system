@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink, Leaf, AlertCircle, RefreshCw, MapPinCheck } from "lucide-react";
+import { Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink, Leaf, AlertCircle, RefreshCw, MapPinCheck, Upload, Copy, QrCode, University, Banknote, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
@@ -34,6 +34,12 @@ const SHIPPING_METHODS = [
   { value: "self_pickup", label: "自取" },
   { value: "lalamove", label: "Lalamove" },
 ];
+
+const PAYMENT_TYPE_ICONS: Record<string, any> = {
+  qr_code: QrCode,
+  bank_transfer: University,
+  cash: Banknote,
+};
 
 export default function CustomerOrderPage(props: any) {
   const orderNumber = props.orderNumber ?? props.match?.params?.orderNumber ?? "";
@@ -55,6 +61,13 @@ export default function CustomerOrderPage(props: any) {
   const [addressInput, setAddressInput] = useState("");
   const [phoneInput, setPhoneInput] = useState("");
   const [shippingMethod, setShippingMethod] = useState<string>("west_malaysia");
+  const [showPaymentPanel, setShowPaymentPanel] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<any>(null);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState("");
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const utils = trpc.useUtils();
+  const { data: paymentMethods } = trpc.paymentMethods.listEnabled.useQuery();
 
   const updateAddressMutation = trpc.publicOrder.updateAddress.useMutation({
     onSuccess: () => {
@@ -64,10 +77,86 @@ export default function CustomerOrderPage(props: any) {
     onError: (e: any) => toast.error("更新失败: " + e.message),
   });
 
+  const submitPaymentReceiptMutation = trpc.publicOrder.submitPaymentReceipt.useMutation({
+    onSuccess: async () => {
+      toast.success("付款凭证已上传，等待商家确认");
+      setShowPaymentPanel(false);
+      setReceiptFile(null);
+      setReceiptPreview("");
+      await utils.publicOrder.getByToken.invalidate({ orderNumber, token });
+    },
+    onError: (e: any) => toast.error("上传失败: " + e.message),
+  });
+
   const o = order as any;
   const statusInfo = o ? STATUS_CONFIG[o.customerStatus] || STATUS_CONFIG["Pending Payment"] : null;
   const hasAddress = !!(o?.shippingAddress);
   const canEditAddress = o?.customerStatus === "Pending Payment";
+  const canPay = canEditAddress && hasAddress && parseFloat(o?.amountDue || "0") > 0;
+
+  function copyToClipboard(text: string, label: string) {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} 已复制`);
+  }
+
+  function handleReceiptSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setReceiptFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => setReceiptPreview(e.target?.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  async function handleSubmitReceipt() {
+    if (!selectedPaymentMethod) {
+      toast.error("请选择付款方式");
+      return;
+    }
+    if (!receiptFile) {
+      toast.error("请选择付款凭证图片");
+      return;
+    }
+    setUploadingReceipt(true);
+    try {
+      const content = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("读取文件失败"));
+        reader.readAsDataURL(receiptFile);
+      });
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: content, filename: receiptFile.name, contentType: receiptFile.type }),
+      });
+      if (!response.ok) throw new Error("文件上传失败");
+      const uploaded = await response.json();
+      await submitPaymentReceiptMutation.mutateAsync({
+        orderNumber,
+        token,
+        receiptUrl: uploaded.url,
+        paymentMethodId: selectedPaymentMethod.id,
+      });
+    } catch (e: any) {
+      toast.error(e?.message || "上传失败，请重试");
+    } finally {
+      setUploadingReceipt(false);
+    }
+  }
+
+  function goToMallForAddOn() {
+    if (!o) return;
+    sessionStorage.setItem("xintian_mall_add_on_order", JSON.stringify({
+      orderNumber,
+      token,
+      customerName: o.customerName || "",
+      contactNumber: o.customerPhone || "",
+      shippingAddress: o.shippingAddress || "",
+      shippingMethod: o.shippingMethod || "west_malaysia",
+    }));
+    window.location.assign("/mall");
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -301,6 +390,101 @@ export default function CustomerOrderPage(props: any) {
                 </div>
               </CardContent>
             </Card>
+
+            {/* 客户结单操作：直接汇款或继续到商城加单 */}
+            {canEditAddress && (
+              <Card className="border-primary/25 bg-primary/[0.025]">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">完成结单</CardTitle>
+                  <p className="text-sm text-muted-foreground">您可以直接汇款并上传凭证，或先到商城继续加购商品。</p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {!hasAddress && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      请先填写收货地址，系统计算运费后即可完成付款。
+                    </div>
+                  )}
+
+                  {!showPaymentPanel ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Button
+                        className="bg-[#2d6a4f] hover:bg-[#40916c]"
+                        disabled={!canPay}
+                        onClick={() => setShowPaymentPanel(true)}
+                      >
+                        <Banknote className="mr-2 h-4 w-4" />直接汇款
+                      </Button>
+                      <Button variant="outline" onClick={goToMallForAddOn}>
+                        <ShoppingBag className="mr-2 h-4 w-4" />前往商城加单
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 border-t pt-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">选择付款方式</p>
+                          <p className="text-xs text-muted-foreground">应付款：RM {o.amountDue || "0.00"}</p>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => setShowPaymentPanel(false)}>取消</Button>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {paymentMethods?.filter((method: any) => method.isEnabled).map((method: any) => {
+                          const Icon = PAYMENT_TYPE_ICONS[method.type] || Banknote;
+                          const selected = selectedPaymentMethod?.id === method.id;
+                          return (
+                            <button
+                              key={method.id}
+                              type="button"
+                              onClick={() => setSelectedPaymentMethod(method)}
+                              className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-colors ${selected ? "border-primary bg-primary/10 ring-1 ring-primary" : "bg-background hover:border-primary/50"}`}
+                            >
+                              <span className={`rounded-md p-2 ${selected ? "bg-primary text-primary-foreground" : "bg-muted"}`}><Icon className="h-4 w-4" /></span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-medium">{method.name}</span>
+                                <span className="block text-xs text-muted-foreground">{method.type === "qr_code" ? "扫码付款" : method.type === "bank_transfer" ? "银行转账" : "其他付款方式"}</span>
+                              </span>
+                              {selected && <CheckCircle2 className="h-4 w-4 text-primary" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {selectedPaymentMethod && (
+                        <div className="space-y-3 rounded-lg border bg-background p-4">
+                          {selectedPaymentMethod.type === "qr_code" && selectedPaymentMethod.qrImageUrl && (
+                            <div className="flex justify-center"><img src={selectedPaymentMethod.qrImageUrl} alt={`${selectedPaymentMethod.name} QR Code`} className="max-h-64 max-w-full rounded-lg border object-contain" /></div>
+                          )}
+                          {selectedPaymentMethod.type === "bank_transfer" && (
+                            <div className="space-y-2 text-sm">
+                              {selectedPaymentMethod.bankName && <div className="flex justify-between gap-4"><span className="text-muted-foreground">银行名称</span><span className="font-medium text-right">{selectedPaymentMethod.bankName}</span></div>}
+                              {selectedPaymentMethod.accountHolder && <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">账户持有人</span><span className="flex items-center gap-1 font-medium text-right">{selectedPaymentMethod.accountHolder}<Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(selectedPaymentMethod.accountHolder, "账户持有人")}><Copy className="h-3.5 w-3.5" /></Button></span></div>}
+                              {selectedPaymentMethod.accountNumber && <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">银行账号</span><span className="flex items-center gap-1 font-mono font-semibold text-right">{selectedPaymentMethod.accountNumber}<Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(selectedPaymentMethod.accountNumber, "银行账号")}><Copy className="h-3.5 w-3.5" /></Button></span></div>}
+                            </div>
+                          )}
+                          {selectedPaymentMethod.paymentInstruction && <p className="rounded-md bg-muted p-3 text-sm">{selectedPaymentMethod.paymentInstruction}</p>}
+
+                          <div className="space-y-2 border-t pt-3">
+                            <p className="text-sm font-medium">上传付款凭证</p>
+                            <p className="text-xs text-muted-foreground">付款后请上传转账截图或收据，商家核对后会更新订单状态。</p>
+                            <div className="flex items-center gap-3">
+                              <label className="cursor-pointer">
+                                <Button type="button" variant="outline" asChild><span><Upload className="mr-2 h-4 w-4" />选择图片</span></Button>
+                                <input type="file" accept="image/*" className="hidden" onChange={handleReceiptSelect} />
+                              </label>
+                              {receiptPreview && <img src={receiptPreview} alt="付款凭证预览" className="h-16 w-16 rounded-md border object-cover" />}
+                            </div>
+                            <Button className="w-full bg-[#2d6a4f] hover:bg-[#40916c]" disabled={!receiptFile || uploadingReceipt || submitPaymentReceiptMutation.isPending} onClick={handleSubmitReceipt}>
+                              <CheckCircle2 className="mr-2 h-4 w-4" />{uploadingReceipt || submitPaymentReceiptMutation.isPending ? "上传中..." : "确认上传付款凭证"}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Shipping Address - V2.0.3: Show address with edit option */}
             <Card>
