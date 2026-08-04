@@ -108,6 +108,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const totalAmount = parseFloat(o.totalAmount || "0");
   const paidAmount = parseFloat(o.paidAmount || "0");
   const balance = totalAmount - paidAmount;
+  const discountAmount = parseFloat(o.discountAmount || "0");
 
   return (
     <div className="container max-w-5xl mx-auto px-4 py-6 space-y-4">
@@ -220,7 +221,10 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/50">
                 <tr>
+                  <th className="text-left p-3 font-medium w-20">{translate("图片", "Image")}</th>
                   <th className="text-left p-3 font-medium">{translate("商品名称", "Product Name")}</th>
+                  <th className="text-left p-3 font-medium">{translate("SKU", "SKU")}</th>
+                  <th className="text-left p-3 font-medium">{translate("关键词", "Keyword")}</th>
                   <th className="text-left p-3 font-medium">{translate("规格", "Variation")}</th>
                   <th className="text-right p-3 font-medium">{translate("数量", "Qty")}</th>
                   <th className="text-right p-3 font-medium">{translate("单价", "Unit Price")}</th>
@@ -230,7 +234,16 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
               <tbody>
                 {(o.items || []).map((item: any, idx: number) => (
                   <tr key={idx} className="border-b last:border-0">
-                    <td className="p-3">{item.productName}</td>
+                    <td className="p-3">
+                      {item.productImage ? (
+                        <img src={item.productImage} alt={item.productName} className="w-16 h-16 rounded object-cover" />
+                      ) : (
+                        <div className="w-16 h-16 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground">{translate("无图", "No img")}</div>
+                      )}
+                    </td>
+                    <td className="p-3 font-medium">{item.productName}</td>
+                    <td className="p-3 text-muted-foreground">{item.productSku || "-"}</td>
+                    <td className="p-3 text-muted-foreground">{item.facebookKeyword || "-"}</td>
                     <td className="p-3 text-muted-foreground">{item.variationName || "-"}</td>
                     <td className="p-3 text-right">{item.quantity}</td>
                     <td className="p-3 text-right">RM {parseFloat(item.unitPrice).toFixed(2)}</td>
@@ -238,7 +251,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                   </tr>
                 ))}
                 {(!o.items || o.items.length === 0) && (
-                  <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">{translate("无商品", "No items")}</td></tr>
+                  <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">{translate("无商品", "No items")}</td></tr>
                 )}
               </tbody>
             </table>
@@ -258,6 +271,9 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           <div className="flex justify-between"><span>{translate("商品小计", "Items Subtotal")}</span><span>RM {itemsSubtotal.toFixed(2)}</span></div>
           {promotionDiscount > 0 && (
             <div className="flex justify-between text-purple-600"><span>{translate("促销优惠", "Promotion Discount")}</span><span>-RM {promotionDiscount.toFixed(2)}</span></div>
+          )}
+          {discountAmount > 0 && (
+            <div className="flex justify-between text-red-600"><span>{translate("人工折扣", "Manual Discount")}{o.discountReason && ` (${o.discountReason})`}</span><span>-RM {discountAmount.toFixed(2)}</span></div>
           )}
           {extraCharge > 0 && (
             <div className="flex justify-between"><span>{translate("额外收费", "Extra Charge")}{o.extraChargeDescription && ` (${o.extraChargeDescription})`}</span><span>+RM {extraCharge.toFixed(2)}</span></div>

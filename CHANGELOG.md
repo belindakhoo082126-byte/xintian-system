@@ -609,3 +609,17 @@
 - 默认模板：`Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}`
 ### Notes
 - TypeScript 零错误
+
+## V2.0.43: 本地订单5个问题修复 (2026-08-05)
+### Fixed
+1. 订单号格式改为XT+5位数字（XT00001, XT00002...），新增order_seq计数表，所有3处订单创建均使用generateOrderNumber函数
+2. 订单浏览页面（OrderBrowsePage）商品明细新增图片列（64x64缩略图）、SKU列、关键词列
+3. 区域三收件人详情自动同步：customerForm变化时通过useEffect自动更新recipientForm（当buyerIsRecipient=true时）
+4. 区域五折扣原因和收费说明显示在订单浏览：schema新增discountReason列，OrderBrowsePage金额详情显示人工折扣及原因
+5. 区域六备注保存到order_remarks并在订单浏览显示：创建订单时自动保存remark到order_remarks表
+### Added
+- `order_seq` 表用于生成顺序订单号
+- `discountReason` 列到 orders 表
+- `generateOrderNumber()` 函数生成XT00001格式的订单号
+### Notes
+- TypeScript 零错误

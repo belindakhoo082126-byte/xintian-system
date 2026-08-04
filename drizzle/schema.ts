@@ -541,6 +541,7 @@ export const orders = mysqlTable("orders", {
   totalWeight: decimal("totalWeight", { precision: 8, scale: 2 }).default("0"),
   // V2.2: Promotion / discount / extra charge fields
   discountAmount: decimal("discountAmount", { precision: 10, scale: 2 }).default("0"),
+  discountReason: varchar("discountReason", { length: 500 }),
   promotionId: int("promotionId"),
   promotionName: varchar("promotionName", { length: 255 }),
   promotionDiscount: decimal("promotionDiscount", { precision: 10, scale: 2 }).default("0"),
@@ -2609,3 +2610,13 @@ export const campaignButtons = mysqlTable("campaign_buttons", {
 });
 export type CampaignButton = typeof campaignButtons.$inferSelect;
 export type InsertCampaignButton = typeof campaignButtons.$inferInsert;
+
+// V2.0.43: Order number sequence counter
+export const orderSeq = mysqlTable("order_seq", {
+  id: int("id").autoincrement().primaryKey(),
+  prefix: varchar("prefix", { length: 10 }).notNull(),
+  nextNumber: int("next_number").notNull().default(1),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OrderSeq = typeof orderSeq.$inferSelect;
+export type InsertOrderSeq = typeof orderSeq.$inferInsert;

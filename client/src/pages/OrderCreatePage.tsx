@@ -115,6 +115,17 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   });
   const [buyerIsRecipient, setBuyerIsRecipient] = useState(true);
 
+  // V2.0.43: Auto-sync customerForm to recipientForm when buyer is recipient
+  useEffect(() => {
+    if (buyerIsRecipient) {
+      setRecipientForm(prev => ({
+        ...prev,
+        recipientName: customerForm.name,
+        recipientPhone: customerForm.phoneNumber,
+      }));
+    }
+  }, [customerForm.name, customerForm.phoneNumber, buyerIsRecipient]);
+
   // Shipping
   const [shippingMethod, setShippingMethod] = useState("west_malaysia");
 

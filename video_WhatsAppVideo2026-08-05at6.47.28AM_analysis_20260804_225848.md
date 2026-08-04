@@ -1,0 +1,5 @@
+Based on the video, here is a description of the user's experience focusing on your requested points:
+
+1.  **Order number format:** The order numbers listed in the "订单号" (Order Number) column all begin with the prefix "**XT**" followed by a long sequence of digits (e.g., XT17885883599919943).
+2.  **Product images:** There are **no product images** displayed anywhere in the order list view. The table only shows text-based information like order number, customer, source, amount, and status.
+3.  **Issues with the order browsing/viewing experience:** The user encounters a significant issue when trying to view an order's details. They click the "view" icon (the eye symbol) next to the first order on the list. The page transitions to an "订单预览" (Order Preview) screen, but instead of loading the order details, it eventually displays an error message stating "**订单未找到**" (Order not found).

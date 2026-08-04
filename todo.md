@@ -1885,3 +1885,11 @@
 - [x] 4. 前端订单详情：Send to Messenger 前弹出编辑对话框（Resend 也支持）
 - [x] 5. 系统设置页面新增消息模板编辑
 - [x] 6. TypeScript 检查 + 保存检查点
+
+## V2.0.43: 本地订单5个问题修复
+- [x] 1. 订单号格式改为XT+5位数字（XT00001开始），需添加order_seq计数表
+- [x] 2. 订单浏览页面显示商品图片（OrderBrowsePage items table 加 productImage/SKU/Keyword 列）
+- [x] 3. 区域三收件人详情自动同步（customerForm变化时自动更新recipientForm）
+- [x] 4. 区域五折扣原因和收费说明显示在订单浏览（schema新增discountReason列，OrderBrowsePage显示原因）
+- [x] 5. 区域六备注显示在订单浏览（创建订单时保存remark到order_remarks，OrderBrowsePage显示）
+- [x] 6. TypeScript 检查 + 保存检查点

@@ -47,6 +47,8 @@ import {
   campaigns, campaignFlows, campaignButtons, campaignContentIds,
   // V2.0 imports - Reservation Records
   reservationRecords,
+  // V2.0.43 imports - Order sequence counter
+  orderSeq,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -488,6 +490,23 @@ export async function getOrderItems(orderId: number) {
   return result;
 }
 
+// V2.0.43: Generate sequential order number (XT00001, XT00002, ...)
+export async function generateOrderNumber(prefix: string): Promise<string> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Atomically get and increment the sequence number
+  const [row] = await db.select().from(orderSeq).where(eq(orderSeq.prefix, prefix)).limit(1);
+  let nextNum = 1;
+  if (row) {
+    nextNum = row.nextNumber;
+    await db.update(orderSeq).set({ nextNumber: nextNum + 1 }).where(eq(orderSeq.prefix, prefix));
+  } else {
+    await db.insert(orderSeq).values({ prefix, nextNumber: 2 });
+  }
+  // Format with 5-digit zero-padded number
+  return `${prefix}${String(nextNum).padStart(5, "0")}`;
+}
+
 export async function createOrderWithSplit(data: {
   customerId: number;
   facebookName?: string;
@@ -574,9 +593,9 @@ export async function createOrderWithSplit(data: {
   // V2.2: Total = 商品小计 - 促销优惠 - 人工折扣 + 额外收费 + 运费 - 使用Credit
   const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscountNum - discountAmountNum + extraChargeNum + shippingFee - creditUsedNum;
   
-  // V2.2: Generate order number with XT/CXT prefix based on orderCategory
+  // V2.0.43: Generate sequential order number with XT/CXT prefix (XT00001, CXT00001)
   const prefix = data.orderCategory === "import" ? "CXT" : "XT";
-  const orderNumber = `${prefix}${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const orderNumber = await generateOrderNumber(prefix);
 
   const orderResult = await db.insert(orders).values({
     orderNumber,
@@ -607,6 +626,7 @@ export async function createOrderWithSplit(data: {
     extraCharge: data.extraCharge || null,
     extraChargeDescription: data.extraChargeDescription || null,
     creditUsed: data.creditUsed || null,
+    discountReason: data.discountReason || null,
   });
 
     const orderId = (orderResult as any)[0].insertId;
@@ -3743,7 +3763,7 @@ export async function mallCheckout(data: {
   }
 
   // Create new order
-  const orderNumber = `XT${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const orderNumber = await generateOrderNumber("XT");
   const orderResult = await db.insert(orders).values({
     orderNumber,
     customerId: customer.id,
@@ -4795,7 +4815,7 @@ export async function createOrderFromLiveCapture(data: {
   }
   
   // Create new order
-  const orderNumber = `XT${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const orderNumber = await generateOrderNumber("XT");
   const secureToken = generateSecureToken();
   const orderResult = await db.insert(orders).values({
     orderNumber,
