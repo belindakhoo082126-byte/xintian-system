@@ -1984,3 +1984,8 @@
 - [x] 1. getOrderById 中 secureToken/checkoutLink update 失败时 try-catch 保护，确保订单数据仍能正常返回
 - [x] 2. OrderBrowsePage 增加 error 状态显示，当 tRPC 查询失败时显示具体错误信息而非仅显示"订单未找到"
 - [x] 3. TypeScript 零错误，269/269 测试通过
+## V2.0.57: 订单浏览页增加结单通知功能和状态显示
+- [x] 1. OrderBrowsePage 增加结单链接复制按钮和发送 Messenger 按钮
+- [x] 2. OrderBrowsePage 增加通知状态显示（已发送/发送失败/未发送 + 日期时间）
+- [x] 3. 统一所有发送接口的默认消息模板为用户指定的完整内容
+- [x] 4. TypeScript 检查 + 测试通过

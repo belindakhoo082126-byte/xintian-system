@@ -704,8 +704,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                               e.stopPropagation();
                               const fullLink = `https://xintian.com.my${(o as any).checkoutLink}`;
                               const template = (systemSettings as any)?.checkoutMessageTemplate ||
-                                "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
-                              const msg = template.replace(/\{link\}/g, fullLink);
+                                "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                              const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, (o as any).orderNumber || "");
                               resendCheckoutMutation.mutate({ orderId: (o as any).id, customMessage: msg });
                             }}
                           >
@@ -751,8 +751,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                             }
                             const fullLink = `https://xintian.com.my${(o as any).checkoutLink}`;
                             const template = (systemSettings as any)?.checkoutMessageTemplate ||
-                              "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
-                            const msg = template.replace(/\{link\}/g, fullLink);
+                              "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                            const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, (o as any).orderNumber || "");
                             sendCheckoutMutation.mutate({ orderId: (o as any).id, customMessage: msg });
                           }}>
                             <MessageCircle className="h-4 w-4" />
@@ -877,8 +877,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         if (link && phone) {
                           const fullLink = `https://xintian.com.my${link}`;
                           const template = (systemSettings as any)?.checkoutMessageTemplate ||
-                            "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
-                          const msg = template.replace(/\{link\}/g, fullLink);
+                            "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                          const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, (orderDetail as any).orderNumber || "");
                           setMessageDialogMode("whatsapp");
                           setEditableMessage(msg);
                           setMessageDialogOpen(true);
@@ -893,8 +893,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         if (link) {
                           const fullLink = `https://xintian.com.my${link}`;
                           const template = (systemSettings as any)?.checkoutMessageTemplate ||
-                            "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
-                          const msg = template.replace(/\{link\}/g, fullLink);
+                            "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                          const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, (orderDetail as any).orderNumber || "");
                           setMessageDialogMode("messenger");
                           setEditableMessage(msg);
                           setMessageDialogOpen(true);
@@ -925,7 +925,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                             if (link) {
                               const fullLink = `https://xintian.com.my${link}`;
                               const template = (systemSettings as any)?.checkoutMessageTemplate ||
-                                "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
+                                "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
                               const msg = template.replace(/\{link\}/g, fullLink);
                               setMessageDialogMode("messenger");
                               setEditableMessage(msg);

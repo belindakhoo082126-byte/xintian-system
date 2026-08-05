@@ -12,6 +12,7 @@ import {
   ArrowLeft, Edit, FileText, User, Package, DollarSign, Truck,
   CreditCard, History, MessageSquare, PackageCheck, Calendar,
   Sprout, TreePine, AlertCircle, Link2, Download, Printer,
+  Copy, MessageCircle, Bell, Send,
 } from "lucide-react";
 import html2canvas from "html2canvas";
 
@@ -140,6 +141,14 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const { data: order, isLoading, error: orderError } = trpc.orders.getDetail.useQuery({ id: orderId });
   const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
   const { data: operationLogs } = trpc.orders.getOperationLogs.useQuery({ orderId });
+  const utils = trpc.useUtils();
+  const sendCheckoutMutation = trpc.orders.sendCheckout.useMutation({
+    onSuccess: () => {
+      toast.success(translate("结单通知已发送到 Messenger", "Checkout notification sent to Messenger"));
+      utils.orders.getDetail.invalidate({ id: orderId });
+    },
+    onError: (e: any) => toast.error(translate("发送失败: {message}", "Send failed: {message}", { message: e.message })),
+  });
 
   if (isLoading) {
     return (
@@ -246,8 +255,56 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
               <Link2 className="h-3 w-3 mr-1" />{translate("复制订单链接", "Copy Order Link")}
             </Button>
           )}
+          {o.checkoutLink && (
+            <Button variant="outline" size="sm" onClick={() => {
+              const fullLink = `https://xintian.com.my${o.checkoutLink}`;
+              navigator.clipboard.writeText(fullLink);
+              toast.success(translate("结单链接已复制", "Checkout link copied"), { description: fullLink, duration: 5000 });
+            }}>
+              <Copy className="h-3 w-3 mr-1" />{translate("复制结单链接", "Copy Checkout Link")}
+            </Button>
+          )}
+          {o.checkoutLink && o.messengerId && (
+            <Button variant="outline" size="sm" onClick={() => {
+              const fullLink = `https://xintian.com.my${o.checkoutLink}`;
+              const template =
+                "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+              const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, o.orderNumber || "");
+              sendCheckoutMutation.mutate({ orderId: orderId, customMessage: msg });
+            }} disabled={sendCheckoutMutation.isPending}>
+              <Send className="h-3 w-3 mr-1" />{translate("发送结单通知", "Send Checkout Notification")}
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Notification Status Banner */}
+      {o.notificationStatus && (
+        <div className={`flex items-center gap-3 px-4 py-2 rounded-lg text-sm no-print ${
+          o.notificationStatus === "sent" ? "bg-green-50 text-green-700 border border-green-200" :
+          o.notificationStatus === "failed" ? "bg-red-50 text-red-700 border border-red-200" :
+          "bg-muted text-muted-foreground"
+        }`}>
+          <Bell className="h-4 w-4 flex-shrink-0" />
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              <span className="font-medium">
+                {o.notificationStatus === "sent" ? translate("✅ 通知已发送", "✅ Notification Sent") :
+                 o.notificationStatus === "failed" ? translate("❌ 通知发送失败", "❌ Notification Failed") :
+                 translate("⏳ 待发送", "⏳ Pending")}
+              </span>
+              {o.notificationSentAt && (
+                <span className="text-xs opacity-80">
+                  {new Date(o.notificationSentAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
+                </span>
+              )}
+            </div>
+            {o.notificationStatus === "failed" && o.notificationError && (
+              <span className="text-xs opacity-80">{translate("失败原因", "Error")}: {o.notificationError}</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Export/Print content wrapper */}
       <div ref={exportRef} className="space-y-4">

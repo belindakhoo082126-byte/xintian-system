@@ -741,3 +741,14 @@
 - getOrderById 中 secureToken/checkoutLink 自动补齐 update 失败时增加 try-catch 保护，确保即使 update 失败（如 unique 约束冲突），订单数据仍能正常返回给前端
 - OrderBrowsePage 增加 tRPC error 状态显示：当查询失败时显示具体错误信息（如权限不足、数据库错误等），而非仅显示"订单未找到"，方便管理员和开发者排查问题
 - 错误页面同时显示订单 ID，便于确认导航参数是否正确
+
+## V2.0.57 (2026-08-05) — 订单浏览页增加结单通知功能和状态显示
+
+### Added
+- OrderBrowsePage 新增「复制结单链接」按钮，可一键复制结单链接到剪贴板
+- OrderBrowsePage 新增「发送结单通知」按钮，可直接从订单浏览页发送 Messenger 结单通知
+- OrderBrowsePage 新增通知状态横幅，显示已发送/发送失败/待发送状态及发送时间，失败时显示失败原因
+
+### Changed
+- 统一所有结单通知发送接口（sendCheckout、batchSendSelected、resendCheckout）的默认消息模板为用户指定的完整中文内容：包含汇款提醒、订单查询链接、商城加单提示、免邮规则说明
+- Orders.tsx 中所有模板替换逻辑增加 {orderNumber} 变量替换，确保发送内容中订单号正确填充
