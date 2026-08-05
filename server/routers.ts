@@ -5854,6 +5854,25 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         return result;
       }),
     // V2.0.3: Customer updates shipping address from public order page
+    // V2.0.52: Customer can add remark to their order
+    updateRemark: publicProcedure
+      .input(z.object({
+        orderNumber: z.string(),
+        token: z.string(),
+        remark: z.string().min(1).max(2000),
+      }))
+      .mutation(async ({ input }) => {
+        const order = await db.getOrderBySecureToken(input.orderNumber, input.token);
+        if (!order) throw new Error("订单不存在或链接无效");
+        await db.createOrderRemark({
+          orderId: order.id,
+          content: input.remark,
+          type: "customer",
+          remarkCategory: "customer_other",
+          createdBy: "customer",
+        });
+        return { success: true };
+      }),
     updateAddress: publicProcedure
       .input(z.object({
         orderNumber: z.string(),

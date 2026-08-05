@@ -1952,3 +1952,9 @@
 - [x] 1. 后端新增通知统计接口（在 getDashboardV11Stats 中添加 notificationStats：sentThisMonth/failedThisMonth/totalThisMonth/successRate）
 - [x] 2. Dashboard 前端新增通知发送成功率卡片（进度条+成功/失败数量+总计）
 - [x] 3. TypeScript 检查 + 保存检查点（269/269 测试通过）
+
+## V2.0.52: 客户结单页面优化
+- [x] 1. 客户结单页面增加备注填写功能（备注文本框 + 换盆服务勾选 + 换盆说明）
+- [x] 2. 结单页面注明换盆服务说明（紫色卡片提示：加购植物花盆+备注选择换盆服务）
+- [x] 3. 确认商城加单后可点击购物车结账（MallCheckout 已支持 secureAddOnOrder 模式，从 sessionStorage 读取上下文，加单后合并到原订单）
+- [x] 4. TypeScript 检查 + 保存检查点（268/269 通过，1个为 ParcelKing 外部API超时，与本次修改无关）

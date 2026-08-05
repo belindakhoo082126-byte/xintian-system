@@ -700,3 +700,11 @@
 - 后端 getDashboardV11Stats 新增 notificationStats：sentThisMonth/failedThisMonth/totalThisMonth/successRate
 - 前端卡片包含：成功率百分比 Badge、绿色进度条、发送成功数量、发送失败数量、总计
 - 当本月有发送记录时才显示卡片（totalThisMonth > 0）
+
+## V2.0.52 (2026-08-05) — 客户结单页面优化
+
+### Added
+- 客户结单页面新增「订单备注」卡片：备注文本框 + 换盆服务勾选 + 换盆说明文本框
+- 客户结单页面新增「换盆服务」说明卡片：紫色提示框，说明加购植物花盆+备注选择换盆服务
+- 后端新增 `publicOrder.updateRemark` 接口，客户可安全保存备注到 order_remarks 表
+- 完成结单区描述更新：「加单完毕后可点击购物车进行结账」

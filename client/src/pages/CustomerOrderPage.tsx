@@ -66,8 +66,18 @@ export default function CustomerOrderPage(props: any) {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState("");
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const [customerRemark, setCustomerRemark] = useState("");
+  const [repotService, setRepotService] = useState(false);
+  const [repotRemark, setRepotRemark] = useState("");
   const utils = trpc.useUtils();
   const { data: paymentMethods } = trpc.paymentMethods.listEnabled.useQuery();
+
+  const submitRemarkMutation = trpc.publicOrder.updateRemark.useMutation({
+    onSuccess: () => {
+      toast.success("备注已保存");
+    },
+    onError: (e: any) => toast.error("保存失败: " + e.message),
+  });
 
   const updateAddressMutation = trpc.publicOrder.updateAddress.useMutation({
     onSuccess: () => {
@@ -391,12 +401,84 @@ export default function CustomerOrderPage(props: any) {
               </CardContent>
             </Card>
 
+            {/* V2.0.52: 换盆服务说明 */}
+            <Card className="border-purple-200 bg-purple-50/30 dark:border-purple-900/40 dark:bg-purple-950/10">
+              <CardContent className="pt-4">
+                <div className="flex items-start gap-3">
+                  <Leaf className="h-5 w-5 text-purple-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-purple-900">🌿 换盆服务</p>
+                    <p className="text-xs text-purple-700 mt-1">
+                      如有需要换盆服务，可以直接把想要更换的植物及花盆加入购物车，结账时在备注区选择换盆服务即可。
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* V2.0.52: 客户备注 */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">订单备注</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <Label className="text-sm">备注内容</Label>
+                  <Textarea
+                    value={customerRemark}
+                    onChange={e => setCustomerRemark(e.target.value)}
+                    placeholder="如有特殊要求请在此备注（如配送时间、包装要求等）"
+                    rows={3}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="repot-service"
+                    checked={repotService}
+                    onChange={e => setRepotService(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <Label htmlFor="repot-service" className="text-sm cursor-pointer">需要换盆服务</Label>
+                </div>
+                {repotService && (
+                  <div>
+                    <Label className="text-sm">换盆说明</Label>
+                    <Textarea
+                      value={repotRemark}
+                      onChange={e => setRepotRemark(e.target.value)}
+                      placeholder="请说明需要换盆的植物及花盆"
+                      rows={2}
+                    />
+                  </div>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={submitRemarkMutation.isPending || (!customerRemark.trim() && !repotService)}
+                  onClick={() => {
+                    const remarkText = [
+                      customerRemark.trim(),
+                      repotService ? `【换盆服务】${repotRemark.trim() || "需要换盆服务"}` : "",
+                    ].filter(Boolean).join("\n");
+                    submitRemarkMutation.mutate({
+                      orderNumber,
+                      token,
+                      remark: remarkText,
+                    });
+                  }}
+                >
+                  {submitRemarkMutation.isPending ? "保存中..." : "保存备注"}
+                </Button>
+              </CardContent>
+            </Card>
+
             {/* 客户结单操作：直接汇款或继续到商城加单 */}
             {canEditAddress && (
               <Card className="border-primary/25 bg-primary/[0.025]">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">完成结单</CardTitle>
-                  <p className="text-sm text-muted-foreground">您可以直接汇款并上传凭证，或先到商城继续加购商品。</p>
+                  <p className="text-sm text-muted-foreground">您可以直接汇款并上传凭证，或先到商城继续加购商品。加单完毕后可点击购物车进行结账。</p>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {!hasAddress && (
