@@ -1989,3 +1989,9 @@
 - [x] 2. OrderBrowsePage 增加通知状态显示（已发送/发送失败/未发送 + 日期时间）
 - [x] 3. 统一所有发送接口的默认消息模板为用户指定的完整内容
 - [x] 4. TypeScript 检查 + 测试通过
+## V2.0.58: 订单列表页批量勾选发送结单通知功能增强
+- [x] 1. 批量发送区域改为始终显示（不限于orderCategory !== "all"），让所有订单页都能使用
+- [x] 2. 全选checkbox改为选中所有有checkoutLink+messengerId的订单（不限于pending状态）
+- [x] 3. 行内checkbox也改为所有有checkoutLink+messengerId的订单都可勾选
+- [x] 4. 增加已选数量提示和清空选择按钮
+- [x] 5. TypeScript 检查 + 测试通过

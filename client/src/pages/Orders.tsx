@@ -570,14 +570,22 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
         </Select>
       </div>
 
-      {orderCategory !== "all" && (
-        <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3">
-          <div>
-            <p className="text-sm font-medium">{translate("Checkout 通知管理", "Checkout Notification Management")}</p>
-            <p className="text-xs text-muted-foreground">{translate("一键发送 Checkout Link 给所有未发送或发送失败的订单", "Send Checkout Link to all pending or failed orders")}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {selectedIds.size > 0 && (
+      <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3">
+        <div>
+          <p className="text-sm font-medium">{translate("结单通知管理", "Checkout Notification Management")}</p>
+          <p className="text-xs text-muted-foreground">{translate("勾选订单后点击「发送选中」批量发送结单通知到 Messenger", "Select orders and click \"Send Selected\" to batch send checkout notifications via Messenger")}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <>
+              <span className="text-sm text-muted-foreground">{translate("已选 {count} 张", "{count} selected", { count: selectedIds.size })}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                {translate("清空选择", "Clear")}
+              </Button>
               <Button
                 size="sm"
                 variant="secondary"
@@ -587,19 +595,19 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                 <Send className="h-4 w-4 mr-1" />
                 {translate("发送选中 ({count})", "Send Selected ({count})", { count: selectedIds.size })}
               </Button>
-            )}
-            <Button
-              size="sm"
-              variant="default"
-              onClick={() => batchSendCheckoutMutation.mutate({ status: statusFilter === "all" ? undefined : statusFilter })}
-              disabled={batchSendCheckoutMutation.isPending}
-            >
-              <Send className="h-4 w-4 mr-1" />
-              {translate("发送全部未发送订单", "Send All Pending")}
-            </Button>
-          </div>
+            </>
+          )}
+          <Button
+            size="sm"
+            variant="default"
+            onClick={() => batchSendCheckoutMutation.mutate({ status: statusFilter === "all" ? undefined : statusFilter })}
+            disabled={batchSendCheckoutMutation.isPending}
+          >
+            <Send className="h-4 w-4 mr-1" />
+            {translate("发送全部未发送订单", "Send All Pending")}
+          </Button>
         </div>
-      )}
+      </div>
 
       <Card>
         <CardContent className="p-0">
@@ -608,11 +616,14 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               <TableRow>
                 <TableHead className="w-[40px]">
                   <Checkbox
-                    checked={orders?.some((o: any) => o.physicalStatus === "pending") && orders?.filter((o: any) => o.physicalStatus === "pending").every((o: any) => selectedIds.has(o.id))}
+                    checked={(() => {
+                      const selectable = orders?.filter((o: any) => o.checkoutLink && o.messengerId) || [];
+                      return selectable.length > 0 && selectable.every((o: any) => selectedIds.has(o.id));
+                    })()}
                     onCheckedChange={(checked) => {
                       if (checked) {
                         const newSet = new Set<number>();
-                        orders?.filter((o: any) => o.physicalStatus === "pending").forEach((o: any) => newSet.add(o.id));
+                        orders?.filter((o: any) => o.checkoutLink && o.messengerId).forEach((o: any) => newSet.add(o.id));
                         setSelectedIds(newSet);
                       } else {
                         setSelectedIds(new Set());
@@ -642,7 +653,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               }).map((o: any) => (
                 <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openDetail(o.id)}>
                   <TableCell className="w-[40px]" onClick={(e) => e.stopPropagation()}>
-                    {o.physicalStatus === "pending" && (
+                    {o.checkoutLink && o.messengerId && (
                       <Checkbox
                         checked={selectedIds.has(o.id)}
                         onCheckedChange={(checked) => {
