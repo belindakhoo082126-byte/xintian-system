@@ -1894,15 +1894,17 @@ export const orderPayments = mysqlTable("order_payments", {
   orderId: int("orderId").notNull(),
   // Payment amount for this record
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  // Payment method used
-  paymentMethodId: int("paymentMethodId"),
-  paymentMethodName: varchar("paymentMethodName", { length: 100 }),
-  // Receipt proof URL (uploaded image/file)
-  receiptUrl: varchar("receiptUrl", { length: 500 }),
   // Payment date (when customer made the transfer)
   paymentDate: timestamp("paymentDate"),
-  // Who recorded this payment (admin name)
-  recordedBy: varchar("recordedBy", { length: 255 }),
+  // Payment method used
+  paymentMethod: varchar("paymentMethod", { length: 100 }),
+  // Receipt proof URL (uploaded image/file)
+  receiptUrl: varchar("receiptUrl", { length: 500 }),
+  // Purpose / notes about this payment
+  purpose: varchar("purpose", { length: 255 }),
+  // Who recorded this payment (operator)
+  operatorId: int("operatorId"),
+  operatorName: varchar("operatorName", { length: 255 }),
   // Notes
   notes: text("notes"),
   // Timestamp

@@ -762,3 +762,10 @@
 
 ### Added
 - 增加已选数量提示（如「已选 3 张」）和「清空选择」按钮，方便管理已勾选的订单
+
+## V2.0.59 (2026-08-05) — 修复本地订单管理三个问题
+
+### Fixed
+- **复制结单链接只有链接没有内容**：改为复制完整通知内容（含模板文字+链接+订单号），点击复制按钮后剪贴板中包含完整的结单通知消息
+- **点击眼睛查询订单报错**：order_payments 表列名映射修复——schema 中 paymentMethodId/paymentMethodName/recordedBy 改为数据库实际列名 paymentMethod/purpose/operatorName/operatorId，addOrderPayment 函数和 routers.ts 中调用同步更新
+- **订单无法打勾**：checkbox 条件从限制 checkoutLink+messengerId 改为所有订单都可勾选，全选和行内 checkbox 均不限制条件

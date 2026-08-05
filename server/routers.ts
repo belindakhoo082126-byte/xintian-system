@@ -1218,8 +1218,7 @@ export const appRouter = router({
       .input(z.object({
         orderId: z.number(),
         amount: z.string(),
-        paymentMethodId: z.number().optional(),
-        paymentMethodName: z.string().optional(),
+        paymentMethod: z.string().optional(),
         receiptUrl: z.string().optional(),
         notes: z.string().optional(),
       }))
@@ -1227,10 +1226,9 @@ export const appRouter = router({
         await db.addOrderPayment({
           orderId: input.orderId,
           amount: input.amount,
-          paymentMethodId: input.paymentMethodId,
-          paymentMethodName: input.paymentMethodName,
+          paymentMethod: input.paymentMethod,
           receiptUrl: input.receiptUrl,
-          recordedBy: ctx.user?.name || "admin",
+          operatorName: ctx.user?.name || "admin",
           notes: input.notes,
         });
         return { success: true };

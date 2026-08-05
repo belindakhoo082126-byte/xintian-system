@@ -1995,3 +1995,8 @@
 - [x] 3. 行内checkbox也改为所有有checkoutLink+messengerId的订单都可勾选
 - [x] 4. 增加已选数量提示和清空选择按钮
 - [x] 5. TypeScript 检查 + 测试通过
+## V2.0.59: 修复本地订单管理三个问题
+- [x] 1. 复制结单链接改为复制完整通知内容（含模板文字+链接+订单号）
+- [x] 2. 修复点击眼睛查询订单报错——order_payments表列名映射修复（paymentMethodId→paymentMethod, paymentMethodName→paymentMethod, recordedBy→operatorName）
+- [x] 3. 修复订单无法打勾——checkbox条件改为所有订单都可勾选（不限制checkoutLink+messengerId）
+- [x] 4. TypeScript 检查 + 测试通过（266/266通过，1个live-key测试网络超时跳过）

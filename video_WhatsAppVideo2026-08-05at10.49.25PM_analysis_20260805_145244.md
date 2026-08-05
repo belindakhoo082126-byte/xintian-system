@@ -1,0 +1,1 @@
+Based on the video, the user is attempting to select the checkboxes next to the orders in the list. However, they are unable to check or uncheck them. When the user clicks on the checkboxes, nothing happens; the boxes remain empty and do not show a checkmark, indicating that they are unresponsive or disabled.

@@ -823,11 +823,10 @@ export async function getOrderPayments(orderId: number) {
 export async function addOrderPayment(data: {
   orderId: number;
   amount: string;
-  paymentMethodId?: number;
-  paymentMethodName?: string;
+  paymentMethod?: string;
   receiptUrl?: string;
   paymentDate?: Date;
-  recordedBy?: string;
+  operatorName?: string;
   notes?: string;
 }) {
   const db = await getDb();
@@ -836,11 +835,10 @@ export async function addOrderPayment(data: {
   await db.insert(orderPayments).values({
     orderId: data.orderId,
     amount: data.amount,
-    paymentMethodId: data.paymentMethodId || null,
-    paymentMethodName: data.paymentMethodName || null,
+    paymentMethod: data.paymentMethod || null,
     receiptUrl: data.receiptUrl || null,
     paymentDate: data.paymentDate || new Date(),
-    recordedBy: data.recordedBy || null,
+    operatorName: data.operatorName || null,
     notes: data.notes || null,
   });
 
@@ -863,7 +861,7 @@ export async function addOrderPayment(data: {
     }).where(eq(orders.id, data.orderId));
   }
 
-  await logOrderOperation(data.orderId, "payment", `Payment recorded: RM${data.amount}`, null, data.recordedBy);
+  await logOrderOperation(data.orderId, "payment", `Payment recorded: RM${data.amount}`, null, data.operatorName);
   broadcastChanges(["orders", "dashboard"]);
 }
 

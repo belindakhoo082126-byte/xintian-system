@@ -463,7 +463,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     addPaymentMutation.mutate({
       orderId: detailOrderId,
       amount: paymentForm.amount,
-      paymentMethodName: paymentForm.paymentMethodName || undefined,
+      paymentMethod: paymentForm.paymentMethodName || undefined,
       receiptUrl: paymentForm.receiptUrl || undefined,
       notes: paymentForm.notes || undefined,
     });
@@ -617,13 +617,13 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                 <TableHead className="w-[40px]">
                   <Checkbox
                     checked={(() => {
-                      const selectable = orders?.filter((o: any) => o.checkoutLink && o.messengerId) || [];
+                      const selectable = orders || [];
                       return selectable.length > 0 && selectable.every((o: any) => selectedIds.has(o.id));
                     })()}
                     onCheckedChange={(checked) => {
                       if (checked) {
                         const newSet = new Set<number>();
-                        orders?.filter((o: any) => o.checkoutLink && o.messengerId).forEach((o: any) => newSet.add(o.id));
+                        (orders || []).forEach((o: any) => newSet.add(o.id));
                         setSelectedIds(newSet);
                       } else {
                         setSelectedIds(new Set());
@@ -653,19 +653,17 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               }).map((o: any) => (
                 <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openDetail(o.id)}>
                   <TableCell className="w-[40px]" onClick={(e) => e.stopPropagation()}>
-                    {o.checkoutLink && o.messengerId && (
-                      <Checkbox
-                        checked={selectedIds.has(o.id)}
-                        onCheckedChange={(checked) => {
-                          setSelectedIds((prev) => {
-                            const newSet = new Set(prev);
-                            if (checked) newSet.add(o.id);
-                            else newSet.delete(o.id);
-                            return newSet;
-                          });
-                        }}
-                      />
-                    )}
+                    <Checkbox
+                      checked={selectedIds.has(o.id)}
+                      onCheckedChange={(checked) => {
+                        setSelectedIds((prev) => {
+                          const newSet = new Set(prev);
+                          if (checked) newSet.add(o.id);
+                          else newSet.delete(o.id);
+                          return newSet;
+                        });
+                      }}
+                    />
                   </TableCell>
                   <TableCell className="font-mono text-sm">{o.orderNumber}</TableCell>
                   <TableCell>{o.facebookName || "-"}</TableCell>
@@ -743,12 +741,15 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                       </Button>
                       {(o as any).checkoutLink && (
                         <>
-                          <Button variant="ghost" size="icon" title={translate("复制结单链接", "Copy Checkout Link")} onClick={(e) => {
+                          <Button variant="ghost" size="icon" title={translate("复制结单通知", "Copy Checkout Notification")} onClick={(e) => {
                             e.stopPropagation();
                             const fullLink = `https://xintian.com.my${(o as any).checkoutLink}`;
-                            navigator.clipboard.writeText(fullLink);
-                            toast.success(translate("结单链接已复制", "Checkout link copied"), {
-                              description: fullLink,
+                            const template =
+                              "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                            const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, (o as any).orderNumber || "");
+                            navigator.clipboard.writeText(msg);
+                            toast.success(translate("结单通知已复制", "Checkout notification copied"), {
+                              description: msg.substring(0, 100) + "...",
                               duration: 5000,
                             });
                           }}>
