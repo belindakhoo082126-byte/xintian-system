@@ -692,3 +692,11 @@
 - 批量发送间隔控制：每条发送间隔1秒，防止 Messenger API 限流导致发送失败
 - 通知发送历史记录：所有4个发送接口（sendCheckout/resendCheckout/batchSendCheckout/batchSendSelected）均记录到 notification_logs 表
 - 订单详情页新增「通知发送历史」模块：显示每次发送的时间、状态（成功/失败）、渠道、错误信息和消息内容
+
+## V2.0.51 (2026-08-05) — Dashboard 通知发送成功率统计卡片
+
+### Added
+- Dashboard 新增「通知发送统计（本月）」卡片，显示 Checkout 通知发送成功率
+- 后端 getDashboardV11Stats 新增 notificationStats：sentThisMonth/failedThisMonth/totalThisMonth/successRate
+- 前端卡片包含：成功率百分比 Badge、绿色进度条、发送成功数量、发送失败数量、总计
+- 当本月有发送记录时才显示卡片（totalThisMonth > 0）

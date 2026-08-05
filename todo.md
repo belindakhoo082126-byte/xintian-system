@@ -1947,3 +1947,8 @@
 - [x] 3. 新增 notification_logs 表记录每次发送通知的时间和结果（已有表+接口，在所有4个发送接口中添加日志记录）
 - [x] 4. 订单详情页显示通知发送历史记录模块（NotificationHistory 组件，显示每次发送的时间/状态/渠道/错误/消息内容）
 - [x] 5. TypeScript 检查 + 保存检查点（269/269 测试通过）
+
+## V2.0.51: Dashboard 通知发送成功率统计卡片
+- [x] 1. 后端新增通知统计接口（在 getDashboardV11Stats 中添加 notificationStats：sentThisMonth/failedThisMonth/totalThisMonth/successRate）
+- [x] 2. Dashboard 前端新增通知发送成功率卡片（进度条+成功/失败数量+总计）
+- [x] 3. TypeScript 检查 + 保存检查点（269/269 测试通过）

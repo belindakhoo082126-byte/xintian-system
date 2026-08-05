@@ -7,7 +7,7 @@ import {
   ShoppingCart, Warehouse, Calendar,
   ShoppingBag, CheckCircle, XCircle, Ban,
   Bot, ArrowRight, AlertTriangle,
-  Plane, Eye, Home, FileText, MessageCircle,
+  Plane, Eye, Home, FileText, MessageCircle, Send,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useI18n } from "@/contexts/I18nContext";
@@ -119,6 +119,45 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+
+      {/* V2.0.51: Notification Success Rate */}
+      {(stats as any).notificationStats && (stats as any).notificationStats.totalThisMonth > 0 && (
+        <div>
+          <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "通知发送统计（本月）" : "Notification Stats (This Month)"}</h2>
+          <Card className="border-blue-200 bg-blue-50/40 dark:border-blue-900/60 dark:bg-blue-950/10">
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Send className="h-5 w-5 text-blue-500" />
+                  <span className="text-sm font-medium">{lang === "zh" ? "Checkout 通知发送成功率" : "Checkout Notification Success Rate"}</span>
+                </div>
+                <Badge variant="secondary" className="text-base font-bold">{(stats as any).notificationStats.successRate}%</Badge>
+              </div>
+              <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
+                <div
+                  className="h-full bg-green-500 transition-all duration-500"
+                  style={{ width: `${(stats as any).notificationStats.successRate}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between mt-3 text-sm">
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+                  <span className="text-muted-foreground">{lang === "zh" ? "发送成功" : "Sent"}</span>
+                  <span className="font-bold text-green-600">{(stats as any).notificationStats.sentThisMonth}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                  <span className="text-muted-foreground">{lang === "zh" ? "发送失败" : "Failed"}</span>
+                  <span className="font-bold text-red-600">{(stats as any).notificationStats.failedThisMonth}</span>
+                </div>
+                <div className="text-muted-foreground">
+                  {lang === "zh" ? "总计" : "Total"}: <span className="font-bold">{(stats as any).notificationStats.totalThisMonth}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* V2.1: 9 Fixed Work Status Cards — always visible */}
       <div>

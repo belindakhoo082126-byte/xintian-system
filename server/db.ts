@@ -5072,11 +5072,15 @@ export async function getDashboardV11Stats() {
   const scheduledToday = await db.select({ count: sql`COUNT(*)` }).from(orders)
     .where(and(eq(orders.physicalStatus, 'packing'), eq(orders.scheduledShippingDate, today))) as any[];
 
-  // Order alerts
+    // Order alerts
   const repotOrders = await db.select({ count: sql`COUNT(DISTINCT orderId)` }).from(orderItemRepots) as any[];
   const holdExpiring = await db.select({ count: sql`COUNT(*)` }).from(orders)
     .where(eq(orders.physicalStatus, 'hold_order')) as any[];
-
+  // V2.0.51: Notification stats (this month)
+  const notifSentCount = await db.select({ count: sql`COUNT(*)` }).from(notificationLogs)
+    .where(and(eq(notificationLogs.status, 'sent'), sql`${notificationLogs.createdAt} >= ${firstOfMonth}`)) as any[];
+  const notifFailedCount = await db.select({ count: sql`COUNT(*)` }).from(notificationLogs)
+    .where(and(eq(notificationLogs.status, 'failed'), sql`${notificationLogs.createdAt} >= ${firstOfMonth}`)) as any[];
   return {
     row1: {
       pendingPayment: Number(pendingPayment[0]?.count || 0),
@@ -5119,6 +5123,16 @@ export async function getDashboardV11Stats() {
     pendingNotifications: await getPendingNotifications(10),
     // V2.0: Import Pre-order stats
     importPreorderStats: await getImportPreorderStatsSafe(),
+    // V2.0.51: Notification stats
+    notificationStats: {
+      sentThisMonth: Number(notifSentCount[0]?.count || 0),
+      failedThisMonth: Number(notifFailedCount[0]?.count || 0),
+      totalThisMonth: Number(notifSentCount[0]?.count || 0) + Number(notifFailedCount[0]?.count || 0),
+      successRate: (() => {
+        const total = Number(notifSentCount[0]?.count || 0) + Number(notifFailedCount[0]?.count || 0);
+        return total > 0 ? Math.round((Number(notifSentCount[0]?.count || 0) / total) * 100) : 0;
+      })(),
+    },
   };
 }
 
