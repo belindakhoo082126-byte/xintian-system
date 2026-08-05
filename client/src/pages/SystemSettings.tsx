@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -280,20 +280,29 @@ export default function SystemSettings() {
           {/* Checkout Message Template */}
           <Card>
             <CardHeader>
-              <CardTitle>Checkout 消息模板</CardTitle>
+              <CardTitle>Checkout 追单消息模板</CardTitle>
+              <CardDescription>发送给未汇款订单客户的默认追单消息，支持自定义编辑</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-2">
-                <Label>发送给客户的消息模板</Label>
+                <Label>追单消息内容</Label>
                 <Textarea
                   value={form.checkoutMessageTemplate || ""}
                   onChange={(e) => update("checkoutMessageTemplate", e.target.value)}
-                  rows={5}
-                  placeholder="Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.&#10;&#10;{link}"
+                  rows={8}
+                  placeholder="您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}"
                 />
-                <p className="text-xs text-muted-foreground">
-                  发送 Messenger 或 WhatsApp 时使用的默认消息。使用 <code className="px-1 py-0.5 bg-muted rounded">{"{link}"}</code> 作为 Checkout 链接占位符，系统会自动替换为实际链接。
-                </p>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    可用占位符：
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <code className="px-2 py-1 text-xs bg-muted rounded">{"{link}"}</code>
+                    <span className="text-xs text-muted-foreground">→ 结单链接</span>
+                    <code className="px-2 py-1 text-xs bg-muted rounded ml-2">{"{orderNumber}"}</code>
+                    <span className="text-xs text-muted-foreground">→ 订单号</span>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

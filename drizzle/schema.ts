@@ -2620,3 +2620,4 @@ export const orderSeq = mysqlTable("order_seq", {
 });
 export type OrderSeq = typeof orderSeq.$inferSelect;
 export type InsertOrderSeq = typeof orderSeq.$inferInsert;
+

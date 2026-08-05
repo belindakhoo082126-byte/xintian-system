@@ -1401,9 +1401,27 @@ export const appRouter = router({
             .replace(/\{orderNumber\}/g, order.orderNumber || "");
           await sendTextMessage(order.messengerId, message);
           await db.updateOrderNotificationStatus(input.orderId, "sent", null);
+          // V2.0.50: Log notification history
+          await db.createNotificationLog({
+            orderId: input.orderId,
+            type: "checkout_reminder",
+            channel: "messenger",
+            message: message.substring(0, 1000),
+            status: "sent",
+            sentAt: new Date(),
+          }).catch(() => {});
           return { success: true };
         } catch (error: any) {
           await db.updateOrderNotificationStatus(input.orderId, "failed", error.message || "Unknown error");
+          // V2.0.50: Log failed notification
+          await db.createNotificationLog({
+            orderId: input.orderId,
+            type: "checkout_reminder",
+            channel: "messenger",
+            message: (input.customMessage || "").substring(0, 1000),
+            status: "failed",
+            errorMessage: error.message || "Unknown error",
+          }).catch(() => {});
           throw new Error(`Failed to send: ${error.message}`);
         }
       }),
@@ -1424,23 +1442,47 @@ export const appRouter = router({
         const settings = await db.getSystemSettings();
         const template = (settings as any)?.checkoutMessageTemplate ||
           "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+        let isFirstSend = true;
         for (const order of pendingOrders) {
           if (!order.messengerId || !order.checkoutLink) {
             results.skipped++;
             continue;
           }
+          // V2.0.50: 1-second interval between sends to avoid API rate limiting
+          if (!isFirstSend) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          isFirstSend = false;
+          const { sendTextMessage } = await import("./messenger");
+          const baseUrl = "https://xintian.com.my";
+          const fullLink = `${baseUrl}${order.checkoutLink}`;
+          const message = template
+            .replace(/\{link\}/g, fullLink)
+            .replace(/\{orderNumber\}/g, order.orderNumber || "");
           try {
-            const { sendTextMessage } = await import("./messenger");
-            const baseUrl = "https://xintian.com.my";
-            const fullLink = `${baseUrl}${order.checkoutLink}`;
-            const message = template
-              .replace(/\{link\}/g, fullLink)
-              .replace(/\{orderNumber\}/g, order.orderNumber || "");
             await sendTextMessage(order.messengerId, message);
             await db.updateOrderNotificationStatus(order.id, "sent", null);
+            // V2.0.50: Log notification history
+            await db.createNotificationLog({
+              orderId: order.id,
+              type: "checkout_reminder",
+              channel: "messenger",
+              message: message.substring(0, 1000),
+              status: "sent",
+              sentAt: new Date(),
+            }).catch(() => {});
             results.sent++;
           } catch (error: any) {
             await db.updateOrderNotificationStatus(order.id, "failed", error.message || "Unknown error");
+            // V2.0.50: Log failed notification
+            await db.createNotificationLog({
+              orderId: order.id,
+              type: "checkout_reminder",
+              channel: "messenger",
+              message: message.substring(0, 1000),
+              status: "failed",
+              errorMessage: error.message || "Unknown error",
+            }).catch(() => {});
             results.failed++;
             results.failedOrders.push({ id: order.id, orderNumber: order.orderNumber, customerName: order.facebookName || order.customerName || "Unknown", error: error.message || "Unknown error" });
           }
@@ -1457,24 +1499,48 @@ export const appRouter = router({
         const settings = await db.getSystemSettings();
         const template = (settings as any)?.checkoutMessageTemplate ||
           "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
+        let isFirstSendSelected = true;
         for (const orderId of input.orderIds) {
           const order = await db.getOrderById(orderId);
           if (!order || !order.checkoutLink || !order.messengerId) {
             results.skipped++;
             continue;
           }
+          // V2.0.50: 1-second interval between sends to avoid API rate limiting
+          if (!isFirstSendSelected) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          isFirstSendSelected = false;
+          const { sendTextMessage } = await import("./messenger");
+          const baseUrl = "https://xintian.com.my";
+          const fullLink = `${baseUrl}${order.checkoutLink}`;
+          const message = template
+            .replace(/\{link\}/g, fullLink)
+            .replace(/\{orderNumber\}/g, order.orderNumber || "");
           try {
-            const { sendTextMessage } = await import("./messenger");
-            const baseUrl = "https://xintian.com.my";
-            const fullLink = `${baseUrl}${order.checkoutLink}`;
-            const message = template
-              .replace(/\{link\}/g, fullLink)
-              .replace(/\{orderNumber\}/g, order.orderNumber || "");
             await sendTextMessage(order.messengerId, message);
             await db.updateOrderNotificationStatus(orderId, "sent", null);
+            // V2.0.50: Log notification history
+            await db.createNotificationLog({
+              orderId: orderId,
+              type: "checkout_reminder",
+              channel: "messenger",
+              message: message.substring(0, 1000),
+              status: "sent",
+              sentAt: new Date(),
+            }).catch(() => {});
             results.sent++;
           } catch (error: any) {
             await db.updateOrderNotificationStatus(orderId, "failed", error.message || "Unknown error");
+            // V2.0.50: Log failed notification
+            await db.createNotificationLog({
+              orderId: orderId,
+              type: "checkout_reminder",
+              channel: "messenger",
+              message: message.substring(0, 1000),
+              status: "failed",
+              errorMessage: error.message || "Unknown error",
+            }).catch(() => {});
             results.failed++;
             results.failedOrders.push({ id: orderId, orderNumber: order.orderNumber, customerName: order.facebookName || "Unknown", error: error.message || "Unknown error" });
           }
@@ -1501,9 +1567,27 @@ export const appRouter = router({
             .replace(/\{orderNumber\}/g, order.orderNumber || "");
           await sendTextMessage(order.messengerId, message);
           await db.updateOrderNotificationStatus(input.orderId, "sent", null);
+          // V2.0.50: Log notification history
+          await db.createNotificationLog({
+            orderId: input.orderId,
+            type: "checkout_reminder",
+            channel: "messenger",
+            message: message.substring(0, 1000),
+            status: "sent",
+            sentAt: new Date(),
+          }).catch(() => {});
           return { success: true };
         } catch (error: any) {
           await db.updateOrderNotificationStatus(input.orderId, "failed", error.message || "Unknown error");
+          // V2.0.50: Log failed notification
+          await db.createNotificationLog({
+            orderId: input.orderId,
+            type: "checkout_reminder",
+            channel: "messenger",
+            message: (input.customMessage || "").substring(0, 1000),
+            status: "failed",
+            errorMessage: error.message || "Unknown error",
+          }).catch(() => {});
           throw new Error(`Failed to send: ${error.message}`);
         }
       }),

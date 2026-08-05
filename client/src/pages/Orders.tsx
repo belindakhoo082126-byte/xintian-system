@@ -14,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw } from "lucide-react";
+import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, Bell } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSearch, useLocation } from "wouter";
 
@@ -948,6 +948,9 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                   )}
                 </div>
 
+                {/* V2.0.50: Notification History */}
+                {orderDetail && <NotificationHistory orderId={orderDetail.id} />}
+
                 {/* Status actions */}
                 <div className="flex flex-wrap gap-2 pt-4 border-t">
                   {(orderDetail.physicalStatus === "pending" || orderDetail.physicalStatus === "receipt_uploaded") && (
@@ -1699,6 +1702,47 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// V2.0.50: Notification History Component
+function NotificationHistory({ orderId }: { orderId: number }) {
+  const { data: logs, isLoading } = trpc.notifications.list.useQuery({ orderId });
+  const { translate } = useI18n();
+
+  if (isLoading) return null;
+  if (!logs || logs.length === 0) return null;
+
+  return (
+    <div className="mt-3 p-3 rounded-lg border bg-muted/30">
+      <div className="text-sm font-medium mb-2 flex items-center gap-1.5">
+        <Bell className="h-3.5 w-3.5" />
+        {translate("通知发送历史", "Notification History")}
+        <Badge variant="secondary" className="ml-1">{logs.length}</Badge>
+      </div>
+      <div className="space-y-2 max-h-48 overflow-y-auto">
+        {logs.map((log: any) => (
+          <div key={log.id} className="flex items-start gap-2 text-xs p-2 rounded bg-background/50">
+            <div className={`mt-0.5 h-2 w-2 rounded-full flex-shrink-0 ${log.status === "sent" ? "bg-green-500" : "bg-red-500"}`} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{log.status === "sent" ? translate("发送成功", "Sent") : translate("发送失败", "Failed")}</span>
+                <span className="text-muted-foreground">
+                  {log.sentAt ? new Date(log.sentAt).toLocaleString() : new Date(log.createdAt).toLocaleString()}
+                </span>
+                <Badge variant="outline" className="text-[10px] py-0 px-1.5">{log.channel}</Badge>
+              </div>
+              {log.errorMessage && (
+                <div className="text-destructive mt-0.5 truncate">{log.errorMessage}</div>
+              )}
+              {log.message && (
+                <div className="text-muted-foreground mt-0.5 line-clamp-2 whitespace-pre-wrap">{log.message}</div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
