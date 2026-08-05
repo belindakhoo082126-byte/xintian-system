@@ -2028,3 +2028,12 @@
 - [x] 3. 添加 section4Items 变量过滤区域4有效商品，区域4无商品时禁用添加按钮并显示提示
 - [x] 4. repottingEntries 类型添加 plantProductId/potProductId 字段，选择时记录 productId
 - [x] 5. TypeScript 检查零错误，269/269 测试通过
+## V2.0.66: 换盆备注下拉菜单按商品分类过滤+显示数量
+- [x] 1. ManualOrderItem 接口添加 isPot 和 categoryId 字段
+- [x] 2. 商品搜索结果添加到 manualItems 时携带 isPot 和 categoryId
+- [x] 3. selectProduct 函数也携带 isPot 和 categoryId
+- [x] 4. 添加 section4Plants（isPot=false）和 section4Pots（isPot=true）过滤变量
+- [x] 5. 植物名称下拉只显示 section4Plants，花盆下拉只显示 section4Pots
+- [x] 6. 下拉选项显示商品数量（×N），同一商品添加多次时各自显示
+- [x] 7. 无对应类型商品时显示禁用提示项
+- [x] 8. TypeScript 零错误，269/269 测试通过

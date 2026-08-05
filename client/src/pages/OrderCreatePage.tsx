@@ -73,6 +73,9 @@ interface ManualOrderItem {
   sku?: string;
   keyword?: string;
   sellingPrice?: string;
+  // V2.0.66: Product classification for repotting remarks filtering
+  isPot?: boolean;
+  categoryId?: number;
 }
 
 export default function OrderCreatePage({ orderCategory = "local" }: { orderCategory?: "local" | "import" }) {
@@ -154,6 +157,9 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const { data: potProducts } = trpc.repots.potProducts.useQuery();
   // V2.0.65: Items added in Section 4, filtered to those with a real productId
   const section4Items = manualItems.filter(i => i.productId !== undefined);
+  // V2.0.66: Plant items (isPot=false) and pot items (isPot=true) for repotting remarks
+  const section4Plants = section4Items.filter(i => !i.isPot);
+  const section4Pots = section4Items.filter(i => i.isPot);
 
   // Preview mode
   const [previewMode, setPreviewMode] = useState(false);
@@ -393,6 +399,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         sku: (product as any).sku,
         keyword: (product as any).keyword || "",
         sellingPrice: (product as any).sellingPrice || (product as any).regularPrice || "0",
+        isPot: (product as any).isPot || false,
+        categoryId: (product as any).categoryId,
       };
     }));
   }
@@ -839,6 +847,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                         sku: p.sku,
                         keyword: p.keyword || "",
                         sellingPrice: p.sellingPrice || p.regularPrice || "0",
+                        isPot: p.isPot || false,
+                        categoryId: p.categoryId,
                       }]);
                       setProductSearchQuery("");
                     }}
@@ -1086,15 +1096,21 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                     <Select
                       value={entry.plantName}
                       onValueChange={(v) => {
-                        const item = section4Items.find(i => i.productName === v);
+                        const item = section4Plants.find(i => i.productName === v);
                         setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, plantName: v, plantProductId: item?.productId } : r));
                       }}
                     >
                       <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择植物", "Select plant")} /></SelectTrigger>
                       <SelectContent>
-                        {section4Items.map((item) => (
-                          <SelectItem key={item.productId} value={item.productName}>{item.productName}{item.variationName ? ` (${item.variationName})` : ""}</SelectItem>
-                        ))}
+                        {section4Plants.length === 0 ? (
+                          <SelectItem value="__none" disabled>{translate("区域四无植物类商品", "No plant items in Section 4")}</SelectItem>
+                        ) : (
+                          section4Plants.map((item, i) => (
+                            <SelectItem key={`${item.productId}-${i}`} value={item.productName}>
+                              {item.productName}{item.variationName ? ` (${item.variationName})` : ""} {translate("×{qty}", " ×{qty}", { qty: String(item.quantity) })}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1103,15 +1119,21 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                     <Select
                       value={entry.potName}
                       onValueChange={(v) => {
-                        const item = section4Items.find(i => i.productName === v);
+                        const item = section4Pots.find(i => i.productName === v);
                         setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, potName: v, potProductId: item?.productId } : r));
                       }}
                     >
                       <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择花盆", "Select pot")} /></SelectTrigger>
                       <SelectContent>
-                        {section4Items.map((item) => (
-                          <SelectItem key={item.productId} value={item.productName}>{item.productName}{item.variationName ? ` (${item.variationName})` : ""}</SelectItem>
-                        ))}
+                        {section4Pots.length === 0 ? (
+                          <SelectItem value="__none" disabled>{translate("区域四无花盆类商品", "No pot items in Section 4")}</SelectItem>
+                        ) : (
+                          section4Pots.map((item, i) => (
+                            <SelectItem key={`${item.productId}-${i}`} value={item.productName}>
+                              {item.productName}{item.variationName ? ` (${item.variationName})` : ""} {translate("×{qty}", " ×{qty}", { qty: String(item.quantity) })}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1139,14 +1161,14 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                 variant="outline"
                 size="sm"
                 onClick={() => setRepottingEntries(prev => [...prev, { plantName: "", potName: "", quantity: 1 }])}
-                disabled={section4Items.length === 0}
+                disabled={section4Plants.length === 0 && section4Pots.length === 0}
               >
                 <Plus className="h-4 w-4 mr-1" />
                 {translate("添加换盆记录", "Add Repot Entry")}
               </Button>
-              {section4Items.length === 0 && (
+              {section4Plants.length === 0 && section4Pots.length === 0 && (
                 <div className="text-xs text-amber-600 dark:text-amber-400">
-                  {translate("请先在区域四添加商品后再使用换盆备注", "Please add products in Section 4 first before using repotting remarks")}
+                  {translate("请先在区域四添加植物和花盆商品后再使用换盆备注", "Please add plant and pot products in Section 4 first before using repotting remarks")}
                 </div>
               )}
               {repottingEntries.length > 0 && (
