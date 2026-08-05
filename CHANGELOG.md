@@ -657,3 +657,10 @@
 - 客户结单页状态映射修正：`pending` → `Pending Payment`（与前端 STATUS_CONFIG 对齐）
 - 商城付款测试修正：`receipt_uploaded` 状态允许重复上传，测试改用 `shipped` 状态验证拒绝逻辑
 - 直播订单创建修复：移除重复的 secureToken 字段
+
+## V2.0.47 (2026-08-05) — 订单列表增加专属链接操作按钮
+
+### Added
+- 订单列表操作列新增「复制结单链接」按钮（Copy 图标），管理员可直接在列表中复制专属结单链接，无需进入订单详情
+- 订单列表操作列新增「发送到 Messenger」按钮（MessageCircle 图标），管理员可直接在列表中发送结单信息给客户
+- 无 checkoutLink 的订单不显示这两个按钮，无 messengerId 的订单点击发送时提示错误

@@ -14,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send } from "lucide-react";
+import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send, Link2, MessageCircle, Copy } from "lucide-react";
 import { useSearch, useLocation } from "wouter";
 
 const PHYSICAL_STATUS = {
@@ -635,9 +635,37 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openDetail(o.id); }}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="icon" title={translate("查看详情", "View Details")} onClick={(e) => { e.stopPropagation(); openDetail(o.id); }}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      {(o as any).checkoutLink && (
+                        <>
+                          <Button variant="ghost" size="icon" title={translate("复制结单链接", "Copy Checkout Link")} onClick={(e) => {
+                            e.stopPropagation();
+                            const fullLink = `https://xintian.com.my${(o as any).checkoutLink}`;
+                            navigator.clipboard.writeText(fullLink);
+                            toast.success(translate("结单链接已复制", "Checkout link copied"));
+                          }}>
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" title={translate("发送到 Messenger", "Send to Messenger")} onClick={(e) => {
+                            e.stopPropagation();
+                            if (!(o as any).messengerId) {
+                              toast.error(translate("该订单没有 Messenger ID，无法发送", "No Messenger ID for this order"));
+                              return;
+                            }
+                            const fullLink = `https://xintian.com.my${(o as any).checkoutLink}`;
+                            const template = (systemSettings as any)?.checkoutMessageTemplate ||
+                              "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
+                            const msg = template.replace(/\{link\}/g, fullLink);
+                            sendCheckoutMutation.mutate({ orderId: (o as any).id, customMessage: msg });
+                          }}>
+                            <MessageCircle className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
