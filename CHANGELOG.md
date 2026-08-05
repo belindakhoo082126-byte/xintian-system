@@ -734,3 +734,10 @@
 - 区域四商品数量0无法清除：Input改为允许空字符串，不再强制回填0
 - 区域六订单备注选项缺失：新增备注类型选择器（普通备注/发货日期/换盆/其他），发货日期支持日期选择器，换盆提示建单后可在订单详情添加多组
 - 建立订单乱码修复：schema.ts中orderSeq表的updatedAt列名映射从"updatedAt"修正为"updated_at"，与数据库实际列名一致
+
+## V2.0.56 (2026-08-05) — 修复"订单未找到"bug
+
+### Fixed
+- getOrderById 中 secureToken/checkoutLink 自动补齐 update 失败时增加 try-catch 保护，确保即使 update 失败（如 unique 约束冲突），订单数据仍能正常返回给前端
+- OrderBrowsePage 增加 tRPC error 状态显示：当查询失败时显示具体错误信息（如权限不足、数据库错误等），而非仅显示"订单未找到"，方便管理员和开发者排查问题
+- 错误页面同时显示订单 ID，便于确认导航参数是否正确

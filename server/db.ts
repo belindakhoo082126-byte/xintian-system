@@ -459,10 +459,15 @@ export async function getOrderById(id: number) {
 
   const order = result[0];
   // 兼容旧订单：管理员第一次打开详情时，自动补齐安全令牌和真实可访问的结单路径。
+  // 使用 try-catch 防止 update 失败导致整个查询失败（如 unique 约束冲突等）
   const secureToken = order.secureToken || generateSecureToken();
   const checkoutLink = `/order/${order.orderNumber}/${secureToken}`;
   if (!order.secureToken || order.checkoutLink !== checkoutLink) {
-    await db.update(orders).set({ secureToken, checkoutLink }).where(eq(orders.id, id));
+    try {
+      await db.update(orders).set({ secureToken, checkoutLink }).where(eq(orders.id, id));
+    } catch (updateErr) {
+      console.warn("[getOrderById] Failed to update secureToken/checkoutLink:", updateErr);
+    }
   }
   return { ...order, secureToken, checkoutLink };
 }

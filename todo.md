@@ -1980,3 +1980,7 @@
 - [x] 3. 区域六订单备注选项缺失（新增备注类型选择器：普通/发货日期/换盆/其他）
 - [x] 4. 建立订单乱码修复（schema.ts updatedAt 列名映射修复为 updated_at）
 - [x] 5. TypeScript 检查 + 保存检查点（269/269 测试通过）
+## V2.0.56: 修复"订单未找到"bug
+- [x] 1. getOrderById 中 secureToken/checkoutLink update 失败时 try-catch 保护，确保订单数据仍能正常返回
+- [x] 2. OrderBrowsePage 增加 error 状态显示，当 tRPC 查询失败时显示具体错误信息而非仅显示"订单未找到"
+- [x] 3. TypeScript 零错误，269/269 测试通过

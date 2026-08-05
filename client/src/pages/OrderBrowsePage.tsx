@@ -137,7 +137,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
     window.print();
   }
 
-  const { data: order, isLoading } = trpc.orders.getDetail.useQuery({ id: orderId });
+  const { data: order, isLoading, error: orderError } = trpc.orders.getDetail.useQuery({ id: orderId });
   const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
   const { data: operationLogs } = trpc.orders.getOperationLogs.useQuery({ orderId });
 
@@ -162,13 +162,28 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
     );
   }
 
-  if (!order) {
+  if (!order || orderError) {
     return (
       <div className="container max-w-5xl mx-auto px-4 py-6">
         <div className="flex items-center gap-3 mb-4">
           <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
           <h1 className="text-xl font-bold">{translate("订单未找到", "Order Not Found")}</h1>
         </div>
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              <span className="text-sm">
+                {orderError?.message
+                  ? translate(`错误: ${orderError.message}`, `Error: ${orderError.message}`)
+                  : translate("无法加载订单数据，请检查订单ID是否正确。", "Unable to load order data. Please check if the order ID is correct.")}
+              </span>
+            </div>
+            <div className="mt-4 text-sm text-muted-foreground">
+              {translate("订单ID", "Order ID")}: {orderId}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
