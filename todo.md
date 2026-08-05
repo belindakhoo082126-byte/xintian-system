@@ -2000,3 +2000,8 @@
 - [x] 2. 修复点击眼睛查询订单报错——order_payments表列名映射修复（paymentMethodId→paymentMethod, paymentMethodName→paymentMethod, recordedBy→operatorName）
 - [x] 3. 修复订单无法打勾——checkbox条件改为所有订单都可勾选（不限制checkoutLink+messengerId）
 - [x] 4. TypeScript 检查 + 测试通过（266/266通过，1个live-key测试网络超时跳过）
+## V2.0.60: 建单页换盆备注支持多条记录
+- [x] 1. OrderCreatePage 换盆备注区域改为支持多条换盆记录（每条可选择植物+花盆+数量）
+- [x] 2. 建单时将多条换盆记录作为 repottingData JSON 保存到 order_remarks 表
+- [x] 3. OrderBrowsePage 正确显示多条换盆记录（解析 repottingData JSON 并渲染每条植物→花盆记录）
+- [x] 4. TypeScript 检查 + 测试通过（266/266通过）

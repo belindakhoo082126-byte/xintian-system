@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import {
   Search, Plus, Trash2, X, ArrowLeft, Eye, Save, ClipboardPaste,
   User, Package, DollarSign, Truck, FileText, Sparkles, CreditCard, Maximize2,
+  Sprout,
 } from "lucide-react";
 
 const ORDER_NATURE = {
@@ -144,6 +145,9 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const [remark, setRemark] = useState("");
   const [createRemarkCategory, setCreateRemarkCategory] = useState("");
   const [createRemarkDeliveryDate, setCreateRemarkDeliveryDate] = useState("");
+  // V2.0.60: Multiple repotting entries for order creation
+  const [repottingEntries, setRepottingEntries] = useState<Array<{ plantName: string; potName: string; quantity: number }>>([]);
+  const { data: potProducts } = trpc.repots.potProducts.useQuery();
 
   // Preview mode
   const [previewMode, setPreviewMode] = useState(false);
@@ -204,6 +208,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         creditUsed: creditUsed !== "0" ? creditUsed : undefined,
         recipientName: recipientForm.recipientName || undefined,
         recipientPhone: recipientForm.recipientPhone || undefined,
+        repottingData: createRemarkCategory === "repotting" && repottingEntries.length > 0 ? JSON.stringify(repottingEntries) : undefined,
       });
     },
     onError: (e) => toast.error(translate("客户创建失败: {message}", "Customer creation failed: {message}", { message: e.message })),
@@ -438,6 +443,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         remark: remark || undefined,
         remarkCategory: createRemarkCategory || undefined,
         remarkDeliveryDate: createRemarkDeliveryDate || undefined,
+        repottingData: createRemarkCategory === "repotting" && repottingEntries.length > 0 ? JSON.stringify(repottingEntries) : undefined,
       });
     } else {
       findCustomerMutation.mutate({
@@ -1062,9 +1068,72 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             </div>
           )}
           {createRemarkCategory === "repotting" && (
-            <div className="space-y-2">
-              <Label className="text-xs">{translate("换盆说明（建单后可在订单详情添加多组换盆资料）", "Repotting details (can add multiple groups in order detail after creation)")}</Label>
-              <Input value={remark} onChange={(e) => setRemark(e.target.value)} placeholder={translate("例如：Monstera 换 White Pot 8\"", "e.g. Monstera to White Pot 8\"")} />
+            <div className="space-y-3">
+              <Label className="text-xs">{translate("换盆记录（可添加多组，建单后还可在订单详情继续添加）", "Repotting entries (can add multiple groups, more can be added in order detail after creation)")}</Label>
+              {repottingEntries.map((entry, idx) => (
+                <div key={idx} className="flex items-end gap-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950/20">
+                  <div className="flex-1">
+                    <Label className="text-xs mb-1 block">{translate("植物名称", "Plant Name")}</Label>
+                    <Input
+                      value={entry.plantName}
+                      onChange={(e) => setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, plantName: e.target.value } : r))}
+                      placeholder={translate("例如：发财树", "e.g. Money Tree")}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Label className="text-xs mb-1 block">{translate("花盆", "Pot")}</Label>
+                    <Select value={entry.potName} onValueChange={(v) => {
+                      const pot = potProducts?.find((p: any) => p.name === v);
+                      setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, potName: v } : r));
+                    }}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择花盆", "Select pot")} /></SelectTrigger>
+                      <SelectContent>
+                        {potProducts?.map((pot: any) => (
+                          <SelectItem key={pot.id} value={pot.name}>{pot.name} {pot.potCapacity ? `(${pot.potCapacity})` : ""}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-16">
+                    <Label className="text-xs mb-1 block">{translate("数量", "Qty")}</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={entry.quantity}
+                      onChange={(e) => setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, quantity: Number(e.target.value) } : r))}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setRepottingEntries(prev => prev.filter((_, i) => i !== idx))}
+                  >
+                    <Trash2 className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRepottingEntries(prev => [...prev, { plantName: "", potName: "", quantity: 1 }])}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                {translate("添加换盆记录", "Add Repot Entry")}
+              </Button>
+              {repottingEntries.length > 0 && (
+                <div className="text-xs text-muted-foreground">
+                  {translate("已添加 {count} 条换盆记录", "{count} repot entries added", { count: String(repottingEntries.length) })}
+                </div>
+              )}
+              <Input
+                value={remark}
+                onChange={(e) => setRemark(e.target.value)}
+                placeholder={translate("补充说明（可选）", "Additional notes (optional)")}
+                className="text-sm"
+              />
             </div>
           )}
           {(createRemarkCategory === "" || createRemarkCategory === "general" || createRemarkCategory === "other") && (

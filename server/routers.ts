@@ -1131,6 +1131,7 @@ export const appRouter = router({
         remark: z.string().optional(),
         remarkCategory: z.string().optional(),
         remarkDeliveryDate: z.string().optional(),
+        repottingData: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const result = await db.createOrderWithSplit(input);
@@ -1143,8 +1144,19 @@ export const appRouter = router({
               type: "internal",
               content: input.remark.trim(),
               createdBy: ctx.user?.name || "admin",
-              remarkCategory: input.remarkCategory || "other",
+              remarkCategory: (input.remarkCategory as "repotting" | "desired_delivery_date" | "other") || "other",
               desiredDeliveryDate: input.remarkDeliveryDate || undefined,
+              repottingData: input.repottingData || undefined,
+            }).catch(() => {});
+          } else if (input.repottingData && input.remarkCategory === "repotting") {
+            // V2.0.60: Save repotting data even without text remark
+            await db.createOrderRemark({
+              orderId: result.orderId,
+              type: "internal",
+              content: "换盆安排",
+              createdBy: ctx.user?.name || "admin",
+              remarkCategory: "repotting",
+              repottingData: input.repottingData,
             }).catch(() => {});
           }
         }

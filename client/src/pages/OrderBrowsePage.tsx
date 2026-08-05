@@ -524,6 +524,26 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                     {r.desiredDeliveryDate ? new Date(r.desiredDeliveryDate).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US") : ""}
                     {r.desiredDeliveryReason && <span className="ml-2">— {r.desiredDeliveryReason}</span>}
                   </p>
+                ) : r.remarkCategory === "repotting" && r.repottingData ? (
+                  <div className="space-y-1">
+                    <p className="text-sm">{r.content}</p>
+                    {(() => {
+                      try {
+                        const entries = JSON.parse(r.repottingData);
+                        return entries.map((e: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 text-xs bg-green-50 dark:bg-green-950/20 rounded px-2 py-1">
+                            <Sprout className="h-3 w-3 text-green-600" />
+                            <span className="font-medium">{e.plantName}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="font-medium">{e.potName}</span>
+                            <span className="text-muted-foreground">x{e.quantity}</span>
+                          </div>
+                        ));
+                      } catch {
+                        return null;
+                      }
+                    })()}
+                  </div>
                 ) : (
                   <p className="text-sm">{r.content}</p>
                 )}

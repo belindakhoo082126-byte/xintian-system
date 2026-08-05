@@ -769,3 +769,15 @@
 - **复制结单链接只有链接没有内容**：改为复制完整通知内容（含模板文字+链接+订单号），点击复制按钮后剪贴板中包含完整的结单通知消息
 - **点击眼睛查询订单报错**：order_payments 表列名映射修复——schema 中 paymentMethodId/paymentMethodName/recordedBy 改为数据库实际列名 paymentMethod/purpose/operatorName/operatorId，addOrderPayment 函数和 routers.ts 中调用同步更新
 - **订单无法打勾**：checkbox 条件从限制 checkoutLink+messengerId 改为所有订单都可勾选，全选和行内 checkbox 均不限制条件
+
+## V2.0.60 (2026-08-05) — 建单页换盆备注支持多条记录
+
+### Added
+- **建单页换盆备注支持多条记录**：选择备注类型为「换盆」后，可添加多条换盆记录，每条可指定植物名称、花盆（从花盆商品列表选择）和数量
+- **「添加换盆记录」按钮**：点击可添加新的换盆条目，支持同个订单多个植物换盆的场景
+- **已添加条数提示**：显示已添加的换盆记录数量
+- **补充说明输入框**：可在多条换盆记录之外添加额外文字说明
+
+### Changed
+- **后端 API 支持 repottingData**：orders.create 输入新增 repottingData 字段，建单时将多条换盆记录作为 JSON 保存到 order_remarks 表的 repottingData 列
+- **OrderBrowsePage 换盆备注显示优化**：解析 repottingData JSON，以「植物 → 花盆 x数量」格式渲染每条换盆记录，带绿色背景区分
