@@ -1445,6 +1445,38 @@ export const appRouter = router({
         }
         return results;
       }),
+    // V2.0.48: Batch send checkout links to selected orders
+    batchSendSelected: adminProcedure
+      .input(z.object({
+        orderIds: z.array(z.number()).min(1, "请至少选择一张订单"),
+      }))
+      .mutation(async ({ input }) => {
+        const results = { sent: 0, failed: 0, skipped: 0, total: input.orderIds.length, failedOrders: [] as any[] };
+        const settings = await db.getSystemSettings();
+        const template = (settings as any)?.checkoutMessageTemplate ||
+          "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
+        for (const orderId of input.orderIds) {
+          const order = await db.getOrderById(orderId);
+          if (!order || !order.checkoutLink || !order.messengerId) {
+            results.skipped++;
+            continue;
+          }
+          try {
+            const { sendTextMessage } = await import("./messenger");
+            const baseUrl = "https://xintian.com.my";
+            const fullLink = `${baseUrl}${order.checkoutLink}`;
+            const message = template.replace(/\{link\}/g, fullLink);
+            await sendTextMessage(order.messengerId, message);
+            await db.updateOrderNotificationStatus(orderId, "sent", null);
+            results.sent++;
+          } catch (error: any) {
+            await db.updateOrderNotificationStatus(orderId, "failed", error.message || "Unknown error");
+            results.failed++;
+            results.failedOrders.push({ id: orderId, orderNumber: order.orderNumber, customerName: order.facebookName || "Unknown", error: error.message || "Unknown error" });
+          }
+        }
+        return results;
+      }),
     // V2.0.33: Resend checkout link
     resendCheckout: adminProcedure
       .input(z.object({ orderId: z.number(), customMessage: z.string().optional() }))

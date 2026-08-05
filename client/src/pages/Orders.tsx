@@ -14,7 +14,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send, Link2, MessageCircle, Copy } from "lucide-react";
+import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useSearch, useLocation } from "wouter";
 
 const PHYSICAL_STATUS = {
@@ -127,6 +128,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [messageDialogMode, setMessageDialogMode] = useState<"messenger" | "whatsapp">("messenger");
   const [editableMessage, setEditableMessage] = useState("");
+  // V2.0.48: Batch selection
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const utils = trpc.useUtils();
 
@@ -303,6 +306,27 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       const summary = lang === "zh"
         ? `共找到 ${total} 张未汇款订单\n发送成功: ${sent}\n发送失败: ${failed}\n跳过: ${skipped}`
         : `Found ${total} unpaid orders\nSent: ${sent}\nFailed: ${failed}\nSkipped: ${skipped}`;
+      if (failed > 0 && failedList) {
+        toast.error(`${summary}\n\n${lang === "zh" ? "失败名单:" : "Failed orders:"}\n${failedList}`, { duration: 10000 });
+      } else {
+        toast.success(summary, { duration: 6000 });
+      }
+    },
+    onError: (e) => toast.error(translate("批量发送失败: {message}", "Batch send failed: {message}", { message: e.message })),
+  });
+  // V2.0.48: Batch send selected orders
+  const batchSendSelectedMutation = trpc.orders.batchSendSelected.useMutation({
+    onSuccess: (data: any) => {
+      utils.orders.invalidate();
+      setSelectedIds(new Set());
+      const total = data.total || 0;
+      const sent = data.sent || 0;
+      const failed = data.failed || 0;
+      const skipped = data.skipped || 0;
+      const failedList = (data.failedOrders || []).map((o: any) => `${o.orderNumber} - ${o.customerName} (${o.error})`).join("\n");
+      const summary = lang === "zh"
+        ? `选中 ${total} 张订单\n发送成功: ${sent}\n发送失败: ${failed}\n跳过: ${skipped}`
+        : `Selected ${total} orders\nSent: ${sent}\nFailed: ${failed}\nSkipped: ${skipped}`;
       if (failed > 0 && failedList) {
         toast.error(`${summary}\n\n${lang === "zh" ? "失败名单:" : "Failed orders:"}\n${failedList}`, { duration: 10000 });
       } else {
@@ -550,15 +574,28 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             <p className="text-sm font-medium">{translate("Checkout 通知管理", "Checkout Notification Management")}</p>
             <p className="text-xs text-muted-foreground">{translate("一键发送 Checkout Link 给所有未发送或发送失败的订单", "Send Checkout Link to all pending or failed orders")}</p>
           </div>
-          <Button
-            size="sm"
-            variant="default"
-            onClick={() => batchSendCheckoutMutation.mutate({ status: statusFilter === "all" ? undefined : statusFilter })}
-            disabled={batchSendCheckoutMutation.isPending}
-          >
-            <Send className="h-4 w-4 mr-1" />
-            {translate("发送全部未发送订单", "Send All Pending")}
-          </Button>
+          <div className="flex items-center gap-2">
+            {selectedIds.size > 0 && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => batchSendSelectedMutation.mutate({ orderIds: Array.from(selectedIds) })}
+                disabled={batchSendSelectedMutation.isPending}
+              >
+                <Send className="h-4 w-4 mr-1" />
+                {translate("发送选中 ({count})", "Send Selected ({count})", { count: selectedIds.size })}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() => batchSendCheckoutMutation.mutate({ status: statusFilter === "all" ? undefined : statusFilter })}
+              disabled={batchSendCheckoutMutation.isPending}
+            >
+              <Send className="h-4 w-4 mr-1" />
+              {translate("发送全部未发送订单", "Send All Pending")}
+            </Button>
+          </div>
         </div>
       )}
 
@@ -567,6 +604,20 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[40px]">
+                  <Checkbox
+                    checked={orders?.some((o: any) => o.physicalStatus === "pending") && orders?.filter((o: any) => o.physicalStatus === "pending").every((o: any) => selectedIds.has(o.id))}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        const newSet = new Set<number>();
+                        orders?.filter((o: any) => o.physicalStatus === "pending").forEach((o: any) => newSet.add(o.id));
+                        setSelectedIds(newSet);
+                      } else {
+                        setSelectedIds(new Set());
+                      }
+                    }}
+                  />
+                </TableHead>
                 <TableHead>{translate("订单号", "Order No.")}</TableHead>
                 <TableHead>{translate("客户", "Customer")}</TableHead>
                 <TableHead>{translate("来源", "Source")}</TableHead>
@@ -580,14 +631,29 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
               ) : orders?.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{translate("暂无订单", "No orders yet")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{translate("暂无订单", "No orders yet")}</TableCell></TableRow>
               ) : orders?.filter((o: any) => {
                 if (sourceFilter === "all") return true;
                 return (o as any).orderSource === sourceFilter;
               }).map((o: any) => (
                 <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openDetail(o.id)}>
+                  <TableCell className="w-[40px]" onClick={(e) => e.stopPropagation()}>
+                    {o.physicalStatus === "pending" && (
+                      <Checkbox
+                        checked={selectedIds.has(o.id)}
+                        onCheckedChange={(checked) => {
+                          setSelectedIds((prev) => {
+                            const newSet = new Set(prev);
+                            if (checked) newSet.add(o.id);
+                            else newSet.delete(o.id);
+                            return newSet;
+                          });
+                        }}
+                      />
+                    )}
+                  </TableCell>
                   <TableCell className="font-mono text-sm">{o.orderNumber}</TableCell>
                   <TableCell>{o.facebookName || "-"}</TableCell>
                   <TableCell>
@@ -626,6 +692,24 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                       <span className="inline-flex items-center gap-1 text-xs text-red-600">
                         <span className="h-2 w-2 rounded-full bg-red-500" />
                         {translate("发送失败", "Failed")}
+                        {(o as any).checkoutLink && (o as any).messengerId && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 ml-1"
+                            title={translate("重新发送", "Resend")}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const fullLink = `https://xintian.com.my${(o as any).checkoutLink}`;
+                              const template = (systemSettings as any)?.checkoutMessageTemplate ||
+                                "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
+                              const msg = template.replace(/\{link\}/g, fullLink);
+                              resendCheckoutMutation.mutate({ orderId: (o as any).id, customMessage: msg });
+                            }}
+                          >
+                            <RotateCw className="h-3 w-3" />
+                          </Button>
+                        )}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
@@ -645,7 +729,10 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                             e.stopPropagation();
                             const fullLink = `https://xintian.com.my${(o as any).checkoutLink}`;
                             navigator.clipboard.writeText(fullLink);
-                            toast.success(translate("结单链接已复制", "Checkout link copied"));
+                            toast.success(translate("结单链接已复制", "Checkout link copied"), {
+                              description: fullLink,
+                              duration: 5000,
+                            });
                           }}>
                             <Copy className="h-4 w-4" />
                           </Button>
