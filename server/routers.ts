@@ -1129,19 +1129,22 @@ export const appRouter = router({
         postcode: z.string().optional(),
         country: z.string().optional(),
         remark: z.string().optional(),
+        remarkCategory: z.string().optional(),
+        remarkDeliveryDate: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const result = await db.createOrderWithSplit(input);
         if (result.orderId) {
           await db.logOrderOperation(result.orderId, "create", `Order created by ${ctx.user?.name || "admin"}`, null, ctx.user?.name || "admin");
-          // V2.0.43: Save remark to order_remarks if provided
+          // V2.0.43/V2.0.55: Save remark to order_remarks if provided
           if (input.remark && input.remark.trim()) {
             await db.createOrderRemark({
               orderId: result.orderId,
               type: "internal",
               content: input.remark.trim(),
               createdBy: ctx.user?.name || "admin",
-              remarkCategory: "other",
+              remarkCategory: input.remarkCategory || "other",
+              desiredDeliveryDate: input.remarkDeliveryDate || undefined,
             }).catch(() => {});
           }
         }

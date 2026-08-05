@@ -142,6 +142,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
 
   // Remarks
   const [remark, setRemark] = useState("");
+  const [createRemarkCategory, setCreateRemarkCategory] = useState("");
+  const [createRemarkDeliveryDate, setCreateRemarkDeliveryDate] = useState("");
 
   // Preview mode
   const [previewMode, setPreviewMode] = useState(false);
@@ -433,6 +435,9 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         creditUsed: creditUsed !== "0" ? creditUsed : undefined,
         recipientName: recipientForm.recipientName || undefined,
         recipientPhone: recipientForm.recipientPhone || undefined,
+        remark: remark || undefined,
+        remarkCategory: createRemarkCategory || undefined,
+        remarkDeliveryDate: createRemarkDeliveryDate || undefined,
       });
     } else {
       findCustomerMutation.mutate({
@@ -912,7 +917,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                 <div className="grid grid-cols-12 gap-2 items-end">
                   <div className="col-span-3">
                     <Label className="text-xs">{translate("数量", "Quantity")}</Label>
-                    <Input type="number" className="h-9" value={item.quantity} onChange={(e) => updateManualItem(idx, "quantity", parseInt(e.target.value) || 0)} />
+                    <Input type="number" className="h-9" value={item.quantity} onChange={(e) => updateManualItem(idx, "quantity", e.target.value === "" ? "" : parseInt(e.target.value) || 0)} />
                   </div>
                   <div className="col-span-3">
                     <Label className="text-xs">{translate("单价", "Unit Price")}</Label>
@@ -1037,13 +1042,39 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             {translate("区域六：备注", "Section 6: Remark")}
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <Textarea
-            value={remark}
-            onChange={(e) => setRemark(e.target.value)}
-            rows={2}
-            placeholder={translate("普通备注，例如：星期五才方便收货 / 送礼不要放价格 / 两张订单一起发", "General remark, e.g. Friday delivery preferred / No price tag for gift")}
-          />
+        <CardContent className="space-y-3">
+          <div>
+            <Label className="text-xs mb-1.5 block">{translate("备注类型", "Remark Type")}</Label>
+            <Select value={createRemarkCategory} onValueChange={(v) => setCreateRemarkCategory(v)}>
+              <SelectTrigger className="w-full"><SelectValue placeholder={translate("选择备注类型（可选）", "Select remark type (optional)")} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="general">{translate("普通备注", "General Remark")}</SelectItem>
+                <SelectItem value="desired_delivery_date">{translate("发货日期", "Shipping Date")}</SelectItem>
+                <SelectItem value="repotting">{translate("换盆", "Repotting")}</SelectItem>
+                <SelectItem value="other">{translate("其他", "Other")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {createRemarkCategory === "desired_delivery_date" && (
+            <div>
+              <Label className="text-xs mb-1.5 block">{translate("预约发货日期", "Scheduled Shipping Date")}</Label>
+              <Input type="date" value={createRemarkDeliveryDate} onChange={(e) => setCreateRemarkDeliveryDate(e.target.value)} />
+            </div>
+          )}
+          {createRemarkCategory === "repotting" && (
+            <div className="space-y-2">
+              <Label className="text-xs">{translate("换盆说明（建单后可在订单详情添加多组换盆资料）", "Repotting details (can add multiple groups in order detail after creation)")}</Label>
+              <Input value={remark} onChange={(e) => setRemark(e.target.value)} placeholder={translate("例如：Monstera 换 White Pot 8\"", "e.g. Monstera to White Pot 8\"")} />
+            </div>
+          )}
+          {(createRemarkCategory === "" || createRemarkCategory === "general" || createRemarkCategory === "other") && (
+            <Textarea
+              value={remark}
+              onChange={(e) => setRemark(e.target.value)}
+              rows={2}
+              placeholder={translate("普通备注，例如：星期五才方便收货 / 送礼不要放价格 / 两张订单一起发", "General remark, e.g. Friday delivery preferred / No price tag for gift")}
+            />
+          )}
         </CardContent>
       </Card>
 

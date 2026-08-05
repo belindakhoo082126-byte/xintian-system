@@ -4001,52 +4001,80 @@ export function parseSmartPaste(text: string): {
   // Phone number pattern (Malaysian format)
   const phoneRegex = /(\+?6?01[0-9]\s?\-?\s?\d{3,4}\s?\-?\s?\d{3,4}|\+?6?01[0-9]{8,9})/;
 
-  for (const line of lines) {
-    // Check for postcode + city pattern
-    const postcodeMatch = line.match(postcodeRegex);
-    if (postcodeMatch && !result.postcode) {
-      result.postcode = postcodeMatch[1];
-      // City is the rest of the line after postcode
-      const cityPart = line.replace(postcodeRegex, "").trim();
-      if (cityPart) result.city = cityPart;
-      continue;
-    }
+  // V2.0.55: Improved parsing — handle single-line and multi-line addresses properly
+  const states = ["Johor", "Kedah", "Kelantan", "Melaka", "Melacca", "Negeri Sembilan", "Pahang", "Penang", "Pulau Pinang", "Perak", "Perlis", "Sabah", "Sarawak", "Selangor", "Terengganu", "Kuala Lumpur", "Putrajaya", "Labuan", "WP Kuala Lumpur", "gelugor", "Georgetown", "Shah Alam", "Petaling Jaya", "Subang Jaya", "Klang", "Cheras", "Ampang", "Kajang", "Serdang", "Puchong", "Damansara"];
+  const stateAliases: Record<string, string> = {
+    "pulau pinang": "Penang", "penang": "Penang", "gelugor": "Penang", "georgetown": "Penang",
+    "kuala lumpur": "Kuala Lumpur", "wp kuala lumpur": "Kuala Lumpur",
+    "melacca": "Melaka", "melaka": "Melaka",
+  };
 
-    // Check for phone number
+  for (const line of lines) {
+    // Check for phone number first (before postcode, since phone may contain digits)
     const phoneMatch = line.match(phoneRegex);
     if (phoneMatch && !result.contactNumber) {
       result.contactNumber = phoneMatch[1].replace(/[\s\-]/g, "");
       continue;
     }
 
-    // Check for Malaysian states
-    const states = ["Johor", "Kedah", "Kelantan", "Melaka", "Negeri Sembilan", "Pahang", "Penang", "Perak", "Perlis", "Sabah", "Sarawak", "Selangor", "Terengganu", "Kuala Lumpur", "Putrajaya", "Labuan", "Pulau Pinang"];
-    const stateMatch = states.find(s => line.toLowerCase().includes(s.toLowerCase()));
-    if (stateMatch && !result.state) {
-      result.state = stateMatch;
-      // Check if it's East or West Malaysia
-      if (["Sabah", "Sarawak", "Labuan"].includes(stateMatch)) {
-        result.area = "East Malaysia";
-      } else {
-        result.area = "West Malaysia";
+    // Check for postcode in this line
+    const postcodeMatch = line.match(postcodeRegex);
+    if (postcodeMatch && !result.postcode) {
+      result.postcode = postcodeMatch[1];
+      // Parse the rest of the line to extract city and state
+      const restOfLine = line.replace(postcodeRegex, "").replace(/,/g, " ").trim();
+      
+      // Try to find a state in the rest of the line
+      const foundState = states.find(s => restOfLine.toLowerCase().includes(s.toLowerCase()));
+      if (foundState) {
+        const aliasKey = Object.keys(stateAliases).find(k => restOfLine.toLowerCase().includes(k.toLowerCase()));
+        result.state = aliasKey ? stateAliases[aliasKey] : foundState;
+        if (["Sabah", "Sarawak", "Labuan"].includes(result.state)) {
+          result.area = "East Malaysia";
+        } else {
+          result.area = "West Malaysia";
+        }
+        // City is the rest without the state
+        const cityPart = restOfLine.replace(new RegExp(foundState, "gi"), "").trim();
+        if (cityPart && !result.city) result.city = cityPart;
+      } else if (restOfLine && !result.city) {
+        result.city = restOfLine;
       }
       continue;
     }
 
+    // Check for Malaysian states (standalone state line)
+    if (!result.state) {
+      const foundState = states.find(s => line.toLowerCase().includes(s.toLowerCase()));
+      if (foundState) {
+        const aliasKey = Object.keys(stateAliases).find(k => line.toLowerCase().includes(k.toLowerCase()));
+        result.state = aliasKey ? stateAliases[aliasKey] : foundState;
+        if (["Sabah", "Sarawak", "Labuan"].includes(result.state)) {
+          result.area = "East Malaysia";
+        } else {
+          result.area = "West Malaysia";
+        }
+        // If line has more than just the state, the rest might be city
+        const restOfLine = line.replace(new RegExp(foundState, "gi"), "").replace(/,/g, "").trim();
+        if (restOfLine && !result.city) result.city = restOfLine;
+        continue;
+      }
+    }
+
     // First non-matched line is usually the name
-    if (!result.customerName && !postcodeMatch && !phoneMatch && !stateMatch) {
+    if (!result.customerName) {
       result.customerName = line;
       continue;
     }
 
-    // Second non-matched line is address
-    if (!result.addressLine1 && result.customerName && !postcodeMatch && !phoneMatch && !stateMatch) {
+    // Second non-matched line is address line 1
+    if (!result.addressLine1) {
       result.addressLine1 = line;
       continue;
     }
 
     // Third non-matched line is address line 2
-    if (!result.addressLine2 && result.customerName && result.addressLine1 && !postcodeMatch && !phoneMatch && !stateMatch) {
+    if (!result.addressLine2) {
       result.addressLine2 = line;
       continue;
     }

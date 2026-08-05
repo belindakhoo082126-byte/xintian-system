@@ -2616,7 +2616,7 @@ export const orderSeq = mysqlTable("order_seq", {
   id: int("id").autoincrement().primaryKey(),
   prefix: varchar("prefix", { length: 10 }).notNull(),
   nextNumber: int("next_number").notNull().default(1),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 });
 export type OrderSeq = typeof orderSeq.$inferSelect;
 export type InsertOrderSeq = typeof orderSeq.$inferInsert;
