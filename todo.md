@@ -2022,3 +2022,9 @@
 - [x] 2. 优化 aiSmartParse——换用 gpt-5-mini + reasoning effort minimal + json_schema structured output + maxCompletionTokens=500
 - [x] 3. 修复 handleSmartPaste 前端 state 竞态——多次 setRecipientForm 改为单次批量更新，smartParseUpdatingRef 重置从 100ms 增至 200ms
 - [x] 4. TypeScript 检查零错误
+## V2.0.65: 换盆备注植物和花盆改为从区域4商品下拉选择
+- [x] 1. 植物名称从手动输入改为下拉选择，数据源为区域4已添加的商品（manualItems中有productId的）
+- [x] 2. 花盆从 potProducts 改为从区域4已添加的商品下拉选择
+- [x] 3. 添加 section4Items 变量过滤区域4有效商品，区域4无商品时禁用添加按钮并显示提示
+- [x] 4. repottingEntries 类型添加 plantProductId/potProductId 字段，选择时记录 productId
+- [x] 5. TypeScript 检查零错误，269/269 测试通过

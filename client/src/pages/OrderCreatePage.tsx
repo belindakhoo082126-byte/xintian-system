@@ -149,8 +149,11 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const [createRemarkCategory, setCreateRemarkCategory] = useState("");
   const [createRemarkDeliveryDate, setCreateRemarkDeliveryDate] = useState("");
   // V2.0.60: Multiple repotting entries for order creation
-  const [repottingEntries, setRepottingEntries] = useState<Array<{ plantName: string; potName: string; quantity: number }>>([]);
+  // V2.0.65: Plant & pot both selected from Section 4 items (manualItems)
+  const [repottingEntries, setRepottingEntries] = useState<Array<{ plantName: string; plantProductId?: number; potName: string; potProductId?: number; quantity: number }>>([]);
   const { data: potProducts } = trpc.repots.potProducts.useQuery();
+  // V2.0.65: Items added in Section 4, filtered to those with a real productId
+  const section4Items = manualItems.filter(i => i.productId !== undefined);
 
   // Preview mode
   const [previewMode, setPreviewMode] = useState(false);
@@ -1080,23 +1083,34 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                 <div key={idx} className="flex items-end gap-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950/20">
                   <div className="flex-1">
                     <Label className="text-xs mb-1 block">{translate("植物名称", "Plant Name")}</Label>
-                    <Input
+                    <Select
                       value={entry.plantName}
-                      onChange={(e) => setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, plantName: e.target.value } : r))}
-                      placeholder={translate("例如：发财树", "e.g. Money Tree")}
-                      className="h-8 text-sm"
-                    />
+                      onValueChange={(v) => {
+                        const item = section4Items.find(i => i.productName === v);
+                        setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, plantName: v, plantProductId: item?.productId } : r));
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择植物", "Select plant")} /></SelectTrigger>
+                      <SelectContent>
+                        {section4Items.map((item) => (
+                          <SelectItem key={item.productId} value={item.productName}>{item.productName}{item.variationName ? ` (${item.variationName})` : ""}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="flex-1">
                     <Label className="text-xs mb-1 block">{translate("花盆", "Pot")}</Label>
-                    <Select value={entry.potName} onValueChange={(v) => {
-                      const pot = potProducts?.find((p: any) => p.name === v);
-                      setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, potName: v } : r));
-                    }}>
+                    <Select
+                      value={entry.potName}
+                      onValueChange={(v) => {
+                        const item = section4Items.find(i => i.productName === v);
+                        setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, potName: v, potProductId: item?.productId } : r));
+                      }}
+                    >
                       <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择花盆", "Select pot")} /></SelectTrigger>
                       <SelectContent>
-                        {potProducts?.map((pot: any) => (
-                          <SelectItem key={pot.id} value={pot.name}>{pot.name} {pot.potCapacity ? `(${pot.potCapacity})` : ""}</SelectItem>
+                        {section4Items.map((item) => (
+                          <SelectItem key={item.productId} value={item.productName}>{item.productName}{item.variationName ? ` (${item.variationName})` : ""}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1125,10 +1139,16 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                 variant="outline"
                 size="sm"
                 onClick={() => setRepottingEntries(prev => [...prev, { plantName: "", potName: "", quantity: 1 }])}
+                disabled={section4Items.length === 0}
               >
                 <Plus className="h-4 w-4 mr-1" />
                 {translate("添加换盆记录", "Add Repot Entry")}
               </Button>
+              {section4Items.length === 0 && (
+                <div className="text-xs text-amber-600 dark:text-amber-400">
+                  {translate("请先在区域四添加商品后再使用换盆备注", "Please add products in Section 4 first before using repotting remarks")}
+                </div>
+              )}
               {repottingEntries.length > 0 && (
                 <div className="text-xs text-muted-foreground">
                   {translate("已添加 {count} 条换盆记录", "{count} repot entries added", { count: String(repottingEntries.length) })}
