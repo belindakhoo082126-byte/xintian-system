@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
@@ -114,10 +114,13 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     postcode: "",
     country: "Malaysia",
   });
-  const [buyerIsRecipient, setBuyerIsRecipient] = useState(true);
-
+    const [buyerIsRecipient, setBuyerIsRecipient] = useState(true);
+  // V2.0.62: Ref to prevent useEffect from overwriting Smart Parse results
+  const smartParseUpdatingRef = useRef(false);
   // V2.0.43: Auto-sync customerForm to recipientForm when buyer is recipient
   useEffect(() => {
+    // Skip if Smart Parse is currently updating (it sets both forms directly)
+    if (smartParseUpdatingRef.current) return;
     if (buyerIsRecipient) {
       setRecipientForm(prev => ({
         ...prev,
@@ -303,6 +306,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     try {
       const result = await utils.orders.aiSmartParse.fetch({ text: smartPasteText });
       if (result) {
+        // V2.0.62: Set flag to prevent useEffect from overwriting Smart Parse results
+        smartParseUpdatingRef.current = true;
         // V2.0.61: Always update both customer form and recipient form from Smart Parse results
         if (result.customerName) {
           setCustomerForm(prev => ({ ...prev, name: result.customerName }));
@@ -316,11 +321,13 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         if (result.addressLine2) setRecipientForm(prev => ({ ...prev, addressLine2: result.addressLine2 }));
         if (result.city) setRecipientForm(prev => ({ ...prev, city: result.city }));
         if (result.state) setRecipientForm(prev => ({ ...prev, state: result.state }));
-        if (result.postcode) setRecipientForm(prev => ({ ...prev, postcode: result.postcode }))
+        if (result.postcode) setRecipientForm(prev => ({ ...prev, postcode: result.postcode }));
         if (result.area === "East Malaysia") {
           setShippingMethod("east_malaysia_poslaju");
         }
         toast.success(translate("Smart Parse 完成（{method}）", "Smart Parse complete ({method})", { method: result.method }));
+        // Reset flag after a tick to allow state updates to settle
+        setTimeout(() => { smartParseUpdatingRef.current = false; }, 100);
       }
     } catch (e: any) {
       toast.error(translate("Smart Parse 失败: {message}", "Smart Parse failed: {message}", { message: e.message }));

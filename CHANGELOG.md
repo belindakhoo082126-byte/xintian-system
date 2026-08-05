@@ -789,3 +789,9 @@
 
 ### Changed
 - **AI Smart Parse 速度优化**：模型从 `gpt-4o-mini` 改为 `gpt-5-nano`（最快最便宜的模型），精简 prompt 减少输入 token，添加 `maxTokens=500` 限制输出长度，预期响应时间从5分钟降至数秒
+
+## V2.0.62 (2026-08-05) — 修复 useEffect 覆盖 Smart Parse 区域3更新
+
+### Fixed
+- **根因**：`useEffect` 监听 `customerForm.name` 和 `customerForm.phoneNumber` 变化，当 Smart Parse 同时更新 `customerForm` 和 `recipientForm` 时，`customerForm` 变化触发 `useEffect`，将 `recipientForm` 的姓名和电话覆盖回 `customerForm` 的值（旧值），导致区域3看起来没有更新
+- **修复**：添加 `smartParseUpdatingRef` 标志，Smart Parse 更新期间设置 `true`，`useEffect` 检测到该标志时跳过同步，100ms 后重置为 `false`，确保后续手动编辑仍能正常同步

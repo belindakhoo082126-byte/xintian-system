@@ -2009,3 +2009,6 @@
 - [x] 1. 修复区域3收件人资料不更新——姓名、电话、地址字段始终更新 recipientForm（不依赖 buyerIsRecipient）
 - [x] 2. 优化 AI Smart Parse 速度——模型从 gpt-4o-mini 改为 gpt-5-nano，精简 prompt，添加 maxTokens=500
 - [x] 3. TypeScript 检查 + 测试通过（266/266通过）
+## V2.0.62: 修复 useEffect 覆盖 Smart Parse 区域3更新
+- [x] 1. 修复 useEffect 在 Smart Parse 后覆盖 recipientForm 的问题——添加 smartParseUpdatingRef 标志，Smart Parse 更新时跳过 useEffect 同步
+- [x] 2. TypeScript 检查 + 测试通过（266/266通过）
