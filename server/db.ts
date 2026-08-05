@@ -4113,10 +4113,32 @@ Text:
 ${text}`;
     
     const response = await invokeLLM({
-      model: "gpt-5-nano",
+      model: "gpt-5-mini",
       messages: [{ role: "user", content: prompt }],
-      responseFormat: { type: "json_object" },
-      maxTokens: 500,
+      responseFormat: {
+        type: "json_schema",
+        json_schema: {
+          name: "customer_address",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              customerName: { type: "string" },
+              contactNumber: { type: "string" },
+              addressLine1: { type: "string" },
+              addressLine2: { type: "string" },
+              postcode: { type: "string" },
+              city: { type: "string" },
+              state: { type: "string" },
+              area: { type: "string", enum: ["West Malaysia", "East Malaysia"] },
+            },
+            required: ["customerName", "contactNumber", "addressLine1", "addressLine2", "postcode", "city", "state", "area"],
+            additionalProperties: false,
+          },
+        },
+      },
+      maxCompletionTokens: 500,
+      reasoning: { effort: "minimal" },
     });
     
     const content = typeof response.choices?.[0]?.message?.content === "string"

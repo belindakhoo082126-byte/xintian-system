@@ -306,28 +306,35 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     try {
       const result = await utils.orders.aiSmartParse.fetch({ text: smartPasteText });
       if (result) {
-        // V2.0.62: Set flag to prevent useEffect from overwriting Smart Parse results
+        // V2.0.64: Set flag to prevent useEffect from overwriting Smart Parse results
         smartParseUpdatingRef.current = true;
-        // V2.0.61: Always update both customer form and recipient form from Smart Parse results
-        if (result.customerName) {
-          setCustomerForm(prev => ({ ...prev, name: result.customerName }));
-          setRecipientForm(prev => ({ ...prev, recipientName: result.customerName }));
+
+        // V2.0.64: Single batch update for customerForm to avoid race conditions
+        const customerUpdates: Record<string, string> = {};
+        if (result.customerName) customerUpdates.name = result.customerName;
+        if (result.contactNumber) customerUpdates.phoneNumber = result.contactNumber;
+        if (Object.keys(customerUpdates).length > 0) {
+          setCustomerForm(prev => ({ ...prev, ...customerUpdates }));
         }
-        if (result.contactNumber) {
-          setCustomerForm(prev => ({ ...prev, phoneNumber: result.contactNumber }));
-          setRecipientForm(prev => ({ ...prev, recipientPhone: result.contactNumber }));
-        }
-        if (result.addressLine1) setRecipientForm(prev => ({ ...prev, addressLine1: result.addressLine1 }));
-        if (result.addressLine2) setRecipientForm(prev => ({ ...prev, addressLine2: result.addressLine2 }));
-        if (result.city) setRecipientForm(prev => ({ ...prev, city: result.city }));
-        if (result.state) setRecipientForm(prev => ({ ...prev, state: result.state }));
-        if (result.postcode) setRecipientForm(prev => ({ ...prev, postcode: result.postcode }));
+
+        // V2.0.64: Single batch update for recipientForm — one setState call, no race
+        setRecipientForm(prev => ({
+          ...prev,
+          recipientName: result.customerName || prev.recipientName,
+          recipientPhone: result.contactNumber || prev.recipientPhone,
+          addressLine1: result.addressLine1 || prev.addressLine1,
+          addressLine2: result.addressLine2 || prev.addressLine2,
+          city: result.city || prev.city,
+          state: result.state || prev.state,
+          postcode: result.postcode || prev.postcode,
+        }));
+
         if (result.area === "East Malaysia") {
           setShippingMethod("east_malaysia_poslaju");
         }
         toast.success(translate("Smart Parse 完成（{method}）", "Smart Parse complete ({method})", { method: result.method }));
-        // Reset flag after a tick to allow state updates to settle
-        setTimeout(() => { smartParseUpdatingRef.current = false; }, 100);
+        // Reset flag after state updates have flushed
+        setTimeout(() => { smartParseUpdatingRef.current = false; }, 200);
       }
     } catch (e: any) {
       toast.error(translate("Smart Parse 失败: {message}", "Smart Parse failed: {message}", { message: e.message }));

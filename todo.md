@@ -2017,3 +2017,8 @@
 - [x] 2. 修复 aiSmartParse LLM 返回字段名归一化——snake_case 转 camelCase，放宽 rule-based 判断条件
 - [x] 3. 保留 useEffect 同步逻辑但用 smartParseUpdatingRef 防止覆盖（V2.0.62 已修复）
 - [x] 4. TypeScript 检查 + 测试通过（269/269通过）
+## V2.0.64: 彻底修复 AI Smart Parse 区域3不更新（根因：LLM 参数错误）
+- [x] 1. 修复 invokeLLM 对 GPT-5 系列模型的参数——添加 maxCompletionTokens/max_completion_tokens 支持，GPT-5 系列必须用 max_completion_tokens 而非 max_tokens
+- [x] 2. 优化 aiSmartParse——换用 gpt-5-mini + reasoning effort minimal + json_schema structured output + maxCompletionTokens=500
+- [x] 3. 修复 handleSmartPaste 前端 state 竞态——多次 setRecipientForm 改为单次批量更新，smartParseUpdatingRef 重置从 100ms 增至 200ms
+- [x] 4. TypeScript 检查零错误
