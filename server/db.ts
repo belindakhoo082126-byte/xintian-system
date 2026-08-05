@@ -4013,19 +4013,21 @@ export function parseSmartPaste(text: string): {
   };
 
   for (const line of lines) {
-    // Check for phone number first (before postcode, since phone may contain digits)
+    // V2.0.63: Don't `continue` after phone match — keep processing the same line for postcode/address
+    let workingLine = line;
     const phoneMatch = line.match(phoneRegex);
     if (phoneMatch && !result.contactNumber) {
       result.contactNumber = phoneMatch[1].replace(/[\s\-]/g, "");
-      continue;
+      // Remove the phone number from the line so it doesn't interfere with further parsing
+      workingLine = workingLine.replace(phoneMatch[0], " ").trim();
     }
 
-    // Check for postcode in this line
-    const postcodeMatch = line.match(postcodeRegex);
+    // Check for postcode in this line (use workingLine with phone removed)
+    const postcodeMatch = workingLine.match(postcodeRegex);
     if (postcodeMatch && !result.postcode) {
       result.postcode = postcodeMatch[1];
       // Parse the rest of the line to extract city and state
-      const restOfLine = line.replace(postcodeRegex, "").replace(/,/g, " ").trim();
+      const restOfLine = workingLine.replace(postcodeRegex, "").replace(/,/g, " ").trim();
       
       // Try to find a state in the rest of the line
       const foundState = states.find(s => restOfLine.toLowerCase().includes(s.toLowerCase()));
@@ -4048,7 +4050,7 @@ export function parseSmartPaste(text: string): {
 
     // Check for Malaysian states (standalone state line)
     if (!result.state) {
-      const foundState = states.find(s => line.toLowerCase().includes(s.toLowerCase()));
+      const foundState = states.find(s => workingLine.toLowerCase().includes(s.toLowerCase()));
       if (foundState) {
         const aliasKey = Object.keys(stateAliases).find(k => line.toLowerCase().includes(k.toLowerCase()));
         result.state = aliasKey ? stateAliases[aliasKey] : foundState;
@@ -4058,7 +4060,7 @@ export function parseSmartPaste(text: string): {
           result.area = "West Malaysia";
         }
         // If line has more than just the state, the rest might be city
-        const restOfLine = line.replace(new RegExp(foundState, "gi"), "").replace(/,/g, "").trim();
+        const restOfLine = workingLine.replace(new RegExp(foundState, "gi"), "").replace(/,/g, "").trim();
         if (restOfLine && !result.city) result.city = restOfLine;
         continue;
       }
@@ -4066,19 +4068,19 @@ export function parseSmartPaste(text: string): {
 
     // First non-matched line is usually the name
     if (!result.customerName) {
-      result.customerName = line;
+      result.customerName = workingLine;
       continue;
     }
 
     // Second non-matched line is address line 1
     if (!result.addressLine1) {
-      result.addressLine1 = line;
+      result.addressLine1 = workingLine;
       continue;
     }
 
     // Third non-matched line is address line 2
     if (!result.addressLine2) {
-      result.addressLine2 = line;
+      result.addressLine2 = workingLine;
       continue;
     }
   }
@@ -4095,7 +4097,8 @@ export async function aiSmartParse(text: string) {
   const ruleParsed = parseSmartPaste(text);
   
   // If we got good enough data, return it
-  if (ruleParsed.customerName && ruleParsed.contactNumber && ruleParsed.postcode) {
+  // V2.0.63: Also accept if we have name + phone + address (postcode may be missing in some addresses)
+  if (ruleParsed.customerName && ruleParsed.contactNumber && (ruleParsed.postcode || ruleParsed.addressLine1)) {
     return { ...ruleParsed, rawText: text, method: "rule" };
   }
   
@@ -4119,7 +4122,17 @@ ${text}`;
     const content = typeof response.choices?.[0]?.message?.content === "string"
       ? response.choices[0].message.content
       : "{}";
-    const aiParsed = JSON.parse(content);
+    const aiParsedRaw = JSON.parse(content);
+    // V2.0.63: Normalize field names — LLM may return snake_case or different field names
+    const aiParsed: any = {};
+    if (aiParsedRaw.customerName || aiParsedRaw.customer_name || aiParsedRaw.name) aiParsed.customerName = aiParsedRaw.customerName || aiParsedRaw.customer_name || aiParsedRaw.name;
+    if (aiParsedRaw.contactNumber || aiParsedRaw.contact_number || aiParsedRaw.phone || aiParsedRaw.phoneNumber) aiParsed.contactNumber = aiParsedRaw.contactNumber || aiParsedRaw.contact_number || aiParsedRaw.phone || aiParsedRaw.phoneNumber;
+    if (aiParsedRaw.addressLine1 || aiParsedRaw.address_line_1 || aiParsedRaw.address1) aiParsed.addressLine1 = aiParsedRaw.addressLine1 || aiParsedRaw.address_line_1 || aiParsedRaw.address1;
+    if (aiParsedRaw.addressLine2 || aiParsedRaw.address_line_2 || aiParsedRaw.address2) aiParsed.addressLine2 = aiParsedRaw.addressLine2 || aiParsedRaw.address_line_2 || aiParsedRaw.address2;
+    if (aiParsedRaw.postcode || aiParsedRaw.postalCode || aiParsedRaw.postal_code || aiParsedRaw.zip) aiParsed.postcode = aiParsedRaw.postcode || aiParsedRaw.postalCode || aiParsedRaw.postal_code || aiParsedRaw.zip;
+    if (aiParsedRaw.city) aiParsed.city = aiParsedRaw.city;
+    if (aiParsedRaw.state) aiParsed.state = aiParsedRaw.state;
+    if (aiParsedRaw.area) aiParsed.area = aiParsedRaw.area;
     return { ...aiParsed, rawText: text, method: "ai" };
   } catch (error) {
     // Fallback to rule-based result

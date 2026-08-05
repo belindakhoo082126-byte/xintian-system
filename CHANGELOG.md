@@ -795,3 +795,15 @@
 ### Fixed
 - **根因**：`useEffect` 监听 `customerForm.name` 和 `customerForm.phoneNumber` 变化，当 Smart Parse 同时更新 `customerForm` 和 `recipientForm` 时，`customerForm` 变化触发 `useEffect`，将 `recipientForm` 的姓名和电话覆盖回 `customerForm` 的值（旧值），导致区域3看起来没有更新
 - **修复**：添加 `smartParseUpdatingRef` 标志，Smart Parse 更新期间设置 `true`，`useEffect` 检测到该标志时跳过同步，100ms 后重置为 `false`，确保后续手动编辑仍能正常同步
+
+## V2.0.63 (2026-08-05) — 彻底修复 Smart Parse 单行地址解析
+
+### Fixed
+
+- **parseSmartPaste 单行地址解析修复**：phone 匹配后不再 `continue` 跳过整行，而是从同一行中继续提取 postcode、city、state、address，解决单行地址（如 `Alice 0123456789 No 31 Jalan Pantai 11700 Gelugor Pulau Pinang`）无法提取地址和邮编的问题
+- **aiSmartParse LLM 字段名归一化**：LLM 返回的 snake_case 字段名（如 `customer_name`、`contact_number`、`address_line_1`）自动转换为 camelCase，避免前端因字段名不匹配而无法更新
+- **rule-based 判断条件放宽**：从要求 name + phone + postcode 改为 name + phone + (postcode 或 addressLine1)，部分地址没有邮编也能通过规则解析
+
+### Notes
+
+- TypeScript 零错误，269/269 测试通过

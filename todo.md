@@ -2012,3 +2012,8 @@
 ## V2.0.62: 修复 useEffect 覆盖 Smart Parse 区域3更新
 - [x] 1. 修复 useEffect 在 Smart Parse 后覆盖 recipientForm 的问题——添加 smartParseUpdatingRef 标志，Smart Parse 更新时跳过 useEffect 同步
 - [x] 2. TypeScript 检查 + 测试通过（266/266通过）
+## V2.0.63: 彻底修复 Smart Parse 区域3不更新
+- [x] 1. 修复 parseSmartPaste 单行地址解析——phone 匹配后不 continue，继续在同一行提取 postcode/name/address
+- [x] 2. 修复 aiSmartParse LLM 返回字段名归一化——snake_case 转 camelCase，放宽 rule-based 判断条件
+- [x] 3. 保留 useEffect 同步逻辑但用 smartParseUpdatingRef 防止覆盖（V2.0.62 已修复）
+- [x] 4. TypeScript 检查 + 测试通过（269/269通过）
