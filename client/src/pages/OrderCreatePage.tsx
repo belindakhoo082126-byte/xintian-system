@@ -303,28 +303,20 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     try {
       const result = await utils.orders.aiSmartParse.fetch({ text: smartPasteText });
       if (result) {
+        // V2.0.61: Always update both customer form and recipient form from Smart Parse results
         if (result.customerName) {
           setCustomerForm(prev => ({ ...prev, name: result.customerName }));
-          if (buyerIsRecipient) {
-            setRecipientForm(prev => ({ ...prev, recipientName: result.customerName }));
-          }
+          setRecipientForm(prev => ({ ...prev, recipientName: result.customerName }));
         }
         if (result.contactNumber) {
           setCustomerForm(prev => ({ ...prev, phoneNumber: result.contactNumber }));
-          if (buyerIsRecipient) {
-            setRecipientForm(prev => ({ ...prev, recipientPhone: result.contactNumber }));
-          }
+          setRecipientForm(prev => ({ ...prev, recipientPhone: result.contactNumber }));
         }
-        // V2.0.54: Address fields always update recipient form (not dependent on buyerIsRecipient)
         if (result.addressLine1) setRecipientForm(prev => ({ ...prev, addressLine1: result.addressLine1 }));
         if (result.addressLine2) setRecipientForm(prev => ({ ...prev, addressLine2: result.addressLine2 }));
         if (result.city) setRecipientForm(prev => ({ ...prev, city: result.city }));
         if (result.state) setRecipientForm(prev => ({ ...prev, state: result.state }));
-        if (result.postcode) setRecipientForm(prev => ({ ...prev, postcode: result.postcode }));
-        // Also update customer name and phone if buyer is recipient
-        if (result.customerName && !buyerIsRecipient) {
-          // Still update recipient name if AI provides it separately
-        }
+        if (result.postcode) setRecipientForm(prev => ({ ...prev, postcode: result.postcode }))
         if (result.area === "East Malaysia") {
           setShippingMethod("east_malaysia_poslaju");
         }

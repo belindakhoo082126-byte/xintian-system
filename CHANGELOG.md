@@ -781,3 +781,11 @@
 ### Changed
 - **后端 API 支持 repottingData**：orders.create 输入新增 repottingData 字段，建单时将多条换盆记录作为 JSON 保存到 order_remarks 表的 repottingData 列
 - **OrderBrowsePage 换盆备注显示优化**：解析 repottingData JSON，以「植物 → 花盆 x数量」格式渲染每条换盆记录，带绿色背景区分
+
+## V2.0.61 (2026-08-05) — 修复 AI Smart Parse 区域3不更新+速度优化
+
+### Fixed
+- **区域3收件人资料不更新**：AI Smart Parse 识别后，姓名和电话只在 `buyerIsRecipient` 为 true 时更新区域3收件人表单。修复为始终更新收件人表单的姓名、电话和地址字段，不依赖 `buyerIsRecipient` 条件
+
+### Changed
+- **AI Smart Parse 速度优化**：模型从 `gpt-4o-mini` 改为 `gpt-5-nano`（最快最便宜的模型），精简 prompt 减少输入 token，添加 `maxTokens=500` 限制输出长度，预期响应时间从5分钟降至数秒

@@ -4102,18 +4102,18 @@ export async function aiSmartParse(text: string) {
   // Otherwise, use LLM for smarter parsing
   try {
     const { invokeLLM } = await import("./_core/llm.js");
-    const prompt = `Parse the following Malaysian customer address text and extract structured data. Return JSON only.
-Extract: customerName, contactNumber, addressLine1, addressLine2, postcode, city, state, area (West/East Malaysia).
-Malaysian states: Johor, Kedah, Kelantan, Melaka, Negeri Sembilan, Pahang, Penang/Pulau Pinang, Perak, Perlis, Sabah, Sarawak, Selangor, Terengganu, Kuala Lumpur, Putrajaya, Labuan.
-Sabah/Sarawak/Labuan = East Malaysia, others = West Malaysia.
+    const prompt = `Parse this Malaysian customer address text. Return JSON only, no explanation.
+Extract: customerName, contactNumber, addressLine1, addressLine2, postcode, city, state, area ("West Malaysia" or "East Malaysia").
+Sabah/Sarawak/Labuan = East Malaysia, all others = West Malaysia.
 
 Text:
 ${text}`;
     
     const response = await invokeLLM({
-      model: "gpt-4o-mini",
+      model: "gpt-5-nano",
       messages: [{ role: "user", content: prompt }],
       responseFormat: { type: "json_object" },
+      maxTokens: 500,
     });
     
     const content = typeof response.choices?.[0]?.message?.content === "string"

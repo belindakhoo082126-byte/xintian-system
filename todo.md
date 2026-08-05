@@ -2005,3 +2005,7 @@
 - [x] 2. 建单时将多条换盆记录作为 repottingData JSON 保存到 order_remarks 表
 - [x] 3. OrderBrowsePage 正确显示多条换盆记录（解析 repottingData JSON 并渲染每条植物→花盆记录）
 - [x] 4. TypeScript 检查 + 测试通过（266/266通过）
+## V2.0.61: 修复 AI Smart Parse 区域3不更新+速度优化
+- [x] 1. 修复区域3收件人资料不更新——姓名、电话、地址字段始终更新 recipientForm（不依赖 buyerIsRecipient）
+- [x] 2. 优化 AI Smart Parse 速度——模型从 gpt-4o-mini 改为 gpt-5-nano，精简 prompt，添加 maxTokens=500
+- [x] 3. TypeScript 检查 + 测试通过（266/266通过）
