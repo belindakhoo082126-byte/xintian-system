@@ -708,3 +708,13 @@
 - 客户结单页面新增「换盆服务」说明卡片：紫色提示框，说明加购植物花盆+备注选择换盆服务
 - 后端新增 `publicOrder.updateRemark` 接口，客户可安全保存备注到 order_remarks 表
 - 完成结单区描述更新：「加单完毕后可点击购物车进行结账」
+
+## V2.0.53 (2026-08-05) — 备注系统重构
+
+### Changed
+- Dashboard 订单备注：自动过滤已发货/已完成订单，只显示活跃订单（pending/paid/packing/hold_order）
+- 今日预约发货：从 orderRemarks.desiredDeliveryDate + orders.scheduledShippingDate 双重来源计算，自动过滤非活跃订单
+- 换盆备注：改为多组可新增模式，每组可勾选订单商品作为植物 + 输入花盆名称，支持多盆植物共用一个花盆
+- 换盆数据：repottingData 以 JSON 格式存储完整的植物-花盆关联信息
+- 订单管理备注筛选：全部/有备注/无备注（已存在，确认功能正确）
+- 已发货/已完成订单自动从 Dashboard 备注和今日预约发货移除，无需手动完成

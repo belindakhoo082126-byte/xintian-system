@@ -122,6 +122,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
   const [remarkForm, setRemarkForm] = useState({ remarkCategory: "", content: "", desiredDeliveryDate: "", desiredDeliveryReason: "", repottingData: "" });
+  // V2.0.53: Repotting groups — multiple repot pairs with plant selection from order items
+  const [repotGroups, setRepotGroups] = useState<{ selectedPlantIds: number[]; potName: string }[]>([{ selectedPlantIds: [], potName: "" }]);
   const [showRemarkForm, setShowRemarkForm] = useState(false);
   const [editingRemarkId, setEditingRemarkId] = useState<number | null>(null);
   // V2.0.42: Custom message template dialog
@@ -1218,14 +1220,61 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                       </div>
                     )}
                     {remarkForm.remarkCategory === "repotting" && (
-                      <div className="space-y-2">
-                        <Label className="text-sm">{translate("换盆内容（格式：植物 → 花盆 x 数量）", "Repotting details (format: Plant → Pot x Qty)")}</Label>
-                        <Textarea
-                          placeholder={translate("例如：玫瑰 ×1 → BABA170 白盆 ×1", "e.g. Rose ×1 → BABA170 White Pot ×1")}
-                          value={remarkForm.content}
-                          onChange={(e) => setRemarkForm({ ...remarkForm, content: e.target.value })}
-                          rows={3}
-                        />
+                      <div className="space-y-3">
+                        <Label className="text-sm font-medium">{translate("换盆组（可新增多组）", "Repotting Groups (Add multiple)")}</Label>
+                        {repotGroups.map((group, gIdx) => (
+                          <div key={gIdx} className="space-y-2 p-3 border rounded-lg bg-green-50/30 dark:bg-green-950/10">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium text-green-700">{translate(`换盆 ${gIdx + 1}`, `Repot ${gIdx + 1}`)}</span>
+                              {repotGroups.length > 1 && (
+                                <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setRepotGroups(repotGroups.filter((_, i) => i !== gIdx))}>
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                            <div>
+                              <Label className="text-xs">{translate("选择植物（从本订单商品）", "Select Plants (from order items)")}</Label>
+                              <div className="space-y-1 mt-1">
+                                {orderDetail.items?.map((item: any) => (
+                                  <label key={item.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                                    <input
+                                      type="checkbox"
+                                      checked={group.selectedPlantIds.includes(item.id)}
+                                      onChange={(e) => {
+                                        const newGroups = [...repotGroups];
+                                        if (e.target.checked) {
+                                          newGroups[gIdx].selectedPlantIds = [...group.selectedPlantIds, item.id];
+                                        } else {
+                                          newGroups[gIdx].selectedPlantIds = group.selectedPlantIds.filter((id: number) => id !== item.id);
+                                        }
+                                        setRepotGroups(newGroups);
+                                      }}
+                                      className="h-4 w-4 rounded border-gray-300"
+                                    />
+                                    <span className="flex-1 truncate">{item.productName}{item.variationName ? ` (${item.variationName})` : ""}</span>
+                                    <span className="text-xs text-muted-foreground">x{item.quantity}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <Label className="text-xs">{translate("花盆", "Pot")}</Label>
+                              <Input
+                                placeholder={translate("例如：White Pot 8\"", "e.g. White Pot 8\"")}
+                                value={group.potName}
+                                onChange={(e) => {
+                                  const newGroups = [...repotGroups];
+                                  newGroups[gIdx].potName = e.target.value;
+                                  setRepotGroups(newGroups);
+                                }}
+                                className="text-sm"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                        <Button variant="outline" size="sm" onClick={() => setRepotGroups([...repotGroups, { selectedPlantIds: [], potName: "" }])}>
+                          <Plus className="h-4 w-4 mr-1" />{translate("新增换盆", "Add Repot Group")}
+                        </Button>
                       </div>
                     )}
                     {remarkForm.remarkCategory === "other" && (
@@ -1240,24 +1289,55 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                     )}
                     <Button
                       size="sm"
-                      disabled={!remarkForm.remarkCategory || (remarkForm.remarkCategory !== "desired_delivery_date" && !remarkForm.content) || (remarkForm.remarkCategory === "desired_delivery_date" && !remarkForm.desiredDeliveryDate)}
+                      disabled={!remarkForm.remarkCategory || 
+                        (remarkForm.remarkCategory === "desired_delivery_date" && !remarkForm.desiredDeliveryDate) ||
+                        (remarkForm.remarkCategory === "repotting" && repotGroups.every(g => g.selectedPlantIds.length === 0 || !g.potName.trim())) ||
+                        (remarkForm.remarkCategory === "other" && !remarkForm.content.trim())
+                      }
                       onClick={() => {
+                        // V2.0.53: Generate repotting content and data from repotGroups
+                        let submitContent = remarkForm.content;
+                        let submitRepottingData: string | undefined;
+                        if (remarkForm.remarkCategory === "repotting") {
+                          const groups = repotGroups.filter(g => g.selectedPlantIds.length > 0 && g.potName.trim());
+                          const itemMap = new Map((orderDetail.items || []).map((it: any) => [it.id, it]));
+                          const lines = groups.map((g, i) => {
+                            const plants = g.selectedPlantIds.map(id => {
+                              const it = itemMap.get(id);
+                              return it ? `${it.productName}${it.variationName ? ` (${it.variationName})` : ""}` : `Item#${id}`;
+                            }).join(" + ");
+                            return `换盆${i + 1}: ${plants} → ${g.potName.trim()}`;
+                          });
+                          submitContent = lines.join("\n");
+                          submitRepottingData = JSON.stringify(groups.map(g => ({
+                            plantItemIds: g.selectedPlantIds,
+                            plantNames: g.selectedPlantIds.map(id => {
+                              const it = itemMap.get(id);
+                              return it ? it.productName : "";
+                            }),
+                            potName: g.potName.trim(),
+                          })));
+                        } else if (remarkForm.remarkCategory === "desired_delivery_date") {
+                          submitContent = `希望收货日期: ${remarkForm.desiredDeliveryDate}${remarkForm.desiredDeliveryReason ? " — " + remarkForm.desiredDeliveryReason : ""}`;
+                        }
                         if (editingRemarkId) {
                           updateRemarkMutation.mutate({
                             id: editingRemarkId,
-                            content: remarkForm.content || (remarkForm.remarkCategory === "desired_delivery_date" ? `希望收货日期: ${remarkForm.desiredDeliveryDate}${remarkForm.desiredDeliveryReason ? " — " + remarkForm.desiredDeliveryReason : ""}` : ""),
+                            content: submitContent || "",
                             remarkCategory: remarkForm.remarkCategory as any,
                             desiredDeliveryDate: remarkForm.desiredDeliveryDate || undefined,
                             desiredDeliveryReason: remarkForm.desiredDeliveryReason || undefined,
+                            repottingData: submitRepottingData,
                           });
                         } else {
                           createRemarkMutation.mutate({
                             orderId: orderDetail.id,
                             type: "internal",
-                            content: remarkForm.content || (remarkForm.remarkCategory === "desired_delivery_date" ? `希望收货日期: ${remarkForm.desiredDeliveryDate}${remarkForm.desiredDeliveryReason ? " — " + remarkForm.desiredDeliveryReason : ""}` : ""),
+                            content: submitContent || "",
                             remarkCategory: remarkForm.remarkCategory as any,
                             desiredDeliveryDate: remarkForm.desiredDeliveryDate || undefined,
                             desiredDeliveryReason: remarkForm.desiredDeliveryReason || undefined,
+                            repottingData: submitRepottingData,
                           });
                         }
                       }}

@@ -1958,3 +1958,11 @@
 - [x] 2. 结单页面注明换盆服务说明（紫色卡片提示：加购植物花盆+备注选择换盆服务）
 - [x] 3. 确认商城加单后可点击购物车结账（MallCheckout 已支持 secureAddOnOrder 模式，从 sessionStorage 读取上下文，加单后合并到原订单）
 - [x] 4. TypeScript 检查 + 保存检查点（268/269 通过，1个为 ParcelKing 外部API超时，与本次修改无关）
+
+## V2.0.53: 备注系统重构
+- [x] 1. 后端：getOrdersWithRemarks 过滤已发货/已完成，只显示活跃订单的备注
+- [x] 2. 后端：scheduledToday 从 orderRemarks.desiredDeliveryDate + orders.scheduledShippingDate 双重来源计算
+- [x] 3. 前端：换盆改为多组可新增模式，植物从订单商品勾选（repotGroups state + checkbox + JSON repottingData）
+- [x] 4. 前端：订单管理备注筛选（全部/有备注/无备注）— 已存在且功能正确
+- [x] 5. 后端：已发货/已完成自动移除Dashboard备注和今日预约发货（getOrdersWithRemarks 和 scheduledToday 均过滤 shipped/completed 状态）
+- [x] 6. TypeScript 检查 + 保存检查点（269/269 测试通过）

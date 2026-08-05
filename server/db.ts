@@ -5068,9 +5068,17 @@ export async function getDashboardV11Stats() {
     )) as any[];
   const totalMonthSales = (Number(localSalesMonth[0]?.total || 0)) + (Number(importSalesMonth[0]?.total || 0));
 
-  // Row 5: Scheduled shipping today
-  const scheduledToday = await db.select({ count: sql`COUNT(*)` }).from(orders)
+  // V2.0.53: Row 5: Scheduled shipping today — from desired_delivery_date remarks + scheduledShippingDate
+  const scheduledTodayFromRemarks = await db.select({ count: sql`COUNT(DISTINCT ${orderRemarks.orderId})` }).from(orderRemarks)
+    .leftJoin(orders, eq(orderRemarks.orderId, orders.id))
+    .where(and(
+      sql`${orderRemarks.remarkCategory} = 'desired_delivery_date'`,
+      sql`DATE(${orderRemarks.desiredDeliveryDate}) = ${today}`,
+      sql`${orders.physicalStatus} IN ('pending', 'paid', 'packing', 'hold_order')`
+    )) as any[];
+  const scheduledTodayFromOrders = await db.select({ count: sql`COUNT(*)` }).from(orders)
     .where(and(eq(orders.physicalStatus, 'packing'), eq(orders.scheduledShippingDate, today))) as any[];
+  const scheduledTodayTotal = Number(scheduledTodayFromRemarks[0]?.count || 0) + Number(scheduledTodayFromOrders[0]?.count || 0);
 
     // Order alerts
   const repotOrders = await db.select({ count: sql`COUNT(DISTINCT orderId)` }).from(orderItemRepots) as any[];
@@ -5109,11 +5117,11 @@ export async function getDashboardV11Stats() {
       totalMonthSales: totalMonthSales.toFixed(2),
     },
     row5: {
-      scheduledToday: Number(scheduledToday[0]?.count || 0),
+      scheduledToday: scheduledTodayTotal,
     },
     alerts: {
       repotOrders: Number(repotOrders[0]?.count || 0),
-      scheduledToday: Number(scheduledToday[0]?.count || 0),
+      scheduledToday: scheduledTodayTotal,
       holdExpiring: Number(holdExpiring[0]?.count || 0),
       pendingPayment: Number(pendingPayment[0]?.count || 0),
     },
@@ -5259,10 +5267,12 @@ export async function updateOrderRemark(id: number, data: {
   broadcastChanges(["orders", "dashboard"]);
 }
 
-// V3.0: Get orders with remarks for Dashboard (no status filter — all orders with remarks)
+// V2.0.53: Get orders with remarks for Dashboard — exclude shipped/completed orders
 export async function getOrdersWithRemarks() {
   const db = await getDb();
   if (!db) return [];
+  // V2.0.53: Exclude shipped and completed orders from Dashboard remarks
+  const activeStatuses = ['pending', 'paid', 'packing', 'hold_order'];
   const rows = await db.select({
     remarkId: orderRemarks.id,
     orderId: orderRemarks.orderId,
@@ -5281,6 +5291,7 @@ export async function getOrdersWithRemarks() {
   }).from(orderRemarks)
     .leftJoin(orders, eq(orderRemarks.orderId, orders.id))
     .leftJoin(customers, eq(orders.customerId, customers.id))
+    .where(sql`${orders.physicalStatus} IN (${sql.join(activeStatuses.map(s => sql`${s}`), sql`,`)})`)
     .orderBy(desc(orderRemarks.createdAt));
   // Deduplicate by orderId (same order with multiple remarks counts as 1)
   const seen = new Set<number>();
