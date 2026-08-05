@@ -308,11 +308,16 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             setRecipientForm(prev => ({ ...prev, recipientPhone: result.contactNumber }));
           }
         }
+        // V2.0.54: Address fields always update recipient form (not dependent on buyerIsRecipient)
         if (result.addressLine1) setRecipientForm(prev => ({ ...prev, addressLine1: result.addressLine1 }));
         if (result.addressLine2) setRecipientForm(prev => ({ ...prev, addressLine2: result.addressLine2 }));
         if (result.city) setRecipientForm(prev => ({ ...prev, city: result.city }));
         if (result.state) setRecipientForm(prev => ({ ...prev, state: result.state }));
         if (result.postcode) setRecipientForm(prev => ({ ...prev, postcode: result.postcode }));
+        // Also update customer name and phone if buyer is recipient
+        if (result.customerName && !buyerIsRecipient) {
+          // Still update recipient name if AI provides it separately
+        }
         if (result.area === "East Malaysia") {
           setShippingMethod("east_malaysia_poslaju");
         }
@@ -946,7 +951,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <div>
               <Label className="text-xs">{translate("折扣金额", "Discount Amount")}</Label>
-              <Input type="number" value={discountAmount} onChange={(e) => setDiscountAmount(e.target.value || "0")} placeholder="0.00" />
+              <Input type="number" value={discountAmount} onChange={(e) => setDiscountAmount(e.target.value)} placeholder="0.00" />
             </div>
             <div className="col-span-2">
               <Label className="text-xs">{translate("折扣原因", "Discount Reason")}</Label>
@@ -954,7 +959,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             </div>
             <div>
               <Label className="text-xs">{translate("额外收费", "Extra Charge")}</Label>
-              <Input type="number" value={extraCharge} onChange={(e) => setExtraCharge(e.target.value || "0")} placeholder="0.00" />
+              <Input type="number" value={extraCharge} onChange={(e) => setExtraCharge(e.target.value)} placeholder="0.00" />
             </div>
             <div className="col-span-2">
               <Label className="text-xs">{translate("收费说明", "Charge Description")}</Label>
@@ -964,7 +969,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               <>
                 <div>
                   <Label className="text-xs">{translate("使用Credit", "Use Credit")}</Label>
-                  <Input type="number" value={creditUsed} onChange={(e) => setCreditUsed(e.target.value || "0")} placeholder="0.00" />
+                  <Input type="number" value={creditUsed} onChange={(e) => setCreditUsed(e.target.value)} placeholder="0.00" />
                 </div>
                 <div className="col-span-2 flex items-end">
                   <Badge variant="secondary" className="mb-2">
@@ -984,15 +989,25 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               <span className="font-medium">RM {itemsSubtotal.toFixed(2)}</span>
             </div>
             {discountNum > 0 && (
-              <div className="flex justify-between text-red-600">
-                <span>{translate("人工折扣", "Manual Discount")}</span>
-                <span>-RM {discountNum.toFixed(2)}</span>
+              <div className="space-y-0.5">
+                <div className="flex justify-between text-red-600">
+                  <span>{translate("人工折扣", "Manual Discount")}</span>
+                  <span>-RM {discountNum.toFixed(2)}</span>
+                </div>
+                {discountReason && (
+                  <div className="text-xs text-muted-foreground pl-2">↳ {discountReason}</div>
+                )}
               </div>
             )}
             {extraChargeNum > 0 && (
-              <div className="flex justify-between">
-                <span>{translate("额外收费", "Extra Charge")}</span>
-                <span>+RM {extraChargeNum.toFixed(2)}</span>
+              <div className="space-y-0.5">
+                <div className="flex justify-between">
+                  <span>{translate("额外收费", "Extra Charge")}</span>
+                  <span>+RM {extraChargeNum.toFixed(2)}</span>
+                </div>
+                {extraChargeDescription && (
+                  <div className="text-xs text-muted-foreground pl-2">↳ {extraChargeDescription}</div>
+                )}
               </div>
             )}
             <div className="flex justify-between">
