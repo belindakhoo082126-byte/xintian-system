@@ -1396,7 +1396,9 @@ export const appRouter = router({
           const settings = await db.getSystemSettings();
           const template = (settings as any)?.checkoutMessageTemplate ||
             "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
-          const message = (input.customMessage || template).replace(/\{link\}/g, fullLink);
+          const message = (input.customMessage || template)
+            .replace(/\{link\}/g, fullLink)
+            .replace(/\{orderNumber\}/g, order.orderNumber || "");
           await sendTextMessage(order.messengerId, message);
           await db.updateOrderNotificationStatus(input.orderId, "sent", null);
           return { success: true };
@@ -1412,18 +1414,16 @@ export const appRouter = router({
         source: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
-        // V2.0.41: Only send to unpaid orders (pending) with notificationStatus pending/failed/null
+        // V2.0.49: Send to ALL unpaid orders (pending), regardless of notification status (support multiple sends)
         const allOrders = await db.getOrders({
           physicalStatus: "pending",
           hasRemark: undefined,
         });
-        const pendingOrders = (allOrders as any[]).filter((o: any) =>
-          o.notificationStatus === "pending" || o.notificationStatus === "failed" || !o.notificationStatus
-        );
+        const pendingOrders = allOrders as any[];
         const results = { sent: 0, failed: 0, skipped: 0, total: pendingOrders.length, failedOrders: [] as any[] };
         const settings = await db.getSystemSettings();
         const template = (settings as any)?.checkoutMessageTemplate ||
-          "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
+          "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
         for (const order of pendingOrders) {
           if (!order.messengerId || !order.checkoutLink) {
             results.skipped++;
@@ -1433,7 +1433,9 @@ export const appRouter = router({
             const { sendTextMessage } = await import("./messenger");
             const baseUrl = "https://xintian.com.my";
             const fullLink = `${baseUrl}${order.checkoutLink}`;
-            const message = template.replace(/\{link\}/g, fullLink);
+            const message = template
+              .replace(/\{link\}/g, fullLink)
+              .replace(/\{orderNumber\}/g, order.orderNumber || "");
             await sendTextMessage(order.messengerId, message);
             await db.updateOrderNotificationStatus(order.id, "sent", null);
             results.sent++;
@@ -1465,7 +1467,9 @@ export const appRouter = router({
             const { sendTextMessage } = await import("./messenger");
             const baseUrl = "https://xintian.com.my";
             const fullLink = `${baseUrl}${order.checkoutLink}`;
-            const message = template.replace(/\{link\}/g, fullLink);
+            const message = template
+              .replace(/\{link\}/g, fullLink)
+              .replace(/\{orderNumber\}/g, order.orderNumber || "");
             await sendTextMessage(order.messengerId, message);
             await db.updateOrderNotificationStatus(orderId, "sent", null);
             results.sent++;
@@ -1492,7 +1496,9 @@ export const appRouter = router({
           const settings = await db.getSystemSettings();
           const template = (settings as any)?.checkoutMessageTemplate ||
             "Hello, here is your order. Please click the link below to fill in your details and complete payment. Thank you.\n\n{link}";
-          const message = (input.customMessage || template).replace(/\{link\}/g, fullLink);
+          const message = (input.customMessage || template)
+            .replace(/\{link\}/g, fullLink)
+            .replace(/\{orderNumber\}/g, order.orderNumber || "");
           await sendTextMessage(order.messengerId, message);
           await db.updateOrderNotificationStatus(input.orderId, "sent", null);
           return { success: true };

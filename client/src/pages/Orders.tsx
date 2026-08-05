@@ -717,6 +717,11 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         {translate("未发送", "Not Sent")}
                       </span>
                     )}
+                    {(o as any).notificationSentAt && (
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        {new Date((o as any).notificationSentAt).toLocaleDateString()} {new Date((o as any).notificationSentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
