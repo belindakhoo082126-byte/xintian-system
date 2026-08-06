@@ -2081,3 +2081,8 @@
 - [x] 5. 客户版模板 — 不显示 Facebook ID/Messenger ID/操作记录/内部备注
 - [x] 6. 内部版模板 — 保留所有后台资料（Facebook/Messenger/操作记录/内部备注）
 - [x] 7. TypeScript 零错误，269/269 测试通过
+## V2.0.74: 修复导出图片下载 + 移除商品图片
+- [x] 1. 修复 html2canvas oklch 错误 — Logo 改用纯 CSS 圆形+文字，不用 img 标签
+- [x] 2. 修复导出图片下载 — 使用 Blob URL 替代 dataURL，更可靠的跨平台下载
+- [x] 3. 移除商品图片列 — 打印和导出只显示文字（商品名、规格、数量、单价、小计）
+- [x] 4. TypeScript 零错误，269/269 测试通过

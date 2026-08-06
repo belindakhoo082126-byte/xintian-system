@@ -62,27 +62,29 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   // V2.0.45: Logo URL for watermark
   const LOGO_URL = "/manus-storage/xintian-logo-transparent_58bbaf5e.png";
 
-  // V2.0.73: Export order as PNG using standalone OrderDocument (no oklch, pure inline styles)
+  // V2.0.74: Export order as PNG — robust cross-platform download
   async function handleExportImage() {
     setExporting(true);
     try {
       // Create a standalone container outside the React tree
       const container = document.createElement("div");
       container.style.position = "fixed";
-      container.style.left = "-9999px";
+      container.style.left = "0";
       container.style.top = "0";
       container.style.zIndex = "-1";
+      container.style.opacity = "0";
+      container.style.pointerEvents = "none";
       document.body.appendChild(container);
 
       // Render OrderDocument into the container using React
       const root = createRoot(container);
       await new Promise<void>((resolve) => {
         root.render(<OrderDocument order={o} remarks={remarks} variant="customer" />);
-        setTimeout(resolve, 300);
+        setTimeout(resolve, 500);
       });
 
-      // Wait for images to load
-      await new Promise(r => setTimeout(r, 200));
+      // Wait for any images to load
+      await new Promise(r => setTimeout(r, 300));
 
       const targetEl = container.firstChild as HTMLElement;
       if (!targetEl) throw new Error("Failed to render order document");
@@ -91,23 +93,36 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
         scale: 2,
         backgroundColor: "#ffffff",
         useCORS: true,
-        allowTaint: false,
+        allowTaint: true,
         foreignObjectRendering: false,
         logging: false,
+        imageTimeout: 0,
       });
+
+      // Convert to blob for more reliable download (especially on mobile)
+      const dataUrl = canvas.toDataURL("image/png");
+      const blob = await (await fetch(dataUrl)).blob();
+      const blobUrl = URL.createObjectURL(blob);
 
       const link = document.createElement("a");
       link.download = `order_${o.orderNumber}.png`;
-      link.href = canvas.toDataURL("image/png");
+      link.href = blobUrl;
+      link.style.display = "none";
+      document.body.appendChild(link);
       link.click();
-      toast.success(translate("图片已下载", "Image downloaded"));
 
       // Cleanup
-      root.unmount();
-      document.body.removeChild(container);
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
+        root.unmount();
+        document.body.removeChild(container);
+      }, 100);
+
+      toast.success(translate("图片已下载", "Image downloaded"));
     } catch (e: any) {
+      console.error("Export image error:", e);
       toast.error(translate("导出失败: {message}", "Export failed: {message}", { message: e.message }));
-    } finally {
       setExporting(false);
     }
   }
