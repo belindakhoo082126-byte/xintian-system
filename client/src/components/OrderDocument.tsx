@@ -384,6 +384,10 @@ export function OrderDocument({
                   {translate("希望收货日期", "Desired Delivery Date")}: {r.desiredDeliveryDate ? fmtDateOnly(r.desiredDeliveryDate) : "-"}
                   {r.desiredDeliveryReason && <span> — {r.desiredDeliveryReason}</span>}
                 </div>
+              ) : r.remarkCategory === "select_tree" ? (
+                <div style={{ fontSize: "13px" }}>
+                  <span style={{ fontWeight: 600 }}>{translate("选树身", "Select Tree")}</span>: {r.content || "-"}
+                </div>
               ) : (
                 <p style={{ margin: 0 }}>{r.content}</p>
               )}

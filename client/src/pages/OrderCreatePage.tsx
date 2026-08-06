@@ -1134,6 +1134,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                 <SelectItem value="general">{translate("普通备注", "General Remark")}</SelectItem>
                 <SelectItem value="desired_delivery_date">{translate("发货日期", "Shipping Date")}</SelectItem>
                 <SelectItem value="repotting">{translate("换盆", "Repotting")}</SelectItem>
+                <SelectItem value="select_tree">{translate("选树身", "Select Tree")}</SelectItem>
                 <SelectItem value="other">{translate("其他", "Other")}</SelectItem>
               </SelectContent>
             </Select>
@@ -1266,12 +1267,12 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               />
             </div>
           )}
-          {(createRemarkCategory === "" || createRemarkCategory === "general" || createRemarkCategory === "other") && (
+          {(createRemarkCategory === "" || createRemarkCategory === "general" || createRemarkCategory === "other" || createRemarkCategory === "select_tree") && (
             <Textarea
               value={remark}
               onChange={(e) => setRemark(e.target.value)}
               rows={2}
-              placeholder={translate("普通备注，例如：星期五才方便收货 / 送礼不要放价格 / 两张订单一起发", "General remark, e.g. Friday delivery preferred / No price tag for gift")}
+              placeholder={createRemarkCategory === "select_tree" ? translate("选树身备注，例如：选粗身 / 选矮身 / 选树形好看的", "Select tree remark, e.g. thick trunk / short trunk / nice shape") : translate("普通备注，例如：星期五才方便收货 / 送礼不要放价格 / 两张订单一起发", "General remark, e.g. Friday delivery preferred / No price tag for gift")}
             />
           )}
         </CardContent>

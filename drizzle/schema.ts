@@ -1293,7 +1293,8 @@ export const orderRemarks = mysqlTable("order_remarks", {
   // V3.0: Remark category (备注类别: repotting/desired_delivery_date/other)
   remarkCategory: mysqlEnum("remarkCategory", [
     "repotting",              // 换盆
-    "desired_delivery_date",  // 希望收货日期
+    "desired_delivery_date",  // 希望收货日期 / 发货日期
+    "select_tree",            // 选树身
     "other",                  // 其他
   ]),
   content: text("content").notNull(),

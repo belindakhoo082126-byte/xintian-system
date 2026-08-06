@@ -5618,6 +5618,26 @@ export async function getTodayScheduledShipping() {
     .orderBy(desc(orders.createdAt));
 }
 
+// V3.1: Get today's scheduled shipping orders from desired_delivery_date remarks
+export async function getTodayScheduledShippingOrders() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const today = new Date().toISOString().split('T')[0];
+  const rows = await db.select({
+    remark: orderRemarks,
+    order: orders,
+  })
+    .from(orderRemarks)
+    .leftJoin(orders, eq(orderRemarks.orderId, orders.id))
+    .where(and(
+      eq(orderRemarks.remarkCategory, "desired_delivery_date"),
+      sql`DATE(${orderRemarks.desiredDeliveryDate}) = ${today}`,
+      sql`${orders.physicalStatus} IN ('pending', 'paid', 'packing', 'hold_order')`
+    ))
+    .orderBy(desc(orderRemarks.createdAt));
+  return rows;
+}
+
 // V1.1: Auto-complete orders 7 days after shipping
 export async function autoCompleteShippedOrders() {
   const db = await getDb();

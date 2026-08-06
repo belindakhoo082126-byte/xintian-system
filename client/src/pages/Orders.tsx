@@ -1207,6 +1207,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         <SelectContent>
                           <SelectItem value="repotting">{translate("换盆", "Repotting")}</SelectItem>
                           <SelectItem value="desired_delivery_date">{translate("希望收货日期", "Desired Delivery Date")}</SelectItem>
+                          <SelectItem value="select_tree">{translate("选树身", "Select Tree")}</SelectItem>
                           <SelectItem value="other">{translate("其他", "Other")}</SelectItem>
                         </SelectContent>
                       </Select>
@@ -1289,13 +1290,14 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         </Button>
                       </div>
                     )}
-                    {remarkForm.remarkCategory === "other" && (
+                    {(remarkForm.remarkCategory === "other" || remarkForm.remarkCategory === "select_tree") && (
                       <div>
                         <Label className="text-sm">{translate("备注内容", "Remark Content")}</Label>
                         <Textarea
                           value={remarkForm.content}
                           onChange={(e) => setRemarkForm({ ...remarkForm, content: e.target.value })}
                           rows={3}
+                          placeholder={remarkForm.remarkCategory === "select_tree" ? translate("选树身备注，例如：选粗身 / 选矮身 / 选树形好看的", "Select tree remark, e.g. thick trunk / short trunk / nice shape") : ""}
                         />
                       </div>
                     )}
@@ -1304,7 +1306,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                       disabled={!remarkForm.remarkCategory || 
                         (remarkForm.remarkCategory === "desired_delivery_date" && !remarkForm.desiredDeliveryDate) ||
                         (remarkForm.remarkCategory === "repotting" && repotGroups.every(g => g.selectedPlantIds.length === 0 || !g.potName.trim())) ||
-                        (remarkForm.remarkCategory === "other" && !remarkForm.content.trim())
+                        ((remarkForm.remarkCategory === "other" || remarkForm.remarkCategory === "select_tree") && !remarkForm.content.trim())
                       }
                       onClick={() => {
                         // V2.0.53: Generate repotting content and data from repotGroups
@@ -1382,6 +1384,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                               <Badge variant="secondary" className="text-xs">
                                 {r.remarkCategory === "repotting" ? translate("换盆", "Repotting") :
                                  r.remarkCategory === "desired_delivery_date" ? translate("希望收货日期", "Desired Delivery Date") :
+                                 r.remarkCategory === "select_tree" ? translate("选树身", "Select Tree") :
                                  translate("其他", "Other")}
                               </Badge>
                             )}
