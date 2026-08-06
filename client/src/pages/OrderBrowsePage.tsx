@@ -17,6 +17,7 @@ import {
 import html2canvas from "html2canvas";
 import { createRoot } from "react-dom/client";
 import { OrderDocument } from "@/components/OrderDocument";
+import { prepareOrderDocumentExportHost } from "@/lib/orderDocumentExport";
 
 const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
   pending: { zh: "未汇款订单", en: "Unpaid Order", variant: "outline" },
@@ -83,12 +84,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
 
       // Create a standalone container outside the React tree
       const container = document.createElement("div");
-      container.style.position = "fixed";
-      container.style.left = "0";
-      container.style.top = "0";
-      container.style.zIndex = "-1";
-      container.style.opacity = "0";
-      container.style.pointerEvents = "none";
+      prepareOrderDocumentExportHost(container);
       document.body.appendChild(container);
 
       // Render OrderDocument into the container using React
@@ -160,9 +156,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
     }
 
     const container = document.createElement("div");
-    container.style.position = "fixed";
-    container.style.left = "-9999px";
-    container.style.top = "0";
+    prepareOrderDocumentExportHost(container);
     document.body.appendChild(container);
 
     const root = createRoot(container);

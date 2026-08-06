@@ -2094,3 +2094,4 @@
 - [x] 1. 导出前先 fetch Logo 图片转为 base64 dataURL 传给 OrderDocument
 - [x] 2. 打印也使用同样的 base64 dataURL 方式
 - [x] 3. TypeScript 零错误，269/269 测试通过
+- [x] 移除订单导出与打印单据中订单号上方意外叠加的“A”图标，保持其余内容不变
