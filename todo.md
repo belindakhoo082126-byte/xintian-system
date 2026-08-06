@@ -2048,3 +2048,8 @@
 - [x] 2. 只更新 recipientForm（recipientName, recipientPhone, addressLine1, addressLine2, city, state, postcode, country）
 - [x] 3. 配送方式仍自动判断（East Malaysia → east_malaysia_poslaju）
 - [x] 4. TypeScript 零错误，269/269 测试通过
+## V2.0.69: AI Smart Parse 深入排查覆盖区域2问题 + Debug Log
+- [x] 1. 检查所有 setCustomerForm 调用路径，确认 handleSmartPaste 不修改 customerForm
+- [x] 2. 检查 useEffect 同步逻辑，确认 smartParseUpdatingRef 正确阻止覆盖
+- [x] 3. 添加 debug log 到 handleSmartPaste 前后（BEFORE/AFTER/API Result）
+- [x] 4. TypeScript 零错误，269/269 测试通过

@@ -121,8 +121,10 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   // V2.0.62: Ref to prevent useEffect from overwriting Smart Parse results
   const smartParseUpdatingRef = useRef(false);
   // V2.0.43: Auto-sync customerForm to recipientForm when buyer is recipient
+  // V2.0.69: Only sync when buyerIsRecipient is true AND smartParseUpdatingRef is false
+  // This prevents AI Smart Parse results from being overwritten by stale customerForm values
   useEffect(() => {
-    // Skip if Smart Parse is currently updating (it sets both forms directly)
+    // Skip if Smart Parse is currently updating (it sets recipientForm directly)
     if (smartParseUpdatingRef.current) return;
     if (buyerIsRecipient) {
       setRecipientForm(prev => ({
@@ -312,14 +314,33 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
       return;
     }
     setSmartPasteLoading(true);
+
+    // V2.0.69: Debug log BEFORE AI Smart Parse
+    console.log("[AI Smart Parse] BEFORE:", {
+      "customerForm.name": customerForm.name,
+      "customerForm.phoneNumber": customerForm.phoneNumber,
+      "recipientForm.recipientName": recipientForm.recipientName,
+      "recipientForm.recipientPhone": recipientForm.recipientPhone,
+      buyerIsRecipient,
+    });
+
+    // V2.0.69: Snapshot customerForm before AI Smart to detect any unauthorized modification
+    const customerNameBefore = customerForm.name;
+    const customerPhoneBefore = customerForm.phoneNumber;
+
     try {
       const result = await utils.orders.aiSmartParse.fetch({ text: smartPasteText });
       if (result) {
+        // V2.0.69: Debug log AI result
+        console.log("[AI Smart Parse] API Result:", result);
+
         // V2.0.68: AI Smart Parse only updates Region 3 (Recipient), NEVER Region 2 (Customer Profile)
         // Customer Profile (name, facebookName, facebookId, messengerId) must not be overwritten by recipient data
         smartParseUpdatingRef.current = true;
 
-        // V2.0.68: Single batch update for recipientForm only — no customerForm changes
+        // V2.0.69: Single batch update for recipientForm only — NO customerForm changes
+        // AI Smart Parse is NOT allowed to modify: customerForm.name, customerForm.phoneNumber,
+        // customerForm.facebookName, customerForm.facebookId, customerForm.messengerId
         setRecipientForm(prev => ({
           ...prev,
           recipientName: result.customerName || prev.recipientName,
@@ -335,6 +356,20 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         if (result.area === "East Malaysia") {
           setShippingMethod("east_malaysia_poslaju");
         }
+
+        // V2.0.69: Debug log AFTER AI Smart Parse (check after state flush)
+        setTimeout(() => {
+          console.log("[AI Smart Parse] AFTER (after 100ms):", {
+            "customerForm.name (should be unchanged)": customerForm.name,
+            "customerForm.phoneNumber (should be unchanged)": customerForm.phoneNumber,
+            "recipientForm.recipientName (should be AI result)": recipientForm.recipientName,
+            "recipientForm.recipientPhone (should be AI result)": recipientForm.recipientPhone,
+            "customerNameBefore": customerNameBefore,
+            "customerPhoneBefore": customerPhoneBefore,
+            "customerNameChanged": customerForm.name !== customerNameBefore,
+          });
+        }, 100);
+
         toast.success(translate("Smart Parse 完成（{method}）", "Smart Parse complete ({method})", { method: result.method }));
         // Reset flag after state updates have flushed
         setTimeout(() => { smartParseUpdatingRef.current = false; }, 200);
