@@ -290,7 +290,7 @@ export default function SystemSettings() {
                   value={form.checkoutMessageTemplate || ""}
                   onChange={(e) => update("checkoutMessageTemplate", e.target.value)}
                   rows={8}
-                  placeholder="您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}"
+                  placeholder="您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}"
                 />
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">

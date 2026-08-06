@@ -2037,3 +2037,9 @@
 - [x] 6. 下拉选项显示商品数量（×N），同一商品添加多次时各自显示
 - [x] 7. 无对应类型商品时显示禁用提示项
 - [x] 8. TypeScript 零错误，269/269 测试通过
+## V2.0.67: 修改结单通知消息模板，取消按钮相关文案
+- [x] 1. routers.ts 中4处默认消息模板去掉"或直接点击按钮（查询/结账订单）"
+- [x] 2. OrderBrowsePage.tsx 中1处消息模板修改
+- [x] 3. Orders.tsx 中6处消息模板修改
+- [x] 4. SystemSettings.tsx 中 placeholder 修改
+- [x] 5. TypeScript 零错误

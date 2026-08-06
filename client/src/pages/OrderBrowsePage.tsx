@@ -268,7 +268,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
             <Button variant="outline" size="sm" onClick={() => {
               const fullLink = `https://xintian.com.my${o.checkoutLink}`;
               const template =
-                "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
               const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, o.orderNumber || "");
               sendCheckoutMutation.mutate({ orderId: orderId, customMessage: msg });
             }} disabled={sendCheckoutMutation.isPending}>
