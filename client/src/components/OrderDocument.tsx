@@ -57,11 +57,14 @@ export function OrderDocument({
   remarks,
   variant = "customer",
   logoDataUrl,
+  responsive = false,
 }: {
   order: any;
   remarks?: any[];
   variant?: "customer" | "admin";
   logoDataUrl?: string;
+  /** 仅供屏幕预览使用；导出 PNG 与打印仍维持固定 800px 版面。 */
+  responsive?: boolean;
 }) {
   const { translate, lang } = useI18n();
   const o = order;
@@ -139,8 +142,10 @@ export function OrderDocument({
   return (
     <div
       style={{
-        width: "800px",
-        padding: "40px",
+        width: responsive ? "100%" : "800px",
+        maxWidth: responsive ? "800px" : undefined,
+        margin: responsive ? "0 auto" : undefined,
+        padding: responsive ? "clamp(16px, 4vw, 40px)" : "40px",
         background: C.bgWhite,
         fontFamily: "'Noto Sans SC', 'Segoe UI', Arial, sans-serif",
         color: C.text,

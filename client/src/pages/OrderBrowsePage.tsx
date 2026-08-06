@@ -735,15 +735,21 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
 
       {/* Preview Document Dialog — same OrderDocument template as export/print */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0">
-          <DialogHeader className="px-6 pt-4 pb-2 sticky top-0 bg-white z-10 border-b">
+        <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+          <DialogHeader className="shrink-0 border-b bg-white px-5 py-4 pr-12 sm:px-8">
             <DialogTitle className="text-base flex items-center gap-2">
               <Eye className="h-4 w-4" />
               {translate("Preview 单据", "Preview Document")} — {o.orderNumber}
             </DialogTitle>
           </DialogHeader>
-          <div className="px-4 py-2">
-            <OrderDocument order={o} remarks={remarks} variant="admin" logoDataUrl={previewLogoUrl} />
+          <div className="min-h-0 flex-1 overflow-auto bg-muted/30 px-3 py-4 sm:px-8 sm:py-6">
+            <OrderDocument
+              order={o}
+              remarks={remarks}
+              variant="admin"
+              logoDataUrl={previewLogoUrl}
+              responsive
+            />
           </div>
         </DialogContent>
       </Dialog>
