@@ -15,6 +15,7 @@ import {
   Copy, MessageCircle, Bell, Send,
 } from "lucide-react";
 import html2canvas from "html2canvas";
+import { createRoot } from "react-dom/client";
 import { OrderDocument } from "@/components/OrderDocument";
 
 const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
@@ -56,25 +57,41 @@ const SHIPPING_LABELS: Record<string, { zh: string; en: string }> = {
 export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; onBack: () => void }) {
   const { translate, lang } = useI18n();
   const [_, setLocation] = useLocation();
-  const exportRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
-  const [showPrintView, setShowPrintView] = useState(false);
 
   // V2.0.45: Logo URL for watermark
   const LOGO_URL = "/manus-storage/xintian-logo-transparent_58bbaf5e.png";
 
-  // V2.0.72: Export order as image using OrderDocument component
+  // V2.0.73: Export order as PNG using standalone OrderDocument (no oklch, pure inline styles)
   async function handleExportImage() {
-    if (!exportRef.current) return;
     setExporting(true);
     try {
+      // Create a standalone container outside the React tree
+      const container = document.createElement("div");
+      container.style.position = "fixed";
+      container.style.left = "-9999px";
+      container.style.top = "0";
+      container.style.zIndex = "-1";
+      document.body.appendChild(container);
+
+      // Render OrderDocument into the container using React
+      const root = createRoot(container);
+      await new Promise<void>((resolve) => {
+        root.render(<OrderDocument order={o} remarks={remarks} variant="customer" />);
+        setTimeout(resolve, 300);
+      });
+
+      // Wait for images to load
       await new Promise(r => setTimeout(r, 200));
 
-      const canvas = await html2canvas(exportRef.current, {
+      const targetEl = container.firstChild as HTMLElement;
+      if (!targetEl) throw new Error("Failed to render order document");
+
+      const canvas = await html2canvas(targetEl, {
         scale: 2,
         backgroundColor: "#ffffff",
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
         foreignObjectRendering: false,
         logging: false,
       });
@@ -83,20 +100,68 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
       link.download = `order_${o.orderNumber}.png`;
       link.href = canvas.toDataURL("image/png");
       link.click();
-      toast.success(translate("\u56fe\u7247\u5df2\u4e0b\u8f7d", "Image downloaded"));
+      toast.success(translate("图片已下载", "Image downloaded"));
+
+      // Cleanup
+      root.unmount();
+      document.body.removeChild(container);
     } catch (e: any) {
-      toast.error(translate("\u5bfc\u51fa\u5931\u8d25: {message}", "Export failed: {message}", { message: e.message }));
+      toast.error(translate("导出失败: {message}", "Export failed: {message}", { message: e.message }));
     } finally {
       setExporting(false);
     }
   }
 
-  // V2.0.72: Print order using OrderDocument layout
+  // V2.0.73: Print order — open new window with only OrderDocument content
   function handlePrint() {
-    setShowPrintView(true);
+    const container = document.createElement("div");
+    container.style.position = "fixed";
+    container.style.left = "-9999px";
+    container.style.top = "0";
+    document.body.appendChild(container);
+
+    const root = createRoot(container);
+    root.render(<OrderDocument order={o} remarks={remarks} variant="customer" />);
+
     setTimeout(() => {
-      window.print();
-      setShowPrintView(false);
+      const targetEl = container.firstChild as HTMLElement;
+      if (!targetEl) return;
+
+      const printWindow = window.open("", "_blank", "width=900,height=700");
+      if (!printWindow) {
+        toast.error(translate("无法打开打印窗口，请检查弹窗拦截设置", "Cannot open print window. Please check popup blocker settings."));
+        root.unmount();
+        document.body.removeChild(container);
+        return;
+      }
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>心田 Xin Tian - ${o.orderNumber}</title>
+          <style>
+            @page { margin: 1cm; }
+            body { margin: 0; padding: 0; font-family: 'Noto Sans SC', 'Segoe UI', Arial, sans-serif; }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          </style>
+        </head>
+        <body>${targetEl.outerHTML}</body>
+        </html>
+      `);
+      printWindow.document.close();
+
+      // Wait for images to load in print window
+      setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+      }, 500);
+
+      // Cleanup React container
+      root.unmount();
+      document.body.removeChild(container);
     }, 300);
   }
 
@@ -181,19 +246,6 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
 
   return (
     <div className="container max-w-5xl mx-auto px-4 py-6 space-y-4">
-      {/* V2.0.72: Hidden OrderDocument for export — rendered off-screen but accessible by html2canvas */}
-      <div style={{ position: "absolute", left: "-9999px", top: 0, zIndex: -1 }} aria-hidden>
-        <div ref={exportRef}>
-          <OrderDocument order={o} remarks={remarks} />
-        </div>
-      </div>
-
-      {/* V2.0.72: Print-only view using OrderDocument */}
-      {showPrintView && (
-        <div className="print-only-order-doc">
-          <OrderDocument order={o} remarks={remarks} />
-        </div>
-      )}
       {/* Header */}
       <div className="flex items-center justify-between no-print">
         <div className="flex items-center gap-3">
@@ -271,9 +323,6 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           </div>
         </div>
       )}
-
-      {/* Export/Print content wrapper */}
-      <div ref={exportRef} className="space-y-4">
 
       {/* Section 1: Order Basic Info */}
       <Card>
@@ -573,8 +622,6 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           </ScrollArea>
         </CardContent>
       </Card>
-
-      </div>
 
       {/* Footer Actions */}
       <div className="flex justify-end gap-3 pt-4 pb-8 no-print">

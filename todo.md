@@ -2073,3 +2073,11 @@
 - [x] 2. 导出图片使用 OrderDocument 渲染，包含 Logo/品牌名/订单号/客户资料/收件人/商品/金额/付款/备注
 - [x] 3. 打印功能使用 OrderDocument — CSS @media print 只显示 OrderDocument，隐藏所有系统 UI
 - [x] 4. TypeScript 零错误，269/269 测试通过
+## V2.0.73: 彻底重新设计订单模板 — 修复 oklch + 独立导出/打印
+- [x] 1. 重写 OrderDocument 组件 — 所有颜色用 hex/rgb，所有样式用内联 style，不依赖任何 CSS 变量/Tailwind
+- [x] 2. 修复 html2canvas oklch 错误 — 导出区域完全隔离，不继承任何 oklch 颜色
+- [x] 3. 导出图片 — 用 createRoot 渲染 OrderDocument 到独立 DOM 节点，html2canvas 截图生成 PNG
+- [x] 4. 打印 — 打开新窗口只包含 OrderDocument 模板，不打印整个网页
+- [x] 5. 客户版模板 — 不显示 Facebook ID/Messenger ID/操作记录/内部备注
+- [x] 6. 内部版模板 — 保留所有后台资料（Facebook/Messenger/操作记录/内部备注）
+- [x] 7. TypeScript 零错误，269/269 测试通过
