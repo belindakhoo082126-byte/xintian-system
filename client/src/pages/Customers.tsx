@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Search, Eye, GitMerge, AlertTriangle, Pencil, Plus } from "lucide-react";
+import { Search, Eye, GitMerge, AlertTriangle, Pencil, Plus, Wallet, History } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
 
 
 
@@ -42,6 +43,12 @@ export default function Customers() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newCustomer, setNewCustomer] = useState<any>({ name: "", phoneNumber: "", email: "", address: "" });
   const [duplicates, setDuplicates] = useState<any[]>([]);
+  // V2.2: Credit management state
+  const [creditDialogOpen, setCreditDialogOpen] = useState(false);
+  const [creditAction, setCreditAction] = useState<"add" | "deduct" | "adjust">("add");
+  const [creditAmount, setCreditAmount] = useState("");
+  const [creditReason, setCreditReason] = useState("");
+  const [creditHistoryOpen, setCreditHistoryOpen] = useState(false);
   const utils = trpc.useUtils();
 
   const { data: customers, isLoading } = trpc.customers.list.useQuery({
@@ -91,6 +98,45 @@ export default function Customers() {
     },
     onError: (e) => toast.error(translate("建立失败: {message}", "Creation failed: {message}", { message: e.message })),
   });
+
+  // V2.2: Credit management mutations
+  const addCreditMutation = trpc.customers.addCredit.useMutation({
+    onSuccess: (data) => {
+      utils.customers.invalidate();
+      toast.success(translate("Credit 已新增，余额: RM {balance}", "Credit added, balance: RM {balance}", { balance: data.newBalance }));
+      setCreditDialogOpen(false);
+      setCreditAmount("");
+      setCreditReason("");
+    },
+    onError: (e) => toast.error(translate("新增 Credit 失败: {message}", "Add credit failed: {message}", { message: e.message })),
+  });
+
+  const deductCreditMutation = trpc.customers.deductCredit.useMutation({
+    onSuccess: (data) => {
+      utils.customers.invalidate();
+      toast.success(translate("Credit 已扣除，余额: RM {balance}", "Credit deducted, balance: RM {balance}", { balance: data.newBalance }));
+      setCreditDialogOpen(false);
+      setCreditAmount("");
+      setCreditReason("");
+    },
+    onError: (e) => toast.error(translate("扣除 Credit 失败: {message}", "Deduct credit failed: {message}", { message: e.message })),
+  });
+
+  const adjustCreditMutation = trpc.customers.adjustCredit.useMutation({
+    onSuccess: (data) => {
+      utils.customers.invalidate();
+      toast.success(translate("Credit 已调整，余额: RM {balance}", "Credit adjusted, balance: RM {balance}", { balance: data.newBalance }));
+      setCreditDialogOpen(false);
+      setCreditAmount("");
+      setCreditReason("");
+    },
+    onError: (e) => toast.error(translate("调整 Credit 失败: {message}", "Adjust credit failed: {message}", { message: e.message })),
+  });
+
+  const { data: creditHistory } = trpc.customers.creditHistory.useQuery(
+    { customerId: detailCustomer?.id ?? 0, limit: 50 },
+    { enabled: !!detailCustomer && creditHistoryOpen }
+  );
 
   function openDetail(customer: any) {
     setDuplicates([]);
@@ -287,6 +333,39 @@ export default function Customers() {
                   <p className="text-muted-foreground">{translate("积分余额", "Points Balance")}</p>
                   <p className="font-medium">{detailCustomer.pointsBalance}</p>
                 </div>
+                <div>
+                  <p className="text-muted-foreground">{translate("Credit 余额", "Credit Balance")}</p>
+                  <p className="font-bold text-blue-600">RM {parseFloat(detailCustomer.creditBalance || "0").toFixed(2)}</p>
+                </div>
+              </div>
+
+              {/* V2.2: Credit Management Section */}
+              <div className="p-4 border rounded-lg bg-blue-50/30 dark:bg-blue-950/10">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Wallet className="h-4 w-4 text-blue-600" />
+                    <p className="font-medium text-sm">{translate("Credit 管理", "Credit Management")}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => { setCreditAction("add"); setCreditDialogOpen(true); }}>
+                      <Plus className="h-3 w-3 mr-1" />
+                      {translate("新增", "Add")}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => { setCreditAction("deduct"); setCreditDialogOpen(true); }}>
+                      {translate("扣除", "Deduct")}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => { setCreditAction("adjust"); setCreditDialogOpen(true); }}>
+                      {translate("调整", "Adjust")}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setCreditHistoryOpen(true)}>
+                      <History className="h-3 w-3 mr-1" />
+                      {translate("记录", "History")}
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {translate("Credit 只能在此处管理，订单会自动读取并扣除。", "Credit can only be managed here. Orders will auto-read and deduct.")}
+                </p>
               </div>
 
               {/* Customer notes */}
@@ -366,6 +445,99 @@ export default function Customers() {
                 </Button>
               </DialogFooter>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* V2.2: Credit Action Dialog */}
+      <Dialog open={creditDialogOpen} onOpenChange={setCreditDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {creditAction === "add" && translate("新增 Credit", "Add Credit")}
+              {creditAction === "deduct" && translate("扣除 Credit", "Deduct Credit")}
+              {creditAction === "adjust" && translate("调整 Credit", "Adjust Credit")}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-muted/30 rounded-lg text-sm">
+              <p className="text-muted-foreground">{translate("客户", "Customer")}</p>
+              <p className="font-medium">{detailCustomer?.name || detailCustomer?.facebookName || "-"}</p>
+              <p className="text-muted-foreground mt-1">{translate("当前 Credit 余额", "Current Credit Balance")}</p>
+              <p className="font-bold text-blue-600">RM {parseFloat(detailCustomer?.creditBalance || "0").toFixed(2)}</p>
+            </div>
+            <div>
+              <Label className="text-xs">
+                {creditAction === "adjust" ? translate("金额 (正数增加, 负数减少)", "Amount (positive to add, negative to reduce)") : translate("金额", "Amount")}
+              </Label>
+              <Input type="number" value={creditAmount} onChange={(e) => setCreditAmount(e.target.value)} placeholder="0.00" />
+            </div>
+            <div>
+              <Label className="text-xs">{translate("原因", "Reason")}</Label>
+              <Input value={creditReason} onChange={(e) => setCreditReason(e.target.value)} placeholder={translate("例如：客户退款", "e.g. Customer refund")} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreditDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button
+              disabled={!creditAmount || !creditReason || (creditAction !== "adjust" && parseFloat(creditAmount) <= 0)}
+              onClick={() => {
+                const amt = parseFloat(creditAmount);
+                if (isNaN(amt)) return;
+                if (creditAction === "add") addCreditMutation.mutate({ customerId: detailCustomer.id, amount: amt, reason: creditReason });
+                else if (creditAction === "deduct") deductCreditMutation.mutate({ customerId: detailCustomer.id, amount: amt, reason: creditReason });
+                else adjustCreditMutation.mutate({ customerId: detailCustomer.id, amount: amt, reason: creditReason });
+              }}
+            >
+              {translate("确认", "Confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* V2.2: Credit History Dialog */}
+      <Dialog open={creditHistoryOpen} onOpenChange={setCreditHistoryOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{translate("Credit 变动记录", "Credit Transaction History")}</DialogTitle>
+          </DialogHeader>
+          {creditHistory && creditHistory.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{translate("日期", "Date")}</TableHead>
+                  <TableHead>{translate("类型", "Type")}</TableHead>
+                  <TableHead className="text-right">{translate("金额", "Amount")}</TableHead>
+                  <TableHead className="text-right">{translate("余额", "Balance")}</TableHead>
+                  <TableHead>{translate("原因", "Reason")}</TableHead>
+                  <TableHead>{translate("操作人", "Operator")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {creditHistory.map((t: any) => (
+                  <TableRow key={t.id}>
+                    <TableCell className="text-xs">{new Date(t.createdAt).toLocaleString()}</TableCell>
+                    <TableCell>
+                      <Badge variant={t.type === "add" || t.type === "order_refund" ? "default" : t.type === "deduct" || t.type === "order_use" ? "destructive" : "secondary"}>
+                        {t.type === "add" && translate("新增", "Add")}
+                        {t.type === "deduct" && translate("扣除", "Deduct")}
+                        {t.type === "adjust" && translate("调整", "Adjust")}
+                        {t.type === "order_use" && translate("订单使用", "Order Use")}
+                        {t.type === "order_refund" && translate("订单退款", "Order Refund")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className={`text-right font-medium ${parseFloat(t.amount) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      {parseFloat(t.amount) >= 0 ? "+" : ""}RM {parseFloat(t.amount).toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-right">RM {parseFloat(t.balanceAfter).toFixed(2)}</TableCell>
+                    <TableCell className="text-xs">{t.reason || "-"}</TableCell>
+                    <TableCell className="text-xs">{t.operatorName || "-"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">{translate("暂无 Credit 变动记录", "No credit transactions")}</p>
           )}
         </DialogContent>
       </Dialog>

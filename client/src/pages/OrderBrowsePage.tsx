@@ -549,7 +549,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           )}
           <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")}</span><span>RM {shippingFee.toFixed(2)}</span></div>
           {creditUsed > 0 && (
-            <div className="flex justify-between text-blue-600"><span>{translate("使用Credit", "Credit Used")}</span><span>-RM {creditUsed.toFixed(2)}</span></div>
+            <div className="flex justify-between text-blue-600"><span>{translate("自动扣除Credit", "Auto Credit Used")}</span><span>-RM {creditUsed.toFixed(2)}</span></div>
           )}
           <Separator />
           <div className="flex justify-between font-bold text-base"><span>{translate("总金额", "Total Amount")}</span><span>RM {totalAmount.toFixed(2)}</span></div>

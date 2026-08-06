@@ -2131,3 +2131,15 @@
 - [x] 从 OrderDocument 单据中移除操作记录（Operation Logs）显示
 - [x] 修复手机端导出单据图片时 oklch 颜色函数不支持的错误（html2canvas onclone 回调替换 oklch 为 hex）
 - [x] TypeScript 编译零错误，270 项测试全部通过
+
+## V2.2: Customer Credit 系统改造 + 金额计算统一
+
+- [x] 数据库：新增 credit_transactions 表（记录所有 Credit 变动）
+- [x] 后端：Credit 自动读取/扣除/更新逻辑（useCustomerCredit, refundCustomerCredit, addCustomerCredit, deductCustomerCredit, adjustCustomerCredit）
+- [x] 后端：新增 Credit 管理路由（addCredit, deductCredit, adjustCredit, creditHistory）
+- [x] 前端 OrderCreatePage：Credit 从手动输入改为自动读取客户余额并自动扣除
+- [x] 前端 OrderEditPage：Credit 从手动输入改为自动读取客户余额并自动扣除
+- [x] 前端 Customers.tsx：新增 Credit 管理功能（新增/扣除/调整/记录查看）
+- [x] 前端 OrderBrowsePage：Credit 显示标签改为「自动扣除Credit」
+- [x] 前端 OrderDocument：Credit 显示标签改为「自动扣除Credit」
+- [x] 编译零错误，270 项测试全部通过

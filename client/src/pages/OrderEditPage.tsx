@@ -103,7 +103,14 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
 
   const discountNum = parseFloat(formData.discountAmount) || 0;
   const extraChargeNum = parseFloat(formData.extraCharge) || 0;
-  const creditUsedNum = parseFloat(formData.creditUsed) || 0;
+  // V2.2: Credit is auto-applied from customer account, not manually entered
+  const customerCreditBalance = parseFloat((order as any)?.creditBalance || "0");
+  const creditUsedNum = useMemo(() => {
+    if (customerCreditBalance <= 0) return 0;
+    // Auto-apply: use all available credit up to the total amount (before shipping)
+    const maxCreditCoverage = itemsSubtotal - discountNum + extraChargeNum;
+    return Math.min(customerCreditBalance, Math.max(0, maxCreditCoverage));
+  }, [customerCreditBalance, itemsSubtotal, discountNum, extraChargeNum]);
   const shippingFeeNum = parseFloat(formData.shippingFee) || 0;
   const totalAmount = itemsSubtotal - discountNum + extraChargeNum + shippingFeeNum - creditUsedNum;
 
@@ -111,6 +118,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     updateDetailsMutation.mutate({
       id: orderId,
       ...formData,
+      creditUsed: creditUsedNum.toFixed(2),
       totalAmount: totalAmount.toFixed(2),
     });
   }
@@ -338,8 +346,8 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               <Input value={formData.extraChargeDescription} onChange={(e) => setFormData({ ...formData, extraChargeDescription: e.target.value })} />
             </div>
             <div>
-              <Label className="text-xs">{translate("使用Credit", "Credit Used")}</Label>
-              <Input type="number" value={formData.creditUsed} onChange={(e) => setFormData({ ...formData, creditUsed: e.target.value || "0" })} />
+              <Label className="text-xs">{translate("自动扣除Credit", "Auto Credit Used")}</Label>
+              <Input type="number" value={creditUsedNum.toFixed(2)} readOnly className="bg-muted" />
             </div>
             <div>
               <Label className="text-xs">{translate("运费", "Shipping Fee")}</Label>

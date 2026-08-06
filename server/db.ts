@@ -49,6 +49,8 @@ import {
   reservationRecords,
   // V2.0.43 imports - Order sequence counter
   orderSeq,
+  // V2.2 imports - Customer Credit Transactions
+  creditTransactions,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -4255,31 +4257,138 @@ ${text}`;
 // V2.2: Customer Credit functions
 // ============================================================================
 
-export async function useCustomerCredit(customerId: number, amount: number, orderId: number) {
+export async function useCustomerCredit(customerId: number, amount: number, orderId: number, operatorName?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const customer = await getCustomerById(customerId);
   if (!customer) throw new Error("Customer not found");
   const balance = parseFloat(customer.creditBalance?.toString() || "0");
   if (balance < amount) throw new Error(`Insufficient credit: ${balance} < ${amount}`);
+  const newBalance = balance - amount;
   await db.update(customers).set({
-    creditBalance: (balance - amount).toFixed(2),
+    creditBalance: newBalance.toFixed(2),
   }).where(eq(customers.id, customerId));
+  // Record credit transaction
+  await db.insert(creditTransactions).values({
+    customerId,
+    type: "order_use",
+    amount: amount.toFixed(2),
+    balanceAfter: newBalance.toFixed(2),
+    reason: `Order #${orderId} credit usage`,
+    orderId,
+    operatorName: operatorName || null,
+  });
   await logOrderOperation(orderId, "credit_used", `Used customer credit: RM${amount.toFixed(2)}`);
-  return { remainingCredit: (balance - amount).toFixed(2) };
+  return { remainingCredit: newBalance.toFixed(2) };
 }
 
-export async function refundCustomerCredit(customerId: number, amount: number, orderId: number) {
+export async function refundCustomerCredit(customerId: number, amount: number, orderId: number, operatorName?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const customer = await getCustomerById(customerId);
   if (!customer) throw new Error("Customer not found");
   const balance = parseFloat(customer.creditBalance?.toString() || "0");
+  const newBalance = balance + amount;
   await db.update(customers).set({
-    creditBalance: (balance + amount).toFixed(2),
+    creditBalance: newBalance.toFixed(2),
   }).where(eq(customers.id, customerId));
+  // Record credit transaction
+  await db.insert(creditTransactions).values({
+    customerId,
+    type: "order_refund",
+    amount: amount.toFixed(2),
+    balanceAfter: newBalance.toFixed(2),
+    reason: `Order #${orderId} credit refund`,
+    orderId,
+    operatorName: operatorName || null,
+  });
   await logOrderOperation(orderId, "credit_refunded", `Refunded customer credit: RM${amount.toFixed(2)}`);
-  return { newBalance: (balance + amount).toFixed(2) };
+  return { newBalance: newBalance.toFixed(2) };
+}
+
+// V2.2: Add credit to customer (from Customer Management)
+export async function addCustomerCredit(customerId: number, amount: number, reason: string, operatorName?: string, operatorId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const customer = await getCustomerById(customerId);
+  if (!customer) throw new Error("Customer not found");
+  const balance = parseFloat(customer.creditBalance?.toString() || "0");
+  const newBalance = balance + amount;
+  await db.update(customers).set({
+    creditBalance: newBalance.toFixed(2),
+  }).where(eq(customers.id, customerId));
+  await db.insert(creditTransactions).values({
+    customerId,
+    type: "add",
+    amount: amount.toFixed(2),
+    balanceAfter: newBalance.toFixed(2),
+    reason: reason || null,
+    operatorName: operatorName || null,
+    operatorId: operatorId || null,
+  });
+  broadcastChanges(["customers"]);
+  return { newBalance: newBalance.toFixed(2) };
+}
+
+// V2.2: Deduct credit from customer (from Customer Management)
+export async function deductCustomerCredit(customerId: number, amount: number, reason: string, operatorName?: string, operatorId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const customer = await getCustomerById(customerId);
+  if (!customer) throw new Error("Customer not found");
+  const balance = parseFloat(customer.creditBalance?.toString() || "0");
+  if (balance < amount) throw new Error(`Insufficient credit: ${balance} < ${amount}`);
+  const newBalance = balance - amount;
+  await db.update(customers).set({
+    creditBalance: newBalance.toFixed(2),
+  }).where(eq(customers.id, customerId));
+  await db.insert(creditTransactions).values({
+    customerId,
+    type: "deduct",
+    amount: amount.toFixed(2),
+    balanceAfter: newBalance.toFixed(2),
+    reason: reason || null,
+    operatorName: operatorName || null,
+    operatorId: operatorId || null,
+  });
+  broadcastChanges(["customers"]);
+  return { newBalance: newBalance.toFixed(2) };
+}
+
+// V2.2: Adjust credit (positive or negative adjustment)
+export async function adjustCustomerCredit(customerId: number, amount: number, reason: string, operatorName?: string, operatorId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const customer = await getCustomerById(customerId);
+  if (!customer) throw new Error("Customer not found");
+  const balance = parseFloat(customer.creditBalance?.toString() || "0");
+  const newBalance = balance + amount; // amount can be negative
+  if (newBalance < 0) throw new Error(`Resulting balance cannot be negative: ${newBalance}`);
+  await db.update(customers).set({
+    creditBalance: newBalance.toFixed(2),
+  }).where(eq(customers.id, customerId));
+  await db.insert(creditTransactions).values({
+    customerId,
+    type: "adjust",
+    amount: amount.toFixed(2),
+    balanceAfter: newBalance.toFixed(2),
+    reason: reason || null,
+    operatorName: operatorName || null,
+    operatorId: operatorId || null,
+  });
+  broadcastChanges(["customers"]);
+  return { newBalance: newBalance.toFixed(2) };
+}
+
+// V2.2: Get credit transaction history for a customer
+export async function getCreditTransactions(customerId: number, limit?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select().from(creditTransactions).where(eq(creditTransactions.customerId, customerId));
+  if (limit) {
+    query = query.limit(limit) as any;
+  }
+  return await query.orderBy(desc(creditTransactions.createdAt));
 }
 
 // ============================================================================

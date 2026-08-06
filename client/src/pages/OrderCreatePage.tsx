@@ -149,7 +149,19 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const [discountReason, setDiscountReason] = useState("");
   const [extraCharge, setExtraCharge] = useState("0");
   const [extraChargeDescription, setExtraChargeDescription] = useState("");
-  const [creditUsed, setCreditUsed] = useState("0");
+  // V2.2: Credit is auto-applied from customer account, not manually entered
+  const customerCreditBalance = parseFloat(selectedCustomer?.creditBalance || "0");
+  const autoCreditUsed = useMemo(() => {
+    if (!selectedCustomerId || customerCreditBalance <= 0) return 0;
+    // Auto-apply: use all available credit up to the total amount (before shipping)
+    const itemsSubtotalPre = manualItems.reduce((sum, i) => sum + (i.productType === "physical" || i.productType === "gift" || i.productType === "membership" ? parseFloat(i.subtotal) || 0 : 0), 0);
+    const discountPre = parseFloat(discountAmount) || 0;
+    const extraPre = parseFloat(extraCharge) || 0;
+    // Credit can cover up to itemsSubtotal - discount + extra (before shipping)
+    const maxCreditCoverage = itemsSubtotalPre - discountPre + extraPre;
+    return Math.min(customerCreditBalance, Math.max(0, maxCreditCoverage));
+  }, [selectedCustomerId, customerCreditBalance, manualItems, discountAmount, extraCharge]);
+  const creditUsed = autoCreditUsed.toFixed(2);
 
   // Remarks
   const [remark, setRemark] = useState("");
@@ -287,7 +299,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const itemsSubtotal = physicalSubtotal + membershipSubtotal;
   const discountNum = parseFloat(discountAmount) || 0;
   const extraChargeNum = parseFloat(extraCharge) || 0;
-  const creditUsedNum = parseFloat(creditUsed) || 0;
+  const creditUsedNum = autoCreditUsed;
 
   // Settled amount for free shipping threshold
   const settledAmount = itemsSubtotal - discountNum;
@@ -1053,15 +1065,15 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               <Label className="text-xs">{translate("收费说明", "Charge Description")}</Label>
               <Input value={extraChargeDescription} onChange={(e) => setExtraChargeDescription(e.target.value)} placeholder={translate("例如：特别包装+急件处理", "e.g. Special packaging + rush handling")} />
             </div>
-            {selectedCustomerId && selectedCustomer?.creditBalance && parseFloat(selectedCustomer.creditBalance) > 0 && (
+            {selectedCustomerId && customerCreditBalance > 0 && (
               <>
                 <div>
-                  <Label className="text-xs">{translate("使用Credit", "Use Credit")}</Label>
-                  <Input type="number" value={creditUsed} onChange={(e) => setCreditUsed(e.target.value)} placeholder="0.00" />
+                  <Label className="text-xs">{translate("自动扣除Credit", "Auto Credit Used")}</Label>
+                  <Input type="number" value={creditUsed} readOnly className="bg-muted" placeholder="0.00" />
                 </div>
                 <div className="col-span-2 flex items-end">
                   <Badge variant="secondary" className="mb-2">
-                    {translate("Credit余额", "Credit Balance")}: RM {parseFloat(selectedCustomer.creditBalance).toFixed(2)}
+                    {translate("Credit余额", "Credit Balance")}: RM {customerCreditBalance.toFixed(2)}
                   </Badge>
                 </div>
               </>

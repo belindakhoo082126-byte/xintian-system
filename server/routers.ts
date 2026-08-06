@@ -1376,26 +1376,26 @@ export const appRouter = router({
         return await db.aiSmartParse(input.text);
       }),
 
-    // V2.2: Use customer credit
+    // V2.2: Use customer credit (auto-deduct when creating/editing order)
     useCredit: adminProcedure
       .input(z.object({
         customerId: z.number(),
         amount: z.number(),
         orderId: z.number(),
       }))
-      .mutation(async ({ input }) => {
-        return await db.useCustomerCredit(input.customerId, input.amount, input.orderId);
+      .mutation(async ({ input, ctx }) => {
+        return await db.useCustomerCredit(input.customerId, input.amount, input.orderId, ctx.user?.name || undefined);
       }),
 
-    // V2.2: Refund customer credit
+    // V2.2: Refund customer credit (when order is cancelled/modified)
     refundCredit: adminProcedure
       .input(z.object({
         customerId: z.number(),
         amount: z.number(),
         orderId: z.number(),
       }))
-      .mutation(async ({ input }) => {
-        return await db.refundCustomerCredit(input.customerId, input.amount, input.orderId);
+      .mutation(async ({ input, ctx }) => {
+        return await db.refundCustomerCredit(input.customerId, input.amount, input.orderId, ctx.user?.name || undefined);
       }),
 
     // V2.2: Calculate West Malaysia shipping
@@ -2147,6 +2147,49 @@ export const appRouter = router({
       .input(z.object({ status: z.string().optional() }).optional())
       .query(async ({ input }) => {
         return await db.getMergeSuggestions(input?.status);
+      }),
+
+    // V2.2: Credit Management - Add credit to customer
+    addCredit: adminProcedure
+      .input(z.object({
+        customerId: z.number(),
+        amount: z.number().positive(),
+        reason: z.string().min(1).max(500),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.addCustomerCredit(input.customerId, input.amount, input.reason, ctx.user?.name || undefined, ctx.user?.id);
+      }),
+
+    // V2.2: Credit Management - Deduct credit from customer
+    deductCredit: adminProcedure
+      .input(z.object({
+        customerId: z.number(),
+        amount: z.number().positive(),
+        reason: z.string().min(1).max(500),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.deductCustomerCredit(input.customerId, input.amount, input.reason, ctx.user?.name || undefined, ctx.user?.id);
+      }),
+
+    // V2.2: Credit Management - Adjust credit (positive or negative)
+    adjustCredit: adminProcedure
+      .input(z.object({
+        customerId: z.number(),
+        amount: z.number(), // can be negative
+        reason: z.string().min(1).max(500),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.adjustCustomerCredit(input.customerId, input.amount, input.reason, ctx.user?.name || undefined, ctx.user?.id);
+      }),
+
+    // V2.2: Credit Management - Get credit transaction history
+    creditHistory: adminProcedure
+      .input(z.object({
+        customerId: z.number(),
+        limit: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await db.getCreditTransactions(input.customerId, input.limit);
       }),
   }),
 

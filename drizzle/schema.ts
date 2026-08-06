@@ -2635,3 +2635,28 @@ export const orderSeq = mysqlTable("order_seq", {
 export type OrderSeq = typeof orderSeq.$inferSelect;
 export type InsertOrderSeq = typeof orderSeq.$inferInsert;
 
+
+// ============================================================================
+// V2.2: Customer Credit Transactions (Credit 变动记录)
+// ============================================================================
+
+export const creditTransactions = mysqlTable("credit_transactions", {
+  id: int("id").autoincrement().primaryKey(),
+  customerId: int("customerId").notNull(),
+  // Type: add (新增) / deduct (扣除) / adjust (调整) / order_use (订单使用) / order_refund (订单退款)
+  type: mysqlEnum("type", ["add", "deduct", "adjust", "order_use", "order_refund"]).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  // Balance after this transaction
+  balanceAfter: decimal("balanceAfter", { precision: 10, scale: 2 }).notNull(),
+  // Reason / description
+  reason: varchar("reason", { length: 500 }),
+  // Related order ID (if applicable)
+  orderId: int("orderId"),
+  // Admin who made the change
+  operatorName: varchar("operatorName", { length: 255 }),
+  operatorId: int("operatorId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CreditTransaction = typeof creditTransactions.$inferSelect;
+export type InsertCreditTransaction = typeof creditTransactions.$inferInsert;

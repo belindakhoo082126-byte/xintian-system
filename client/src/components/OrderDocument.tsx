@@ -291,7 +291,7 @@ export function OrderDocument({
           </div>
           {creditUsed > 0 && (
             <div style={{ ...amtRow, color: C.blue }}>
-              <span>{translate("Credit", "Credit Used")}</span>
+              <span>{translate("自动扣除Credit", "Auto Credit Used")}</span>
               <span>-RM {creditUsed.toFixed(2)}</span>
             </div>
           )}
