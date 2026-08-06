@@ -2068,3 +2068,8 @@
 - [x] 7. 打印功能错误 — 添加 no-print class，CSS @media print 隐藏 sidebar/nav/header
 - [x] 8. 移除复制结单链接按钮 — 已删除
 - [x] TypeScript 零错误，268/269 测试通过
+## V2.0.72: 重新设计导出图片和打印功能
+- [x] 1. 创建专用 OrderDocument 组件 — 单页文档布局，不使用系统卡片样式
+- [x] 2. 导出图片使用 OrderDocument 渲染，包含 Logo/品牌名/订单号/客户资料/收件人/商品/金额/付款/备注
+- [x] 3. 打印功能使用 OrderDocument — CSS @media print 只显示 OrderDocument，隐藏所有系统 UI
+- [x] 4. TypeScript 零错误，269/269 测试通过
