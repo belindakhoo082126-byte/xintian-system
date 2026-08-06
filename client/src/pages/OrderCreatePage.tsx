@@ -19,6 +19,8 @@ import {
   User, Package, DollarSign, Truck, FileText, Sparkles, CreditCard, Maximize2,
   Sprout,
 } from "lucide-react";
+import { PaymentRecordsEditor } from "@/components/PaymentRecordsEditor";
+import type { PaymentRecord } from "@/components/PaymentRecordsEditor";
 
 const ORDER_NATURE = {
   retail: { label: "零售", enLabel: "Retail" },
@@ -165,6 +167,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
 
   // Preview mode
   const [previewMode, setPreviewMode] = useState(false);
+  const [localPayments, setLocalPayments] = useState<PaymentRecord[]>([]);
   // Product image preview (lightbox) with multi-image support
   const [previewProduct, setPreviewProduct] = useState<ManualOrderItem | null>(null);
   const [previewImageIndex, setPreviewImageIndex] = useState(0);
@@ -235,9 +238,29 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   });
 
   const createOrderMutation = trpc.orders.create.useMutation({
-    onSuccess: (r: any) => {
+    onSuccess: async (r: any) => {
       utils.orders.invalidate();
-      toast.success(translate("订单创建成功: {orderNumber}", "Order created successfully: {orderNumber}", { orderNumber: r.orderNumber }));
+      // Batch-submit any locally collected payment records
+      if (localPayments.length > 0 && r.orderId) {
+        try {
+          for (const p of localPayments) {
+            await trpc.orders.addPayment.useMutation().mutateAsync({
+              orderId: r.orderId,
+              amount: p.amount,
+              paymentMethod: p.paymentMethod,
+              paymentDate: p.paymentDate ? new Date(p.paymentDate).toISOString() : undefined,
+              receiptFiles: p.receiptFiles && p.receiptFiles.length > 0 ? JSON.stringify(p.receiptFiles) : undefined,
+              notes: p.notes || undefined,
+              purpose: p.purpose || undefined,
+            });
+          }
+          toast.success(translate("订单创建成功，已保存 {count} 笔付款记录", "Order created, {count} payment record(s) saved", { count: String(localPayments.length) }));
+        } catch (err: any) {
+          toast.success(translate("订单创建成功: {orderNumber}（付款记录保存失败，请到订单页手动添加）", "Order created: {orderNumber} (payment records failed to save, please add manually)", { orderNumber: r.orderNumber }));
+        }
+      } else {
+        toast.success(translate("订单创建成功: {orderNumber}", "Order created successfully: {orderNumber}", { orderNumber: r.orderNumber }));
+      }
       setLocation("/orders/" + (orderCategory === "import" ? "import" : "local"));
     },
     onError: (e) => toast.error(translate("订单创建失败: {message}", "Order creation failed: {message}", { message: e.message })),
@@ -1251,6 +1274,25 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               placeholder={translate("普通备注，例如：星期五才方便收货 / 送礼不要放价格 / 两张订单一起发", "General remark, e.g. Friday delivery preferred / No price tag for gift")}
             />
           )}
+        </CardContent>
+      </Card>
+
+      {/* Payment Records (Create Mode) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <DollarSign className="h-4 w-4" />
+            {translate("付款记录", "Payment Records")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PaymentRecordsEditor
+            mode="create"
+            totalAmount={totalAmount}
+            paidAmount={localPayments.reduce((sum, p) => sum + parseFloat(p.amount || "0"), 0)}
+            payments={localPayments}
+            onLocalPaymentsChange={setLocalPayments}
+          />
         </CardContent>
       </Card>
 

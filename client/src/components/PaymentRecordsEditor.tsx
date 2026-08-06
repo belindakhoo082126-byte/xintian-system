@@ -25,11 +25,15 @@ export interface PaymentRecord {
 }
 
 interface Props {
-  orderId: number;
+  orderId?: number;
   totalAmount: number;
   paidAmount: number;
   payments: PaymentRecord[];
   onRefresh?: () => void;
+  /** "create" mode collects payments locally without an orderId; "edit" mode (default) fires server mutations */
+  mode?: "edit" | "create";
+  /** Required in create mode: callback to sync local payment state up to parent */
+  onLocalPaymentsChange?: (payments: PaymentRecord[]) => void;
 }
 
 const PAYMENT_METHODS = [
@@ -41,12 +45,13 @@ const PAYMENT_METHODS = [
   { value: "Other", label: "其他", zhLabel: "其他" },
 ];
 
-export function PaymentRecordsEditor({ orderId, totalAmount, paidAmount, payments, onRefresh }: Props) {
+export function PaymentRecordsEditor({ orderId, totalAmount, paidAmount, payments, onRefresh, mode = "edit", onLocalPaymentsChange }: Props) {
   const { translate, lang } = useI18n();
   const utils = trpc.useUtils();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isCreateMode = mode === "create";
 
   // New payment form state
   const [newPayment, setNewPayment] = useState<PaymentRecord>({
@@ -143,6 +148,30 @@ export function PaymentRecordsEditor({ orderId, totalAmount, paidAmount, payment
       toast.error(translate("请输入有效金额", "Please enter a valid amount"));
       return;
     }
+    if (isCreateMode) {
+      // In create mode, collect locally without an orderId
+      const localPayment: PaymentRecord = {
+        ...newPayment,
+        amount: amt.toFixed(2),
+        id: Date.now() + Math.floor(Math.random() * 1000),
+      };
+      onLocalPaymentsChange?.([...payments, localPayment]);
+      setDialogOpen(false);
+      setNewPayment({
+        amount: "",
+        paymentMethod: "Bank Transfer",
+        paymentDate: new Date().toISOString().slice(0, 10),
+        receiptFiles: [],
+        notes: "",
+        purpose: "",
+      });
+      toast.success(translate("付款记录已新增", "Payment record added"));
+      return;
+    }
+    if (!orderId) {
+      toast.error(translate("订单ID缺失", "Order ID is missing"));
+      return;
+    }
     addPaymentMutation.mutate({
       orderId,
       amount: amt.toFixed(2),
@@ -158,6 +187,10 @@ export function PaymentRecordsEditor({ orderId, totalAmount, paidAmount, payment
 
   function handleDeletePayment(paymentId: number) {
     if (!confirm(translate("确认删除此付款记录？", "Confirm delete this payment record?"))) return;
+    if (isCreateMode) {
+      onLocalPaymentsChange?.(payments.filter(p => p.id !== paymentId));
+      return;
+    }
     deletePaymentMutation.mutate({ paymentId });
   }
 
@@ -249,6 +282,11 @@ export function PaymentRecordsEditor({ orderId, totalAmount, paidAmount, payment
         <Plus className="h-4 w-4 mr-1" />
         {translate("新增付款记录", "Add Payment")}
       </Button>
+      {isCreateMode && payments.length > 0 && (
+        <div className="text-xs text-muted-foreground text-center">
+          {translate("付款记录将在订单创建后自动保存", "Payment records will be saved automatically after order creation")}
+        </div>
+      )}
 
       {/* Add Payment Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -384,8 +422,8 @@ export function PaymentRecordsEditor({ orderId, totalAmount, paidAmount, payment
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               {translate("取消", "Cancel")}
             </Button>
-            <Button onClick={handleAddPayment} disabled={addPaymentMutation.isPending || uploading}>
-              {addPaymentMutation.isPending ? translate("保存中...", "Saving...") : translate("确认新增", "Confirm Add")}
+            <Button onClick={handleAddPayment} disabled={(!isCreateMode && addPaymentMutation.isPending) || uploading}>
+              {(!isCreateMode && addPaymentMutation.isPending) ? translate("保存中...", "Saving...") : translate("确认新增", "Confirm Add")}
             </Button>
           </DialogFooter>
         </DialogContent>

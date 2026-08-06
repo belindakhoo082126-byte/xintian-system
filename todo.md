@@ -2110,6 +2110,6 @@
 - [x] 后端 tRPC 路由：addPayment 支持 receiptFiles/purpose/paymentDate，新增 deletePayment 路由
 - [x] 前端组件：可复用 PaymentRecordsEditor（新增付款弹窗+多文件上传+自动余额计算）
 - [x] OrderEditPage：接入 PaymentRecordsEditor
-- [ ] OrderCreatePage：接入 PaymentRecordsEditor（本地暂存，创建后批量提交）
+- [x] OrderCreatePage：接入 PaymentRecordsEditor（本地暂存，创建后批量提交）
 - [x] OrderBrowsePage：完善付款记录展示（单据预览+余额汇总+状态建议）
 - [x] 编译与测试验证
