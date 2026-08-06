@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink, Leaf, AlertCircle, RefreshCw, MapPinCheck, Upload, Copy, QrCode, University, Banknote, ShoppingBag } from "lucide-react";
+import { Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink, Leaf, AlertCircle, RefreshCw, MapPinCheck, Upload, Copy, QrCode, University, Banknote, ShoppingBag, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
@@ -68,7 +68,8 @@ export default function CustomerOrderPage(props: any) {
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [customerRemark, setCustomerRemark] = useState("");
   const [repotService, setRepotService] = useState(false);
-  const [repotRemark, setRepotRemark] = useState("");
+  // V2.0.68: Structured repotting entries (same as admin)
+  const [repottingEntries, setRepottingEntries] = useState<Array<{ plantName: string; potName: string; quantity: number }>>([]);
   const utils = trpc.useUtils();
   const { data: paymentMethods } = trpc.paymentMethods.listEnabled.useQuery();
 
@@ -103,6 +104,32 @@ export default function CustomerOrderPage(props: any) {
   const hasAddress = !!(o?.shippingAddress);
   const canEditAddress = o?.customerStatus === "Pending Payment";
   const canPay = canEditAddress && hasAddress && parseFloat(o?.amountDue || "0") > 0;
+
+  // V2.0.68: Filter payment methods based on shipping method
+  // Cash only available for self pickup; delivery methods don't show cash
+  const currentShippingMethod = o?.shippingMethod || shippingMethod;
+  const isSelfPickup = currentShippingMethod === "self_pickup";
+  const filteredPaymentMethods = useMemo(() => {
+    if (!paymentMethods) return [];
+    return paymentMethods.filter((method: any) => {
+      if (!method.isEnabled) return false;
+      // Hide cash for non-self-pickup shipping methods
+      if (method.type === "cash" && !isSelfPickup) return false;
+      return true;
+    });
+  }, [paymentMethods, isSelfPickup]);
+
+  // V2.0.68: Get plant items from order (isPot=false) for repotting
+  const orderPlants = useMemo(() => {
+    if (!o?.items) return [];
+    return o.items.filter((item: any) => !item.isPot && item.productType === "physical");
+  }, [o?.items]);
+
+  // V2.0.68: Get pot items from order (isPot=true) for repotting
+  const orderPots = useMemo(() => {
+    if (!o?.items) return [];
+    return o.items.filter((item: any) => item.isPot);
+  }, [o?.items]);
 
   function copyToClipboard(text: string, label: string) {
     navigator.clipboard.writeText(text);
@@ -166,6 +193,45 @@ export default function CustomerOrderPage(props: any) {
       shippingMethod: o.shippingMethod || "west_malaysia",
     }));
     window.location.assign("/mall");
+  }
+
+  // V2.0.68: Handle saving remark with repotting data
+  function handleSaveRemark() {
+    const remarkText = customerRemark.trim();
+    if (!remarkText && !repotService) {
+      toast.error("请填写备注内容或勾选换盆服务");
+      return;
+    }
+
+    if (repotService && repottingEntries.length > 0) {
+      // Save with repotting data (same format as admin)
+      const repottingData = JSON.stringify(repottingEntries.map(e => ({
+        plantName: e.plantName,
+        potName: e.potName,
+        quantity: e.quantity,
+      })));
+      const content = [
+        remarkText,
+        `【换盆服务】共 ${repottingEntries.length} 组换盆`,
+      ].filter(Boolean).join("\n");
+      submitRemarkMutation.mutate({
+        orderNumber,
+        token,
+        remark: content,
+        remarkCategory: "repotting",
+        repottingData,
+      });
+    } else {
+      const content = [
+        remarkText,
+        repotService ? `【换盆服务】需要换盆服务` : "",
+      ].filter(Boolean).join("\n");
+      submitRemarkMutation.mutate({
+        orderNumber,
+        token,
+        remark: content,
+      });
+    }
   }
 
   return (
@@ -295,7 +361,7 @@ export default function CustomerOrderPage(props: any) {
               </Card>
             )}
 
-            {/* Status */}
+            {/* 1. 订单资料 - Status */}
             <Card>
               <CardContent className="py-4">
                 <div className="flex items-center justify-between">
@@ -311,7 +377,7 @@ export default function CustomerOrderPage(props: any) {
               </CardContent>
             </Card>
 
-            {/* Items */}
+            {/* 2. 商品列表 */}
             <Card>
               <CardHeader><CardTitle className="text-base">商品列表</CardTitle></CardHeader>
               <CardContent className="space-y-3">
@@ -335,7 +401,7 @@ export default function CustomerOrderPage(props: any) {
               </CardContent>
             </Card>
 
-            {/* Amount Summary - V2.0.3: Complete breakdown with shipping */}
+            {/* 3. 金额明细 */}
             <Card>
               <CardHeader><CardTitle className="text-base">金额明细</CardTitle></CardHeader>
               <CardContent className="space-y-1 text-sm">
@@ -401,22 +467,32 @@ export default function CustomerOrderPage(props: any) {
               </CardContent>
             </Card>
 
-            {/* V2.0.52: 换盆服务说明 */}
-            <Card className="border-purple-200 bg-purple-50/30 dark:border-purple-900/40 dark:bg-purple-950/10">
-              <CardContent className="pt-4">
-                <div className="flex items-start gap-3">
-                  <Leaf className="h-5 w-5 text-purple-600 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-purple-900">🌿 换盆服务</p>
-                    <p className="text-xs text-purple-700 mt-1">
-                      如有需要换盆服务，可以直接把想要更换的植物及花盆加入购物车，结账时在备注区选择换盆服务即可。
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            {/* 4. 付款记录 - Show existing payment records */}
+            {o.payments && o.payments.length > 0 && (
+              <Card>
+                <CardHeader><CardTitle className="text-base">付款记录</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                  {o.payments.map((p: any, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between text-sm border-b pb-2 last:border-0">
+                      <div>
+                        <span className="font-medium">{p.paymentMethodName || p.paymentMethod || "-"}</span>
+                        <span className="text-muted-foreground ml-2">{new Date(p.paymentDate || p.createdAt).toLocaleString("zh-CN")}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">RM {parseFloat(p.amount).toFixed(2)}</span>
+                        {p.receiptUrl && (
+                          <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
+                            查看单据 <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
 
-            {/* V2.0.52: 客户备注 */}
+            {/* 5. 订单备注（含换盆功能） */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">订单备注</CardTitle>
@@ -436,49 +512,161 @@ export default function CustomerOrderPage(props: any) {
                     type="checkbox"
                     id="repot-service"
                     checked={repotService}
-                    onChange={e => setRepotService(e.target.checked)}
+                    onChange={e => {
+                      setRepotService(e.target.checked);
+                      if (!e.target.checked) {
+                        setRepottingEntries([]);
+                      }
+                    }}
                     className="h-4 w-4 rounded border-gray-300"
                   />
                   <Label htmlFor="repot-service" className="text-sm cursor-pointer">需要换盆服务</Label>
                 </div>
                 {repotService && (
-                  <div>
-                    <Label className="text-sm">换盆说明</Label>
-                    <Textarea
-                      value={repotRemark}
-                      onChange={e => setRepotRemark(e.target.value)}
-                      placeholder="请说明需要换盆的植物及花盆"
-                      rows={2}
-                    />
+                  <div className="space-y-3 border rounded-lg p-3 bg-purple-50/30">
+                    <Label className="text-xs">换盆记录（可添加多组，系统会自动读取本订单的植物和花盆）</Label>
+                    {repottingEntries.map((entry, idx) => (
+                      <div key={idx} className="flex items-end gap-2 p-3 border rounded-lg bg-background">
+                        <div className="flex-1">
+                          <Label className="text-xs mb-1 block">植物名称</Label>
+                          <Select
+                            value={entry.plantName}
+                            onValueChange={(v) => {
+                              setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, plantName: v } : r));
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="选择植物" /></SelectTrigger>
+                            <SelectContent>
+                              {orderPlants.length === 0 ? (
+                                <SelectItem value="__none" disabled>本订单无植物类商品</SelectItem>
+                              ) : (
+                                orderPlants.map((item: any, i: number) => (
+                                  <SelectItem key={`${item.productId}-${i}`} value={item.productName}>
+                                    {item.productName}{item.variationName ? ` (${item.variationName})` : ""} ×{item.quantity}
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex-1">
+                          <Label className="text-xs mb-1 block">花盆</Label>
+                          <Select
+                            value={entry.potName}
+                            onValueChange={(v) => {
+                              setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, potName: v } : r));
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="选择花盆" /></SelectTrigger>
+                            <SelectContent>
+                              {orderPots.length === 0 ? (
+                                <SelectItem value="__none" disabled>本订单无花盆类商品</SelectItem>
+                              ) : (
+                                orderPots.map((item: any, i: number) => (
+                                  <SelectItem key={`${item.productId}-${i}`} value={item.productName}>
+                                    {item.productName}{item.variationName ? ` (${item.variationName})` : ""} ×{item.quantity}
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="w-16">
+                          <Label className="text-xs mb-1 block">数量</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={entry.quantity}
+                            onChange={(e) => setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, quantity: Number(e.target.value) } : r))}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setRepottingEntries(prev => prev.filter((_, i) => i !== idx))}
+                        >
+                          <Trash2 className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRepottingEntries(prev => [...prev, { plantName: "", potName: "", quantity: 1 }])}
+                      disabled={orderPlants.length === 0 && orderPots.length === 0}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      添加换盆记录
+                    </Button>
+                    {orderPlants.length === 0 && orderPots.length === 0 && (
+                      <div className="text-xs text-amber-600">
+                        本订单中没有植物或花盆商品，如需换盆请先到商城加购花盆。
+                      </div>
+                    )}
+                    {repottingEntries.length > 0 && (
+                      <div className="text-xs text-muted-foreground">
+                        已添加 {repottingEntries.length} 条换盆记录
+                      </div>
+                    )}
                   </div>
                 )}
                 <Button
                   size="sm"
                   variant="outline"
                   disabled={submitRemarkMutation.isPending || (!customerRemark.trim() && !repotService)}
-                  onClick={() => {
-                    const remarkText = [
-                      customerRemark.trim(),
-                      repotService ? `【换盆服务】${repotRemark.trim() || "需要换盆服务"}` : "",
-                    ].filter(Boolean).join("\n");
-                    submitRemarkMutation.mutate({
-                      orderNumber,
-                      token,
-                      remark: remarkText,
-                    });
-                  }}
+                  onClick={handleSaveRemark}
                 >
                   {submitRemarkMutation.isPending ? "保存中..." : "保存备注"}
                 </Button>
               </CardContent>
             </Card>
 
-            {/* 客户结单操作：直接汇款或继续到商城加单 */}
+            {/* 6. 收件人资料 */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">收件信息</CardTitle>
+                  {hasAddress && canEditAddress && (
+                    <Button variant="ghost" size="sm" onClick={() => {
+                      setAddressInput(o.shippingAddress || "");
+                      setPhoneInput(o.customerPhone || "");
+                      setShippingMethod(o.shippingMethod || "west_malaysia");
+                      setShowAddressForm(true);
+                    }}>
+                      修改
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-1 text-sm">
+                <div className="flex items-center gap-2"><User className="h-4 w-4 text-muted-foreground" />{o.customerName}</div>
+                {o.customerPhone && (
+                  <div className="flex items-center gap-2"><Phone className="h-4 w-4 text-muted-foreground" />{o.customerPhone}</div>
+                )}
+                {o.shippingAddress && (
+                  <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />{o.shippingAddress}</div>
+                )}
+                {o.shippingMethod && (
+                  <div className="flex items-center gap-2"><Truck className="h-4 w-4 text-muted-foreground" />
+                    {SHIPPING_METHODS.find(m => m.value === o.shippingMethod)?.label || o.shippingMethod}
+                  </div>
+                )}
+                {!hasAddress && !showAddressForm && (
+                  <div className="flex items-center gap-2 text-amber-600">
+                    <MapPinCheck className="h-4 w-4" /> 尚未填写收货地址
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* 7. 完成结单（最下方） */}
             {canEditAddress && (
               <Card className="border-primary/25 bg-primary/[0.025]">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">完成结单</CardTitle>
-                  <p className="text-sm text-muted-foreground">您可以直接汇款并上传凭证，或先到商城继续加购商品。加单完毕后可点击购物车进行结账。</p>
+                  <p className="text-sm text-muted-foreground">确认商品、金额、备注、收件资料无误后，请直接汇款并上传凭证完成结单。</p>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {!hasAddress && (
@@ -505,13 +693,16 @@ export default function CustomerOrderPage(props: any) {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-medium">选择付款方式</p>
-                          <p className="text-xs text-muted-foreground">应付款：RM {o.amountDue || "0.00"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            应付款：RM {o.amountDue || "0.00"}
+                            {!isSelfPickup && <span className="ml-2 text-amber-600">（配送订单不支持现金付款）</span>}
+                          </p>
                         </div>
                         <Button variant="ghost" size="sm" onClick={() => setShowPaymentPanel(false)}>取消</Button>
                       </div>
 
                       <div className="grid gap-2 sm:grid-cols-2">
-                        {paymentMethods?.filter((method: any) => method.isEnabled).map((method: any) => {
+                        {filteredPaymentMethods.map((method: any) => {
                           const Icon = PAYMENT_TYPE_ICONS[method.type] || Banknote;
                           const selected = selectedPaymentMethod?.id === method.id;
                           return (
@@ -524,7 +715,7 @@ export default function CustomerOrderPage(props: any) {
                               <span className={`rounded-md p-2 ${selected ? "bg-primary text-primary-foreground" : "bg-muted"}`}><Icon className="h-4 w-4" /></span>
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-sm font-medium">{method.name}</span>
-                                <span className="block text-xs text-muted-foreground">{method.type === "qr_code" ? "扫码付款" : method.type === "bank_transfer" ? "银行转账" : "其他付款方式"}</span>
+                                <span className="block text-xs text-muted-foreground">{method.type === "qr_code" ? "扫码付款" : method.type === "bank_transfer" ? "银行转账" : method.type === "cash" ? "现金付款" : "其他付款方式"}</span>
                               </span>
                               {selected && <CheckCircle2 className="h-4 w-4 text-primary" />}
                             </button>
@@ -567,44 +758,6 @@ export default function CustomerOrderPage(props: any) {
                 </CardContent>
               </Card>
             )}
-
-            {/* Shipping Address - V2.0.3: Show address with edit option */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">收件信息</CardTitle>
-                  {hasAddress && canEditAddress && (
-                    <Button variant="ghost" size="sm" onClick={() => {
-                      setAddressInput(o.shippingAddress || "");
-                      setPhoneInput(o.customerPhone || "");
-                      setShippingMethod(o.shippingMethod || "west_malaysia");
-                      setShowAddressForm(true);
-                    }}>
-                      修改
-                    </Button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
-                <div className="flex items-center gap-2"><User className="h-4 w-4 text-muted-foreground" />{o.customerName}</div>
-                {o.customerPhone && (
-                  <div className="flex items-center gap-2"><Phone className="h-4 w-4 text-muted-foreground" />{o.customerPhone}</div>
-                )}
-                {o.shippingAddress && (
-                  <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />{o.shippingAddress}</div>
-                )}
-                {o.shippingMethod && (
-                  <div className="flex items-center gap-2"><Truck className="h-4 w-4 text-muted-foreground" />
-                    {SHIPPING_METHODS.find(m => m.value === o.shippingMethod)?.label || o.shippingMethod}
-                  </div>
-                )}
-                {!hasAddress && !showAddressForm && (
-                  <div className="flex items-center gap-2 text-amber-600">
-                    <MapPinCheck className="h-4 w-4" /> 尚未填写收货地址
-                  </div>
-                )}
-              </CardContent>
-            </Card>
 
             {/* Packages / Tracking - Real data from database */}
             {o.packages && o.packages.length > 0 && (

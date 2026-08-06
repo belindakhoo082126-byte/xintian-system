@@ -5873,6 +5873,8 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         orderNumber: z.string(),
         token: z.string(),
         remark: z.string().min(1).max(2000),
+        remarkCategory: z.enum(["customer_other", "repotting"]).optional(),
+        repottingData: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         const order = await db.getOrderBySecureToken(input.orderNumber, input.token);
@@ -5881,8 +5883,9 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
           orderId: order.id,
           content: input.remark,
           type: "customer",
-          remarkCategory: "customer_other",
+          remarkCategory: input.remarkCategory || "customer_other",
           createdBy: "customer",
+          repottingData: input.repottingData,
         });
         return { success: true };
       }),

@@ -10665,8 +10665,9 @@ export async function getOrderBySecureToken(orderNumber: string, token: string) 
   const enrichedItems = await Promise.all(items.map(async (i) => {
     const product = await db.select({
       coverImageUrl: products.coverImageUrl,
+      isPot: products.isPot,
     }).from(products).where(eq(products.id, i.productId)).limit(1);
-    return { ...i, coverImageUrl: product[0]?.coverImageUrl || null };
+    return { ...i, coverImageUrl: product[0]?.coverImageUrl || null, isPot: product[0]?.isPot || false };
   }));
 
   // Get packages

@@ -2045,3 +2045,11 @@
 - [x] 4. OrderEditPage 付款记录通过 addPayment API 直接提交到后端
 - [x] 5. QR Pay 改名为 QR Pay (Tng/Duit Now)——全站统一（OrderCreatePage、OrderEditPage、OrderBrowsePage、Orders.tsx）
 - [x] 6. TypeScript 检查零错误
+
+## V2.0.68: 客户订单浏览页面调整
+- [x] 1. 付款方式根据配送方式自动切换（自取才显示Cash，配送不显示Cash）
+- [x] 2. 换盆功能与后台一致（自动读取订单植物、选择花盆、可新增多组）
+- [x] 3. 页面顺序调整：订单资料→商品列表→金额详情→付款记录→订单备注（换盆）→收件人资料→完成结单（最下方）
+- [x] 4. 后端 publicOrder.updateRemark 支持 repottingData 字段
+- [x] 5. getOrderBySecureToken 返回 isPot 字段用于区分植物和花盆
+- [x] 6. TypeScript 检查零错误
