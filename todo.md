@@ -2090,3 +2090,7 @@
 - [x] 1. 上传 Logo 图片到 S3 — /manus-storage/FB_IMG_1779824864256(2)_dbe588b7.png
 - [x] 2. OrderDocument 组件 Logo 从纯 CSS 圆形"心"字改为 img 标签加载真实 Logo
 - [x] 3. TypeScript 零错误，269/269 测试通过
+## V2.0.76: 修复 Logo 图片导致导出失败
+- [x] 1. 导出前先 fetch Logo 图片转为 base64 dataURL 传给 OrderDocument
+- [x] 2. 打印也使用同样的 base64 dataURL 方式
+- [x] 3. TypeScript 零错误，269/269 测试通过

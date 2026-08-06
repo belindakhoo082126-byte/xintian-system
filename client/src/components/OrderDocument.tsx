@@ -56,10 +56,12 @@ export function OrderDocument({
   order,
   remarks,
   variant = "customer",
+  logoDataUrl,
 }: {
   order: any;
   remarks?: any[];
   variant?: "customer" | "admin";
+  logoDataUrl?: string;
 }) {
   const { translate, lang } = useI18n();
   const o = order;
@@ -160,7 +162,7 @@ export function OrderDocument({
       >
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <img
-            src="/manus-storage/FB_IMG_1779824864256(2)_dbe588b7.png"
+            src={logoDataUrl || "/manus-storage/FB_IMG_1779824864256(2)_dbe588b7.png"}
             style={{
               width: "56px",
               height: "56px",

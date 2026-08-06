@@ -66,6 +66,21 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   async function handleExportImage() {
     setExporting(true);
     try {
+      // Pre-convert logo to base64 dataURL so html2canvas doesn't hit CORS/taint issues
+      let logoDataUrl: string | undefined;
+      try {
+        const logoResp = await fetch("/manus-storage/FB_IMG_1779824864256(2)_dbe588b7.png");
+        const logoBlob = await logoResp.blob();
+        logoDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(logoBlob);
+        });
+      } catch (e) {
+        console.warn("Logo fetch failed, will try direct URL", e);
+      }
+
       // Create a standalone container outside the React tree
       const container = document.createElement("div");
       container.style.position = "fixed";
@@ -79,7 +94,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
       // Render OrderDocument into the container using React
       const root = createRoot(container);
       await new Promise<void>((resolve) => {
-        root.render(<OrderDocument order={o} remarks={remarks} variant="customer" />);
+        root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} />);
         setTimeout(resolve, 500);
       });
 
@@ -128,7 +143,22 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   }
 
   // V2.0.73: Print order — open new window with only OrderDocument content
-  function handlePrint() {
+  async function handlePrint() {
+    // Pre-convert logo to base64 dataURL
+    let logoDataUrl: string | undefined;
+    try {
+      const logoResp = await fetch("/manus-storage/FB_IMG_1779824864256(2)_dbe588b7.png");
+      const logoBlob = await logoResp.blob();
+      logoDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(logoBlob);
+      });
+    } catch (e) {
+      console.warn("Logo fetch failed for print", e);
+    }
+
     const container = document.createElement("div");
     container.style.position = "fixed";
     container.style.left = "-9999px";
@@ -136,7 +166,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
     document.body.appendChild(container);
 
     const root = createRoot(container);
-    root.render(<OrderDocument order={o} remarks={remarks} variant="customer" />);
+    root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} />);
 
     setTimeout(() => {
       const targetEl = container.firstChild as HTMLElement;
