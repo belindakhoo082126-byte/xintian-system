@@ -181,6 +181,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
     } catch (e: any) {
       console.error("Export image error:", e);
       toast.error(translate("导出失败: {message}", "Export failed: {message}", { message: e.message }));
+    } finally {
       setExporting(false);
     }
   }
