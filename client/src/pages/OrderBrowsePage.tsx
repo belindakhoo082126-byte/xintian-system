@@ -743,7 +743,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
             </DialogTitle>
           </DialogHeader>
           <div className="px-4 py-2">
-            <OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={previewLogoUrl} />
+            <OrderDocument order={o} remarks={remarks} variant="admin" logoDataUrl={previewLogoUrl} />
           </div>
         </DialogContent>
       </Dialog>
