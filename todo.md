@@ -2086,3 +2086,7 @@
 - [x] 2. 修复导出图片下载 — 使用 Blob URL 替代 dataURL，更可靠的跨平台下载
 - [x] 3. 移除商品图片列 — 打印和导出只显示文字（商品名、规格、数量、单价、小计）
 - [x] 4. TypeScript 零错误，269/269 测试通过
+## V2.0.75: 订单模板使用用户提供的 Logo 图片
+- [x] 1. 上传 Logo 图片到 S3 — /manus-storage/FB_IMG_1779824864256(2)_dbe588b7.png
+- [x] 2. OrderDocument 组件 Logo 从纯 CSS 圆形"心"字改为 img 标签加载真实 Logo
+- [x] 3. TypeScript 零错误，269/269 测试通过

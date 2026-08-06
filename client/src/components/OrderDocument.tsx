@@ -159,19 +159,17 @@ export function OrderDocument({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{
-            width: "56px",
-            height: "56px",
-            borderRadius: "50%",
-            background: C.green,
-            color: "#ffffff",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "24px",
-            fontWeight: 700,
-            flexShrink: 0,
-          }}>心</div>
+          <img
+            src="/manus-storage/FB_IMG_1779824864256(2)_dbe588b7.png"
+            style={{
+              width: "56px",
+              height: "56px",
+              borderRadius: "50%",
+              objectFit: "cover",
+              flexShrink: 0,
+            }}
+            alt="心田 Logo"
+          />
           <div>
             <div style={{ fontSize: "22px", fontWeight: 700, color: C.green }}>心田 Xin Tian</div>
             <div style={{ fontSize: "11px", color: C.textMuted }}>融合植物 · 草本DIY · 情绪疗愈与手作共创</div>
