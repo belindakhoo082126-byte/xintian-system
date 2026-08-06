@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
@@ -11,13 +11,14 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Edit, FileText, User, Package, DollarSign, Truck,
   CreditCard, History, MessageSquare, PackageCheck, Calendar,
-  Sprout, TreePine, AlertCircle, Link2, Download, Printer,
+  Sprout, TreePine, AlertCircle, Link2, Download, Printer, Eye,
   Copy, MessageCircle, Bell, Send,
 } from "lucide-react";
 import html2canvas from "html2canvas";
 import { createRoot } from "react-dom/client";
 import { OrderDocument } from "@/components/OrderDocument";
 import { prepareOrderDocumentExportHost } from "@/lib/orderDocumentExport";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
   pending: { zh: "未汇款订单", en: "Unpaid Order", variant: "outline" },
@@ -59,6 +60,30 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const { translate, lang } = useI18n();
   const [_, setLocation] = useLocation();
   const [exporting, setExporting] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewLogoUrl, setPreviewLogoUrl] = useState<string | undefined>(undefined);
+
+  // Preload logo as dataURL for Preview — same asset as export/print
+  useEffect(() => {
+    if (!previewOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch("/manus-storage/FB_IMG_1779824864256(2)_dbe588b7.png");
+        const blob = await resp.blob();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        if (!cancelled) setPreviewLogoUrl(dataUrl);
+      } catch (e) {
+        console.warn("Preview logo fetch failed", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [previewOpen]);
 
   // V2.0.45: Logo URL for watermark
   const LOGO_URL = "/manus-storage/xintian-logo-transparent_58bbaf5e.png";
@@ -303,6 +328,9 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
         </div>
         <div className="flex items-center gap-2 no-print">
           <Badge variant={statusCfg.variant}>{translate(statusCfg.zh, statusCfg.en)}</Badge>
+          <Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
+            <Eye className="h-3 w-3 mr-1" />{translate("Preview 单据", "Preview Document")}
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExportImage} disabled={exporting}>
             <Download className="h-3 w-3 mr-1" />{exporting ? translate("导出中...", "Exporting...") : translate("导出图片", "Export Image")}
           </Button>
@@ -671,6 +699,21 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           <Edit className="h-4 w-4 mr-1" />{translate("编辑订单", "Edit Order")}
         </Button>
       </div>
+
+      {/* Preview Document Dialog — same OrderDocument template as export/print */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0">
+          <DialogHeader className="px-6 pt-4 pb-2 sticky top-0 bg-white z-10 border-b">
+            <DialogTitle className="text-base flex items-center gap-2">
+              <Eye className="h-4 w-4" />
+              {translate("Preview 单据", "Preview Document")} — {o.orderNumber}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="px-4 py-2">
+            <OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={previewLogoUrl} />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
