@@ -616,15 +616,6 @@ export const orders = mysqlTable("orders", {
   notificationStatus: mysqlEnum("notificationStatus", ["pending", "sent", "failed"]).default("pending"),
   notificationError: text("notificationError"),
   notificationSentAt: timestamp("notificationSentAt"),
-  // V2.0.71: Recipient info (separate from customer profile)
-  recipientName: varchar("recipientName", { length: 255 }),
-  recipientPhone: varchar("recipientPhone", { length: 50 }),
-  addressLine1: varchar("addressLine1", { length: 500 }),
-  addressLine2: varchar("addressLine2", { length: 500 }),
-  postcode: varchar("postcode", { length: 20 }),
-  recipientCity: varchar("recipientCity", { length: 100 }),
-  recipientState: varchar("recipientState", { length: 100 }),
-  recipientCountry: varchar("recipientCountry", { length: 100 }),
 });
 export type Order = typeof orders.$inferSelect;
 export type InsertOrder = typeof orders.$inferInsert;
@@ -1293,8 +1284,7 @@ export const orderRemarks = mysqlTable("order_remarks", {
   // V3.0: Remark category (备注类别: repotting/desired_delivery_date/other)
   remarkCategory: mysqlEnum("remarkCategory", [
     "repotting",              // 换盆
-    "desired_delivery_date",  // 希望收货日期 / 发货日期
-    "select_tree",            // 选树身
+    "desired_delivery_date",  // 希望收货日期
     "other",                  // 其他
   ]),
   content: text("content").notNull(),
@@ -1910,8 +1900,6 @@ export const orderPayments = mysqlTable("order_payments", {
   paymentMethod: varchar("paymentMethod", { length: 100 }),
   // Receipt proof URL (uploaded image/file)
   receiptUrl: varchar("receiptUrl", { length: 500 }),
-  // Multiple receipt files (JSON array of URLs) — supports JPG, PNG, PDF
-  receiptFiles: text("receiptFiles"),
   // Purpose / notes about this payment
   purpose: varchar("purpose", { length: 255 }),
   // Who recorded this payment (operator)
@@ -2635,28 +2623,3 @@ export const orderSeq = mysqlTable("order_seq", {
 export type OrderSeq = typeof orderSeq.$inferSelect;
 export type InsertOrderSeq = typeof orderSeq.$inferInsert;
 
-
-// ============================================================================
-// V2.2: Customer Credit Transactions (Credit 变动记录)
-// ============================================================================
-
-export const creditTransactions = mysqlTable("credit_transactions", {
-  id: int("id").autoincrement().primaryKey(),
-  customerId: int("customerId").notNull(),
-  // Type: add (新增) / deduct (扣除) / adjust (调整) / order_use (订单使用) / order_refund (订单退款)
-  type: mysqlEnum("type", ["add", "deduct", "adjust", "order_use", "order_refund"]).notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  // Balance after this transaction
-  balanceAfter: decimal("balanceAfter", { precision: 10, scale: 2 }).notNull(),
-  // Reason / description
-  reason: varchar("reason", { length: 500 }),
-  // Related order ID (if applicable)
-  orderId: int("orderId"),
-  // Admin who made the change
-  operatorName: varchar("operatorName", { length: 255 }),
-  operatorId: int("operatorId"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type CreditTransaction = typeof creditTransactions.$inferSelect;
-export type InsertCreditTransaction = typeof creditTransactions.$inferInsert;

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
@@ -11,19 +11,18 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Edit, FileText, User, Package, DollarSign, Truck,
   CreditCard, History, MessageSquare, PackageCheck, Calendar,
-  Sprout, TreePine, AlertCircle, Link2, Download, Printer, Eye,
-  Copy, MessageCircle, Bell, Send,
+  Sprout, TreePine, AlertCircle, Link2, Download, Printer,
+  Copy, MessageCircle, Bell, Send, Plus, Upload, Loader2, Trash2,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import html2canvas from "html2canvas";
-import { createRoot } from "react-dom/client";
-import { OrderDocument } from "@/components/OrderDocument";
-import { prepareOrderDocumentExportHost } from "@/lib/orderDocumentExport";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
   pending: { zh: "未汇款订单", en: "Unpaid Order", variant: "outline" },
   receipt_uploaded: { zh: "待审核付款凭证", en: "Pending Payment Verification", variant: "secondary" },
-  partial_payment: { zh: "部分汇款", en: "Partial Payment", variant: "secondary" },
   hold_order: { zh: "保留订单", en: "Hold Order", variant: "secondary" },
   packing: { zh: "待包货", en: "Pending Packing", variant: "default" },
   partial_shipped: { zh: "部分发货", en: "Partial Shipped", variant: "secondary" },
@@ -60,196 +59,91 @@ const SHIPPING_LABELS: Record<string, { zh: string; en: string }> = {
 export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; onBack: () => void }) {
   const { translate, lang } = useI18n();
   const [_, setLocation] = useLocation();
+  const exportRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewLogoUrl, setPreviewLogoUrl] = useState<string | undefined>(undefined);
-
-  // Preload logo as dataURL for Preview — same asset as export/print
-  useEffect(() => {
-    if (!previewOpen) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const resp = await fetch("/manus-storage/FB_IMG_1779824864256(2)_dbe588b7.png");
-        const blob = await resp.blob();
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-        if (!cancelled) setPreviewLogoUrl(dataUrl);
-      } catch (e) {
-        console.warn("Preview logo fetch failed", e);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [previewOpen]);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const receiptFileRef = useRef<HTMLInputElement>(null);
 
   // V2.0.45: Logo URL for watermark
   const LOGO_URL = "/manus-storage/xintian-logo-transparent_58bbaf5e.png";
 
-  // V2.0.74: Export order as PNG — robust cross-platform download
+  // V2.0.44: Export order as image with logo and watermark
   async function handleExportImage() {
+    if (!exportRef.current) return;
     setExporting(true);
     try {
-      // Pre-convert logo to base64 dataURL so html2canvas doesn't hit CORS/taint issues
-      let logoDataUrl: string | undefined;
-      try {
-        const logoResp = await fetch("/manus-storage/FB_IMG_1779824864256(2)_dbe588b7.png");
-        const logoBlob = await logoResp.blob();
-        logoDataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(logoBlob);
-        });
-      } catch (e) {
-        console.warn("Logo fetch failed, will try direct URL", e);
-      }
-
-      // Create a standalone container outside the React tree
-      const container = document.createElement("div");
-      prepareOrderDocumentExportHost(container);
-      document.body.appendChild(container);
-
-      // Render OrderDocument into the container using React
-      const root = createRoot(container);
-      await new Promise<void>((resolve) => {
-        root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} />);
-        setTimeout(resolve, 500);
-      });
-
-      // Wait for any images to load
-      await new Promise(r => setTimeout(r, 300));
-
-      const targetEl = container.firstChild as HTMLElement;
-      if (!targetEl) throw new Error("Failed to render order document");
-
-      const canvas = await html2canvas(targetEl, {
+      // First capture the order content
+      const contentCanvas = await html2canvas(exportRef.current, {
         scale: 2,
         backgroundColor: "#ffffff",
         useCORS: true,
-        allowTaint: true,
-        foreignObjectRendering: false,
-        logging: false,
-        imageTimeout: 0,
-        onclone: (doc: Document) => {
-          // Fix: html2canvas 1.4.1 doesn't support oklch() color function.
-          // Replace all oklch computed colors on body/documentElement with hex.
-          const html = doc.documentElement;
-          const body = doc.body;
-          if (html) html.style.backgroundColor = "#ffffff";
-          if (body) body.style.backgroundColor = "#ffffff";
-          // Also replace any oklch colors in the cloned container's subtree
-          const allEls = doc.querySelectorAll("*");
-          allEls.forEach((el) => {
-            const cs = doc.defaultView?.getComputedStyle(el);
-            if (cs) {
-              const bg = cs.backgroundColor;
-              const color = cs.color;
-              const bdc = cs.borderColor;
-              if (bg && bg.includes("oklch")) (el as HTMLElement).style.backgroundColor = "#ffffff";
-              if (color && color.includes("oklch")) (el as HTMLElement).style.color = "#1a1a1a";
-              if (bdc && bdc.includes("oklch")) (el as HTMLElement).style.borderColor = "#e0e0e0";
-            }
-          });
-        },
       });
 
-      // Convert to blob for more reliable download (especially on mobile)
-      const dataUrl = canvas.toDataURL("image/png");
-      const blob = await (await fetch(dataUrl)).blob();
-      const blobUrl = URL.createObjectURL(blob);
+      // Create a new canvas with extra space for header (logo) and footer (watermark)
+      const logoHeight = 100;
+      const watermarkHeight = 50;
+      const padding = 30;
+      const finalCanvas = document.createElement("canvas");
+      finalCanvas.width = contentCanvas.width + padding * 2;
+      finalCanvas.height = contentCanvas.height + logoHeight + watermarkHeight + padding * 2;
+      const ctx = finalCanvas.getContext("2d")!;
+
+      // Fill white background
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+
+      // Load logo image
+      const logoImg = new Image();
+      logoImg.crossOrigin = "anonymous";
+      await new Promise((resolve, reject) => {
+        logoImg.onload = resolve;
+        logoImg.onerror = reject;
+        logoImg.src = LOGO_URL;
+      });
+
+      // Draw logo at top-left, sized to fit logoHeight
+      const logoSize = logoHeight;
+      ctx.drawImage(logoImg, padding, padding, logoSize, logoSize);
+
+      // Draw brand name next to logo
+      ctx.fillStyle = "#1E3F20";
+      ctx.font = "bold 28px sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.fillText("\u5fc3\u7530 Xin Tian", padding + logoSize + 20, padding + logoHeight / 2);
+
+      // Draw order number next to brand
+      ctx.fillStyle = "#666666";
+      ctx.font = "18px sans-serif";
+      ctx.fillText(`#${o.orderNumber}`, padding + logoSize + 20 + 200, padding + logoHeight / 2);
+
+      // Draw content canvas below header
+      ctx.drawImage(contentCanvas, padding, padding + logoHeight + 10);
+
+      // Draw watermark at bottom
+      const watermarkY = finalCanvas.height - watermarkHeight / 2 - 10;
+      ctx.fillStyle = "rgba(30, 63, 32, 0.15)";
+      ctx.font = "bold 24px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("\u5fc3\u7530 Xin Tian \u00b7 \u878d\u5408\u690d\u7269\u3001\u8349\u672cDIY\u3001\u60c5\u7eea\u7597\u6108\u4e0e\u624b\u4f5c\u521b\u4f5c\u7684\u5171\u521b\u5e73\u53f0", finalCanvas.width / 2, watermarkY);
+      ctx.textAlign = "left";
 
       const link = document.createElement("a");
       link.download = `order_${o.orderNumber}.png`;
-      link.href = blobUrl;
-      link.style.display = "none";
-      document.body.appendChild(link);
+      link.href = finalCanvas.toDataURL("image/png");
       link.click();
-
-      // Cleanup
-      setTimeout(() => {
-        document.body.removeChild(link);
-        URL.revokeObjectURL(blobUrl);
-        root.unmount();
-        document.body.removeChild(container);
-      }, 100);
-
-      toast.success(translate("图片已下载", "Image downloaded"));
+      toast.success(translate("\u56fe\u7247\u5df2\u4e0b\u8f7d", "Image downloaded"));
     } catch (e: any) {
-      console.error("Export image error:", e);
-      toast.error(translate("导出失败: {message}", "Export failed: {message}", { message: e.message }));
+      toast.error(translate("\u5bfc\u51fa\u5931\u8d25: {message}", "Export failed: {message}", { message: e.message }));
     } finally {
       setExporting(false);
     }
   }
 
-  // V2.0.73: Print order — open new window with only OrderDocument content
-  async function handlePrint() {
-    // Pre-convert logo to base64 dataURL
-    let logoDataUrl: string | undefined;
-    try {
-      const logoResp = await fetch("/manus-storage/FB_IMG_1779824864256(2)_dbe588b7.png");
-      const logoBlob = await logoResp.blob();
-      logoDataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(logoBlob);
-      });
-    } catch (e) {
-      console.warn("Logo fetch failed for print", e);
-    }
-
-    const container = document.createElement("div");
-    prepareOrderDocumentExportHost(container);
-    document.body.appendChild(container);
-
-    const root = createRoot(container);
-    root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} />);
-
-    setTimeout(() => {
-      const targetEl = container.firstChild as HTMLElement;
-      if (!targetEl) return;
-
-      const printWindow = window.open("", "_blank", "width=900,height=700");
-      if (!printWindow) {
-        toast.error(translate("无法打开打印窗口，请检查弹窗拦截设置", "Cannot open print window. Please check popup blocker settings."));
-        root.unmount();
-        document.body.removeChild(container);
-        return;
-      }
-
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>心田 Xin Tian - ${o.orderNumber}</title>
-          <style>
-            @page { margin: 1cm; }
-            body { margin: 0; padding: 0; font-family: 'Noto Sans SC', 'Segoe UI', Arial, sans-serif; }
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          </style>
-        </head>
-        <body>${targetEl.outerHTML}</body>
-        </html>
-      `);
-      printWindow.document.close();
-
-      // Wait for images to load in print window
-      setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-        printWindow.close();
-      }, 500);
-
-      // Cleanup React container
-      root.unmount();
-      document.body.removeChild(container);
-    }, 300);
+  // V2.0.44: Print order
+  function handlePrint() {
+    window.print();
   }
 
   const { data: order, isLoading, error: orderError } = trpc.orders.getDetail.useQuery({ id: orderId });
@@ -263,6 +157,60 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
     },
     onError: (e: any) => toast.error(translate("发送失败: {message}", "Send failed: {message}", { message: e.message })),
   });
+  const addPaymentMutation = trpc.orders.addPayment.useMutation({
+    onSuccess: () => {
+      utils.orders.getDetail.invalidate({ id: orderId });
+      toast.success(translate("付款记录已添加", "Payment record added"));
+      setPaymentDialogOpen(false);
+      setPaymentForm({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
+    },
+    onError: (e: any) => toast.error(translate("添加付款失败: {message}", "Payment failed: {message}", { message: e.message })),
+  });
+  async function handleUploadReceipt(file: File) {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(translate("文件大小不能超过 10MB", "File size cannot exceed 10MB"));
+      return;
+    }
+    setUploadingReceipt(true);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: base64, filename: file.name, contentType: file.type }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Upload failed");
+      }
+      const data = await res.json();
+      setPaymentForm(prev => ({ ...prev, receiptUrl: data.url }));
+      toast.success(translate("单据已上传", "Receipt uploaded"));
+    } catch (e: any) {
+      toast.error(translate("上传失败: {message}", "Upload failed: {message}", { message: e.message }));
+    } finally {
+      setUploadingReceipt(false);
+    }
+  }
+  function handleAddPayment() {
+    if (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0) {
+      toast.error(translate("请输入有效金额", "Please enter a valid amount"));
+      return;
+    }
+    addPaymentMutation.mutate({
+      orderId,
+      amount: paymentForm.amount,
+      paymentMethod: paymentForm.paymentMethodName || undefined,
+      receiptUrl: paymentForm.receiptUrl || undefined,
+      notes: paymentForm.notes || undefined,
+    });
+  }
 
   if (isLoading) {
     return (
@@ -349,11 +297,8 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 no-print">
+        <div className="flex items-center gap-2">
           <Badge variant={statusCfg.variant}>{translate(statusCfg.zh, statusCfg.en)}</Badge>
-          <Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
-            <Eye className="h-3 w-3 mr-1" />{translate("Preview 单据", "Preview Document")}
-          </Button>
           <Button variant="outline" size="sm" onClick={handleExportImage} disabled={exporting}>
             <Download className="h-3 w-3 mr-1" />{exporting ? translate("导出中...", "Exporting...") : translate("导出图片", "Export Image")}
           </Button>
@@ -372,11 +317,20 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
               <Link2 className="h-3 w-3 mr-1" />{translate("复制订单链接", "Copy Order Link")}
             </Button>
           )}
+          {o.checkoutLink && (
+            <Button variant="outline" size="sm" onClick={() => {
+              const fullLink = `https://xintian.com.my${o.checkoutLink}`;
+              navigator.clipboard.writeText(fullLink);
+              toast.success(translate("结单链接已复制", "Checkout link copied"), { description: fullLink, duration: 5000 });
+            }}>
+              <Copy className="h-3 w-3 mr-1" />{translate("复制结单链接", "Copy Checkout Link")}
+            </Button>
+          )}
           {o.checkoutLink && o.messengerId && (
             <Button variant="outline" size="sm" onClick={() => {
               const fullLink = `https://xintian.com.my${o.checkoutLink}`;
               const template =
-                "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
               const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, o.orderNumber || "");
               sendCheckoutMutation.mutate({ orderId: orderId, customMessage: msg });
             }} disabled={sendCheckoutMutation.isPending}>
@@ -414,6 +368,9 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
         </div>
       )}
 
+      {/* Export/Print content wrapper */}
+      <div ref={exportRef} className="space-y-4">
+
       {/* Section 1: Order Basic Info */}
       <Card>
         <CardHeader>
@@ -442,7 +399,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-          <div><span className="text-muted-foreground">{translate("客户姓名", "Customer Name")}:</span> {o.customerName || o.facebookName || "-"}</div>
+          <div><span className="text-muted-foreground">{translate("客户姓名", "Customer Name")}:</span> {o.facebookName || o.customerName || "-"}</div>
           <div><span className="text-muted-foreground">{translate("电话号码", "Phone")}:</span> {o.customerPhone || "-"}</div>
           <div><span className="text-muted-foreground">{translate("Facebook 名称", "FB Name")}:</span> {o.facebookName || "-"}</div>
           <div><span className="text-muted-foreground">{translate("Facebook ID", "FB ID")}:</span> {o.facebookId || "-"}</div>
@@ -461,7 +418,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <div><span className="text-muted-foreground">{translate("收件人姓名", "Recipient Name")}:</span> {o.recipientName || "-"}</div>
+            <div><span className="text-muted-foreground">{translate("收件人姓名", "Recipient Name")}:</span> {o.recipientName || o.facebookName || "-"}</div>
             <div><span className="text-muted-foreground">{translate("收件人电话", "Recipient Phone")}:</span> {o.recipientPhone || "-"}</div>
             <div><span className="text-muted-foreground">{translate("配送方式", "Shipping Method")}:</span> {translate(shippingCfg.zh, shippingCfg.en)}</div>
           </div>
@@ -549,7 +506,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           )}
           <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")}</span><span>RM {shippingFee.toFixed(2)}</span></div>
           {creditUsed > 0 && (
-            <div className="flex justify-between text-blue-600"><span>{translate("自动扣除Credit", "Auto Credit Used")}</span><span>-RM {creditUsed.toFixed(2)}</span></div>
+            <div className="flex justify-between text-blue-600"><span>{translate("使用Credit", "Credit Used")}</span><span>-RM {creditUsed.toFixed(2)}</span></div>
           )}
           <Separator />
           <div className="flex justify-between font-bold text-base"><span>{translate("总金额", "Total Amount")}</span><span>RM {totalAmount.toFixed(2)}</span></div>
@@ -571,75 +528,38 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           <CardTitle className="text-base flex items-center gap-2">
             <CreditCard className="h-4 w-4" />
             {translate("6. 付款记录", "6. Payment Records")}
+            <Button variant="outline" size="sm" className="ml-auto no-print" onClick={() => setPaymentDialogOpen(true)}>
+              <Plus className="h-3 w-3 mr-1" />{translate("新增付款", "Add Payment")}
+            </Button>
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Payment records list */}
-          <div className="space-y-2">
-            {(o.payments || []).length === 0 ? (
-              <div className="text-center text-muted-foreground text-sm py-6 border rounded-lg">
-                {translate("暂无付款记录", "No payment records")}
-              </div>
-            ) : (
-              o.payments.map((p: any, idx: number) => {
-                const files: string[] = p.receiptFiles
-                  ? (typeof p.receiptFiles === "string" ? JSON.parse(p.receiptFiles) : p.receiptFiles)
-                  : (p.receiptUrl ? [p.receiptUrl] : []);
-                return (
-                  <div key={idx} className="rounded-lg border p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary">{translate("付款", "Payment")} {idx + 1}</Badge>
-                        <span className="font-medium">RM {parseFloat(p.amount).toFixed(2)}</span>
-                        <span className="text-muted-foreground text-xs">· {p.paymentMethodName || p.paymentMethod || "-"}</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {new Date(p.paymentDate || p.createdAt).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US")}
-                      </span>
-                      {p.purpose && <span>· {p.purpose}</span>}
-                      {p.notes && <span>· {p.notes}</span>}
-                    </div>
-                    {files.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {files.map((url: string, fi: number) => (
-                          <a key={fi} href={url} target="_blank" rel="noopener noreferrer"
-                             className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline bg-blue-50 dark:bg-blue-950/20 rounded px-2 py-1">
-                            <FileText className="h-3 w-3" />
-                            {translate("单据", "Receipt")} {fi + 1}
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Summary */}
-          <Separator />
-          <div className="space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">{translate("订单总金额", "Total Amount")}</span>
-              <span className="font-medium">RM {totalAmount.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">{translate("已付款", "Paid")}</span>
-              <span className="font-medium text-green-600">RM {paidAmount.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">{translate("未付款", "Outstanding")}</span>
-              <span className={`font-medium ${balance > 0 ? "text-orange-600" : "text-green-600"}`}>
-                RM {Math.max(0, balance).toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between pt-1 border-t">
-              <span className="text-muted-foreground">{translate("订单状态", "Order Status")}</span>
-              <Badge variant={statusCfg.variant} className="text-xs">{translate(statusCfg.zh, statusCfg.en)}</Badge>
-            </div>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/50">
+                <tr>
+                  <th className="text-left p-3 font-medium">{translate("日期", "Date")}</th>
+                  <th className="text-right p-3 font-medium">{translate("金额", "Amount")}</th>
+                  <th className="text-left p-3 font-medium">{translate("付款方式", "Method")}</th>
+                  <th className="text-left p-3 font-medium">{translate("付款凭证", "Receipt")}</th>
+                  <th className="text-left p-3 font-medium">{translate("备注", "Notes")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(o.payments || []).map((p: any, idx: number) => (
+                  <tr key={idx} className="border-b last:border-0">
+                    <td className="p-3">{new Date(p.paymentDate || p.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</td>
+                    <td className="p-3 text-right font-medium">RM {parseFloat(p.amount).toFixed(2)}</td>
+                    <td className="p-3">{p.paymentMethodName || "-"}</td>
+                    <td className="p-3">{p.receiptUrl ? <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{translate("查看", "View")}</a> : "-"}</td>
+                    <td className="p-3 text-muted-foreground">{p.notes || "-"}</td>
+                  </tr>
+                ))}
+                {(!o.payments || o.payments.length === 0) && (
+                  <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">{translate("无付款记录", "No payment records")}</td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </CardContent>
       </Card>
@@ -662,7 +582,6 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                   <Badge variant="outline" className="text-xs">
                     {r.remarkCategory === "repotting" ? translate("换盆", "Repotting") :
                      r.remarkCategory === "desired_delivery_date" ? translate("希望收货日期", "Desired Delivery Date") :
-                     r.remarkCategory === "select_tree" ? translate("选树身", "Select Tree") :
                      translate("其他", "Other")}
                   </Badge>
                   <span className="text-xs text-muted-foreground ml-auto">{new Date(r.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</span>
@@ -746,6 +665,8 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
         </CardContent>
       </Card>
 
+      </div>
+
       {/* Footer Actions */}
       <div className="flex justify-end gap-3 pt-4 pb-8 no-print">
         <Button variant="outline" onClick={onBack}>
@@ -756,24 +677,43 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
         </Button>
       </div>
 
-      {/* Preview Document Dialog — same OrderDocument template as export/print */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
-          <DialogHeader className="shrink-0 border-b bg-white px-5 py-4 pr-12 sm:px-8">
-            <DialogTitle className="text-base flex items-center gap-2">
-              <Eye className="h-4 w-4" />
-              {translate("Preview 单据", "Preview Document")} — {o.orderNumber}
-            </DialogTitle>
+      {/* Add Payment Dialog */}
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("新增付款记录", "Add Payment Record")}</DialogTitle>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-auto bg-muted/30 px-3 py-4 sm:px-8 sm:py-6">
-            <OrderDocument
-              order={o}
-              remarks={remarks}
-              variant="admin"
-              logoDataUrl={previewLogoUrl}
-              responsive
-            />
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("金额 (RM)", "Amount (RM)")}</Label>
+              <Input type="number" step="0.01" value={paymentForm.amount} onChange={e => setPaymentForm(prev => ({ ...prev, amount: e.target.value }))} placeholder="0.00" />
+            </div>
+            <div>
+              <Label>{translate("付款方式", "Payment Method")}</Label>
+              <Input value={paymentForm.paymentMethodName} onChange={e => setPaymentForm(prev => ({ ...prev, paymentMethodName: e.target.value }))} placeholder={translate("例如: QR Pay (Tng/Duit Now)", "e.g. QR Pay (Tng/Duit Now)")} />
+            </div>
+            <div>
+              <Label>{translate("上传付款单据", "Upload Receipt")}</Label>
+              <input ref={receiptFileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadReceipt(f); e.target.value = ""; }} />
+              <Button variant="outline" size="sm" onClick={() => receiptFileRef.current?.click()} disabled={uploadingReceipt} className="w-full">
+                {uploadingReceipt ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />{translate("上传中...", "Uploading...")}</> : <><Upload className="h-3 w-3 mr-1" />{translate("选择文件", "Choose File")}</>}
+              </Button>
+              {paymentForm.receiptUrl && (
+                <p className="text-xs text-green-600 mt-1">{translate("✓ 单据已上传", "✓ Receipt uploaded")}</p>
+              )}
+            </div>
+            <div>
+              <Label>{translate("备注", "Notes")}</Label>
+              <Textarea value={paymentForm.notes} onChange={e => setPaymentForm(prev => ({ ...prev, notes: e.target.value }))} rows={2} />
+            </div>
           </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={handleAddPayment} disabled={addPaymentMutation.isPending}>
+              {addPaymentMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+              {translate("保存", "Save")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

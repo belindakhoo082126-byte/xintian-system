@@ -194,12 +194,6 @@ export default function CustomerOrderTracking() {
                           <div className="text-xs text-muted-foreground">{translate("（不保证当天送达，我们会尽量安排）", "(Not guaranteed to arrive on that day, we will try our best)")}</div>
                         </>
                       )}
-                      {r.remarkCategory === "select_tree" && (
-                        <>
-                          <div className="font-medium text-sm">{translate("选树身", "Select Tree")}</div>
-                          <div className="text-sm text-muted-foreground whitespace-pre-wrap">{r.content}</div>
-                        </>
-                      )}
                       {r.remarkCategory === "other" && (
                         <>
                           <div className="font-medium text-sm">{translate("其他备注", "Other Remark")}</div>

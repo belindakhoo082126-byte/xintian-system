@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,12 +9,6 @@ import {
   Bot, ArrowRight, AlertTriangle,
   Plane, Eye, Home, FileText, MessageCircle, Send,
 } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Link } from "wouter";
 import { useI18n } from "@/contexts/I18nContext";
 import { getFollowUpDisplayState } from "./dashboardFollowUp";
@@ -36,8 +29,6 @@ export default function Dashboard() {
   const { data: followUpList } = trpc.orders.followUpList.useQuery({ limit: 50 });
   const followUpDisplay = getFollowUpDisplayState(followUpStats, followUpList);
   const { data: ordersWithRemarks } = trpc.orderRemarks.ordersWithRemarks.useQuery();
-  const [scheduledDialogOpen, setScheduledDialogOpen] = useState(false);
-  const { data: scheduledOrders, isLoading: scheduledLoading } = trpc.scheduledShipping.todayOrders.useQuery(undefined, { enabled: scheduledDialogOpen });
 
 
   if (isLoading) {
@@ -90,7 +81,7 @@ export default function Dashboard() {
     { title: lang === "zh" ? "今日订单" : "Today Orders", value: stats.row4.todayOrders, icon: ShoppingBag, color: "text-cyan-500", link: "/orders?today=1" },
     { title: lang === "zh" ? "部分发货" : "Partial Shipped", value: stats.row1.partialShipped, icon: Truck, color: "text-indigo-500", link: "/packing?tab=partial_shipped" },
     { title: lang === "zh" ? "保留订单" : "Hold Orders", value: stats.row2.holdOrders, icon: Ban, color: "text-yellow-500", link: "/orders?status=hold_order" },
-    { title: lang === "zh" ? "今日预约发货" : "Today Scheduled", value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "__DIALOG__", action: "scheduled" },
+    { title: lang === "zh" ? "今日预约发货" : "Today Scheduled", value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "/packing?tab=scheduled" },
     { title: lang === "zh" ? "未读 Messenger" : "Unread Messenger", value: 0, icon: MessageCircle, color: "text-pink-500", link: "/messenger" },
     { title: lang === "zh" ? "库存预警" : "Stock Alert", value: stats.row3.lowStock + stats.row3.outOfStock, icon: Warehouse, color: "text-red-500", link: "/products-v2?stock=low" },
   ];
@@ -172,36 +163,19 @@ export default function Dashboard() {
       <div>
         <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "工作状态" : "Work Status"}</h2>
         <div className="grid grid-cols-3 sm:grid-cols-9 gap-4">
-          {workCards.map((card, i) => {
-            if (card.action === "scheduled") {
-              return (
-                <div key={i} onClick={() => setScheduledDialogOpen(true)}>
-                  <Card className="h-[112px] flex flex-col hover:shadow-md transition-shadow cursor-pointer">
-                    <CardHeader className="flex flex-row items-start justify-between pb-1 pt-3 px-3">
-                      <CardTitle className="text-xs font-medium text-muted-foreground leading-tight line-clamp-2 min-h-[2rem]">{card.title}</CardTitle>
-                      <card.icon className={`h-4 w-4 shrink-0 ${card.color}`} />
-                    </CardHeader>
-                    <CardContent className="mt-auto px-3 pb-3">
-                      <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
-                    </CardContent>
-                  </Card>
-                </div>
-              );
-            }
-            return (
-              <Link key={i} href={card.link}>
-                <Card className="h-[112px] flex flex-col hover:shadow-md transition-shadow cursor-pointer">
-                  <CardHeader className="flex flex-row items-start justify-between pb-1 pt-3 px-3">
-                    <CardTitle className="text-xs font-medium text-muted-foreground leading-tight line-clamp-2 min-h-[2rem]">{card.title}</CardTitle>
-                    <card.icon className={`h-4 w-4 shrink-0 ${card.color}`} />
-                  </CardHeader>
-                  <CardContent className="mt-auto px-3 pb-3">
-                    <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
+          {workCards.map((card, i) => (
+            <Link key={i} href={card.link}>
+              <Card className="h-[112px] flex flex-col hover:shadow-md transition-shadow cursor-pointer">
+                <CardHeader className="flex flex-row items-start justify-between pb-1 pt-3 px-3">
+                  <CardTitle className="text-xs font-medium text-muted-foreground leading-tight line-clamp-2 min-h-[2rem]">{card.title}</CardTitle>
+                  <card.icon className={`h-4 w-4 shrink-0 ${card.color}`} />
+                </CardHeader>
+                <CardContent className="mt-auto px-3 pb-3">
+                  <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
         </div>
       </div>
 
@@ -412,47 +386,6 @@ export default function Dashboard() {
         </Card>
 
       </div>
-
-      {/* V3.1: Today Scheduled Shipping Dialog */}
-      <Dialog open={scheduledDialogOpen} onOpenChange={setScheduledDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-purple-500" />
-              {lang === "zh" ? "今日预约发货" : "Today Scheduled Shipping"}
-              <Badge variant="secondary" className="ml-2">{stats.row5.scheduledToday}</Badge>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            {scheduledLoading ? (
-              <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "加载中..." : "Loading..."}</p>
-            ) : (!scheduledOrders || (scheduledOrders as any).length === 0) ? (
-              <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "今日无预约发货订单" : "No scheduled shipping orders today"}</p>
-            ) : (
-              (scheduledOrders as any).map((item: any) => (
-                <Link key={item.remark?.id || item.order?.id} href={`/orders/${item.order?.id}`}>
-                  <div className="flex items-start gap-3 p-3 rounded-lg border border-purple-100 hover:bg-purple-50 dark:hover:bg-purple-950/20 transition-colors cursor-pointer">
-                    <Badge className="shrink-0 bg-purple-100 text-purple-700" variant="secondary">
-                      {lang === "zh" ? "预约发货" : "Scheduled"}
-                    </Badge>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{item.order?.orderNumber || `#${item.order?.id}`}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {item.order?.customerName || ""}
-                        {item.remark?.content ? ` · ${item.remark.content}` : ""}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {lang === "zh" ? "发货日期" : "Ship Date"}: {item.remark?.desiredDeliveryDate ? new Date(item.remark.desiredDeliveryDate).toLocaleDateString("zh-CN") : ""}
-                      </p>
-                    </div>
-                    <Eye className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
-                  </div>
-                </Link>
-              ))
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -1144,7 +1144,7 @@ export const appRouter = router({
               type: "internal",
               content: input.remark.trim(),
               createdBy: ctx.user?.name || "admin",
-              remarkCategory: (input.remarkCategory as "repotting" | "desired_delivery_date" | "select_tree" | "other") || "other",
+              remarkCategory: (input.remarkCategory as "repotting" | "desired_delivery_date" | "other") || "other",
               desiredDeliveryDate: input.remarkDeliveryDate || undefined,
               repottingData: input.repottingData || undefined,
             }).catch(() => {});
@@ -1232,10 +1232,7 @@ export const appRouter = router({
         amount: z.string(),
         paymentMethod: z.string().optional(),
         receiptUrl: z.string().optional(),
-        receiptFiles: z.string().optional(), // JSON array of URLs
-        paymentDate: z.string().optional(), // ISO date string
         notes: z.string().optional(),
-        purpose: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         await db.addOrderPayment({
@@ -1243,20 +1240,9 @@ export const appRouter = router({
           amount: input.amount,
           paymentMethod: input.paymentMethod,
           receiptUrl: input.receiptUrl,
-          receiptFiles: input.receiptFiles,
-          paymentDate: input.paymentDate ? new Date(input.paymentDate) : undefined,
           operatorName: ctx.user?.name || "admin",
           notes: input.notes,
-          purpose: input.purpose,
         });
-        return { success: true };
-      }),
-
-    // V2.1: Delete a single payment record
-    deletePayment: adminProcedure
-      .input(z.object({ paymentId: z.number() }))
-      .mutation(async ({ input, ctx }) => {
-        await db.deleteOrderPayment(input.paymentId, ctx.user?.name || "admin");
         return { success: true };
       }),
 
@@ -1376,26 +1362,26 @@ export const appRouter = router({
         return await db.aiSmartParse(input.text);
       }),
 
-    // V2.2: Use customer credit (auto-deduct when creating/editing order)
+    // V2.2: Use customer credit
     useCredit: adminProcedure
       .input(z.object({
         customerId: z.number(),
         amount: z.number(),
         orderId: z.number(),
       }))
-      .mutation(async ({ input, ctx }) => {
-        return await db.useCustomerCredit(input.customerId, input.amount, input.orderId, ctx.user?.name || undefined);
+      .mutation(async ({ input }) => {
+        return await db.useCustomerCredit(input.customerId, input.amount, input.orderId);
       }),
 
-    // V2.2: Refund customer credit (when order is cancelled/modified)
+    // V2.2: Refund customer credit
     refundCredit: adminProcedure
       .input(z.object({
         customerId: z.number(),
         amount: z.number(),
         orderId: z.number(),
       }))
-      .mutation(async ({ input, ctx }) => {
-        return await db.refundCustomerCredit(input.customerId, input.amount, input.orderId, ctx.user?.name || undefined);
+      .mutation(async ({ input }) => {
+        return await db.refundCustomerCredit(input.customerId, input.amount, input.orderId);
       }),
 
     // V2.2: Calculate West Malaysia shipping
@@ -1422,7 +1408,7 @@ export const appRouter = router({
           const fullLink = `${baseUrl}${order.checkoutLink}`;
           const settings = await db.getSystemSettings();
           const template = (settings as any)?.checkoutMessageTemplate ||
-            "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+            "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
           const message = (input.customMessage || template)
             .replace(/\{link\}/g, fullLink)
             .replace(/\{orderNumber\}/g, order.orderNumber || "");
@@ -1468,7 +1454,7 @@ export const appRouter = router({
         const results = { sent: 0, failed: 0, skipped: 0, total: pendingOrders.length, failedOrders: [] as any[] };
         const settings = await db.getSystemSettings();
         const template = (settings as any)?.checkoutMessageTemplate ||
-          "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+          "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
         let isFirstSend = true;
         for (const order of pendingOrders) {
           if (!order.messengerId || !order.checkoutLink) {
@@ -1525,7 +1511,7 @@ export const appRouter = router({
         const results = { sent: 0, failed: 0, skipped: 0, total: input.orderIds.length, failedOrders: [] as any[] };
         const settings = await db.getSystemSettings();
         const template = (settings as any)?.checkoutMessageTemplate ||
-          "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+          "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
         let isFirstSendSelected = true;
         for (const orderId of input.orderIds) {
           const order = await db.getOrderById(orderId);
@@ -1588,7 +1574,7 @@ export const appRouter = router({
           const fullLink = `${baseUrl}${order.checkoutLink}`;
           const settings = await db.getSystemSettings();
           const template = (settings as any)?.checkoutMessageTemplate ||
-            "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+            "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
           const message = (input.customMessage || template)
             .replace(/\{link\}/g, fullLink)
             .replace(/\{orderNumber\}/g, order.orderNumber || "");
@@ -2147,49 +2133,6 @@ export const appRouter = router({
       .input(z.object({ status: z.string().optional() }).optional())
       .query(async ({ input }) => {
         return await db.getMergeSuggestions(input?.status);
-      }),
-
-    // V2.2: Credit Management - Add credit to customer
-    addCredit: adminProcedure
-      .input(z.object({
-        customerId: z.number(),
-        amount: z.number().positive(),
-        reason: z.string().min(1).max(500),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        return await db.addCustomerCredit(input.customerId, input.amount, input.reason, ctx.user?.name || undefined, ctx.user?.id);
-      }),
-
-    // V2.2: Credit Management - Deduct credit from customer
-    deductCredit: adminProcedure
-      .input(z.object({
-        customerId: z.number(),
-        amount: z.number().positive(),
-        reason: z.string().min(1).max(500),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        return await db.deductCustomerCredit(input.customerId, input.amount, input.reason, ctx.user?.name || undefined, ctx.user?.id);
-      }),
-
-    // V2.2: Credit Management - Adjust credit (positive or negative)
-    adjustCredit: adminProcedure
-      .input(z.object({
-        customerId: z.number(),
-        amount: z.number(), // can be negative
-        reason: z.string().min(1).max(500),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        return await db.adjustCustomerCredit(input.customerId, input.amount, input.reason, ctx.user?.name || undefined, ctx.user?.id);
-      }),
-
-    // V2.2: Credit Management - Get credit transaction history
-    creditHistory: adminProcedure
-      .input(z.object({
-        customerId: z.number(),
-        limit: z.number().optional(),
-      }))
-      .query(async ({ input }) => {
-        return await db.getCreditTransactions(input.customerId, input.limit);
       }),
   }),
 
@@ -3773,7 +3716,7 @@ export const appRouter = router({
       type: z.enum(["live", "customer", "internal"]),
       content: z.string().min(1),
       createdBy: z.string().optional(),
-      remarkCategory: z.enum(["repotting", "desired_delivery_date", "select_tree", "other"]).optional(),
+      remarkCategory: z.enum(["repotting", "desired_delivery_date", "other"]).optional(),
       desiredDeliveryDate: z.string().optional(),
       desiredDeliveryReason: z.string().optional(),
       repottingData: z.string().optional(),
@@ -3793,7 +3736,7 @@ export const appRouter = router({
     update: adminProcedure.input(z.object({
       id: z.number(),
       content: z.string().optional(),
-      remarkCategory: z.enum(["repotting", "desired_delivery_date", "select_tree", "other"]).optional(),
+      remarkCategory: z.enum(["repotting", "desired_delivery_date", "other"]).optional(),
       desiredDeliveryDate: z.string().optional(),
       desiredDeliveryReason: z.string().optional(),
       repottingData: z.string().optional(),
@@ -3863,9 +3806,6 @@ export const appRouter = router({
     }),
     today: adminProcedure.query(async () => {
       return await db.getTodayScheduledShipping();
-    }),
-    todayOrders: adminProcedure.query(async () => {
-      return await db.getTodayScheduledShippingOrders();
     }),
     list: adminProcedure.input(z.object({
       dateFrom: z.string().optional(),

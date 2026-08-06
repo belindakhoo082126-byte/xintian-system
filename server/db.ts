@@ -49,8 +49,6 @@ import {
   reservationRecords,
   // V2.0.43 imports - Order sequence counter
   orderSeq,
-  // V2.2 imports - Customer Credit Transactions
-  creditTransactions,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -459,7 +457,7 @@ export async function getOrderById(id: number) {
   const result = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
   if (result.length === 0) return undefined;
 
-  const order = result[0] as any;
+  const order = result[0];
   // 兼容旧订单：管理员第一次打开详情时，自动补齐安全令牌和真实可访问的结单路径。
   // 使用 try-catch 防止 update 失败导致整个查询失败（如 unique 约束冲突等）
   const secureToken = order.secureToken || generateSecureToken();
@@ -471,35 +469,7 @@ export async function getOrderById(id: number) {
       console.warn("[getOrderById] Failed to update secureToken/checkoutLink:", updateErr);
     }
   }
-
-  // V2.0.71: JOIN customers table to get customer profile data
-  const customerResult = await db.select({
-    name: customers.name,
-    phoneNumber: customers.phoneNumber,
-    email: customers.email,
-    address: customers.address,
-    city: customers.city,
-    state: customers.state,
-    postalCode: customers.postalCode,
-    country: customers.country,
-    pointsBalance: customers.pointsBalance,
-  }).from(customers).where(eq(customers.id, order.customerId)).limit(1);
-
-  const customer = customerResult[0] || {};
-  return {
-    ...order,
-    secureToken,
-    checkoutLink,
-    customerName: customer.name || null,
-    customerPhone: customer.phoneNumber || null,
-    customerEmail: customer.email || null,
-    customerAddress: customer.address || null,
-    customerCity: customer.city || null,
-    customerState: customer.state || null,
-    customerPostalCode: customer.postalCode || null,
-    customerCountry: customer.country || null,
-    creditBalance: customer.pointsBalance || 0,
-  };
+  return { ...order, secureToken, checkoutLink };
 }
 
 export async function getOrderItems(orderId: number) {
@@ -675,16 +645,6 @@ export async function createOrderWithSplit(data: {
     extraChargeDescription: data.extraChargeDescription || null,
     creditUsed: data.creditUsed || null,
     discountReason: data.discountReason || null,
-    discountAmount: data.discountAmount || null,
-    // V2.0.71: Recipient info (separate from customer profile)
-    recipientName: data.recipientName || null,
-    recipientPhone: data.recipientPhone || null,
-    addressLine1: data.addressLine1 || null,
-    addressLine2: data.addressLine2 || null,
-    postcode: data.postcode || null,
-    recipientCity: data.city || null,
-    recipientState: data.state || null,
-    recipientCountry: data.country || null,
   });
 
     const orderId = (orderResult as any)[0].insertId;
@@ -865,11 +825,9 @@ export async function addOrderPayment(data: {
   amount: string;
   paymentMethod?: string;
   receiptUrl?: string;
-  receiptFiles?: string; // JSON array of URLs
   paymentDate?: Date;
   operatorName?: string;
   notes?: string;
-  purpose?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -879,30 +837,22 @@ export async function addOrderPayment(data: {
     amount: data.amount,
     paymentMethod: data.paymentMethod || null,
     receiptUrl: data.receiptUrl || null,
-    receiptFiles: data.receiptFiles || null,
     paymentDate: data.paymentDate || new Date(),
     operatorName: data.operatorName || null,
     notes: data.notes || null,
-    purpose: data.purpose || null,
   });
 
-  // Update order paidAmount and auto-suggest status
+  // Update order paidAmount
   const allPayments = await db.select().from(orderPayments).where(eq(orderPayments.orderId, data.orderId));
   const totalPaid = allPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
   const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
   if (order.length > 0) {
     const totalAmount = parseFloat(String(order[0].totalAmount));
     let newStatus = order[0].physicalStatus;
-    // Auto-suggest status based on payment — only update if not already shipped/completed/cancelled
-    const lockedStatuses = ["shipped", "partial_shipped", "completed", "cancelled", "scheduled", "special"];
-    if (!lockedStatuses.includes(order[0].physicalStatus || "")) {
-      if (totalPaid >= totalAmount && totalAmount > 0) {
-        newStatus = "packing"; // Fully paid → ready for packing
-      } else if (totalPaid > 0) {
-        newStatus = "partial_payment"; // Partial payment
-      } else {
-        newStatus = "pending"; // No payment
-      }
+    if (totalPaid >= totalAmount) {
+      newStatus = "packing";
+    } else if (totalPaid > 0) {
+      newStatus = "receipt_uploaded";
     }
     await db.update(orders).set({
       paidAmount: totalPaid.toFixed(2),
@@ -911,48 +861,7 @@ export async function addOrderPayment(data: {
     }).where(eq(orders.id, data.orderId));
   }
 
-  await logOrderOperation(data.orderId, "payment", `Payment recorded: RM${data.amount}${data.purpose ? ` (${data.purpose})` : ""}`, null, data.operatorName);
-  broadcastChanges(["orders", "dashboard"]);
-}
-
-// ============================================================================
-// Delete Order Payment (删除单笔付款记录)
-// ============================================================================
-
-export async function deleteOrderPayment(paymentId: number, operatorName?: string) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const payment = await db.select().from(orderPayments).where(eq(orderPayments.id, paymentId)).limit(1);
-  if (payment.length === 0) throw new Error("Payment record not found");
-
-  const orderId = payment[0].orderId;
-  await db.delete(orderPayments).where(eq(orderPayments.id, paymentId));
-
-  // Recalculate paidAmount and status
-  const allPayments = await db.select().from(orderPayments).where(eq(orderPayments.orderId, orderId));
-  const totalPaid = allPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
-  const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-  if (order.length > 0) {
-    const totalAmount = parseFloat(String(order[0].totalAmount));
-    let newStatus = order[0].physicalStatus;
-    const lockedStatuses = ["shipped", "partial_shipped", "completed", "cancelled", "scheduled", "special"];
-    if (!lockedStatuses.includes(order[0].physicalStatus || "")) {
-      if (totalPaid >= totalAmount && totalAmount > 0) {
-        newStatus = "packing";
-      } else if (totalPaid > 0) {
-        newStatus = "partial_payment";
-      } else {
-        newStatus = "pending";
-      }
-    }
-    await db.update(orders).set({
-      paidAmount: totalPaid.toFixed(2),
-      physicalStatus: newStatus as any,
-    }).where(eq(orders.id, orderId));
-  }
-
-  await logOrderOperation(orderId, "payment", `Payment deleted: RM${payment[0].amount}`, null, operatorName);
+  await logOrderOperation(data.orderId, "payment", `Payment recorded: RM${data.amount}`, null, data.operatorName);
   broadcastChanges(["orders", "dashboard"]);
 }
 
@@ -4257,138 +4166,31 @@ ${text}`;
 // V2.2: Customer Credit functions
 // ============================================================================
 
-export async function useCustomerCredit(customerId: number, amount: number, orderId: number, operatorName?: string) {
+export async function useCustomerCredit(customerId: number, amount: number, orderId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const customer = await getCustomerById(customerId);
   if (!customer) throw new Error("Customer not found");
   const balance = parseFloat(customer.creditBalance?.toString() || "0");
   if (balance < amount) throw new Error(`Insufficient credit: ${balance} < ${amount}`);
-  const newBalance = balance - amount;
   await db.update(customers).set({
-    creditBalance: newBalance.toFixed(2),
+    creditBalance: (balance - amount).toFixed(2),
   }).where(eq(customers.id, customerId));
-  // Record credit transaction
-  await db.insert(creditTransactions).values({
-    customerId,
-    type: "order_use",
-    amount: amount.toFixed(2),
-    balanceAfter: newBalance.toFixed(2),
-    reason: `Order #${orderId} credit usage`,
-    orderId,
-    operatorName: operatorName || null,
-  });
   await logOrderOperation(orderId, "credit_used", `Used customer credit: RM${amount.toFixed(2)}`);
-  return { remainingCredit: newBalance.toFixed(2) };
+  return { remainingCredit: (balance - amount).toFixed(2) };
 }
 
-export async function refundCustomerCredit(customerId: number, amount: number, orderId: number, operatorName?: string) {
+export async function refundCustomerCredit(customerId: number, amount: number, orderId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const customer = await getCustomerById(customerId);
   if (!customer) throw new Error("Customer not found");
   const balance = parseFloat(customer.creditBalance?.toString() || "0");
-  const newBalance = balance + amount;
   await db.update(customers).set({
-    creditBalance: newBalance.toFixed(2),
+    creditBalance: (balance + amount).toFixed(2),
   }).where(eq(customers.id, customerId));
-  // Record credit transaction
-  await db.insert(creditTransactions).values({
-    customerId,
-    type: "order_refund",
-    amount: amount.toFixed(2),
-    balanceAfter: newBalance.toFixed(2),
-    reason: `Order #${orderId} credit refund`,
-    orderId,
-    operatorName: operatorName || null,
-  });
   await logOrderOperation(orderId, "credit_refunded", `Refunded customer credit: RM${amount.toFixed(2)}`);
-  return { newBalance: newBalance.toFixed(2) };
-}
-
-// V2.2: Add credit to customer (from Customer Management)
-export async function addCustomerCredit(customerId: number, amount: number, reason: string, operatorName?: string, operatorId?: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const customer = await getCustomerById(customerId);
-  if (!customer) throw new Error("Customer not found");
-  const balance = parseFloat(customer.creditBalance?.toString() || "0");
-  const newBalance = balance + amount;
-  await db.update(customers).set({
-    creditBalance: newBalance.toFixed(2),
-  }).where(eq(customers.id, customerId));
-  await db.insert(creditTransactions).values({
-    customerId,
-    type: "add",
-    amount: amount.toFixed(2),
-    balanceAfter: newBalance.toFixed(2),
-    reason: reason || null,
-    operatorName: operatorName || null,
-    operatorId: operatorId || null,
-  });
-  broadcastChanges(["customers"]);
-  return { newBalance: newBalance.toFixed(2) };
-}
-
-// V2.2: Deduct credit from customer (from Customer Management)
-export async function deductCustomerCredit(customerId: number, amount: number, reason: string, operatorName?: string, operatorId?: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const customer = await getCustomerById(customerId);
-  if (!customer) throw new Error("Customer not found");
-  const balance = parseFloat(customer.creditBalance?.toString() || "0");
-  if (balance < amount) throw new Error(`Insufficient credit: ${balance} < ${amount}`);
-  const newBalance = balance - amount;
-  await db.update(customers).set({
-    creditBalance: newBalance.toFixed(2),
-  }).where(eq(customers.id, customerId));
-  await db.insert(creditTransactions).values({
-    customerId,
-    type: "deduct",
-    amount: amount.toFixed(2),
-    balanceAfter: newBalance.toFixed(2),
-    reason: reason || null,
-    operatorName: operatorName || null,
-    operatorId: operatorId || null,
-  });
-  broadcastChanges(["customers"]);
-  return { newBalance: newBalance.toFixed(2) };
-}
-
-// V2.2: Adjust credit (positive or negative adjustment)
-export async function adjustCustomerCredit(customerId: number, amount: number, reason: string, operatorName?: string, operatorId?: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const customer = await getCustomerById(customerId);
-  if (!customer) throw new Error("Customer not found");
-  const balance = parseFloat(customer.creditBalance?.toString() || "0");
-  const newBalance = balance + amount; // amount can be negative
-  if (newBalance < 0) throw new Error(`Resulting balance cannot be negative: ${newBalance}`);
-  await db.update(customers).set({
-    creditBalance: newBalance.toFixed(2),
-  }).where(eq(customers.id, customerId));
-  await db.insert(creditTransactions).values({
-    customerId,
-    type: "adjust",
-    amount: amount.toFixed(2),
-    balanceAfter: newBalance.toFixed(2),
-    reason: reason || null,
-    operatorName: operatorName || null,
-    operatorId: operatorId || null,
-  });
-  broadcastChanges(["customers"]);
-  return { newBalance: newBalance.toFixed(2) };
-}
-
-// V2.2: Get credit transaction history for a customer
-export async function getCreditTransactions(customerId: number, limit?: number) {
-  const db = await getDb();
-  if (!db) return [];
-  let query = db.select().from(creditTransactions).where(eq(creditTransactions.customerId, customerId));
-  if (limit) {
-    query = query.limit(limit) as any;
-  }
-  return await query.orderBy(desc(creditTransactions.createdAt));
+  return { newBalance: (balance + amount).toFixed(2) };
 }
 
 // ============================================================================
@@ -5725,26 +5527,6 @@ export async function getTodayScheduledShipping() {
   return await db.select().from(orders)
     .where(and(eq(orders.physicalStatus, 'packing'), eq(orders.scheduledShippingDate, today)))
     .orderBy(desc(orders.createdAt));
-}
-
-// V3.1: Get today's scheduled shipping orders from desired_delivery_date remarks
-export async function getTodayScheduledShippingOrders() {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const today = new Date().toISOString().split('T')[0];
-  const rows = await db.select({
-    remark: orderRemarks,
-    order: orders,
-  })
-    .from(orderRemarks)
-    .leftJoin(orders, eq(orderRemarks.orderId, orders.id))
-    .where(and(
-      eq(orderRemarks.remarkCategory, "desired_delivery_date"),
-      sql`DATE(${orderRemarks.desiredDeliveryDate}) = ${today}`,
-      sql`${orders.physicalStatus} IN ('pending', 'paid', 'packing', 'hold_order')`
-    ))
-    .orderBy(desc(orderRemarks.createdAt));
-  return rows;
 }
 
 // V1.1: Auto-complete orders 7 days after shipping

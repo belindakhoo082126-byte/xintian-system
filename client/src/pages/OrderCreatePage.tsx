@@ -10,17 +10,16 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   Search, Plus, Trash2, X, ArrowLeft, Eye, Save, ClipboardPaste,
   User, Package, DollarSign, Truck, FileText, Sparkles, CreditCard, Maximize2,
-  Sprout,
+  Sprout, Upload, Loader2,
 } from "lucide-react";
-import { PaymentRecordsEditor } from "@/components/PaymentRecordsEditor";
-import type { PaymentRecord } from "@/components/PaymentRecordsEditor";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const ORDER_NATURE = {
   retail: { label: "零售", enLabel: "Retail" },
@@ -123,10 +122,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   // V2.0.62: Ref to prevent useEffect from overwriting Smart Parse results
   const smartParseUpdatingRef = useRef(false);
   // V2.0.43: Auto-sync customerForm to recipientForm when buyer is recipient
-  // V2.0.69: Only sync when buyerIsRecipient is true AND smartParseUpdatingRef is false
-  // This prevents AI Smart Parse results from being overwritten by stale customerForm values
   useEffect(() => {
-    // Skip if Smart Parse is currently updating (it sets recipientForm directly)
+    // Skip if Smart Parse is currently updating (it sets both forms directly)
     if (smartParseUpdatingRef.current) return;
     if (buyerIsRecipient) {
       setRecipientForm(prev => ({
@@ -149,19 +146,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const [discountReason, setDiscountReason] = useState("");
   const [extraCharge, setExtraCharge] = useState("0");
   const [extraChargeDescription, setExtraChargeDescription] = useState("");
-  // V2.2: Credit is auto-applied from customer account, not manually entered
-  const customerCreditBalance = parseFloat(selectedCustomer?.creditBalance || "0");
-  const autoCreditUsed = useMemo(() => {
-    if (!selectedCustomerId || customerCreditBalance <= 0) return 0;
-    // Auto-apply: use all available credit up to the total amount (before shipping)
-    const itemsSubtotalPre = manualItems.reduce((sum, i) => sum + (i.productType === "physical" || i.productType === "gift" || i.productType === "membership" ? parseFloat(i.subtotal) || 0 : 0), 0);
-    const discountPre = parseFloat(discountAmount) || 0;
-    const extraPre = parseFloat(extraCharge) || 0;
-    // Credit can cover up to itemsSubtotal - discount + extra (before shipping)
-    const maxCreditCoverage = itemsSubtotalPre - discountPre + extraPre;
-    return Math.min(customerCreditBalance, Math.max(0, maxCreditCoverage));
-  }, [selectedCustomerId, customerCreditBalance, manualItems, discountAmount, extraCharge]);
-  const creditUsed = autoCreditUsed.toFixed(2);
+  const [creditUsed, setCreditUsed] = useState("0");
 
   // Remarks
   const [remark, setRemark] = useState("");
@@ -170,6 +155,12 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   // V2.0.60: Multiple repotting entries for order creation
   // V2.0.65: Plant & pot both selected from Section 4 items (manualItems)
   const [repottingEntries, setRepottingEntries] = useState<Array<{ plantName: string; plantProductId?: number; potName: string; potProductId?: number; quantity: number }>>([]);
+  // Local payment records (submitted after order creation)
+  const [localPayments, setLocalPayments] = useState<Array<{ amount: string; paymentMethodName: string; receiptUrl: string; notes: string }>>([]);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const receiptFileRef = useRef<HTMLInputElement>(null);
   const { data: potProducts } = trpc.repots.potProducts.useQuery();
   // V2.0.65: Items added in Section 4, filtered to those with a real productId
   const section4Items = manualItems.filter(i => i.productId !== undefined);
@@ -179,7 +170,6 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
 
   // Preview mode
   const [previewMode, setPreviewMode] = useState(false);
-  const [localPayments, setLocalPayments] = useState<PaymentRecord[]>([]);
   // Product image preview (lightbox) with multi-image support
   const [previewProduct, setPreviewProduct] = useState<ManualOrderItem | null>(null);
   const [previewImageIndex, setPreviewImageIndex] = useState(0);
@@ -237,42 +227,37 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         creditUsed: creditUsed !== "0" ? creditUsed : undefined,
         recipientName: recipientForm.recipientName || undefined,
         recipientPhone: recipientForm.recipientPhone || undefined,
-        addressLine1: recipientForm.addressLine1 || undefined,
-        addressLine2: recipientForm.addressLine2 || undefined,
-        city: recipientForm.city || undefined,
-        state: recipientForm.state || undefined,
-        postcode: recipientForm.postcode || undefined,
-        country: recipientForm.country || undefined,
         repottingData: createRemarkCategory === "repotting" && repottingEntries.length > 0 ? JSON.stringify(repottingEntries) : undefined,
       });
     },
     onError: (e) => toast.error(translate("客户创建失败: {message}", "Customer creation failed: {message}", { message: e.message })),
   });
 
+  const addPaymentMutation = trpc.orders.addPayment.useMutation({
+    onError: (e: any) => toast.error(translate("付款记录添加失败: {message}", "Payment record failed: {message}", { message: e.message })),
+  });
+
   const createOrderMutation = trpc.orders.create.useMutation({
     onSuccess: async (r: any) => {
       utils.orders.invalidate();
-      // Batch-submit any locally collected payment records
+      // Submit any local payment records after order creation
       if (localPayments.length > 0 && r.orderId) {
-        try {
-          for (const p of localPayments) {
-            await trpc.orders.addPayment.useMutation().mutateAsync({
+        for (const p of localPayments) {
+          try {
+            await addPaymentMutation.mutateAsync({
               orderId: r.orderId,
               amount: p.amount,
-              paymentMethod: p.paymentMethod,
-              paymentDate: p.paymentDate ? new Date(p.paymentDate).toISOString() : undefined,
-              receiptFiles: p.receiptFiles && p.receiptFiles.length > 0 ? JSON.stringify(p.receiptFiles) : undefined,
+              paymentMethod: p.paymentMethodName || undefined,
+              receiptUrl: p.receiptUrl || undefined,
               notes: p.notes || undefined,
-              purpose: p.purpose || undefined,
             });
+          } catch (e) {
+            // Continue even if one payment fails
           }
-          toast.success(translate("订单创建成功，已保存 {count} 笔付款记录", "Order created, {count} payment record(s) saved", { count: String(localPayments.length) }));
-        } catch (err: any) {
-          toast.success(translate("订单创建成功: {orderNumber}（付款记录保存失败，请到订单页手动添加）", "Order created: {orderNumber} (payment records failed to save, please add manually)", { orderNumber: r.orderNumber }));
         }
-      } else {
-        toast.success(translate("订单创建成功: {orderNumber}", "Order created successfully: {orderNumber}", { orderNumber: r.orderNumber }));
+        setLocalPayments([]);
       }
+      toast.success(translate("订单创建成功: {orderNumber}", "Order created successfully: {orderNumber}", { orderNumber: r.orderNumber }));
       setLocation("/orders/" + (orderCategory === "import" ? "import" : "local"));
     },
     onError: (e) => toast.error(translate("订单创建失败: {message}", "Order creation failed: {message}", { message: e.message })),
@@ -299,7 +284,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const itemsSubtotal = physicalSubtotal + membershipSubtotal;
   const discountNum = parseFloat(discountAmount) || 0;
   const extraChargeNum = parseFloat(extraCharge) || 0;
-  const creditUsedNum = autoCreditUsed;
+  const creditUsedNum = parseFloat(creditUsed) || 0;
 
   // Settled amount for free shipping threshold
   const settledAmount = itemsSubtotal - discountNum;
@@ -355,33 +340,21 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
       return;
     }
     setSmartPasteLoading(true);
-
-    // V2.0.69: Debug log BEFORE AI Smart Parse
-    console.log("[AI Smart Parse] BEFORE:", {
-      "customerForm.name": customerForm.name,
-      "customerForm.phoneNumber": customerForm.phoneNumber,
-      "recipientForm.recipientName": recipientForm.recipientName,
-      "recipientForm.recipientPhone": recipientForm.recipientPhone,
-      buyerIsRecipient,
-    });
-
-    // V2.0.69: Snapshot customerForm before AI Smart to detect any unauthorized modification
-    const customerNameBefore = customerForm.name;
-    const customerPhoneBefore = customerForm.phoneNumber;
-
     try {
       const result = await utils.orders.aiSmartParse.fetch({ text: smartPasteText });
       if (result) {
-        // V2.0.69: Debug log AI result
-        console.log("[AI Smart Parse] API Result:", result);
-
-        // V2.0.68: AI Smart Parse only updates Region 3 (Recipient), NEVER Region 2 (Customer Profile)
-        // Customer Profile (name, facebookName, facebookId, messengerId) must not be overwritten by recipient data
+        // V2.0.64: Set flag to prevent useEffect from overwriting Smart Parse results
         smartParseUpdatingRef.current = true;
 
-        // V2.0.69: Single batch update for recipientForm only — NO customerForm changes
-        // AI Smart Parse is NOT allowed to modify: customerForm.name, customerForm.phoneNumber,
-        // customerForm.facebookName, customerForm.facebookId, customerForm.messengerId
+        // V2.0.64: Single batch update for customerForm to avoid race conditions
+        const customerUpdates: Record<string, string> = {};
+        if (result.customerName) customerUpdates.name = result.customerName;
+        if (result.contactNumber) customerUpdates.phoneNumber = result.contactNumber;
+        if (Object.keys(customerUpdates).length > 0) {
+          setCustomerForm(prev => ({ ...prev, ...customerUpdates }));
+        }
+
+        // V2.0.64: Single batch update for recipientForm — one setState call, no race
         setRecipientForm(prev => ({
           ...prev,
           recipientName: result.customerName || prev.recipientName,
@@ -391,26 +364,11 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
           city: result.city || prev.city,
           state: result.state || prev.state,
           postcode: result.postcode || prev.postcode,
-          country: result.country || prev.country,
         }));
 
         if (result.area === "East Malaysia") {
           setShippingMethod("east_malaysia_poslaju");
         }
-
-        // V2.0.69: Debug log AFTER AI Smart Parse (check after state flush)
-        setTimeout(() => {
-          console.log("[AI Smart Parse] AFTER (after 100ms):", {
-            "customerForm.name (should be unchanged)": customerForm.name,
-            "customerForm.phoneNumber (should be unchanged)": customerForm.phoneNumber,
-            "recipientForm.recipientName (should be AI result)": recipientForm.recipientName,
-            "recipientForm.recipientPhone (should be AI result)": recipientForm.recipientPhone,
-            "customerNameBefore": customerNameBefore,
-            "customerPhoneBefore": customerPhoneBefore,
-            "customerNameChanged": customerForm.name !== customerNameBefore,
-          });
-        }, 100);
-
         toast.success(translate("Smart Parse 完成（{method}）", "Smart Parse complete ({method})", { method: result.method }));
         // Reset flag after state updates have flushed
         setTimeout(() => { smartParseUpdatingRef.current = false; }, 200);
@@ -543,7 +501,53 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     }
   }
 
-  const isSubmitting = findCustomerMutation.isPending || createOrderMutation.isPending;
+  async function handleUploadReceipt(file: File) {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(translate("文件大小不能超过 10MB", "File size cannot exceed 10MB"));
+      return;
+    }
+    setUploadingReceipt(true);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: base64, filename: file.name, contentType: file.type }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Upload failed");
+      }
+      const data = await res.json();
+      setPaymentForm(prev => ({ ...prev, receiptUrl: data.url }));
+      toast.success(translate("单据已上传", "Receipt uploaded"));
+    } catch (e: any) {
+      toast.error(translate("上传失败: {message}", "Upload failed: {message}", { message: e.message }));
+    } finally {
+      setUploadingReceipt(false);
+    }
+  }
+
+  function handleAddLocalPayment() {
+    if (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0) {
+      toast.error(translate("请输入有效金额", "Please enter a valid amount"));
+      return;
+    }
+    setLocalPayments(prev => [...prev, { ...paymentForm }]);
+    setPaymentForm({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
+    setPaymentDialogOpen(false);
+    toast.success(translate("付款记录已添加（订单创建后自动提交）", "Payment added (will be submitted after order creation)"));
+  }
+
+  const localPaymentsTotal = localPayments.reduce((sum, p) => sum + parseFloat(p.amount || "0"), 0);
+
+  const isSubmitting = findCustomerMutation.isPending || createOrderMutation.isPending || addPaymentMutation.isPending;
   const orderTypeLabel = orderCategory === "import" ? translate("中国代购订单", "Import Order") : translate("本地订单", "Local Order");
   const orderNumberPrefix = orderCategory === "import" ? "CXT" : "XT";
   const statusOptions = orderCategory === "import" ? IMPORT_ORDER_STATUSES : LOCAL_ORDER_STATUSES;
@@ -1065,15 +1069,15 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               <Label className="text-xs">{translate("收费说明", "Charge Description")}</Label>
               <Input value={extraChargeDescription} onChange={(e) => setExtraChargeDescription(e.target.value)} placeholder={translate("例如：特别包装+急件处理", "e.g. Special packaging + rush handling")} />
             </div>
-            {selectedCustomerId && customerCreditBalance > 0 && (
+            {selectedCustomerId && selectedCustomer?.creditBalance && parseFloat(selectedCustomer.creditBalance) > 0 && (
               <>
                 <div>
-                  <Label className="text-xs">{translate("自动扣除Credit", "Auto Credit Used")}</Label>
-                  <Input type="number" value={creditUsed} readOnly className="bg-muted" placeholder="0.00" />
+                  <Label className="text-xs">{translate("使用Credit", "Use Credit")}</Label>
+                  <Input type="number" value={creditUsed} onChange={(e) => setCreditUsed(e.target.value)} placeholder="0.00" />
                 </div>
                 <div className="col-span-2 flex items-end">
                   <Badge variant="secondary" className="mb-2">
-                    {translate("Credit余额", "Credit Balance")}: RM {customerCreditBalance.toFixed(2)}
+                    {translate("Credit余额", "Credit Balance")}: RM {parseFloat(selectedCustomer.creditBalance).toFixed(2)}
                   </Badge>
                 </div>
               </>
@@ -1146,7 +1150,6 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                 <SelectItem value="general">{translate("普通备注", "General Remark")}</SelectItem>
                 <SelectItem value="desired_delivery_date">{translate("发货日期", "Shipping Date")}</SelectItem>
                 <SelectItem value="repotting">{translate("换盆", "Repotting")}</SelectItem>
-                <SelectItem value="select_tree">{translate("选树身", "Select Tree")}</SelectItem>
                 <SelectItem value="other">{translate("其他", "Other")}</SelectItem>
               </SelectContent>
             </Select>
@@ -1160,98 +1163,74 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
           {createRemarkCategory === "repotting" && (
             <div className="space-y-3">
               <Label className="text-xs">{translate("换盆记录（可添加多组，建单后还可在订单详情继续添加）", "Repotting entries (can add multiple groups, more can be added in order detail after creation)")}</Label>
-              {repottingEntries.map((entry, idx) => {
-                // V2.0.70: Find selected plant & pot items to show purchase quantity
-                const selectedPlant = section4Plants.find(i => i.productName === entry.plantName);
-                const selectedPot = section4Pots.find(i => i.productName === entry.potName);
-                return (
-                <div key={idx} className="space-y-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950/20">
-                  <div className="flex items-end gap-2">
-                    <div className="flex-1">
-                      <Label className="text-xs mb-1 block">{translate("植物名称", "Plant Name")}</Label>
-                      <Select
-                        value={entry.plantName}
-                        onValueChange={(v) => {
-                          const item = section4Plants.find(i => i.productName === v);
-                          // V2.0.70: Auto-set repot quantity to plant purchase quantity
-                          setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, plantName: v, plantProductId: item?.productId, quantity: item ? item.quantity : r.quantity } : r));
-                        }}
-                      >
-                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择植物", "Select plant")} /></SelectTrigger>
-                        <SelectContent>
-                          {section4Plants.length === 0 ? (
-                            <SelectItem value="__none" disabled>{translate("区域四无植物类商品", "No plant items in Section 4")}</SelectItem>
-                          ) : (
-                            section4Plants.map((item, i) => (
-                              <SelectItem key={`${item.productId}-${i}`} value={item.productName}>
-                                {item.productName}{item.variationName ? ` (${item.variationName})` : ""}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex-1">
-                      <Label className="text-xs mb-1 block">{translate("花盆", "Pot")}</Label>
-                      <Select
-                        value={entry.potName}
-                        onValueChange={(v) => {
-                          const item = section4Pots.find(i => i.productName === v);
-                          setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, potName: v, potProductId: item?.productId } : r));
-                        }}
-                      >
-                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择花盆", "Select pot")} /></SelectTrigger>
-                        <SelectContent>
-                          {section4Pots.length === 0 ? (
-                            <SelectItem value="__none" disabled>{translate("区域四无花盆类商品", "No pot items in Section 4")}</SelectItem>
-                          ) : (
-                            section4Pots.map((item, i) => (
-                              <SelectItem key={`${item.productId}-${i}`} value={item.productName}>
-                                {item.productName}{item.variationName ? ` (${item.variationName})` : ""}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => setRepottingEntries(prev => prev.filter((_, i) => i !== idx))}
+              {repottingEntries.map((entry, idx) => (
+                <div key={idx} className="flex items-end gap-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950/20">
+                  <div className="flex-1">
+                    <Label className="text-xs mb-1 block">{translate("植物名称", "Plant Name")}</Label>
+                    <Select
+                      value={entry.plantName}
+                      onValueChange={(v) => {
+                        const item = section4Plants.find(i => i.productName === v);
+                        setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, plantName: v, plantProductId: item?.productId } : r));
+                      }}
                     >
-                      <Trash2 className="h-4 w-4 text-muted-foreground" />
-                    </Button>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择植物", "Select plant")} /></SelectTrigger>
+                      <SelectContent>
+                        {section4Plants.length === 0 ? (
+                          <SelectItem value="__none" disabled>{translate("区域四无植物类商品", "No plant items in Section 4")}</SelectItem>
+                        ) : (
+                          section4Plants.map((item, i) => (
+                            <SelectItem key={`${item.productId}-${i}`} value={item.productName}>
+                              {item.productName}{item.variationName ? ` (${item.variationName})` : ""} {translate("×{qty}", " ×{qty}", { qty: String(item.quantity) })}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  {/* V2.0.70: Show purchase quantities (read-only) and repot quantity (editable, defaults to plant purchase qty) */}
-                  {(selectedPlant || selectedPot) && (
-                    <div className="flex items-center gap-4 pl-1 text-xs">
-                      {selectedPlant && (
-                        <span className="text-muted-foreground">
-                          {translate("植物购买数量: {qty}（唯读）", "Plant Purchased Qty: {qty} (read-only)", { qty: String(selectedPlant.quantity) })}
-                        </span>
-                      )}
-                      {selectedPot && (
-                        <span className="text-muted-foreground">
-                          {translate("花盆购买数量: {qty}（唯读）", "Pot Purchased Qty: {qty} (read-only)", { qty: String(selectedPot.quantity) })}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 pl-1">
-                    <Label className="text-xs whitespace-nowrap">{translate("换盆数量", "Repot Qty")}</Label>
+                  <div className="flex-1">
+                    <Label className="text-xs mb-1 block">{translate("花盆", "Pot")}</Label>
+                    <Select
+                      value={entry.potName}
+                      onValueChange={(v) => {
+                        const item = section4Pots.find(i => i.productName === v);
+                        setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, potName: v, potProductId: item?.productId } : r));
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择花盆", "Select pot")} /></SelectTrigger>
+                      <SelectContent>
+                        {section4Pots.length === 0 ? (
+                          <SelectItem value="__none" disabled>{translate("区域四无花盆类商品", "No pot items in Section 4")}</SelectItem>
+                        ) : (
+                          section4Pots.map((item, i) => (
+                            <SelectItem key={`${item.productId}-${i}`} value={item.productName}>
+                              {item.productName}{item.variationName ? ` (${item.variationName})` : ""} {translate("×{qty}", " ×{qty}", { qty: String(item.quantity) })}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-16">
+                    <Label className="text-xs mb-1 block">{translate("数量", "Qty")}</Label>
                     <Input
                       type="number"
                       min={1}
                       value={entry.quantity}
                       onChange={(e) => setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, quantity: Number(e.target.value) } : r))}
-                      className="h-8 text-sm w-24"
+                      className="h-8 text-sm"
                     />
-                    <span className="text-xs text-muted-foreground">{translate("（预设等于植物购买数量，可修改）", "(defaults to plant purchase qty, editable)")}</span>
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setRepottingEntries(prev => prev.filter((_, i) => i !== idx))}
+                  >
+                    <Trash2 className="h-4 w-4 text-muted-foreground" />
+                  </Button>
                 </div>
-                );
-              })}
+              ))}
               <Button
                 variant="outline"
                 size="sm"
@@ -1279,33 +1258,14 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               />
             </div>
           )}
-          {(createRemarkCategory === "" || createRemarkCategory === "general" || createRemarkCategory === "other" || createRemarkCategory === "select_tree") && (
+          {(createRemarkCategory === "" || createRemarkCategory === "general" || createRemarkCategory === "other") && (
             <Textarea
               value={remark}
               onChange={(e) => setRemark(e.target.value)}
               rows={2}
-              placeholder={createRemarkCategory === "select_tree" ? translate("选树身备注，例如：选粗身 / 选矮身 / 选树形好看的", "Select tree remark, e.g. thick trunk / short trunk / nice shape") : translate("普通备注，例如：星期五才方便收货 / 送礼不要放价格 / 两张订单一起发", "General remark, e.g. Friday delivery preferred / No price tag for gift")}
+              placeholder={translate("普通备注，例如：星期五才方便收货 / 送礼不要放价格 / 两张订单一起发", "General remark, e.g. Friday delivery preferred / No price tag for gift")}
             />
           )}
-        </CardContent>
-      </Card>
-
-      {/* Payment Records (Create Mode) */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <DollarSign className="h-4 w-4" />
-            {translate("付款记录", "Payment Records")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <PaymentRecordsEditor
-            mode="create"
-            totalAmount={totalAmount}
-            paidAmount={localPayments.reduce((sum, p) => sum + parseFloat(p.amount || "0"), 0)}
-            payments={localPayments}
-            onLocalPaymentsChange={setLocalPayments}
-          />
         </CardContent>
       </Card>
 
@@ -1389,6 +1349,101 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               <div><span className="font-medium text-muted-foreground">{translate("售价", "Price")}:</span> RM {previewProduct?.sellingPrice || previewProduct?.unitPrice || "0"}</div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Section 7: Payment Records (local, submitted after order creation) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <CreditCard className="h-4 w-4" />
+            {translate("区域七：付款记录", "Section 7: Payment Records")}
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setPaymentDialogOpen(true)}>
+              <Plus className="h-3 w-3 mr-1" />{translate("新增付款", "Add Payment")}
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {localPayments.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">{translate("无付款记录，订单创建后可补添加", "No payment records. Can add after order creation.")}</p>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{translate("金额", "Amount")}</TableHead>
+                    <TableHead>{translate("付款方式", "Method")}</TableHead>
+                    <TableHead>{translate("单据", "Receipt")}</TableHead>
+                    <TableHead>{translate("备注", "Notes")}</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {localPayments.map((p, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell className="font-medium">RM {parseFloat(p.amount).toFixed(2)}</TableCell>
+                      <TableCell>{p.paymentMethodName || "-"}</TableCell>
+                      <TableCell>{p.receiptUrl ? <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{translate("查看", "View")}</a> : "-"}</TableCell>
+                      <TableCell className="text-muted-foreground">{p.notes || "-"}</TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" onClick={() => setLocalPayments(prev => prev.filter((_, i) => i !== idx))}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="mt-3 text-sm text-muted-foreground">
+                {translate("已添加付款总额", "Total payments added")}: RM {localPaymentsTotal.toFixed(2)}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Add Payment Dialog */}
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("新增付款记录", "Add Payment Record")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("金额 (RM)", "Amount (RM)")}</Label>
+              <Input type="number" step="0.01" value={paymentForm.amount} onChange={e => setPaymentForm(prev => ({ ...prev, amount: e.target.value }))} placeholder="0.00" />
+            </div>
+            <div>
+              <Label>{translate("付款方式", "Payment Method")}</Label>
+              <Input value={paymentForm.paymentMethodName} onChange={e => setPaymentForm(prev => ({ ...prev, paymentMethodName: e.target.value }))} placeholder={translate("例如: QR Pay (Tng/Duit Now)", "e.g. QR Pay (Tng/Duit Now)")} />
+            </div>
+            <div>
+              <Label>{translate("上传付款单据", "Upload Receipt")}</Label>
+              <input ref={receiptFileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadReceipt(f); e.target.value = ""; }} />
+              {paymentForm.receiptUrl ? (
+                <div className="flex items-center gap-2">
+                  <a href={paymentForm.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline truncate flex-1">{translate("查看单据", "View Receipt")}</a>
+                  <Button variant="ghost" size="sm" onClick={() => setPaymentForm(prev => ({ ...prev, receiptUrl: "" }))}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => receiptFileRef.current?.click()} disabled={uploadingReceipt} className="w-full">
+                  {uploadingReceipt ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />{translate("上传中...", "Uploading...")}</> : <><Upload className="h-3 w-3 mr-1" />{translate("选择文件", "Choose File")}</>}
+                </Button>
+              )}
+            </div>
+            <div>
+              <Label>{translate("备注", "Notes")}</Label>
+              <Textarea value={paymentForm.notes} onChange={e => setPaymentForm(prev => ({ ...prev, notes: e.target.value }))} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={handleAddLocalPayment}>
+              {translate("保存", "Save")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

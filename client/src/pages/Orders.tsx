@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, Bell } from "lucide-react";
+import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, Bell, Upload, Loader2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSearch, useLocation } from "wouter";
 
@@ -121,6 +121,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const [cancelReason, setCancelReason] = useState("");
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const receiptFileRef = useRef<HTMLInputElement>(null);
   const [remarkForm, setRemarkForm] = useState({ remarkCategory: "", content: "", desiredDeliveryDate: "", desiredDeliveryReason: "", repottingData: "" });
   // V2.0.53: Repotting groups — multiple repot pairs with plant selection from order items
   const [repotGroups, setRepotGroups] = useState<{ selectedPlantIds: number[]; potName: string }[]>([{ selectedPlantIds: [], potName: "" }]);
@@ -454,6 +456,38 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     setShipForm({ courierCompany: "", trackingNumber: "" });
   }
 
+  async function handleUploadReceipt(file: File) {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(translate("文件大小不能超过 10MB", "File size cannot exceed 10MB"));
+      return;
+    }
+    setUploadingReceipt(true);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: base64, filename: file.name, contentType: file.type }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Upload failed");
+      }
+      const data = await res.json();
+      setPaymentForm(prev => ({ ...prev, receiptUrl: data.url }));
+      toast.success(translate("单据已上传", "Receipt uploaded"));
+    } catch (e: any) {
+      toast.error(translate("上传失败: {message}", "Upload failed: {message}", { message: e.message }));
+    } finally {
+      setUploadingReceipt(false);
+    }
+  }
   function handleAddPayment() {
     if (!detailOrderId) return;
     if (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0) {
@@ -713,7 +747,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                               e.stopPropagation();
                               const fullLink = `https://xintian.com.my${(o as any).checkoutLink}`;
                               const template = (systemSettings as any)?.checkoutMessageTemplate ||
-                                "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                                "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
                               const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, (o as any).orderNumber || "");
                               resendCheckoutMutation.mutate({ orderId: (o as any).id, customMessage: msg });
                             }}
@@ -745,7 +779,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                             e.stopPropagation();
                             const fullLink = `https://xintian.com.my${(o as any).checkoutLink}`;
                             const template =
-                              "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                              "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
                             const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, (o as any).orderNumber || "");
                             navigator.clipboard.writeText(msg);
                             toast.success(translate("结单通知已复制", "Checkout notification copied"), {
@@ -763,7 +797,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                             }
                             const fullLink = `https://xintian.com.my${(o as any).checkoutLink}`;
                             const template = (systemSettings as any)?.checkoutMessageTemplate ||
-                              "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                              "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
                             const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, (o as any).orderNumber || "");
                             sendCheckoutMutation.mutate({ orderId: (o as any).id, customMessage: msg });
                           }}>
@@ -889,7 +923,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         if (link && phone) {
                           const fullLink = `https://xintian.com.my${link}`;
                           const template = (systemSettings as any)?.checkoutMessageTemplate ||
-                            "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                            "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
                           const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, (orderDetail as any).orderNumber || "");
                           setMessageDialogMode("whatsapp");
                           setEditableMessage(msg);
@@ -905,7 +939,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         if (link) {
                           const fullLink = `https://xintian.com.my${link}`;
                           const template = (systemSettings as any)?.checkoutMessageTemplate ||
-                            "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                            "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
                           const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, (orderDetail as any).orderNumber || "");
                           setMessageDialogMode("messenger");
                           setEditableMessage(msg);
@@ -937,7 +971,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                             if (link) {
                               const fullLink = `https://xintian.com.my${link}`;
                               const template = (systemSettings as any)?.checkoutMessageTemplate ||
-                                "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                                "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
                               const msg = template.replace(/\{link\}/g, fullLink);
                               setMessageDialogMode("messenger");
                               setEditableMessage(msg);
@@ -1207,7 +1241,6 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         <SelectContent>
                           <SelectItem value="repotting">{translate("换盆", "Repotting")}</SelectItem>
                           <SelectItem value="desired_delivery_date">{translate("希望收货日期", "Desired Delivery Date")}</SelectItem>
-                          <SelectItem value="select_tree">{translate("选树身", "Select Tree")}</SelectItem>
                           <SelectItem value="other">{translate("其他", "Other")}</SelectItem>
                         </SelectContent>
                       </Select>
@@ -1290,14 +1323,13 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         </Button>
                       </div>
                     )}
-                    {(remarkForm.remarkCategory === "other" || remarkForm.remarkCategory === "select_tree") && (
+                    {remarkForm.remarkCategory === "other" && (
                       <div>
                         <Label className="text-sm">{translate("备注内容", "Remark Content")}</Label>
                         <Textarea
                           value={remarkForm.content}
                           onChange={(e) => setRemarkForm({ ...remarkForm, content: e.target.value })}
                           rows={3}
-                          placeholder={remarkForm.remarkCategory === "select_tree" ? translate("选树身备注，例如：选粗身 / 选矮身 / 选树形好看的", "Select tree remark, e.g. thick trunk / short trunk / nice shape") : ""}
                         />
                       </div>
                     )}
@@ -1306,7 +1338,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                       disabled={!remarkForm.remarkCategory || 
                         (remarkForm.remarkCategory === "desired_delivery_date" && !remarkForm.desiredDeliveryDate) ||
                         (remarkForm.remarkCategory === "repotting" && repotGroups.every(g => g.selectedPlantIds.length === 0 || !g.potName.trim())) ||
-                        ((remarkForm.remarkCategory === "other" || remarkForm.remarkCategory === "select_tree") && !remarkForm.content.trim())
+                        (remarkForm.remarkCategory === "other" && !remarkForm.content.trim())
                       }
                       onClick={() => {
                         // V2.0.53: Generate repotting content and data from repotGroups
@@ -1314,7 +1346,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         let submitRepottingData: string | undefined;
                         if (remarkForm.remarkCategory === "repotting") {
                           const groups = repotGroups.filter(g => g.selectedPlantIds.length > 0 && g.potName.trim());
-                          const itemMap = new Map<number, any>((orderDetail.items || []).map((it: any) => [it.id, it] as [number, any]));
+                          const itemMap = new Map((orderDetail.items || []).map((it: any) => [it.id, it]));
                           const lines = groups.map((g, i) => {
                             const plants = g.selectedPlantIds.map(id => {
                               const it = itemMap.get(id);
@@ -1384,7 +1416,6 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                               <Badge variant="secondary" className="text-xs">
                                 {r.remarkCategory === "repotting" ? translate("换盆", "Repotting") :
                                  r.remarkCategory === "desired_delivery_date" ? translate("希望收货日期", "Desired Delivery Date") :
-                                 r.remarkCategory === "select_tree" ? translate("选树身", "Select Tree") :
                                  translate("其他", "Other")}
                               </Badge>
                             )}
@@ -1525,13 +1556,34 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               <Label>{translate("付款方式", "Payment Method")}</Label>
               <Input value={paymentForm.paymentMethodName}
                 onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethodName: e.target.value })}
-                placeholder={translate("如：银行转账/TNG/现金", "e.g. Bank Transfer/TNG/Cash")} />
+                placeholder={translate("如：QR Pay (Tng/Duit Now)/银行转账/现金", "e.g. QR Pay (Tng/Duit Now)/Bank Transfer/Cash")} />
             </div>
             <div>
-              <Label>{translate("付款凭证 URL", "Receipt URL")}</Label>
-              <Input value={paymentForm.receiptUrl}
-                onChange={(e) => setPaymentForm({ ...paymentForm, receiptUrl: e.target.value })}
-                placeholder="https://..." />
+              <Label>{translate("付款凭证", "Receipt")}</Label>
+              <input
+                ref={receiptFileRef}
+                type="file"
+                accept="image/*,.pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleUploadReceipt(file);
+                  e.target.value = "";
+                }}
+              />
+              {paymentForm.receiptUrl ? (
+                <div className="flex items-center gap-2">
+                  <a href={paymentForm.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline truncate flex-1">{translate("查看单据", "View Receipt")}</a>
+                  <Button variant="ghost" size="sm" onClick={() => setPaymentForm({ ...paymentForm, receiptUrl: "" })}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => receiptFileRef.current?.click()} disabled={uploadingReceipt}>
+                  {uploadingReceipt ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
+                  {uploadingReceipt ? translate("上传中...", "Uploading...") : translate("上传付款单据", "Upload Receipt")}
+                </Button>
+              )}
             </div>
             <div>
               <Label>{translate("备注", "Notes")}</Label>

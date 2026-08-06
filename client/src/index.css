@@ -232,25 +232,8 @@
   }
 }
 
-/* V2.0.72: Print styles — show only OrderDocument, hide everything else */
+/* V2.0.44: Print styles for order browse */
 @media print {
-  /* Hide everything by default */
-  body * {
-    visibility: hidden;
-  }
-  /* Show only the print-only-order-doc and its children */
-  .print-only-order-doc,
-  .print-only-order-doc * {
-    visibility: visible;
-  }
-  /* Position the print doc at top-left */
-  .print-only-order-doc {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-  }
-  /* Also hide no-print elements */
   .no-print {
     display: none !important;
   }
@@ -261,9 +244,4 @@
     max-width: 100% !important;
     padding: 0 !important;
   }
-}
-
-/* Screen-only: hide print-only elements */
-.print-only-order-doc {
-  display: none;
 }

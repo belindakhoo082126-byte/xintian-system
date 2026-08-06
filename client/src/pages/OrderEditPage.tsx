@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
@@ -12,9 +12,11 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Save, FileText, User, Truck, DollarSign, Package, X, CreditCard,
+  ArrowLeft, Save, FileText, User, Truck, DollarSign, Package, X,
+  CreditCard, Plus, Upload, Loader2, Trash2,
 } from "lucide-react";
-import { PaymentRecordsEditor } from "@/components/PaymentRecordsEditor";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const ORDER_NATURE = {
   retail: { label: "零售", enLabel: "Retail" },
@@ -63,6 +65,12 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     shippingFee: "0",
   });
 
+  // Payment records state
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const receiptFileRef = useRef<HTMLInputElement>(null);
+
   // Load order data into form when available
   useEffect(() => {
     if (order) {
@@ -94,6 +102,63 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     onError: (e) => toast.error(translate("更新失败: {message}", "Update failed: {message}", { message: e.message })),
   });
 
+  const addPaymentMutation = trpc.orders.addPayment.useMutation({
+    onSuccess: () => {
+      utils.orders.getDetail.invalidate({ id: orderId });
+      toast.success(translate("付款记录已添加", "Payment record added"));
+      setPaymentDialogOpen(false);
+      setPaymentForm({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
+    },
+    onError: (e: any) => toast.error(translate("添加付款失败: {message}", "Payment failed: {message}", { message: e.message })),
+  });
+
+  async function handleUploadReceipt(file: File) {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(translate("文件大小不能超过 10MB", "File size cannot exceed 10MB"));
+      return;
+    }
+    setUploadingReceipt(true);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: base64, filename: file.name, contentType: file.type }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Upload failed");
+      }
+      const data = await res.json();
+      setPaymentForm(prev => ({ ...prev, receiptUrl: data.url }));
+      toast.success(translate("单据已上传", "Receipt uploaded"));
+    } catch (e: any) {
+      toast.error(translate("上传失败: {message}", "Upload failed: {message}", { message: e.message }));
+    } finally {
+      setUploadingReceipt(false);
+    }
+  }
+
+  function handleAddPayment() {
+    if (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0) {
+      toast.error(translate("请输入有效金额", "Please enter a valid amount"));
+      return;
+    }
+    addPaymentMutation.mutate({
+      orderId,
+      amount: paymentForm.amount,
+      paymentMethod: paymentForm.paymentMethodName || undefined,
+      receiptUrl: paymentForm.receiptUrl || undefined,
+      notes: paymentForm.notes || undefined,
+    });
+  }
+
   // Calculate total
   const itemsSubtotal = useMemo(() => {
     if (!order) return 0;
@@ -103,14 +168,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
 
   const discountNum = parseFloat(formData.discountAmount) || 0;
   const extraChargeNum = parseFloat(formData.extraCharge) || 0;
-  // V2.2: Credit is auto-applied from customer account, not manually entered
-  const customerCreditBalance = parseFloat((order as any)?.creditBalance || "0");
-  const creditUsedNum = useMemo(() => {
-    if (customerCreditBalance <= 0) return 0;
-    // Auto-apply: use all available credit up to the total amount (before shipping)
-    const maxCreditCoverage = itemsSubtotal - discountNum + extraChargeNum;
-    return Math.min(customerCreditBalance, Math.max(0, maxCreditCoverage));
-  }, [customerCreditBalance, itemsSubtotal, discountNum, extraChargeNum]);
+  const creditUsedNum = parseFloat(formData.creditUsed) || 0;
   const shippingFeeNum = parseFloat(formData.shippingFee) || 0;
   const totalAmount = itemsSubtotal - discountNum + extraChargeNum + shippingFeeNum - creditUsedNum;
 
@@ -118,7 +176,6 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     updateDetailsMutation.mutate({
       id: orderId,
       ...formData,
-      creditUsed: creditUsedNum.toFixed(2),
       totalAmount: totalAmount.toFixed(2),
     });
   }
@@ -346,8 +403,8 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               <Input value={formData.extraChargeDescription} onChange={(e) => setFormData({ ...formData, extraChargeDescription: e.target.value })} />
             </div>
             <div>
-              <Label className="text-xs">{translate("自动扣除Credit", "Auto Credit Used")}</Label>
-              <Input type="number" value={creditUsedNum.toFixed(2)} readOnly className="bg-muted" />
+              <Label className="text-xs">{translate("使用Credit", "Credit Used")}</Label>
+              <Input type="number" value={formData.creditUsed} onChange={(e) => setFormData({ ...formData, creditUsed: e.target.value || "0" })} />
             </div>
             <div>
               <Label className="text-xs">{translate("运费", "Shipping Fee")}</Label>
@@ -372,31 +429,47 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
         </CardContent>
       </Card>
 
-      {/* Payment Records Section */}
+      {/* Section 6: Payment Records */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <CreditCard className="h-4 w-4" />
-            {translate("付款记录", "Payment Records")}
+            {translate("区域六：付款记录", "Section 6: Payment Records")}
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setPaymentDialogOpen(true)}>
+              <Plus className="h-3 w-3 mr-1" />{translate("新增付款", "Add Payment")}
+            </Button>
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {order && (
-            <PaymentRecordsEditor
-              orderId={orderId}
-              totalAmount={totalAmount}
-              paidAmount={parseFloat((order as any).paidAmount || "0")}
-              payments={((order as any).payments || []).map((p: any) => ({
-                id: p.id,
-                amount: p.amount,
-                paymentMethod: p.paymentMethod,
-                paymentDate: p.paymentDate,
-                receiptFiles: p.receiptFiles ? (typeof p.receiptFiles === "string" ? JSON.parse(p.receiptFiles) : p.receiptFiles) : (p.receiptUrl ? [p.receiptUrl] : []),
-                notes: p.notes,
-                purpose: p.purpose,
-              }))}
-            />
-          )}
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="p-3">{translate("日期", "Date")}</TableHead>
+                  <TableHead className="p-3 text-right">{translate("金额", "Amount")}</TableHead>
+                  <TableHead className="p-3">{translate("付款方式", "Method")}</TableHead>
+                  <TableHead className="p-3">{translate("付款凭证", "Receipt")}</TableHead>
+                  <TableHead className="p-3">{translate("备注", "Notes")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {((order as any)?.payments || []).map((p: any, idx: number) => (
+                  <TableRow key={idx}>
+                    <TableCell className="p-3">{new Date(p.paymentDate || p.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</TableCell>
+                    <TableCell className="p-3 text-right font-medium">RM {parseFloat(p.amount).toFixed(2)}</TableCell>
+                    <TableCell className="p-3">{p.paymentMethod || "-"}</TableCell>
+                    <TableCell className="p-3">{p.receiptUrl ? <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{translate("查看", "View")}</a> : "-"}</TableCell>
+                    <TableCell className="p-3 text-muted-foreground">{p.notes || "-"}</TableCell>
+                  </TableRow>
+                ))}
+                {(!((order as any)?.payments || []).length) && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="p-6 text-center text-muted-foreground">{translate("无付款记录", "No payment records")}</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -410,6 +483,52 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
           {updateDetailsMutation.isPending ? translate("保存中...", "Saving...") : translate("保存修改", "Save Changes")}
         </Button>
       </div>
+
+      {/* Add Payment Dialog */}
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("新增付款记录", "Add Payment Record")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("金额 (RM)", "Amount (RM)")}</Label>
+              <Input type="number" step="0.01" value={paymentForm.amount} onChange={e => setPaymentForm(prev => ({ ...prev, amount: e.target.value }))} placeholder="0.00" />
+            </div>
+            <div>
+              <Label>{translate("付款方式", "Payment Method")}</Label>
+              <Input value={paymentForm.paymentMethodName} onChange={e => setPaymentForm(prev => ({ ...prev, paymentMethodName: e.target.value }))} placeholder={translate("例如: QR Pay (Tng/Duit Now)", "e.g. QR Pay (Tng/Duit Now)")} />
+            </div>
+            <div>
+              <Label>{translate("上传付款单据", "Upload Receipt")}</Label>
+              <input ref={receiptFileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadReceipt(f); e.target.value = ""; }} />
+              {paymentForm.receiptUrl ? (
+                <div className="flex items-center gap-2">
+                  <a href={paymentForm.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline truncate flex-1">{translate("查看单据", "View Receipt")}</a>
+                  <Button variant="ghost" size="sm" onClick={() => setPaymentForm(prev => ({ ...prev, receiptUrl: "" }))}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => receiptFileRef.current?.click()} disabled={uploadingReceipt} className="w-full">
+                  {uploadingReceipt ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />{translate("上传中...", "Uploading...")}</> : <><Upload className="h-3 w-3 mr-1" />{translate("选择文件", "Choose File")}</>}
+                </Button>
+              )}
+            </div>
+            <div>
+              <Label>{translate("备注", "Notes")}</Label>
+              <Textarea value={paymentForm.notes} onChange={e => setPaymentForm(prev => ({ ...prev, notes: e.target.value }))} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={handleAddPayment} disabled={addPaymentMutation.isPending}>
+              {addPaymentMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+              {translate("保存", "Save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
