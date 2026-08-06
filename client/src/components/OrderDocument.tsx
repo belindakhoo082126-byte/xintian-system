@@ -396,20 +396,6 @@ export function OrderDocument({
         </div>
       )}
 
-      {/* ===== Admin Only: Operation Logs ===== */}
-      {isAdmin && o.logs && o.logs.length > 0 && (
-        <div style={{ marginBottom: "20px" }}>
-          <div style={sectionTitle}>{translate("操作记录", "Operation Logs")}</div>
-          <div style={{ fontSize: "12px", color: C.textLight }}>
-            {o.logs.map((log: any, idx: number) => (
-              <div key={idx} style={{ padding: "2px 0" }}>
-                {fmtDate(log.createdAt)} — {log.action || log.operationType || "-"} {log.operatorName ? `(${log.operatorName})` : ""}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* ===== Footer ===== */}
       <div style={{ marginTop: "32px", paddingTop: "16px", borderTop: `1px solid ${C.border}`, textAlign: "center" }}>
         <div style={{ fontSize: "11px", color: "#aaaaaa" }}>

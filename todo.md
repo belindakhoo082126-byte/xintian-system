@@ -2125,3 +2125,9 @@
 - [x] Edit 订单：备注内容自动回填，不遗失
 - [x] 发货日期备注特殊逻辑：修改日期自动更新预约名单，删除备注自动移除预约
 - [x] 编译与测试验证
+
+## V2.0.75: 单据修复 — 移除操作记录 + 修复手机导出图片 oklch 错误
+
+- [x] 从 OrderDocument 单据中移除操作记录（Operation Logs）显示
+- [x] 修复手机端导出单据图片时 oklch 颜色函数不支持的错误（html2canvas onclone 回调替换 oklch 为 hex）
+- [x] TypeScript 编译零错误，270 项测试全部通过

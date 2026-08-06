@@ -134,6 +134,27 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
         foreignObjectRendering: false,
         logging: false,
         imageTimeout: 0,
+        onclone: (doc: Document) => {
+          // Fix: html2canvas 1.4.1 doesn't support oklch() color function.
+          // Replace all oklch computed colors on body/documentElement with hex.
+          const html = doc.documentElement;
+          const body = doc.body;
+          if (html) html.style.backgroundColor = "#ffffff";
+          if (body) body.style.backgroundColor = "#ffffff";
+          // Also replace any oklch colors in the cloned container's subtree
+          const allEls = doc.querySelectorAll("*");
+          allEls.forEach((el) => {
+            const cs = doc.defaultView?.getComputedStyle(el);
+            if (cs) {
+              const bg = cs.backgroundColor;
+              const color = cs.color;
+              const bdc = cs.borderColor;
+              if (bg && bg.includes("oklch")) (el as HTMLElement).style.backgroundColor = "#ffffff";
+              if (color && color.includes("oklch")) (el as HTMLElement).style.color = "#1a1a1a";
+              if (bdc && bdc.includes("oklch")) (el as HTMLElement).style.borderColor = "#e0e0e0";
+            }
+          });
+        },
       });
 
       // Convert to blob for more reliable download (especially on mobile)
