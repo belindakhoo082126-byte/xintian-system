@@ -315,18 +315,11 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     try {
       const result = await utils.orders.aiSmartParse.fetch({ text: smartPasteText });
       if (result) {
-        // V2.0.64: Set flag to prevent useEffect from overwriting Smart Parse results
+        // V2.0.68: AI Smart Parse only updates Region 3 (Recipient), NEVER Region 2 (Customer Profile)
+        // Customer Profile (name, facebookName, facebookId, messengerId) must not be overwritten by recipient data
         smartParseUpdatingRef.current = true;
 
-        // V2.0.64: Single batch update for customerForm to avoid race conditions
-        const customerUpdates: Record<string, string> = {};
-        if (result.customerName) customerUpdates.name = result.customerName;
-        if (result.contactNumber) customerUpdates.phoneNumber = result.contactNumber;
-        if (Object.keys(customerUpdates).length > 0) {
-          setCustomerForm(prev => ({ ...prev, ...customerUpdates }));
-        }
-
-        // V2.0.64: Single batch update for recipientForm — one setState call, no race
+        // V2.0.68: Single batch update for recipientForm only — no customerForm changes
         setRecipientForm(prev => ({
           ...prev,
           recipientName: result.customerName || prev.recipientName,
@@ -336,6 +329,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
           city: result.city || prev.city,
           state: result.state || prev.state,
           postcode: result.postcode || prev.postcode,
+          country: result.country || prev.country,
         }));
 
         if (result.area === "East Malaysia") {

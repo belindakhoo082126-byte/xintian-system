@@ -2043,3 +2043,8 @@
 - [x] 3. Orders.tsx 中6处消息模板修改
 - [x] 4. SystemSettings.tsx 中 placeholder 修改
 - [x] 5. TypeScript 零错误
+## V2.0.68: AI Smart Parse 不再覆盖区域2客户资料
+- [x] 1. 移除 handleSmartPaste 中对 customerForm 的更新（name, phoneNumber）
+- [x] 2. 只更新 recipientForm（recipientName, recipientPhone, addressLine1, addressLine2, city, state, postcode, country）
+- [x] 3. 配送方式仍自动判断（East Malaysia → east_malaysia_poslaju）
+- [x] 4. TypeScript 零错误，269/269 测试通过
