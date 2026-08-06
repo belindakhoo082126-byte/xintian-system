@@ -2053,3 +2053,8 @@
 - [x] 2. 检查 useEffect 同步逻辑，确认 smartParseUpdatingRef 正确阻止覆盖
 - [x] 3. 添加 debug log 到 handleSmartPaste 前后（BEFORE/AFTER/API Result）
 - [x] 4. TypeScript 零错误，269/269 测试通过
+## V2.0.70: 换盆备注下拉移除×N + 购买数量唯读 + 换盆数量预设
+- [x] 1. 植物和花盆下拉选项移除 ×N 数量显示，只显示商品名
+- [x] 2. 选择植物后自动设置换盆数量=植物购买数量
+- [x] 3. 选择后显示购买数量（唯读）和换盆数量（可修改）
+- [x] 4. TypeScript 零错误，269/269 测试通过

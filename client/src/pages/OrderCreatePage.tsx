@@ -1118,74 +1118,98 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
           {createRemarkCategory === "repotting" && (
             <div className="space-y-3">
               <Label className="text-xs">{translate("换盆记录（可添加多组，建单后还可在订单详情继续添加）", "Repotting entries (can add multiple groups, more can be added in order detail after creation)")}</Label>
-              {repottingEntries.map((entry, idx) => (
-                <div key={idx} className="flex items-end gap-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950/20">
-                  <div className="flex-1">
-                    <Label className="text-xs mb-1 block">{translate("植物名称", "Plant Name")}</Label>
-                    <Select
-                      value={entry.plantName}
-                      onValueChange={(v) => {
-                        const item = section4Plants.find(i => i.productName === v);
-                        setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, plantName: v, plantProductId: item?.productId } : r));
-                      }}
+              {repottingEntries.map((entry, idx) => {
+                // V2.0.70: Find selected plant & pot items to show purchase quantity
+                const selectedPlant = section4Plants.find(i => i.productName === entry.plantName);
+                const selectedPot = section4Pots.find(i => i.productName === entry.potName);
+                return (
+                <div key={idx} className="space-y-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950/20">
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <Label className="text-xs mb-1 block">{translate("植物名称", "Plant Name")}</Label>
+                      <Select
+                        value={entry.plantName}
+                        onValueChange={(v) => {
+                          const item = section4Plants.find(i => i.productName === v);
+                          // V2.0.70: Auto-set repot quantity to plant purchase quantity
+                          setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, plantName: v, plantProductId: item?.productId, quantity: item ? item.quantity : r.quantity } : r));
+                        }}
+                      >
+                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择植物", "Select plant")} /></SelectTrigger>
+                        <SelectContent>
+                          {section4Plants.length === 0 ? (
+                            <SelectItem value="__none" disabled>{translate("区域四无植物类商品", "No plant items in Section 4")}</SelectItem>
+                          ) : (
+                            section4Plants.map((item, i) => (
+                              <SelectItem key={`${item.productId}-${i}`} value={item.productName}>
+                                {item.productName}{item.variationName ? ` (${item.variationName})` : ""}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex-1">
+                      <Label className="text-xs mb-1 block">{translate("花盆", "Pot")}</Label>
+                      <Select
+                        value={entry.potName}
+                        onValueChange={(v) => {
+                          const item = section4Pots.find(i => i.productName === v);
+                          setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, potName: v, potProductId: item?.productId } : r));
+                        }}
+                      >
+                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择花盆", "Select pot")} /></SelectTrigger>
+                        <SelectContent>
+                          {section4Pots.length === 0 ? (
+                            <SelectItem value="__none" disabled>{translate("区域四无花盆类商品", "No pot items in Section 4")}</SelectItem>
+                          ) : (
+                            section4Pots.map((item, i) => (
+                              <SelectItem key={`${item.productId}-${i}`} value={item.productName}>
+                                {item.productName}{item.variationName ? ` (${item.variationName})` : ""}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setRepottingEntries(prev => prev.filter((_, i) => i !== idx))}
                     >
-                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择植物", "Select plant")} /></SelectTrigger>
-                      <SelectContent>
-                        {section4Plants.length === 0 ? (
-                          <SelectItem value="__none" disabled>{translate("区域四无植物类商品", "No plant items in Section 4")}</SelectItem>
-                        ) : (
-                          section4Plants.map((item, i) => (
-                            <SelectItem key={`${item.productId}-${i}`} value={item.productName}>
-                              {item.productName}{item.variationName ? ` (${item.variationName})` : ""} {translate("×{qty}", " ×{qty}", { qty: String(item.quantity) })}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
                   </div>
-                  <div className="flex-1">
-                    <Label className="text-xs mb-1 block">{translate("花盆", "Pot")}</Label>
-                    <Select
-                      value={entry.potName}
-                      onValueChange={(v) => {
-                        const item = section4Pots.find(i => i.productName === v);
-                        setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, potName: v, potProductId: item?.productId } : r));
-                      }}
-                    >
-                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择花盆", "Select pot")} /></SelectTrigger>
-                      <SelectContent>
-                        {section4Pots.length === 0 ? (
-                          <SelectItem value="__none" disabled>{translate("区域四无花盆类商品", "No pot items in Section 4")}</SelectItem>
-                        ) : (
-                          section4Pots.map((item, i) => (
-                            <SelectItem key={`${item.productId}-${i}`} value={item.productName}>
-                              {item.productName}{item.variationName ? ` (${item.variationName})` : ""} {translate("×{qty}", " ×{qty}", { qty: String(item.quantity) })}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="w-16">
-                    <Label className="text-xs mb-1 block">{translate("数量", "Qty")}</Label>
+                  {/* V2.0.70: Show purchase quantities (read-only) and repot quantity (editable, defaults to plant purchase qty) */}
+                  {(selectedPlant || selectedPot) && (
+                    <div className="flex items-center gap-4 pl-1 text-xs">
+                      {selectedPlant && (
+                        <span className="text-muted-foreground">
+                          {translate("植物购买数量: {qty}（唯读）", "Plant Purchased Qty: {qty} (read-only)", { qty: String(selectedPlant.quantity) })}
+                        </span>
+                      )}
+                      {selectedPot && (
+                        <span className="text-muted-foreground">
+                          {translate("花盆购买数量: {qty}（唯读）", "Pot Purchased Qty: {qty} (read-only)", { qty: String(selectedPot.quantity) })}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 pl-1">
+                    <Label className="text-xs whitespace-nowrap">{translate("换盆数量", "Repot Qty")}</Label>
                     <Input
                       type="number"
                       min={1}
                       value={entry.quantity}
                       onChange={(e) => setRepottingEntries(prev => prev.map((r, i) => i === idx ? { ...r, quantity: Number(e.target.value) } : r))}
-                      className="h-8 text-sm"
+                      className="h-8 text-sm w-24"
                     />
+                    <span className="text-xs text-muted-foreground">{translate("（预设等于植物购买数量，可修改）", "(defaults to plant purchase qty, editable)")}</span>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setRepottingEntries(prev => prev.filter((_, i) => i !== idx))}
-                  >
-                    <Trash2 className="h-4 w-4 text-muted-foreground" />
-                  </Button>
                 </div>
-              ))}
+                );
+              })}
               <Button
                 variant="outline"
                 size="sm"
