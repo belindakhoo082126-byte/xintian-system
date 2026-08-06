@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
   pending: { zh: "未汇款订单", en: "Unpaid Order", variant: "outline" },
   receipt_uploaded: { zh: "待审核付款凭证", en: "Pending Payment Verification", variant: "secondary" },
+  partial_payment: { zh: "部分汇款", en: "Partial Payment", variant: "secondary" },
   hold_order: { zh: "保留订单", en: "Hold Order", variant: "secondary" },
   packing: { zh: "待包货", en: "Pending Packing", variant: "default" },
   partial_shipped: { zh: "部分发货", en: "Partial Shipped", variant: "secondary" },
@@ -550,41 +551,73 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
             {translate("6. 付款记录", "6. Payment Records")}
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-muted/50">
-                <tr>
-                  <th className="text-left p-3 font-medium">{translate("日期", "Date")}</th>
-                  <th className="text-right p-3 font-medium">{translate("金额", "Amount")}</th>
-                  <th className="text-left p-3 font-medium">{translate("付款方式", "Method")}</th>
-                  <th className="text-left p-3 font-medium">{translate("付款截图", "Receipt")}</th>
-                  <th className="text-left p-3 font-medium">{translate("备注", "Notes")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(o.payments || []).map((p: any, idx: number) => (
-                  <tr key={idx} className="border-b last:border-0">
-                    <td className="p-3">{new Date(p.paymentDate || p.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</td>
-                    <td className="p-3 text-right font-medium">RM {parseFloat(p.amount).toFixed(2)}</td>
-                    <td className="p-3">{p.paymentMethodName || p.paymentMethod || "-"}</td>
-                    <td className="p-3">
-                      {p.receiptUrl ? (
-                        <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                          {translate("查看截图", "View Receipt")}
-                        </a>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-muted-foreground">{p.notes || p.purpose || "-"}</td>
-                  </tr>
-                ))}
-                {(!o.payments || o.payments.length === 0) && (
-                  <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">{translate("无付款记录", "No payment records")}</td></tr>
-                )}
-              </tbody>
-            </table>
+        <CardContent className="space-y-4">
+          {/* Payment records list */}
+          <div className="space-y-2">
+            {(o.payments || []).length === 0 ? (
+              <div className="text-center text-muted-foreground text-sm py-6 border rounded-lg">
+                {translate("暂无付款记录", "No payment records")}
+              </div>
+            ) : (
+              o.payments.map((p: any, idx: number) => {
+                const files: string[] = p.receiptFiles
+                  ? (typeof p.receiptFiles === "string" ? JSON.parse(p.receiptFiles) : p.receiptFiles)
+                  : (p.receiptUrl ? [p.receiptUrl] : []);
+                return (
+                  <div key={idx} className="rounded-lg border p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary">{translate("付款", "Payment")} {idx + 1}</Badge>
+                        <span className="font-medium">RM {parseFloat(p.amount).toFixed(2)}</span>
+                        <span className="text-muted-foreground text-xs">· {p.paymentMethodName || p.paymentMethod || "-"}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {new Date(p.paymentDate || p.createdAt).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US")}
+                      </span>
+                      {p.purpose && <span>· {p.purpose}</span>}
+                      {p.notes && <span>· {p.notes}</span>}
+                    </div>
+                    {files.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {files.map((url: string, fi: number) => (
+                          <a key={fi} href={url} target="_blank" rel="noopener noreferrer"
+                             className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline bg-blue-50 dark:bg-blue-950/20 rounded px-2 py-1">
+                            <FileText className="h-3 w-3" />
+                            {translate("单据", "Receipt")} {fi + 1}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Summary */}
+          <Separator />
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">{translate("订单总金额", "Total Amount")}</span>
+              <span className="font-medium">RM {totalAmount.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">{translate("已付款", "Paid")}</span>
+              <span className="font-medium text-green-600">RM {paidAmount.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">{translate("未付款", "Outstanding")}</span>
+              <span className={`font-medium ${balance > 0 ? "text-orange-600" : "text-green-600"}`}>
+                RM {Math.max(0, balance).toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between pt-1 border-t">
+              <span className="text-muted-foreground">{translate("订单状态", "Order Status")}</span>
+              <Badge variant={statusCfg.variant} className="text-xs">{translate(statusCfg.zh, statusCfg.en)}</Badge>
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -12,8 +12,9 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Save, FileText, User, Truck, DollarSign, Package, X,
+  ArrowLeft, Save, FileText, User, Truck, DollarSign, Package, X, CreditCard,
 } from "lucide-react";
+import { PaymentRecordsEditor } from "@/components/PaymentRecordsEditor";
 
 const ORDER_NATURE = {
   retail: { label: "零售", enLabel: "Retail" },
@@ -360,6 +361,34 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               <span>RM {totalAmount.toFixed(2)}</span>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Payment Records Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <CreditCard className="h-4 w-4" />
+            {translate("付款记录", "Payment Records")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {order && (
+            <PaymentRecordsEditor
+              orderId={orderId}
+              totalAmount={totalAmount}
+              paidAmount={parseFloat((order as any).paidAmount || "0")}
+              payments={((order as any).payments || []).map((p: any) => ({
+                id: p.id,
+                amount: p.amount,
+                paymentMethod: p.paymentMethod,
+                paymentDate: p.paymentDate,
+                receiptFiles: p.receiptFiles ? (typeof p.receiptFiles === "string" ? JSON.parse(p.receiptFiles) : p.receiptFiles) : (p.receiptUrl ? [p.receiptUrl] : []),
+                notes: p.notes,
+                purpose: p.purpose,
+              }))}
+            />
+          )}
         </CardContent>
       </Card>
 

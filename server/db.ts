@@ -863,9 +863,11 @@ export async function addOrderPayment(data: {
   amount: string;
   paymentMethod?: string;
   receiptUrl?: string;
+  receiptFiles?: string; // JSON array of URLs
   paymentDate?: Date;
   operatorName?: string;
   notes?: string;
+  purpose?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -875,22 +877,30 @@ export async function addOrderPayment(data: {
     amount: data.amount,
     paymentMethod: data.paymentMethod || null,
     receiptUrl: data.receiptUrl || null,
+    receiptFiles: data.receiptFiles || null,
     paymentDate: data.paymentDate || new Date(),
     operatorName: data.operatorName || null,
     notes: data.notes || null,
+    purpose: data.purpose || null,
   });
 
-  // Update order paidAmount
+  // Update order paidAmount and auto-suggest status
   const allPayments = await db.select().from(orderPayments).where(eq(orderPayments.orderId, data.orderId));
   const totalPaid = allPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
   const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
   if (order.length > 0) {
     const totalAmount = parseFloat(String(order[0].totalAmount));
     let newStatus = order[0].physicalStatus;
-    if (totalPaid >= totalAmount) {
-      newStatus = "packing";
-    } else if (totalPaid > 0) {
-      newStatus = "receipt_uploaded";
+    // Auto-suggest status based on payment — only update if not already shipped/completed/cancelled
+    const lockedStatuses = ["shipped", "partial_shipped", "completed", "cancelled", "scheduled", "special"];
+    if (!lockedStatuses.includes(order[0].physicalStatus || "")) {
+      if (totalPaid >= totalAmount && totalAmount > 0) {
+        newStatus = "packing"; // Fully paid → ready for packing
+      } else if (totalPaid > 0) {
+        newStatus = "partial_payment"; // Partial payment
+      } else {
+        newStatus = "pending"; // No payment
+      }
     }
     await db.update(orders).set({
       paidAmount: totalPaid.toFixed(2),
@@ -899,7 +909,48 @@ export async function addOrderPayment(data: {
     }).where(eq(orders.id, data.orderId));
   }
 
-  await logOrderOperation(data.orderId, "payment", `Payment recorded: RM${data.amount}`, null, data.operatorName);
+  await logOrderOperation(data.orderId, "payment", `Payment recorded: RM${data.amount}${data.purpose ? ` (${data.purpose})` : ""}`, null, data.operatorName);
+  broadcastChanges(["orders", "dashboard"]);
+}
+
+// ============================================================================
+// Delete Order Payment (删除单笔付款记录)
+// ============================================================================
+
+export async function deleteOrderPayment(paymentId: number, operatorName?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const payment = await db.select().from(orderPayments).where(eq(orderPayments.id, paymentId)).limit(1);
+  if (payment.length === 0) throw new Error("Payment record not found");
+
+  const orderId = payment[0].orderId;
+  await db.delete(orderPayments).where(eq(orderPayments.id, paymentId));
+
+  // Recalculate paidAmount and status
+  const allPayments = await db.select().from(orderPayments).where(eq(orderPayments.orderId, orderId));
+  const totalPaid = allPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
+  const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (order.length > 0) {
+    const totalAmount = parseFloat(String(order[0].totalAmount));
+    let newStatus = order[0].physicalStatus;
+    const lockedStatuses = ["shipped", "partial_shipped", "completed", "cancelled", "scheduled", "special"];
+    if (!lockedStatuses.includes(order[0].physicalStatus || "")) {
+      if (totalPaid >= totalAmount && totalAmount > 0) {
+        newStatus = "packing";
+      } else if (totalPaid > 0) {
+        newStatus = "partial_payment";
+      } else {
+        newStatus = "pending";
+      }
+    }
+    await db.update(orders).set({
+      paidAmount: totalPaid.toFixed(2),
+      physicalStatus: newStatus as any,
+    }).where(eq(orders.id, orderId));
+  }
+
+  await logOrderOperation(orderId, "payment", `Payment deleted: RM${payment[0].amount}`, null, operatorName);
   broadcastChanges(["orders", "dashboard"]);
 }
 

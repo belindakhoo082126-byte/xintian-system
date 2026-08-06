@@ -1232,7 +1232,10 @@ export const appRouter = router({
         amount: z.string(),
         paymentMethod: z.string().optional(),
         receiptUrl: z.string().optional(),
+        receiptFiles: z.string().optional(), // JSON array of URLs
+        paymentDate: z.string().optional(), // ISO date string
         notes: z.string().optional(),
+        purpose: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         await db.addOrderPayment({
@@ -1240,9 +1243,20 @@ export const appRouter = router({
           amount: input.amount,
           paymentMethod: input.paymentMethod,
           receiptUrl: input.receiptUrl,
+          receiptFiles: input.receiptFiles,
+          paymentDate: input.paymentDate ? new Date(input.paymentDate) : undefined,
           operatorName: ctx.user?.name || "admin",
           notes: input.notes,
+          purpose: input.purpose,
         });
+        return { success: true };
+      }),
+
+    // V2.1: Delete a single payment record
+    deletePayment: adminProcedure
+      .input(z.object({ paymentId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteOrderPayment(input.paymentId, ctx.user?.name || "admin");
         return { success: true };
       }),
 

@@ -1909,6 +1909,8 @@ export const orderPayments = mysqlTable("order_payments", {
   paymentMethod: varchar("paymentMethod", { length: 100 }),
   // Receipt proof URL (uploaded image/file)
   receiptUrl: varchar("receiptUrl", { length: 500 }),
+  // Multiple receipt files (JSON array of URLs) — supports JPG, PNG, PDF
+  receiptFiles: text("receiptFiles"),
   // Purpose / notes about this payment
   purpose: varchar("purpose", { length: 255 }),
   // Who recorded this payment (operator)

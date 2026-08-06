@@ -2102,3 +2102,14 @@
 - [x] 点击后以弹窗(Dialog)显示 OrderDocument 模板内容，与导出图片/打印版面 100% 一致
 - [x] Preview 不下载图片、不打印，仅预览，方便截图
 - [x] 三种功能(Preview/导出图片/打印)共用同一份 OrderDocument 模板
+
+## 建立订单/Edit 订单可上传付款单据
+
+- [x] 数据库 Schema：order_payments 表新增 receiptFiles（JSON 多文件 URL）和 purpose 字段
+- [x] 后端 db.ts：更新 addOrderPayment 支持 receiptFiles/purpose/paymentDate，新增 deleteOrderPayment，状态自动建议（partial_payment）
+- [x] 后端 tRPC 路由：addPayment 支持 receiptFiles/purpose/paymentDate，新增 deletePayment 路由
+- [x] 前端组件：可复用 PaymentRecordsEditor（新增付款弹窗+多文件上传+自动余额计算）
+- [x] OrderEditPage：接入 PaymentRecordsEditor
+- [ ] OrderCreatePage：接入 PaymentRecordsEditor（本地暂存，创建后批量提交）
+- [x] OrderBrowsePage：完善付款记录展示（单据预览+余额汇总+状态建议）
+- [x] 编译与测试验证
