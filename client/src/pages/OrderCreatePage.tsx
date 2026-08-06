@@ -222,6 +222,12 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         creditUsed: creditUsed !== "0" ? creditUsed : undefined,
         recipientName: recipientForm.recipientName || undefined,
         recipientPhone: recipientForm.recipientPhone || undefined,
+        addressLine1: recipientForm.addressLine1 || undefined,
+        addressLine2: recipientForm.addressLine2 || undefined,
+        city: recipientForm.city || undefined,
+        state: recipientForm.state || undefined,
+        postcode: recipientForm.postcode || undefined,
+        country: recipientForm.country || undefined,
         repottingData: createRemarkCategory === "repotting" && repottingEntries.length > 0 ? JSON.stringify(repottingEntries) : undefined,
       });
     },

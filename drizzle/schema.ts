@@ -616,6 +616,15 @@ export const orders = mysqlTable("orders", {
   notificationStatus: mysqlEnum("notificationStatus", ["pending", "sent", "failed"]).default("pending"),
   notificationError: text("notificationError"),
   notificationSentAt: timestamp("notificationSentAt"),
+  // V2.0.71: Recipient info (separate from customer profile)
+  recipientName: varchar("recipientName", { length: 255 }),
+  recipientPhone: varchar("recipientPhone", { length: 50 }),
+  addressLine1: varchar("addressLine1", { length: 500 }),
+  addressLine2: varchar("addressLine2", { length: 500 }),
+  postcode: varchar("postcode", { length: 20 }),
+  recipientCity: varchar("recipientCity", { length: 100 }),
+  recipientState: varchar("recipientState", { length: 100 }),
+  recipientCountry: varchar("recipientCountry", { length: 100 }),
 });
 export type Order = typeof orders.$inferSelect;
 export type InsertOrder = typeof orders.$inferInsert;

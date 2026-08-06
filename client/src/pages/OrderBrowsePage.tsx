@@ -61,16 +61,22 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   // V2.0.45: Logo URL for watermark
   const LOGO_URL = "/manus-storage/xintian-logo-transparent_58bbaf5e.png";
 
-  // V2.0.44: Export order as image with logo and watermark
+  // V2.0.71: Export order as image with logo and watermark (fixed)
   async function handleExportImage() {
     if (!exportRef.current) return;
     setExporting(true);
     try {
+      // Wait for any pending renders to settle
+      await new Promise(r => setTimeout(r, 100));
+
       // First capture the order content
       const contentCanvas = await html2canvas(exportRef.current, {
         scale: 2,
         backgroundColor: "#ffffff",
         useCORS: true,
+        allowTaint: true,
+        foreignObjectRendering: false,
+        logging: false,
       });
 
       // Create a new canvas with extra space for header (logo) and footer (watermark)
@@ -235,7 +241,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 no-print">
           <Badge variant={statusCfg.variant}>{translate(statusCfg.zh, statusCfg.en)}</Badge>
           <Button variant="outline" size="sm" onClick={handleExportImage} disabled={exporting}>
             <Download className="h-3 w-3 mr-1" />{exporting ? translate("导出中...", "Exporting...") : translate("导出图片", "Export Image")}
@@ -253,15 +259,6 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
               toast.success(translate("客户订单链接已复制", "Customer order link copied"));
             }}>
               <Link2 className="h-3 w-3 mr-1" />{translate("复制订单链接", "Copy Order Link")}
-            </Button>
-          )}
-          {o.checkoutLink && (
-            <Button variant="outline" size="sm" onClick={() => {
-              const fullLink = `https://xintian.com.my${o.checkoutLink}`;
-              navigator.clipboard.writeText(fullLink);
-              toast.success(translate("结单链接已复制", "Checkout link copied"), { description: fullLink, duration: 5000 });
-            }}>
-              <Copy className="h-3 w-3 mr-1" />{translate("复制结单链接", "Copy Checkout Link")}
             </Button>
           )}
           {o.checkoutLink && o.messengerId && (
@@ -337,7 +334,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-          <div><span className="text-muted-foreground">{translate("客户姓名", "Customer Name")}:</span> {o.facebookName || o.customerName || "-"}</div>
+          <div><span className="text-muted-foreground">{translate("客户姓名", "Customer Name")}:</span> {o.customerName || o.facebookName || "-"}</div>
           <div><span className="text-muted-foreground">{translate("电话号码", "Phone")}:</span> {o.customerPhone || "-"}</div>
           <div><span className="text-muted-foreground">{translate("Facebook 名称", "FB Name")}:</span> {o.facebookName || "-"}</div>
           <div><span className="text-muted-foreground">{translate("Facebook ID", "FB ID")}:</span> {o.facebookId || "-"}</div>
@@ -356,7 +353,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <div><span className="text-muted-foreground">{translate("收件人姓名", "Recipient Name")}:</span> {o.recipientName || o.facebookName || "-"}</div>
+            <div><span className="text-muted-foreground">{translate("收件人姓名", "Recipient Name")}:</span> {o.recipientName || "-"}</div>
             <div><span className="text-muted-foreground">{translate("收件人电话", "Recipient Phone")}:</span> {o.recipientPhone || "-"}</div>
             <div><span className="text-muted-foreground">{translate("配送方式", "Shipping Method")}:</span> {translate(shippingCfg.zh, shippingCfg.en)}</div>
           </div>
@@ -476,6 +473,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                   <th className="text-left p-3 font-medium">{translate("日期", "Date")}</th>
                   <th className="text-right p-3 font-medium">{translate("金额", "Amount")}</th>
                   <th className="text-left p-3 font-medium">{translate("付款方式", "Method")}</th>
+                  <th className="text-left p-3 font-medium">{translate("付款截图", "Receipt")}</th>
                   <th className="text-left p-3 font-medium">{translate("备注", "Notes")}</th>
                 </tr>
               </thead>
@@ -484,12 +482,21 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                   <tr key={idx} className="border-b last:border-0">
                     <td className="p-3">{new Date(p.paymentDate || p.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</td>
                     <td className="p-3 text-right font-medium">RM {parseFloat(p.amount).toFixed(2)}</td>
-                    <td className="p-3">{p.paymentMethodName || "-"}</td>
-                    <td className="p-3 text-muted-foreground">{p.notes || "-"}</td>
+                    <td className="p-3">{p.paymentMethodName || p.paymentMethod || "-"}</td>
+                    <td className="p-3">
+                      {p.receiptUrl ? (
+                        <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                          {translate("查看截图", "View Receipt")}
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-muted-foreground">{p.notes || p.purpose || "-"}</td>
                   </tr>
                 ))}
                 {(!o.payments || o.payments.length === 0) && (
-                  <tr><td colSpan={4} className="p-6 text-center text-muted-foreground">{translate("无付款记录", "No payment records")}</td></tr>
+                  <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">{translate("无付款记录", "No payment records")}</td></tr>
                 )}
               </tbody>
             </table>

@@ -1312,7 +1312,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         let submitRepottingData: string | undefined;
                         if (remarkForm.remarkCategory === "repotting") {
                           const groups = repotGroups.filter(g => g.selectedPlantIds.length > 0 && g.potName.trim());
-                          const itemMap = new Map((orderDetail.items || []).map((it: any) => [it.id, it]));
+                          const itemMap = new Map<number, any>((orderDetail.items || []).map((it: any) => [it.id, it] as [number, any]));
                           const lines = groups.map((g, i) => {
                             const plants = g.selectedPlantIds.map(id => {
                               const it = itemMap.get(id);

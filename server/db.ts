@@ -457,7 +457,7 @@ export async function getOrderById(id: number) {
   const result = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
   if (result.length === 0) return undefined;
 
-  const order = result[0];
+  const order = result[0] as any;
   // 兼容旧订单：管理员第一次打开详情时，自动补齐安全令牌和真实可访问的结单路径。
   // 使用 try-catch 防止 update 失败导致整个查询失败（如 unique 约束冲突等）
   const secureToken = order.secureToken || generateSecureToken();
@@ -469,7 +469,35 @@ export async function getOrderById(id: number) {
       console.warn("[getOrderById] Failed to update secureToken/checkoutLink:", updateErr);
     }
   }
-  return { ...order, secureToken, checkoutLink };
+
+  // V2.0.71: JOIN customers table to get customer profile data
+  const customerResult = await db.select({
+    name: customers.name,
+    phoneNumber: customers.phoneNumber,
+    email: customers.email,
+    address: customers.address,
+    city: customers.city,
+    state: customers.state,
+    postalCode: customers.postalCode,
+    country: customers.country,
+    pointsBalance: customers.pointsBalance,
+  }).from(customers).where(eq(customers.id, order.customerId)).limit(1);
+
+  const customer = customerResult[0] || {};
+  return {
+    ...order,
+    secureToken,
+    checkoutLink,
+    customerName: customer.name || null,
+    customerPhone: customer.phoneNumber || null,
+    customerEmail: customer.email || null,
+    customerAddress: customer.address || null,
+    customerCity: customer.city || null,
+    customerState: customer.state || null,
+    customerPostalCode: customer.postalCode || null,
+    customerCountry: customer.country || null,
+    creditBalance: customer.pointsBalance || 0,
+  };
 }
 
 export async function getOrderItems(orderId: number) {
@@ -645,6 +673,16 @@ export async function createOrderWithSplit(data: {
     extraChargeDescription: data.extraChargeDescription || null,
     creditUsed: data.creditUsed || null,
     discountReason: data.discountReason || null,
+    discountAmount: data.discountAmount || null,
+    // V2.0.71: Recipient info (separate from customer profile)
+    recipientName: data.recipientName || null,
+    recipientPhone: data.recipientPhone || null,
+    addressLine1: data.addressLine1 || null,
+    addressLine2: data.addressLine2 || null,
+    postcode: data.postcode || null,
+    recipientCity: data.city || null,
+    recipientState: data.state || null,
+    recipientCountry: data.country || null,
   });
 
     const orderId = (orderResult as any)[0].insertId;

@@ -244,4 +244,40 @@
     max-width: 100% !important;
     padding: 0 !important;
   }
+  /* V2.0.71: Print only order content, hide sidebar/nav/dashboard chrome */
+  [data-sidebar],
+  [data-slot="sidebar"],
+  nav,
+  header,
+  aside,
+  .dashboard-layout-sidebar,
+  .sidebar {
+    display: none !important;
+  }
+  main {
+    margin-left: 0 !important;
+    padding: 0 !important;
+  }
+  .print-only-order {
+    display: block !important;
+  }
+  .print-hide {
+    display: none !important;
+  }
+  /* Ensure cards print with borders */
+  [data-slot="card"] {
+    break-inside: avoid;
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+  }
+  /* Full width for print */
+  .print-full-width {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+/* Screen-only: hide print-only elements */
+.print-only-order {
+  display: none;
 }

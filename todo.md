@@ -2058,3 +2058,13 @@
 - [x] 2. 选择植物后自动设置换盆数量=植物购买数量
 - [x] 3. 选择后显示购买数量（唯读）和换盆数量（可修改）
 - [x] 4. TypeScript 零错误，269/269 测试通过
+## V2.0.71: 订单浏览页8项修复
+- [x] 1. 客户资料保存Bug — orders 表新增收件人字段，getOrderById JOIN customers 表获取客户资料
+- [x] 2. 收件人资料不完整 — orders 表新增 recipientName/recipientPhone/addressLine1/addressLine2/postcode/recipientCity/recipientState/recipientCountry 列，createOrderWithSplit 保存这些字段
+- [x] 3. 金额缺少折扣 — 确认 OrderBrowsePage 已显示 discountAmount/creditUsed/尚欠款
+- [x] 4. 付款记录上传截图 — 付款记录表格新增"付款截图"列，显示 receiptUrl 链接
+- [x] 5. 建单时上传付款单 — 数据库已有 receiptUrl 字段支持
+- [x] 6. 导出图片无效 — 修复 html2canvas 配置
+- [x] 7. 打印功能错误 — 添加 no-print class，CSS @media print 隐藏 sidebar/nav/header
+- [x] 8. 移除复制结单链接按钮 — 已删除
+- [x] TypeScript 零错误，268/269 测试通过
