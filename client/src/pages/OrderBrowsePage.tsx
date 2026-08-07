@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Edit, FileText, User, Package, DollarSign, Truck,
   CreditCard, History, MessageSquare, PackageCheck, Calendar,
-  Sprout, TreePine, AlertCircle, Link2, Download, Printer, Eye,
+  Sprout, TreePine, AlertCircle, Download, Printer, Eye,
   Copy, MessageCircle, Bell, Send, Plus, Upload, Loader2, Trash2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -405,15 +405,6 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           <Button variant="outline" size="sm" onClick={() => setLocation(`/orders/${orderId}/edit`)}>
             <Edit className="h-3 w-3 mr-1" />{translate("编辑", "Edit")}
           </Button>
-          {o.secureToken && (
-            <Button variant="outline" size="sm" onClick={() => {
-              const url = `${window.location.origin}/order/${o.orderNumber}/${o.secureToken}`;
-              navigator.clipboard.writeText(url);
-              toast.success(translate("客户订单链接已复制", "Customer order link copied"));
-            }}>
-              <Link2 className="h-3 w-3 mr-1" />{translate("复制订单链接", "Copy Order Link")}
-            </Button>
-          )}
           {o.checkoutLink && (
             <Button variant="outline" size="sm" onClick={() => {
               const fullLink = `https://xintian.com.my${o.checkoutLink}`;

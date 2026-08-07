@@ -2096,3 +2096,11 @@
 - [x] 前端 OrderEditPage handleAddRemark: 发货日期无备注时用日期作为 content
 - [x] 前端 OrderCreatePage: 发货日期无备注时用日期作为 remark
 - [x] TypeScript 编译零错误
+
+## V2.0.73: 统一结单链接
+
+- [x] 删除「复制订单链接」按钮
+- [x] 保留「复制结单链接」按钮
+- [x] 按钮顺序：Preview → 导出图片 → 打印 → 编辑 → 复制结单链接 → 发送结单通知
+- [x] 移除未使用的 Link2 import
+- [x] TypeScript 编译零错误
