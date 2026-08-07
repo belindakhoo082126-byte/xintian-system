@@ -419,26 +419,26 @@ export default function CustomerOrderPage(props: any) {
                   <span>{hasAddress ? `RM ${o.shippingFee || "0.00"}` : "— 填写地址后计算"}</span>
                 </div>
 
-                {/* 额外费用 */}
+                {/* 额外收费 */}
                 {parseFloat(o.extraCharge || "0") > 0 && (
                   <div className="flex justify-between">
                     <div className="flex flex-col">
-                      <span>{o.extraChargeDescription || "额外费用"}</span>
+                      <span>额外收费 (Extra Charge)</span>
                       {o.extraChargeDescription && (
-                        <span className="text-xs text-muted-foreground">原因: {o.extraChargeDescription}</span>
+                        <span className="text-xs text-muted-foreground">原因：{o.extraChargeDescription}</span>
                       )}
                     </div>
                     <span>RM {o.extraCharge}</span>
                   </div>
                 )}
 
-                {/* Discount */}
+                {/* 人工折扣 */}
                 {parseFloat(o.discountAmount || "0") > 0 && (
                   <div className="flex justify-between text-emerald-600">
                     <div className="flex flex-col">
-                      <span>折扣 (Discount)</span>
+                      <span>人工折扣 (Discount)</span>
                       {o.discountReason && (
-                        <span className="text-xs text-muted-foreground">原因: {o.discountReason}</span>
+                        <span className="text-xs text-muted-foreground">原因：{o.discountReason}</span>
                       )}
                     </div>
                     <span>-RM {o.discountAmount}</span>

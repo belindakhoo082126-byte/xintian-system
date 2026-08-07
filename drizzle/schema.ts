@@ -605,6 +605,13 @@ export const orders = mysqlTable("orders", {
     "shipped",              // 已发货
     "completed",            // 完成
   ]).default("waiting_payment"),
+  // V2.0.85: Recipient info (stored on order for display)
+  recipientName: varchar("recipientName", { length: 255 }),
+  recipientPhone: varchar("recipientPhone", { length: 50 }),
+  recipientCity: varchar("recipientCity", { length: 100 }),
+  recipientState: varchar("recipientState", { length: 100 }),
+  recipientPostcode: varchar("recipientPostcode", { length: 20 }),
+  recipientCountry: varchar("recipientCountry", { length: 100 }),
   // V2.0: Secure token for public order access (customer order page)
   secureToken: varchar("secureToken", { length: 64 }).unique(),
   // V2.0.26: Campaign tracking (订单来源 Campaign 记录)

@@ -460,18 +460,22 @@ export async function getCustomerTimeline(customerId: number) {
     totalAmount: orders.totalAmount,
     physicalStatus: orders.physicalStatus,
     membershipStatus: orders.membershipStatus,
+    orderSource: orders.orderSource,
     createdAt: orders.createdAt,
   }).from(orders).where(eq(orders.customerId, customerId)).orderBy(desc(orders.createdAt));
 
   for (const o of customerOrders) {
+    // V2.0.85: Determine order source for accurate timeline description
+    const source = o.orderSource || 'manual';
+    const sourceLabel = source === 'facebook_live' || source === 'facebook_post' || source === 'facebook_reel' || source === 'messenger' ? '直播捉单' : source === 'store' ? '商城下单' : 'Admin 建立订单';
     events.push({
       type: "order",
-      title: `订单 ${o.orderNumber}`,
-      description: `状态: ${o.physicalStatus || o.membershipStatus || "-"}`,
+      title: `${sourceLabel} ${o.orderNumber}`,
+      description: `订单金额: RM ${o.totalAmount || "0"} | 状态: ${o.physicalStatus || o.membershipStatus || "-"}`,
       amount: String(o.totalAmount || "0"),
       orderId: o.id,
       orderNumber: o.orderNumber,
-      operatorName: null,
+      operatorName: source === 'manual' ? 'Admin' : source === 'store' ? '客户' : 'System',
       createdAt: o.createdAt,
     });
   }
@@ -482,54 +486,56 @@ export async function getCustomerTimeline(customerId: number) {
     .orderBy(desc(customerCreditLedger.createdAt));
 
   for (const l of ledger) {
+    const creditType = l.type === "admin_add" ? "增加 Credit" : l.type === "admin_deduct" ? "扣除 Credit" : l.type === "order_use" ? "扣除 Credit" : l.type === "order_refund" ? "退回 Credit" : "Credit 变动";
+    const creditDesc = l.orderNumber ? `原因：${l.reason || "-"}（订单 ${l.orderNumber}）` : `原因：${l.reason || "-"}`;
     events.push({
       type: "credit",
-      title: l.type === "admin_add" ? "增加 Credit" : l.type === "admin_deduct" ? "扣除 Credit" : l.type === "order_use" ? "订单使用 Credit" : l.type === "order_refund" ? "退款 Credit" : "Credit 变动",
-      description: l.reason || "",
+      title: creditType,
+      description: creditDesc,
       amount: l.amount,
       orderId: l.orderId || null,
       orderNumber: l.orderNumber || null,
-      operatorName: l.performedBy || null,
+      operatorName: l.performedBy || (l.type === "order_use" ? "System" : l.type === "order_refund" ? "System" : "Admin"),
       createdAt: l.createdAt,
     });
   }
 
-  // 3. Customer creation
+  // 3. Customer creation (V2.0.85: changed to activity record)
   const customer = await getCustomerById(customerId);
   if (customer) {
     events.push({
       type: "customer_created",
-      title: "客户创建",
+      title: "客户资料建立",
       description: `客户: ${customer.name || customer.facebookName || customer.displayName || "-"}`,
       amount: null,
       orderId: null,
       orderNumber: null,
-      operatorName: null,
+      operatorName: "System",
       createdAt: customer.createdAt,
     });
 
-    // 4. Blacklist events
+    // 4. Blacklist events (V2.0.85: activity record format)
     if (customer.isBlacklisted && customer.blacklistAt) {
       events.push({
         type: "blacklist",
-        title: "加入黑名单",
-        description: customer.blacklistReason || "",
+        title: "客户加入 Black List",
+        description: customer.blacklistReason ? `原因：${customer.blacklistReason}` : "",
         amount: null,
         orderId: null,
         orderNumber: null,
-        operatorName: null,
+        operatorName: "Admin",
         createdAt: customer.blacklistAt,
       });
     }
     if (!customer.isBlacklisted && customer.unblacklistAt) {
       events.push({
         type: "blacklist",
-        title: "解除黑名单",
+        title: "解除 Black List",
         description: "恢复正常",
         amount: null,
         orderId: null,
         orderNumber: null,
-        operatorName: null,
+        operatorName: "Admin",
         createdAt: customer.unblacklistAt,
       });
     }
@@ -624,10 +630,24 @@ export async function getOrders(filters?: {
 export async function getOrderById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
+  // V2.0.85: JOIN customers table to get customerPhone and creditBalance
   const result = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
   if (result.length === 0) return undefined;
 
   const order = result[0];
+  // V2.0.85: Fetch customer info separately for display
+  const [customer] = await db.select({
+    customerName: customers.name,
+    customerPhone: customers.phoneNumber,
+    customerEmail: customers.email,
+    creditBalance: customers.creditBalance,
+  }).from(customers).where(eq(customers.id, order.customerId)).limit(1);
+  if (customer) {
+    (order as any).customerName = customer.customerName;
+    (order as any).customerPhone = customer.customerPhone;
+    (order as any).customerEmail = customer.customerEmail;
+    (order as any).creditBalance = customer.creditBalance;
+  }
   // 兼容旧订单：管理员第一次打开详情时，自动补齐安全令牌和真实可访问的结单路径。
   // 使用 try-catch 防止 update 失败导致整个查询失败（如 unique 约束冲突等）
   const secureToken = order.secureToken || generateSecureToken();
@@ -825,6 +845,13 @@ export async function createOrderWithSplit(data: {
     extraChargeDescription: data.extraChargeDescription || null,
     creditUsed: autoCreditUsedStr,
     discountReason: data.discountReason || null,
+    // V2.0.85: Save recipient info on order
+    recipientName: data.recipientName || null,
+    recipientPhone: data.recipientPhone || null,
+    recipientCity: data.city || null,
+    recipientState: data.state || null,
+    recipientPostcode: data.postcode || null,
+    recipientCountry: data.country || null,
   });
 
     const orderId = (orderResult as any)[0].insertId;
@@ -852,6 +879,29 @@ export async function createOrderWithSplit(data: {
   // V2.0.78: Auto-deduct credit from customer and write ledger
   if (autoCreditUsed > 0) {
     await useCustomerCredit(data.customerId, autoCreditUsed, orderId, orderNumber);
+  }
+
+  // V2.0.85: Auto-sync address to customer profile if customer has no address
+  const [existingCustomer] = await db.select({
+    address: customers.address,
+    city: customers.city,
+    state: customers.state,
+    postalCode: customers.postalCode,
+    country: customers.country,
+  }).from(customers).where(eq(customers.id, data.customerId)).limit(1);
+
+  const hasCustomerAddress = existingCustomer && (existingCustomer.address || existingCustomer.city || existingCustomer.state);
+  const hasOrderAddress = data.shippingAddress || data.addressLine1 || data.city;
+
+  if (!hasCustomerAddress && hasOrderAddress) {
+    // First order: auto-sync address to customer profile
+    await db.update(customers).set({
+      address: data.shippingAddress || [data.addressLine1, data.addressLine2].filter(Boolean).join(', ') || null,
+      city: data.city || null,
+      state: data.state || null,
+      postalCode: data.postcode || null,
+      country: data.country || null,
+    }).where(eq(customers.id, data.customerId));
   }
 
   // Update customer stats
@@ -3997,6 +4047,13 @@ export async function mallCheckout(data: {
     orderSource: "store",
     paymentMethodId: (data.paymentMethodId as any) || null,
     paymentMethodName: (data.paymentMethodName as any) || null,
+    // V2.0.85: Save recipient info on order
+    recipientName: data.customerName || null,
+    recipientPhone: data.contactNumber || null,
+    recipientCity: data.city || null,
+    recipientState: data.state || null,
+    recipientPostcode: data.postcode || null,
+    recipientCountry: data.area || null,
   });
 
   const orderId = (orderResult as any)[0].insertId;

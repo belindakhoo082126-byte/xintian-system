@@ -2221,3 +2221,13 @@
 - [x] Lalamove 自动比较：实际费用 - (客户已付 + 公司承担 RM15) = 差额，超出自动特别订单
 - [x] Lalamove 自动通知客户：Messenger 发送补运费通知
 - [x] TypeScript 编译零错误 + 270 项测试全部通过
+
+## V2.0.85: Admin订单浏览+客户结单+Timeline+地址同步
+- [x] 修复Admin订单浏览页资料Mapping（getOrderById JOIN customers表获取客户电话/Credit）
+- [x] createOrderWithSplit保存recipientName/recipientPhone/recipientCity/recipientState/recipientPostcode/recipientCountry
+- [x] mallCheckout保存recipient资料到orders表
+- [x] Drizzle schema新增recipientName/recipientPhone/recipientCity/recipientState/recipientPostcode/recipientCountry字段
+- [x] 客户结单页金额明细显示原因（额外收费原因+折扣原因）
+- [x] 客户Timeline改为活动记录（Admin建立订单/直播捉单/商城下单/Credit异动/Black List）
+- [x] 地址自动同步：首次建单时自动写入客户Profile
+- [x] TypeScript 编译零错误 + 270 项测试全部通过
