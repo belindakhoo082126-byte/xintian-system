@@ -2112,13 +2112,18 @@ export const appRouter = router({
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
+        facebookId: z.string().optional(),
+        facebookName: z.string().optional(),
+        messengerId: z.string().optional(),
         phoneNumber: z.string().optional(),
+        whatsappPhone: z.string().optional(),
         email: z.string().optional(),
         address: z.string().optional(),
         city: z.string().optional(),
         state: z.string().optional(),
         postalCode: z.string().optional(),
         country: z.string().optional(),
+        displayName: z.string().optional(),
         isBlacklisted: z.boolean().optional(),
         blacklistReason: z.string().optional(),
         notes: z.string().optional(),
@@ -2182,6 +2187,15 @@ export const appRouter = router({
       }))
       .query(async ({ input }) => {
         return await db.getCustomerCreditLedger(input.customerId);
+      }),
+
+    // V2.0.81: Get customer timeline
+    getTimeline: adminProcedure
+      .input(z.object({
+        customerId: z.number(),
+      }))
+      .query(async ({ input }) => {
+        return await db.getCustomerTimeline(input.customerId);
       }),
 
     // V2.0.78: Set blacklist status — use db helper for audit trail

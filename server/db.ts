@@ -358,10 +358,74 @@ export async function mergeCustomers(sourceId: number, targetId: number, staffId
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  // Get both customers to merge data
+  const [source, target] = await Promise.all([
+    getCustomerById(sourceId),
+    getCustomerById(targetId),
+  ]);
+  if (!source || !target) throw new Error("Customer not found");
+
+  // Merge Credit balances: target gets sum of both
+  const sourceCredit = parseFloat(String(source.creditBalance || "0"));
+  const targetCredit = parseFloat(String(target.creditBalance || "0"));
+  const mergedCredit = sourceCredit + targetCredit;
+
+  // Merge totalOrders and totalSpent
+  const sourceOrders = source.totalOrders || 0;
+  const targetOrders = target.totalOrders || 0;
+  const sourceSpent = parseFloat(String(source.totalSpent || "0"));
+  const targetSpent = parseFloat(String(target.totalSpent || "0"));
+
+  // Fill missing fields on target from source (don't overwrite existing data)
+  const mergedData: Record<string, any> = {
+    creditBalance: mergedCredit.toFixed(2),
+    totalOrders: sourceOrders + targetOrders,
+    totalSpent: (sourceSpent + targetSpent).toFixed(2),
+  };
+  if (!target.facebookId && source.facebookId) mergedData.facebookId = source.facebookId;
+  if (!target.facebookName && source.facebookName) mergedData.facebookName = source.facebookName;
+  if (!target.messengerId && source.messengerId) mergedData.messengerId = source.messengerId;
+  if (!target.name && source.name) mergedData.name = source.name;
+  if (!target.phoneNumber && source.phoneNumber) mergedData.phoneNumber = source.phoneNumber;
+  if (!target.whatsappPhone && source.whatsappPhone) mergedData.whatsappPhone = source.whatsappPhone;
+  if (!target.email && source.email) mergedData.email = source.email;
+  if (!target.address && source.address) mergedData.address = source.address;
+  if (!target.city && source.city) mergedData.city = source.city;
+  if (!target.state && source.state) mergedData.state = source.state;
+  if (!target.postalCode && source.postalCode) mergedData.postalCode = source.postalCode;
+  if (!target.country && source.country) mergedData.country = source.country;
+  if (!target.displayName && source.displayName) mergedData.displayName = source.displayName;
+  // If target is blacklisted, keep it blacklisted
+  if (source.isBlacklisted && !target.isBlacklisted) {
+    mergedData.isBlacklisted = true;
+    mergedData.blacklistReason = source.blacklistReason || "Merged from another account";
+  }
+
+  // Update target customer with merged data
+  await db.update(customers).set(mergedData).where(eq(customers.id, targetId));
+
+  // Write Credit Ledger record for the merge transfer
+  if (sourceCredit > 0) {
+    await db.insert(customerCreditLedger).values({
+      customerId: targetId,
+      type: "admin_add",
+      amount: sourceCredit.toFixed(2),
+      balanceAfter: mergedCredit.toFixed(2),
+      reason: `合并客户 #${sourceId} 的 Credit 转入`,
+      performedBy: `Admin #${staffId}`,
+      createdAt: new Date(),
+    });
+  }
+
   // Move all orders from source to target
   await db.update(orders).set({ customerId: targetId }).where(eq(orders.customerId, sourceId));
+
+  // Move all credit ledger entries from source to target
+  await db.update(customerCreditLedger).set({ customerId: targetId }).where(eq(customerCreditLedger.customerId, sourceId));
+
   // Mark source as merged
   await db.update(customers).set({ mergedIntoCustomerId: targetId }).where(eq(customers.id, sourceId));
+
   // Update merge suggestion
   await db.update(customerMergeSuggestions).set({
     status: "approved",
@@ -371,6 +435,110 @@ export async function mergeCustomers(sourceId: number, targetId: number, staffId
     and(eq(customerMergeSuggestions.customerAId, sourceId), eq(customerMergeSuggestions.customerBId, targetId)),
     and(eq(customerMergeSuggestions.customerAId, targetId), eq(customerMergeSuggestions.customerBId, sourceId))
   ));
+}
+
+// V2.0.81: Get customer timeline — combines orders, credit ledger, blacklist changes, and merge events
+export async function getCustomerTimeline(customerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const events: Array<{
+    type: string;
+    title: string;
+    description: string;
+    amount: string | null;
+    orderId: number | null;
+    orderNumber: string | null;
+    operatorName: string | null;
+    createdAt: Date;
+  }> = [];
+
+  // 1. Orders
+  const customerOrders = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    totalAmount: orders.totalAmount,
+    physicalStatus: orders.physicalStatus,
+    membershipStatus: orders.membershipStatus,
+    createdAt: orders.createdAt,
+  }).from(orders).where(eq(orders.customerId, customerId)).orderBy(desc(orders.createdAt));
+
+  for (const o of customerOrders) {
+    events.push({
+      type: "order",
+      title: `订单 ${o.orderNumber}`,
+      description: `状态: ${o.physicalStatus || o.membershipStatus || "-"}`,
+      amount: String(o.totalAmount || "0"),
+      orderId: o.id,
+      orderNumber: o.orderNumber,
+      operatorName: null,
+      createdAt: o.createdAt,
+    });
+  }
+
+  // 2. Credit ledger
+  const ledger = await db.select().from(customerCreditLedger)
+    .where(eq(customerCreditLedger.customerId, customerId))
+    .orderBy(desc(customerCreditLedger.createdAt));
+
+  for (const l of ledger) {
+    events.push({
+      type: "credit",
+      title: l.type === "admin_add" ? "增加 Credit" : l.type === "admin_deduct" ? "扣除 Credit" : l.type === "order_use" ? "订单使用 Credit" : l.type === "order_refund" ? "退款 Credit" : "Credit 变动",
+      description: l.reason || "",
+      amount: l.amount,
+      orderId: l.orderId || null,
+      orderNumber: l.orderNumber || null,
+      operatorName: l.performedBy || null,
+      createdAt: l.createdAt,
+    });
+  }
+
+  // 3. Customer creation
+  const customer = await getCustomerById(customerId);
+  if (customer) {
+    events.push({
+      type: "customer_created",
+      title: "客户创建",
+      description: `客户: ${customer.name || customer.facebookName || customer.displayName || "-"}`,
+      amount: null,
+      orderId: null,
+      orderNumber: null,
+      operatorName: null,
+      createdAt: customer.createdAt,
+    });
+
+    // 4. Blacklist events
+    if (customer.isBlacklisted && customer.blacklistAt) {
+      events.push({
+        type: "blacklist",
+        title: "加入黑名单",
+        description: customer.blacklistReason || "",
+        amount: null,
+        orderId: null,
+        orderNumber: null,
+        operatorName: null,
+        createdAt: customer.blacklistAt,
+      });
+    }
+    if (!customer.isBlacklisted && customer.unblacklistAt) {
+      events.push({
+        type: "blacklist",
+        title: "解除黑名单",
+        description: "恢复正常",
+        amount: null,
+        orderId: null,
+        orderNumber: null,
+        operatorName: null,
+        createdAt: customer.unblacklistAt,
+      });
+    }
+  }
+
+  // Sort all events by date descending
+  events.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  return events;
 }
 
 export async function getMergeSuggestions(status?: string) {

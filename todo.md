@@ -2181,3 +2181,12 @@
 - [x] PackingDetail.tsx: 新增「转 Credit」按钮 + 自动发送 Messenger 通知
 - [x] TypeScript 编译零错误
 - [x] 270 项测试全部通过
+
+## V2.0.81: 客户管理完善 - Edit/Merge/Timeline
+- [x] 后端：update procedure 增加 facebookId/facebookName/messengerId 字段
+- [x] 后端：mergeCustomers 完善 Credit 合并 + 资料合并逻辑
+- [x] 后端：新增 getCustomerTimeline API
+- [x] 前端：Edit 对话框增加 Facebook/Messenger ID/收件人资料字段
+- [x] 前端：Merge 对话框完善（选择合并目标 + 确认提示 + 合并预览）
+- [x] 前端：客户详情新增 Timeline 显示
+- [x] 测试通过并保存 Checkpoint
