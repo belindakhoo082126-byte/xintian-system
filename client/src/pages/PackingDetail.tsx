@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare, RefreshCw, AlertTriangle } from "lucide-react";
+import { ITEM_SOURCE_LABELS } from "@shared/const";
 
 const COURIERS = [
   { zh: "Parcel Daily", en: "Parcel Daily" },
@@ -330,7 +331,7 @@ export default function PackingDetail() {
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-sm">{item.productName}</div>
                     {item.variationName && <div className="text-sm text-muted-foreground">{item.variationName}</div>}
-                    {item.productSku && <div className="text-xs text-muted-foreground">{translate("SKU:", "SKU:")} {item.productSku}</div>}
+                    <div className="text-xs text-muted-foreground">{translate("来源:", "Source:")} {ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || "-"}</div>
                     {item.keyword && <div className="text-xs text-muted-foreground">{translate("关键词:", "Keyword:")} {item.keyword}</div>}
                   </div>
                 {/* Large Quantity */}
@@ -977,7 +978,7 @@ export default function PackingDetail() {
                 {item.variationName && <span style={{ fontSize: "11px" }}>({item.variationName})</span>}
               </div>
               <div style={{ marginLeft: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "11px" }}>{item.productSku || ""}</span>
+                <span style={{ fontSize: "11px" }}>{ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || ""}</span>
                 <span style={{
                   fontSize: "24px",
                   fontWeight: "bold",

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,19 @@ export default function MallProductDetail() {
   const productId = parseInt(location.split("/").pop() || "0");
   const [quantity, setQuantity] = useState(1);
   const [selectedVariantId, setSelectedVariantId] = useState<number | undefined>(undefined);
+  const [cartCount, setCartCount] = useState(0);
+
+  useEffect(() => {
+    const loadCart = () => {
+      try {
+        const c = JSON.parse(localStorage.getItem("mall_cart") || "[]");
+        setCartCount(c.reduce((s: number, i: any) => s + i.quantity, 0));
+      } catch { setCartCount(0); }
+    };
+    loadCart();
+    window.addEventListener("cart-updated", loadCart);
+    return () => window.removeEventListener("cart-updated", loadCart);
+  }, []);
 
   const { data: settings } = trpc.mall.settings.useQuery();
   const { data: product, isLoading } = trpc.mall.productDetail.useQuery({ id: productId });
@@ -91,7 +104,10 @@ export default function MallProductDetail() {
             <span className="text-2xl">🌿</span>
             <span className="font-bold text-lg text-[#2d6a4f]">{settings?.shopName || t("心田", "Xintian")}</span>
           </Link>
-          <Link href="/mall/checkout" className="ml-auto"><Button variant="ghost"><ShoppingCart className="h-5 w-5" /></Button></Link>
+          <Link href="/mall/checkout" className="ml-auto relative">
+            <Button variant="ghost"><ShoppingCart className="h-5 w-5" /></Button>
+            {cartCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">{cartCount}</Badge>}
+          </Link>
         </div>
       </header>
 

@@ -22,7 +22,7 @@ const UNIFIED_PAYMENT_IMAGE = "/manus-storage/pasted_file_BhQwTf_image_dcbe7a31.
 const PAYMENT_INSTRUCTIONS: Record<string, string> = {
   "Touch 'n Go eWallet QR": "请打开 Touch 'n Go eWallet，扫描二维码完成付款。\n汇款完成后，请截图并上传付款凭证。",
   "DuitNow QR": "请使用任何支援 DuitNow QR 的银行或电子钱包扫描二维码完成付款。\n汇款完成后，请截图并上传付款凭证。",
-  "Public Bank Transfer": "请汇款至以下 Public Bank 户口。\n汇款完成后，请截图并上传付款凭证。",
+  "Online Transfer": "请使用网上银行或手机银行汇款至以下 Public Bank 户口。\n汇款完成后，请截图并上传付款凭证。",
 };
 
 function getPaymentInstruction(method: any): string {

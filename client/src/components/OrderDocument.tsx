@@ -1,4 +1,5 @@
 import { useI18n } from "@/contexts/I18nContext";
+import { ITEM_SOURCE_LABELS } from "@shared/const";
 
 const SHIPPING_LABELS: Record<string, { zh: string; en: string }> = {
   west_malaysia: { zh: "西马", en: "West Malaysia" },
@@ -240,6 +241,7 @@ export function OrderDocument({
                 <th style={{ ...thStyle, width: "60px" }}>{translate("照片", "Photo")}</th>
               )}
               <th style={thStyle}>{translate("商品", "Product")}</th>
+              <th style={thStyle}>{translate("来源", "Source")}</th>
               <th style={thStyle}>{translate("规格", "Variation")}</th>
               <th style={thRight}>{translate("数量", "Qty")}</th>
               <th style={thRight}>{translate("单价", "Price")}</th>
@@ -269,6 +271,7 @@ export function OrderDocument({
                   </td>
                 )}
                 <td style={tdStyle}>{item.productName}</td>
+                <td style={{ ...tdStyle, color: C.textLight }}>{ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || "-"}</td>
                 <td style={{ ...tdStyle, color: C.textLight }}>{item.variationName || "-"}</td>
                 <td style={tdRight}>{item.quantity}</td>
                 <td style={tdRight}>RM {parseFloat(item.unitPrice).toFixed(2)}</td>
@@ -277,7 +280,7 @@ export function OrderDocument({
             ))}
             {(!o.items || o.items.length === 0) && (
               <tr>
-                <td colSpan={showProductImage ? 6 : 5} style={{ ...tdStyle, textAlign: "center", color: C.textMuted }}>{translate("无商品", "No items")}</td>
+                <td colSpan={showProductImage ? 7 : 6} style={{ ...tdStyle, textAlign: "center", color: C.textMuted }}>{translate("无商品", "No items")}</td>
               </tr>
             )}
           </tbody>

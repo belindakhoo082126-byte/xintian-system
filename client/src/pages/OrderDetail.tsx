@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { ArrowLeft, Package, Truck, CheckCircle, Clock, AlertCircle, PauseCircle, Bell, History, FileText, MessageSquare, User, Lock, Trash2, Plus, Sprout, Calendar, AlertTriangle } from "lucide-react";
+import { ITEM_SOURCE_LABELS } from "@shared/const";
 
 const HOLD_TYPE_LABELS_RAW: Record<string, { zh: string; en: string }> = {
   wait_next_live: { zh: "等待下次直播", en: "Wait for next live" },
@@ -273,7 +274,7 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                 <TableHeader>
                   <TableRow>
                     <TableHead>{translate("商品名称", "Product Name")}</TableHead>
-                    <TableHead>{translate("SKU", "SKU")}</TableHead>
+                    <TableHead>{translate("来源", "Source")}</TableHead>
                     <TableHead>{translate("规格", "Specification")}</TableHead>
                     <TableHead>{translate("FB Keyword", "FB Keyword")}</TableHead>
                     <TableHead className="text-right">{translate("数量", "Quantity")}</TableHead>
@@ -288,7 +289,7 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                   ) : items?.map((item: any) => (
                     <TableRow key={item.id}>
                       <TableCell className="font-medium">{item.productName}</TableCell>
-                      <TableCell className="font-mono text-sm text-muted-foreground">{item.productSku || "-"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || "-"}</TableCell>
                       <TableCell className="text-sm">{item.variationName || "-"}</TableCell>
                       <TableCell>
                         {item.facebookKeyword ? (

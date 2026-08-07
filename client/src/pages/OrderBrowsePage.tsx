@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
+import { ITEM_SOURCE_LABELS } from "@shared/const";
 import {
   ArrowLeft, Edit, FileText, User, Package, DollarSign, Truck,
   CreditCard, History, MessageSquare, PackageCheck, Calendar,
@@ -538,7 +539,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                 <tr>
                   <th className="text-left p-3 font-medium w-20">{translate("图片", "Image")}</th>
                   <th className="text-left p-3 font-medium">{translate("商品名称", "Product Name")}</th>
-                  <th className="text-left p-3 font-medium">{translate("SKU", "SKU")}</th>
+                  <th className="text-left p-3 font-medium">{translate("来源", "Source")}</th>
                   <th className="text-left p-3 font-medium">{translate("关键词", "Keyword")}</th>
                   <th className="text-left p-3 font-medium">{translate("规格", "Variation")}</th>
                   <th className="text-right p-3 font-medium">{translate("数量", "Qty")}</th>
@@ -557,7 +558,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                       )}
                     </td>
                     <td className="p-3 font-medium">{item.productName}</td>
-                    <td className="p-3 text-muted-foreground">{item.productSku || "-"}</td>
+                    <td className="p-3 text-muted-foreground">{ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || "-"}</td>
                     <td className="p-3 text-muted-foreground">{item.facebookKeyword || "-"}</td>
                     <td className="p-3 text-muted-foreground">{item.variationName || "-"}</td>
                     <td className="p-3 text-right">{item.quantity}</td>

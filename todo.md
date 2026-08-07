@@ -2277,3 +2277,19 @@
 
 - [x] V2.0.94: 修复OrderEditPage新增商品保存失败 - priceType传"normal"不在enum值内，改为"retail"
 - [x] V2.0.94: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint
+
+- [x] V2.0.95: 付款方式 - DB中"Public Bank Transfer"改名为"Online Transfer"
+- [x] V2.0.95: MallPayment.tsx - PAYMENT_INSTRUCTIONS中"Public Bank Transfer"改为"Online Transfer"
+- [x] V2.0.95: MallPayment.tsx - 确认统一显示汇款资料图（已实现，检查Cash过滤逻辑）
+- [x] V2.0.95: MallCheckout.tsx - Cash仅在self_pickup时显示
+- [x] V2.0.95: 购物车Badge - 确认MallHome.tsx已实时显示数量（V2.0.93已修复）
+- [x] V2.0.95: 购物车 - MallProductDetail.tsx已直接跳转checkout（V2.0.93已修复）+ 新增Badge数量显示
+- [x] V2.0.95: 购物车 - MallCheckout.tsx返回按钮改为/mall而非/mall/cart
+- [x] V2.0.95: 购物车session绑定订单 - 确认localStorage持久化逻辑（V2.0.90已实现）
+- [x] V2.0.95: 移除SKU列 - OrderBrowsePage.tsx改为Source来源
+- [x] V2.0.95: 移除SKU列 - Orders.tsx改为Source来源
+- [x] V2.0.95: 移除SKU列 - OrderDetail.tsx改为Source来源
+- [x] V2.0.95: 移除SKU列 - OrderEditPage.tsx改为Source来源
+- [x] V2.0.95: 移除SKU列 - PackingDetail.tsx改为Source来源
+- [x] V2.0.95: 移除SKU列 - OrderDocument.tsx新增Source来源列
+- [x] V2.0.95: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint

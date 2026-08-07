@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, Bell, Upload, Loader2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSearch, useLocation } from "wouter";
+import { ITEM_SOURCE_LABELS } from "@shared/const";
 
 const PHYSICAL_STATUS = {
   pending: { label: "未汇款订单", enLabel: "Unpaid Order", variant: "outline" },
@@ -1055,7 +1056,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                     <TableRow>
                       <TableHead className="w-24">{translate("商品图片", "Image")}</TableHead>
                       <TableHead className="min-w-[200px]">{translate("商品名称", "Product Name")}</TableHead>
-                      <TableHead>{translate("SKU", "SKU")}</TableHead>
+                      <TableHead>{translate("来源", "Source")}</TableHead>
                       <TableHead>{translate("关键字", "Keyword")}</TableHead>
                       <TableHead>{translate("规格", "Variant")}</TableHead>
                       <TableHead>{translate("数量", "Qty")}</TableHead>
@@ -1074,7 +1075,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                           )}
                         </TableCell>
                         <TableCell className="font-medium" style={{ whiteSpace: "normal", wordBreak: "break-word", maxWidth: "300px" }}>{item.productName}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground font-mono">{item.productSku || "-"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || "-"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{item.keyword || "-"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{item.variationName || "-"}</TableCell>
                         <TableCell>{item.quantity}</TableCell>

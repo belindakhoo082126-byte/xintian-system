@@ -245,7 +245,7 @@ export default function MallCheckout() {
     <div className="min-h-screen bg-[#f8f9fa]">
       <header className="sticky top-0 z-50 bg-white border-b shadow-sm">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-4">
-          <Link href="/mall/cart"><Button variant="ghost" size="icon"><ChevronLeft className="h-5 w-5" /></Button></Link>
+          <Link href="/mall"><Button variant="ghost" size="icon"><ChevronLeft className="h-5 w-5" /></Button></Link>
           <h1 className="font-semibold text-lg">结算</h1>
         </div>
       </header>
@@ -467,7 +467,7 @@ export default function MallCheckout() {
             <Select value={paymentMethodId?.toString() || ""} onValueChange={(v) => setPaymentMethodId(parseInt(v))}>
               <SelectTrigger><SelectValue placeholder="选择付款方式" /></SelectTrigger>
               <SelectContent>
-                {paymentMethods?.filter((p: any) => p.isEnabled).map((p: any) => (
+                {paymentMethods?.filter((p: any) => p.isEnabled && (p.type !== "cash" || form.shippingMethod === "self_pickup")).map((p: any) => (
                   <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
                 ))}
               </SelectContent>

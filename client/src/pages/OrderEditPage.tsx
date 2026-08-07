@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
+import { ITEM_SOURCE_LABELS } from "@shared/const";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -555,7 +556,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
           {showSearchResults && (
             <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
               <Input
-                placeholder={translate("搜索商品名称或SKU...", "Search product name or SKU...")}
+                placeholder={translate("搜索商品名称...", "Search product name...")}
                 value={productSearch}
                 onChange={(e) => setProductSearch(e.target.value)}
                 autoFocus
@@ -591,6 +592,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               <thead className="border-b bg-muted/50">
                 <tr>
                   <th className="text-left p-2 font-medium">{translate("商品名称", "Product Name")}</th>
+                  <th className="text-left p-2 font-medium">{translate("来源", "Source")}</th>
                   <th className="text-left p-2 font-medium">{translate("规格", "Variation")}</th>
                   <th className="text-right p-2 font-medium w-20">{translate("数量", "Qty")}</th>
                   <th className="text-right p-2 font-medium w-28">{translate("单价", "Unit Price")}</th>
@@ -602,6 +604,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                 {editItems.map((item: any, idx: number) => (
                   <tr key={idx} className="border-b last:border-0">
                     <td className="p-2">{item.productName}</td>
+                    <td className="p-2 text-muted-foreground">{ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || "-"}</td>
                     <td className="p-2 text-muted-foreground">{item.variationName || "-"}</td>
                     <td className="p-2">
                       <Input
@@ -630,7 +633,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                   </tr>
                 ))}
                 {editItems.length === 0 && (
-                  <tr><td colSpan={6} className="p-4 text-center text-muted-foreground">{translate("无商品", "No items")}</td></tr>
+                  <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">{translate("无商品", "No items")}</td></tr>
                 )}
               </tbody>
             </table>
