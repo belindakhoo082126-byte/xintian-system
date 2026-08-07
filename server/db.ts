@@ -3890,16 +3890,16 @@ export async function mallCheckout(data: {
     // V2.0.80: 东马 PosLaju 预收 RM50（2kg 内），打包后 API 计算实际运费
     shippingFee = 50;
   } else if (data.shippingMethod === "east_malaysia_shopee") {
-    // V2.0.80: 东马 Shopee 独立运费规则（不使用西马免邮，不使用 PosLaju 预收）
-    // 基础运费 RM15（2kg 内），超过 2kg 每 kg 加 RM8
-    shippingFee = 15 + (totalWeight <= 2 ? 0 : Math.ceil(totalWeight - 2) * 8);
+    // V2.0.84: 东马 Shopee 运费固定 RM0，Shopee 平台自行向客户收取运费
+    shippingFee = 0;
   } else if (data.shippingMethod === "east_malaysia") {
-    // 兼容旧数据：默认走 Shopee 规则
-    shippingFee = 15 + (totalWeight <= 2 ? 0 : Math.ceil(totalWeight - 2) * 8);
+    // 兼容旧数据：默认走 Shopee 规则（RM0）
+    shippingFee = 0;
   } else if (data.shippingMethod === "self_pickup") {
     shippingFee = 0;
   } else if (data.shippingMethod === "lalamove") {
-    shippingFee = 0; // Actual quote
+    // V2.0.84: Lalamove — 满 RM150 公司承担 RM15，未满 RM15 收 RM15
+    shippingFee = thresholdSubtotal >= 150 ? 0 : 15;
   }
 
   const totalAmount = subtotal + shippingFee;
@@ -3948,7 +3948,11 @@ export async function mallCheckout(data: {
     } else if (method === "east_malaysia_poslaju") {
       newShippingFee = 50;
     } else if (method === "east_malaysia_shopee" || method === "east_malaysia") {
-      newShippingFee = 15 + (newWeight <= 2 ? 0 : Math.ceil(newWeight - 2) * 8);
+      // V2.0.84: 东马 Shopee 运费固定 RM0
+      newShippingFee = 0;
+    } else if (method === "lalamove") {
+      // V2.0.84: Lalamove — 满 RM150 公司承担，未满收 RM15
+      newShippingFee = thresholdSubtotal >= 150 ? 0 : 15;
     }
     const newTotal = newSubtotal + newShippingFee;
     const paidAmount = parseFloat((existingOrder as any)?.paidAmount || "0");
@@ -11187,12 +11191,14 @@ export async function updateOrderShippingAddress(orderNumber: string, token: str
     } else {
       shippingFee = 15 + (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3);
     }
-  } else if (shippingMethod === 'east_malaysia') {
-    shippingFee = 15;
+  } else if (shippingMethod === 'east_malaysia' || shippingMethod === 'east_malaysia_shopee') {
+    // V2.0.84: 东马 Shopee 运费固定 RM0
+    shippingFee = 0;
   } else if (shippingMethod === 'self_pickup') {
     shippingFee = 0;
   } else if (shippingMethod === 'lalamove') {
-    shippingFee = 0;
+    // V2.0.84: Lalamove — 满 RM150 公司承担，未满收 RM15
+    shippingFee = thresholdSubtotal >= 150 ? 0 : 15;
   }
 
   // Recalculate total

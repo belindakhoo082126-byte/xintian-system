@@ -18,7 +18,7 @@ export default function MallCheckout() {
   const [form, setForm] = useState<{
     customerName: string; contactNumber: string; whatsappNumber: string; email: string;
     addressLine1: string; addressLine2: string; postcode: string; city: string; state: string; area: string;
-    deliveryRemark: string; shippingMethod: "west_malaysia" | "east_malaysia" | "self_pickup" | "lalamove";
+    deliveryRemark: string; shippingMethod: "west_malaysia" | "east_malaysia" | "east_malaysia_poslaju" | "east_malaysia_shopee" | "self_pickup" | "lalamove";
   }>({
     customerName: "", contactNumber: "", whatsappNumber: "", email: "",
     addressLine1: "", addressLine2: "", postcode: "", city: "", state: "", area: "",
@@ -39,7 +39,7 @@ export default function MallCheckout() {
     customerName: string;
     contactNumber: string;
     shippingAddress: string;
-    shippingMethod: "west_malaysia" | "east_malaysia" | "self_pickup" | "lalamove";
+    shippingMethod: "west_malaysia" | "east_malaysia" | "east_malaysia_poslaju" | "east_malaysia_shopee" | "self_pickup" | "lalamove";
   } | null>(null);
 
   const utils = trpc.useUtils();
@@ -117,8 +117,15 @@ export default function MallCheckout() {
       // 未满 RM150：10kg 以内 RM15，超过 10kg 每公斤 RM3
       shippingFee = 15 + (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3);
     }
-  } else if (form.shippingMethod === "east_malaysia") {
-    shippingFee = 15;
+  } else if (form.shippingMethod === "east_malaysia" || form.shippingMethod === "east_malaysia_shopee") {
+    // V2.0.84: 东马 Shopee 运费固定 RM0
+    shippingFee = 0;
+  } else if (form.shippingMethod === "east_malaysia_poslaju") {
+    // V2.0.84: 东马 PosLaju 预收 RM50
+    shippingFee = 50;
+  } else if (form.shippingMethod === "lalamove") {
+    // V2.0.84: Lalamove — 满 RM150 公司承担，未满收 RM15
+    shippingFee = thresholdSubtotal >= 150 ? 0 : 15;
   }
   // Add standalone shipping fees
   standaloneItems.forEach(i => {
@@ -423,10 +430,17 @@ export default function MallCheckout() {
               </label>
               <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2">
                 <div className="flex items-center gap-3">
-                  <RadioGroupItem value="east_malaysia" />
-                  <div><p className="font-medium text-sm">东马配送</p><p className="text-xs text-muted-foreground">首2kg RM15，其余Shopee补差价</p></div>
+                  <RadioGroupItem value="east_malaysia_poslaju" />
+                  <div><p className="font-medium text-sm">东马 PosLaju</p><p className="text-xs text-muted-foreground">预收 RM50，打包后按实际运费结算</p></div>
                 </div>
-                <span className="font-semibold">RM 15+</span>
+                <span className="font-semibold">RM 50</span>
+              </label>
+              <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2">
+                <div className="flex items-center gap-3">
+                  <RadioGroupItem value="east_malaysia_shopee" />
+                  <div><p className="font-medium text-sm">东马 Shopee</p><p className="text-xs text-muted-foreground">运费由 Shopee 平台收取，本系统不收运费</p></div>
+                </div>
+                <span className="font-semibold text-emerald-600">RM 0</span>
               </label>
               <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2">
                 <div className="flex items-center gap-3">
@@ -438,9 +452,9 @@ export default function MallCheckout() {
               <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent">
                 <div className="flex items-center gap-3">
                   <RadioGroupItem value="lalamove" />
-                  <div><p className="font-medium text-sm">Lalamove</p><p className="text-xs text-muted-foreground">槟城区域，到付运费</p></div>
+                  <div><p className="font-medium text-sm">Lalamove</p><p className="text-xs text-muted-foreground">满 RM150 免邮，未满 RM15</p></div>
                 </div>
-                <span className="font-semibold">到付</span>
+                <span className="font-semibold">{thresholdSubtotal >= 150 ? "免邮" : "RM 15"}</span>
               </label>
             </RadioGroup>
           </CardContent>

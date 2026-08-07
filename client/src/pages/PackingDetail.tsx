@@ -572,11 +572,15 @@ export default function PackingDetail() {
               </div>
             )}
 
-            {/* Actual weight input */}
+            {/* Actual weight / Lalamove fee input */}
             {detail && !detail.actualWeight && (
               <div className="flex items-end gap-3">
                 <div className="flex-1">
-                  <Label>{translate("实际重量 (kg)", "Actual Weight (kg)")}</Label>
+                  <Label>
+                    {d.shippingMethod === "lalamove"
+                      ? translate("Lalamove 实际配送费用 (RM)", "Lalamove Actual Delivery Fee (RM)")
+                      : translate("实际重量 (kg)", "Actual Weight (kg)")}
+                  </Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -584,12 +588,17 @@ export default function PackingDetail() {
                     value={actualWeightInput}
                     onChange={(e) => setActualWeightInput(e.target.value)}
                   />
+                  {d.shippingMethod === "lalamove" && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {translate("公司承担 RM15 + 客户已付 RM" + (Number(d.customerPaidShipping || d.shippingFee || 0)).toFixed(0), "Company bears RM15 + Customer paid RM" + (Number(d.customerPaidShipping || d.shippingFee || 0)).toFixed(0))}
+                    </p>
+                  )}
                 </div>
                 <Button
                   onClick={() => {
                     const w = parseFloat(actualWeightInput);
                     if (!w || w <= 0) {
-                      toast.error(translate("请输入有效重量", "Please enter a valid weight"));
+                      toast.error(translate("请输入有效数值", "Please enter a valid value"));
                       return;
                     }
                     updateWeightMutation.mutate({ orderId, actualWeight: w });
@@ -606,8 +615,8 @@ export default function PackingDetail() {
               <div className="space-y-3">
                 <div className="grid grid-cols-3 gap-4 text-sm border rounded-lg p-3 bg-blue-50 dark:bg-blue-950/20">
                   <div>
-                    <span className="text-muted-foreground block">{translate("实际重量", "Actual Weight")}</span>
-                    <span className="font-medium">{Number(detail.actualWeight).toFixed(2)} kg</span>
+                    <span className="text-muted-foreground block">{d.shippingMethod === "lalamove" ? translate("Lalamove 费用", "Lalamove Fee") : translate("实际重量", "Actual Weight")}</span>
+                    <span className="font-medium">{d.shippingMethod === "lalamove" ? `RM ${Number(detail.actualWeight).toFixed(2)}` : `${Number(detail.actualWeight).toFixed(2)} kg`}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground block">{translate("实际运费", "Actual Shipping")}</span>

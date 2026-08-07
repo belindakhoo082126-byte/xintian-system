@@ -1407,11 +1407,14 @@ export const appRouter = router({
           // V2.0.80: 东马 PosLaju 预收 RM50
           return { shippingFee: 50, isFreeShipping: false, threshold: 0, shippingMethod: method };
         } else if (method === "east_malaysia_shopee" || method === "east_malaysia") {
-          // V2.0.80: 东马 Shopee 独立规则：RM15（2kg内）+ RM8/kg 超出
-          const fee = 15 + (input.totalWeight <= 2 ? 0 : Math.ceil(input.totalWeight - 2) * 8);
-          return { shippingFee: fee, isFreeShipping: false, threshold: 0, shippingMethod: method };
-        } else if (method === "self_pickup" || method === "lalamove") {
+          // V2.0.84: 东马 Shopee 运费固定 RM0
+          return { shippingFee: 0, isFreeShipping: true, threshold: 0, shippingMethod: method };
+        } else if (method === "self_pickup") {
           return { shippingFee: 0, isFreeShipping: false, threshold: 0, shippingMethod: method };
+        } else if (method === "lalamove") {
+          // V2.0.84: Lalamove — 满 RM150 公司承担 RM15，未满收 RM15
+          const fee = input.orderTotal >= 150 ? 0 : 15;
+          return { shippingFee: fee, isFreeShipping: fee === 0, threshold: 150, shippingMethod: method };
         }
         // West Malaysia (default)
         const result = db.calculateWestMalaysiaShipping(input.totalWeight, input.orderTotal);
@@ -3251,7 +3254,7 @@ export const appRouter = router({
       state: z.string(),
       area: z.string(),
       deliveryRemark: z.string().optional(),
-      shippingMethod: z.enum(["west_malaysia", "east_malaysia", "lalamove", "self_pickup"]),
+      shippingMethod: z.enum(["west_malaysia", "east_malaysia", "east_malaysia_poslaju", "east_malaysia_shopee", "lalamove", "self_pickup"]),
       items: z.array(z.object({
         productId: z.number(),
         productName: z.string(),
@@ -4178,8 +4181,21 @@ export const appRouter = router({
       
       let result;
       
-      // V2.0.80: East Malaysia PosLaju uses ParcelKing API + RM5 handling fee
-      if (shippingMethod === "east_malaysia_poslaju") {
+      // V2.0.84: Lalamove — staff enters actual delivery fee, compare against RM15 company bearing
+      if (shippingMethod === "lalamove") {
+        const companyBearing = 15;
+        const actualFee = input.actualWeight; // Reuse actualWeight field as actual Lalamove fee
+        const customerPaid = customerPaidShipping; // 0 (满RM150) or 15 (未满)
+        const totalBorne = customerPaid + companyBearing;
+        const difference = actualFee - totalBorne;
+        const needsSpecialOrder = difference > 0.01;
+        result = {
+          actualShippingFee: actualFee,
+          difference: difference,
+          needsSpecialOrder: needsSpecialOrder,
+          specialOrderType: needsSpecialOrder ? "pending_shipping" as const : null,
+        };
+      } else if (shippingMethod === "east_malaysia_poslaju") {
         const shippingAddr = (order as any).shippingAddress || "";
         const postcode = (order as any).shippingPostcode || "";
         const state = (order as any).shippingState || "";
@@ -4226,14 +4242,16 @@ export const appRouter = router({
             : `Need to refund RM${Math.abs(result.difference).toFixed(2)} shipping fee`
         );
         
-        // V2.0.80: Auto-send Messenger notification to customer about shipping difference
+        // V2.0.84: Auto-send Messenger notification to customer about shipping difference
         if ((order as any).messengerId) {
           try {
             const { sendTextMessage } = await import("./messenger");
             const diff = Math.abs(result.difference);
             const orderNumber = (order as any).orderNumber || "";
             let message: string;
-            if (result.specialOrderType === "pending_refund") {
+            if (shippingMethod === "lalamove") {
+              message = `您好，感恩您的支持 ❤️\n\n您的订单 ${orderNumber} 已完成打包。\nLalamove 实际配送费用超过基础承担金额，尚需补运费 RM${diff.toFixed(2)}。\n完成补款后，我们将尽快安排配送，谢谢。`;
+            } else if (result.specialOrderType === "pending_refund") {
               message = `您好，感恩您的支持 ❤️\n\n您的订单 ${orderNumber} 已完成打包。\n实际运费为 RM${result.actualShippingFee.toFixed(2)}，您已预付 RM${customerPaidShipping.toFixed(2)}。\n多收运费 RM${diff.toFixed(2)}，我们将安排退款，或依您的选择转换为 Credit。\n如有疑问欢迎联系我们，谢谢。`;
             } else {
               message = `您好，感恩您的支持 ❤️\n\n您的订单 ${orderNumber} 已完成打包。\n实际运费为 RM${result.actualShippingFee.toFixed(2)}，您已预付 RM${customerPaidShipping.toFixed(2)}。\n尚需补运费 RM${diff.toFixed(2)}。\n完成补款后我们将尽快安排寄出，谢谢。`;

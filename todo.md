@@ -2212,3 +2212,12 @@
 - [x] 验证搜索多条件支持（姓名、Facebook、电话、Email 等）
 - [x] 验证状态显示（彩色圆点 Normal/Blacklisted）
 - [x] 测试通过并保存 Checkpoint
+
+## V2.0.84: 运费规则修正（东马Shopee + Lalamove）
+- [x] 东马 Shopee 运费固定 RM0（后端 db.ts mallCheckout + mergeOrder + updateShippingAddress + routers.ts calculateShipping）
+- [x] 商城结账页面新增「东马 PosLaju」和「东马 Shopee」两个独立配送选项
+- [x] Lalamove 运费规则：满 RM150 免邮（公司承担 RM15），未满收 RM15
+- [x] Lalamove 打包后实际费用录入：PackingDetail 显示「Lalamove 实际配送费用」输入框
+- [x] Lalamove 自动比较：实际费用 - (客户已付 + 公司承担 RM15) = 差额，超出自动特别订单
+- [x] Lalamove 自动通知客户：Messenger 发送补运费通知
+- [x] TypeScript 编译零错误 + 270 项测试全部通过
