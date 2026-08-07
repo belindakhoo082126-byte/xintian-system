@@ -2160,3 +2160,12 @@
 - [x] 前端：Customers.tsx 客户列表状态栏已有 Black List 显示
 - [x] TypeScript 编译零错误
 - [x] 270 项测试全部通过
+
+## V2.0.79: 修复 AI Smart 地址识别 - 移除标签 + 正确拆分地址 + 不覆盖客户姓名
+- [x] parseSmartPaste: 识别并移除常见标签（Receiver:, Name:, Hp No:, ADD: 等中英文标签）
+- [x] parseSmartPaste: 电话号码去除 "-" 和空格
+- [x] parseSmartPaste: 地址正确拆分为 addressLine1/addressLine2/postcode/city/state
+- [x] handleSmartPaste: 不覆盖客户姓名（区域二），只更新收件人资料（区域三）
+- [x] handleSmartPaste: 勾选「买家是收件人」时才同步收件人姓名到客户姓名
+- [x] TypeScript 编译零错误
+- [x] 270 项测试全部通过

@@ -4016,37 +4016,82 @@ export function parseSmartPaste(text: string): {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   const result: any = {};
 
+  // V2.0.79: Common label patterns to strip — these are prompt text, not data
+  const labelPatterns: { regex: RegExp; field: 'customerName' | 'contactNumber' | 'address' }[] = [
+    // Name labels
+    { regex: /^\s*(receiver|name|recipient|收件人|姓名|买家|顾客)\s*[:：]\s*/i, field: 'customerName' },
+    // Phone labels
+    { regex: /^\s*(hp\s*no|hp|contact|phone|mobile|tel|电话|联络|手机)\s*[:：]?\s*/i, field: 'contactNumber' },
+    // Address labels
+    { regex: /^\s*(add|address|addr|地址|收货地址)\s*[:：]?\s*/i, field: 'address' },
+  ];
+
   // Malaysian postcode pattern (5 digits)
   const postcodeRegex = /\b(\d{5})\b/;
   // Phone number pattern (Malaysian format)
   const phoneRegex = /(\+?6?01[0-9]\s?\-?\s?\d{3,4}\s?\-?\s?\d{3,4}|\+?6?01[0-9]{8,9})/;
 
-  // V2.0.55: Improved parsing — handle single-line and multi-line addresses properly
   const states = ["Johor", "Kedah", "Kelantan", "Melaka", "Melacca", "Negeri Sembilan", "Pahang", "Penang", "Pulau Pinang", "Perak", "Perlis", "Sabah", "Sarawak", "Selangor", "Terengganu", "Kuala Lumpur", "Putrajaya", "Labuan", "WP Kuala Lumpur", "gelugor", "Georgetown", "Shah Alam", "Petaling Jaya", "Subang Jaya", "Klang", "Cheras", "Ampang", "Kajang", "Serdang", "Puchong", "Damansara"];
   const stateAliases: Record<string, string> = {
     "pulau pinang": "Penang", "penang": "Penang", "gelugor": "Penang", "georgetown": "Penang",
     "kuala lumpur": "Kuala Lumpur", "wp kuala lumpur": "Kuala Lumpur",
     "melacca": "Melaka", "melaka": "Melaka",
+    "federal territory of kuala lumpur": "Kuala Lumpur",
+    "federal territory": "Kuala Lumpur",
   };
 
+  // V2.0.79: Collect address parts from labeled address lines
+  const addressParts: string[] = [];
+
   for (const line of lines) {
-    // V2.0.63: Don't `continue` after phone match — keep processing the same line for postcode/address
     let workingLine = line;
-    const phoneMatch = line.match(phoneRegex);
+    let labelField: 'customerName' | 'contactNumber' | 'address' | null = null;
+
+    // V2.0.79: Strip labels first — labels are prompt text, not data
+    for (const lp of labelPatterns) {
+      const match = line.match(lp.regex);
+      if (match) {
+        labelField = lp.field;
+        workingLine = line.replace(lp.regex, "").trim();
+        break;
+      }
+    }
+
+    // V2.0.79: If labeled as address, collect all address parts for later splitting
+    if (labelField === 'address') {
+      if (workingLine) addressParts.push(workingLine);
+      continue;
+    }
+
+    // V2.0.79: If labeled as name, set customerName directly
+    if (labelField === 'customerName') {
+      if (workingLine && !result.customerName) result.customerName = workingLine;
+      continue;
+    }
+
+    // V2.0.79: If labeled as phone, extract phone number and clean it
+    if (labelField === 'contactNumber') {
+      if (workingLine && !result.contactNumber) {
+        // Remove all "-" and spaces from phone number
+        result.contactNumber = workingLine.replace(/[\s\-]/g, "");
+      }
+      continue;
+    }
+
+    // No label found — try to auto-detect content type
+
+    // Try phone match
+    const phoneMatch = workingLine.match(phoneRegex);
     if (phoneMatch && !result.contactNumber) {
       result.contactNumber = phoneMatch[1].replace(/[\s\-]/g, "");
-      // Remove the phone number from the line so it doesn't interfere with further parsing
       workingLine = workingLine.replace(phoneMatch[0], " ").trim();
     }
 
-    // Check for postcode in this line (use workingLine with phone removed)
+    // Check for postcode in this line
     const postcodeMatch = workingLine.match(postcodeRegex);
     if (postcodeMatch && !result.postcode) {
       result.postcode = postcodeMatch[1];
-      // Parse the rest of the line to extract city and state
       const restOfLine = workingLine.replace(postcodeRegex, "").replace(/,/g, " ").trim();
-      
-      // Try to find a state in the rest of the line
       const foundState = states.find(s => restOfLine.toLowerCase().includes(s.toLowerCase()));
       if (foundState) {
         const aliasKey = Object.keys(stateAliases).find(k => restOfLine.toLowerCase().includes(k.toLowerCase()));
@@ -4056,12 +4101,14 @@ export function parseSmartPaste(text: string): {
         } else {
           result.area = "West Malaysia";
         }
-        // City is the rest without the state
         const cityPart = restOfLine.replace(new RegExp(foundState, "gi"), "").trim();
         if (cityPart && !result.city) result.city = cityPart;
       } else if (restOfLine && !result.city) {
         result.city = restOfLine;
       }
+      // If there's content before the postcode, treat as address
+      const beforePostcode = workingLine.split(postcodeRegex)[0].replace(/,$/, "").trim();
+      if (beforePostcode) addressParts.push(beforePostcode);
       continue;
     }
 
@@ -4076,29 +4123,90 @@ export function parseSmartPaste(text: string): {
         } else {
           result.area = "West Malaysia";
         }
-        // If line has more than just the state, the rest might be city
         const restOfLine = workingLine.replace(new RegExp(foundState, "gi"), "").replace(/,/g, "").trim();
         if (restOfLine && !result.city) result.city = restOfLine;
         continue;
       }
     }
 
-    // First non-matched line is usually the name
+    // First non-matched line without label is usually the name
     if (!result.customerName) {
       result.customerName = workingLine;
       continue;
     }
 
-    // Second non-matched line is address line 1
-    if (!result.addressLine1) {
-      result.addressLine1 = workingLine;
-      continue;
+    // Otherwise treat as address part
+    addressParts.push(workingLine);
+  }
+
+  // V2.0.79: Now split collected address parts into addressLine1, addressLine2, postcode, city, state
+  if (addressParts.length > 0) {
+    const fullAddress = addressParts.join(", ");
+    // Try to extract postcode from the full address
+    if (!result.postcode) {
+      const pcMatch = fullAddress.match(postcodeRegex);
+      if (pcMatch) {
+        result.postcode = pcMatch[1];
+      }
+    }
+    // Try to extract state from the full address
+    if (!result.state) {
+      const foundState = states.find(s => fullAddress.toLowerCase().includes(s.toLowerCase()));
+      if (foundState) {
+        const aliasKey = Object.keys(stateAliases).find(k => fullAddress.toLowerCase().includes(k.toLowerCase()));
+        result.state = aliasKey ? stateAliases[aliasKey] : foundState;
+        if (["Sabah", "Sarawak", "Labuan"].includes(result.state)) {
+          result.area = "East Malaysia";
+        } else {
+          result.area = "West Malaysia";
+        }
+      }
+    }
+    // Try to extract city — text between postcode and state
+    if (!result.city && result.postcode) {
+      const afterPostcode = fullAddress.split(result.postcode)[1] || "";
+      if (result.state) {
+        const stateIdx = afterPostcode.toLowerCase().indexOf(result.state.toLowerCase());
+        if (stateIdx > 0) {
+          const cityCandidate = afterPostcode.substring(0, stateIdx).replace(/[,，]/g, "").trim();
+          if (cityCandidate) result.city = cityCandidate;
+        } else {
+          const cityCandidate = afterPostcode.replace(/[,，]/g, "").trim();
+          if (cityCandidate) result.city = cityCandidate.replace(new RegExp(result.state, "gi"), "").trim();
+        }
+      } else {
+        const cityCandidate = afterPostcode.replace(/[,，]/g, "").trim();
+        if (cityCandidate) result.city = cityCandidate;
+      }
     }
 
-    // Third non-matched line is address line 2
-    if (!result.addressLine2) {
-      result.addressLine2 = workingLine;
-      continue;
+    // Split address into line1 and line2
+    // Remove postcode, city, state from the full address to get the street portion
+    let streetPart = fullAddress;
+    if (result.postcode) streetPart = streetPart.replace(new RegExp(`\b${result.postcode}\b`), "");
+    if (result.city) streetPart = streetPart.replace(new RegExp(result.city, "gi"), "");
+    if (result.state) streetPart = streetPart.replace(new RegExp(result.state, "gi"), "");
+    streetPart = streetPart.replace(/[,，]/g, " ").replace(/\s+/g, " ").trim();
+
+    if (streetPart) {
+      // Split by comma or into two roughly equal parts
+      const streetSegments = streetPart.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+      if (streetSegments.length >= 2) {
+        result.addressLine1 = streetSegments[0];
+        result.addressLine2 = streetSegments.slice(1).join(", ");
+      } else {
+        // No comma to split on — put everything in line1
+        result.addressLine1 = streetPart;
+      }
+    }
+  }
+
+  // V2.0.79: Default country for Malaysian addresses
+  if (result.state && !result.area) {
+    if (["Sabah", "Sarawak", "Labuan"].includes(result.state)) {
+      result.area = "East Malaysia";
+    } else {
+      result.area = "West Malaysia";
     }
   }
 

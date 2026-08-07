@@ -351,10 +351,15 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         // V2.0.64: Set flag to prevent useEffect from overwriting Smart Parse results
         smartParseUpdatingRef.current = true;
 
-        // V2.0.64: Single batch update for customerForm to avoid race conditions
+        // V2.0.79: AI Smart only updates recipient info (Section 3), NOT customer name (Section 2)
+        // Customer name is only synced from recipient name when "buyer is recipient" checkbox is on
+        // (the existing useEffect at line 128 handles that sync automatically)
+
+        // V2.0.79: Only update customer phone number (not name) — name stays as-is
         const customerUpdates: Record<string, string> = {};
-        if (result.customerName) customerUpdates.name = result.customerName;
         if (result.contactNumber) customerUpdates.phoneNumber = result.contactNumber;
+        // V2.0.79: Only update customer name if buyer is recipient (so they're the same person)
+        if (result.customerName && buyerIsRecipient) customerUpdates.name = result.customerName;
         if (Object.keys(customerUpdates).length > 0) {
           setCustomerForm(prev => ({ ...prev, ...customerUpdates }));
         }
