@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   ArrowLeft, Save, FileText, User, Truck, DollarSign, Package, X,
-  CreditCard, Plus, Upload, Loader2, Trash2,
+  CreditCard, Plus, Upload, Loader2, Trash2, MessageSquare, Sprout,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -47,6 +47,8 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   const utils = trpc.useUtils();
 
   const { data: order, isLoading } = trpc.orders.getDetail.useQuery({ id: orderId });
+  const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
+  const { data: paymentMethods } = trpc.paymentMethods.list.useQuery();
 
   // Editable form state
   const [formData, setFormData] = useState<any>({
@@ -70,6 +72,16 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   const [paymentForm, setPaymentForm] = useState({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const receiptFileRef = useRef<HTMLInputElement>(null);
+
+  // Remark state
+  const [remarkDialogOpen, setRemarkDialogOpen] = useState(false);
+  const [remarkForm, setRemarkForm] = useState({
+    type: "customer" as "live" | "customer" | "internal",
+    content: "",
+    remarkCategory: "" as "" | "repotting" | "desired_delivery_date" | "other",
+    desiredDeliveryDate: "",
+    repottingEntries: [] as Array<{ plantName: string; potName: string; quantity: number }>,
+  });
 
   // Load order data into form when available
   useEffect(() => {
@@ -110,6 +122,30 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
       setPaymentForm({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
     },
     onError: (e: any) => toast.error(translate("添加付款失败: {message}", "Payment failed: {message}", { message: e.message })),
+  });
+
+  const createRemarkMutation = trpc.orderRemarks.create.useMutation({
+    onSuccess: () => {
+      utils.orderRemarks.list.invalidate({ orderId });
+      toast.success(translate("备注已添加", "Remark added"));
+      setRemarkDialogOpen(false);
+      setRemarkForm({
+        type: "customer",
+        content: "",
+        remarkCategory: "",
+        desiredDeliveryDate: "",
+        repottingEntries: [],
+      });
+    },
+    onError: (e: any) => toast.error(translate("添加备注失败: {message}", "Remark failed: {message}", { message: e.message })),
+  });
+
+  const deleteRemarkMutation = trpc.orderRemarks.delete.useMutation({
+    onSuccess: () => {
+      utils.orderRemarks.list.invalidate({ orderId });
+      toast.success(translate("备注已删除", "Remark deleted"));
+    },
+    onError: (e: any) => toast.error(translate("删除失败: {message}", "Delete failed: {message}", { message: e.message })),
   });
 
   async function handleUploadReceipt(file: File) {
@@ -159,6 +195,23 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     });
   }
 
+  function handleAddRemark() {
+    if (!remarkForm.content && remarkForm.remarkCategory !== "repotting") {
+      toast.error(translate("请输入备注内容", "Please enter remark content"));
+      return;
+    }
+    createRemarkMutation.mutate({
+      orderId,
+      type: remarkForm.type,
+      content: remarkForm.content || (remarkForm.remarkCategory === "repotting" ? "换盆备注" : ""),
+      remarkCategory: remarkForm.remarkCategory || "other",
+      desiredDeliveryDate: remarkForm.remarkCategory === "desired_delivery_date" ? remarkForm.desiredDeliveryDate : undefined,
+      repottingData: remarkForm.remarkCategory === "repotting" && remarkForm.repottingEntries.length > 0
+        ? JSON.stringify(remarkForm.repottingEntries)
+        : undefined,
+    });
+  }
+
   // Calculate total
   const itemsSubtotal = useMemo(() => {
     if (!order) return 0;
@@ -171,6 +224,30 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   const creditUsedNum = parseFloat(formData.creditUsed) || 0;
   const shippingFeeNum = parseFloat(formData.shippingFee) || 0;
   const totalAmount = itemsSubtotal - discountNum + extraChargeNum + shippingFeeNum - creditUsedNum;
+
+  // Payment method filtering based on shipping method
+  const isSelfPickup = formData.shippingMethod === "self_pickup";
+  const filteredPaymentMethods = useMemo(() => {
+    if (!paymentMethods) return [];
+    return paymentMethods.filter((method: any) => {
+      if (!method.isEnabled) return false;
+      if (method.type === "cash" && !isSelfPickup) return false;
+      return true;
+    });
+  }, [paymentMethods, isSelfPickup]);
+
+  // Plant and pot items for repotting
+  const orderPlants = useMemo(() => {
+    if (!order) return [];
+    const o = order as any;
+    return (o.items || []).filter((item: any) => !item.isPot && item.productType === "physical");
+  }, [order]);
+
+  const orderPots = useMemo(() => {
+    if (!order) return [];
+    const o = order as any;
+    return (o.items || []).filter((item: any) => item.isPot && item.productType === "physical");
+  }, [order]);
 
   function handleSave() {
     updateDetailsMutation.mutate({
@@ -457,7 +534,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                   <TableRow key={idx}>
                     <TableCell className="p-3">{new Date(p.paymentDate || p.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</TableCell>
                     <TableCell className="p-3 text-right font-medium">RM {parseFloat(p.amount).toFixed(2)}</TableCell>
-                    <TableCell className="p-3">{p.paymentMethod || "-"}</TableCell>
+                    <TableCell className="p-3">{p.paymentMethod || p.paymentMethodName || "-"}</TableCell>
                     <TableCell className="p-3">{p.receiptUrl ? <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{translate("查看", "View")}</a> : "-"}</TableCell>
                     <TableCell className="p-3 text-muted-foreground">{p.notes || "-"}</TableCell>
                   </TableRow>
@@ -470,6 +547,75 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               </TableBody>
             </Table>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Section 7: Remarks */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <MessageSquare className="h-4 w-4" />
+            {translate("区域七：备注", "Section 7: Remarks")}
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setRemarkDialogOpen(true)}>
+              <Plus className="h-3 w-3 mr-1" />{translate("新增备注", "Add Remark")}
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {(remarks || []).length === 0 ? (
+            <p className="text-muted-foreground text-center py-4">{translate("无备注", "No remarks")}</p>
+          ) : (
+            (remarks || []).map((r: any, idx: number) => (
+              <div key={idx} className="border rounded-lg p-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    {r.remarkCategory === "repotting" ? translate("换盆", "Repotting") :
+                     r.remarkCategory === "desired_delivery_date" ? translate("希望收货日期", "Desired Delivery Date") :
+                     r.remarkCategory === "select_tree" ? translate("选树身", "Select Tree") :
+                     translate("其他", "Other")}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs">{r.type}</Badge>
+                  <span className="text-xs text-muted-foreground ml-auto">{new Date(r.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => deleteRemarkMutation.mutate({ id: r.id })}
+                  >
+                    <Trash2 className="h-3 w-3 text-muted-foreground" />
+                  </Button>
+                </div>
+                {r.remarkCategory === "desired_delivery_date" ? (
+                  <p className="text-sm text-muted-foreground">
+                    {r.desiredDeliveryDate ? new Date(r.desiredDeliveryDate).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US") : ""}
+                    {r.desiredDeliveryReason && <span className="ml-2">— {r.desiredDeliveryReason}</span>}
+                  </p>
+                ) : r.remarkCategory === "repotting" && r.repottingData ? (
+                  <div className="space-y-1">
+                    <p className="text-sm">{r.content}</p>
+                    {(() => {
+                      try {
+                        const entries = JSON.parse(r.repottingData);
+                        return entries.map((e: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 text-xs bg-green-50 dark:bg-green-950/20 rounded px-2 py-1">
+                            <Sprout className="h-3 w-3 text-green-600" />
+                            <span className="font-medium">{e.plantName}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="font-medium">{e.potName}</span>
+                            <span className="text-muted-foreground">x{e.quantity}</span>
+                          </div>
+                        ));
+                      } catch {
+                        return null;
+                      }
+                    })()}
+                  </div>
+                ) : (
+                  <p className="text-sm">{r.content}</p>
+                )}
+              </div>
+            ))
+          )}
         </CardContent>
       </Card>
 
@@ -497,7 +643,24 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
             </div>
             <div>
               <Label>{translate("付款方式", "Payment Method")}</Label>
-              <Input value={paymentForm.paymentMethodName} onChange={e => setPaymentForm(prev => ({ ...prev, paymentMethodName: e.target.value }))} placeholder={translate("例如: QR Pay (Tng/Duit Now)", "e.g. QR Pay (Tng/Duit Now)")} />
+              <Select
+                value={paymentForm.paymentMethodName}
+                onValueChange={(v) => setPaymentForm(prev => ({ ...prev, paymentMethodName: v }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={translate("选择付款方式", "Select payment method")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredPaymentMethods.map((method: any) => (
+                    <SelectItem key={method.id} value={method.name}>
+                      {method.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!isSelfPickup && (
+                <p className="text-xs text-muted-foreground mt-1">{translate("配送订单不支持现金付款", "Cash payment not available for delivery orders")}</p>
+              )}
             </div>
             <div>
               <Label>{translate("上传付款单据", "Upload Receipt")}</Label>
@@ -524,6 +687,150 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
             <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
             <Button onClick={handleAddPayment} disabled={addPaymentMutation.isPending}>
               {addPaymentMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+              {translate("保存", "Save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Remark Dialog */}
+      <Dialog open={remarkDialogOpen} onOpenChange={setRemarkDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{translate("新增备注", "Add Remark")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("备注类型", "Remark Type")}</Label>
+              <Select
+                value={remarkForm.remarkCategory}
+                onValueChange={(v) => setRemarkForm(prev => ({ ...prev, remarkCategory: v as any }))}
+              >
+                <SelectTrigger className="w-full"><SelectValue placeholder={translate("选择备注类型", "Select remark type")} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="other">{translate("其他备注", "Other Remark")}</SelectItem>
+                  <SelectItem value="desired_delivery_date">{translate("希望收货日期", "Desired Delivery Date")}</SelectItem>
+                  <SelectItem value="repotting">{translate("换盆", "Repotting")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {remarkForm.remarkCategory === "desired_delivery_date" && (
+              <div>
+                <Label>{translate("预约发货日期", "Scheduled Shipping Date")}</Label>
+                <Input
+                  type="date"
+                  value={remarkForm.desiredDeliveryDate}
+                  onChange={(e) => setRemarkForm(prev => ({ ...prev, desiredDeliveryDate: e.target.value }))}
+                />
+              </div>
+            )}
+            {remarkForm.remarkCategory === "repotting" && (
+              <div className="space-y-3">
+                <Label className="text-xs">{translate("换盆记录（可添加多组）", "Repotting entries (can add multiple)")}</Label>
+                {remarkForm.repottingEntries.map((entry, idx) => (
+                  <div key={idx} className="flex items-end gap-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950/20">
+                    <div className="flex-1">
+                      <Label className="text-xs mb-1 block">{translate("植物名称", "Plant Name")}</Label>
+                      <Select
+                        value={entry.plantName}
+                        onValueChange={(v) => setRemarkForm(prev => ({
+                          ...prev,
+                          repottingEntries: prev.repottingEntries.map((r, i) => i === idx ? { ...r, plantName: v } : r),
+                        }))}
+                      >
+                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择植物", "Select plant")} /></SelectTrigger>
+                        <SelectContent>
+                          {orderPlants.length === 0 ? (
+                            <SelectItem value="__none" disabled>{translate("订单无植物类商品", "No plant items in order")}</SelectItem>
+                          ) : (
+                            orderPlants.map((item: any, i: number) => (
+                              <SelectItem key={i} value={item.productName}>
+                                {item.productName}{item.variationName ? ` (${item.variationName})` : ""} ×{item.quantity}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex-1">
+                      <Label className="text-xs mb-1 block">{translate("花盆", "Pot")}</Label>
+                      <Select
+                        value={entry.potName}
+                        onValueChange={(v) => setRemarkForm(prev => ({
+                          ...prev,
+                          repottingEntries: prev.repottingEntries.map((r, i) => i === idx ? { ...r, potName: v } : r),
+                        }))}
+                      >
+                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择花盆", "Select pot")} /></SelectTrigger>
+                        <SelectContent>
+                          {orderPots.length === 0 ? (
+                            <SelectItem value="__none" disabled>{translate("订单无花盆类商品", "No pot items in order")}</SelectItem>
+                          ) : (
+                            orderPots.map((item: any, i: number) => (
+                              <SelectItem key={i} value={item.productName}>
+                                {item.productName}{item.variationName ? ` (${item.variationName})` : ""} ×{item.quantity}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="w-16">
+                      <Label className="text-xs mb-1 block">{translate("数量", "Qty")}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={entry.quantity}
+                        onChange={(e) => setRemarkForm(prev => ({
+                          ...prev,
+                          repottingEntries: prev.repottingEntries.map((r, i) => i === idx ? { ...r, quantity: Number(e.target.value) } : r),
+                        }))}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setRemarkForm(prev => ({
+                        ...prev,
+                        repottingEntries: prev.repottingEntries.filter((_, i) => i !== idx),
+                      }))}
+                    >
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRemarkForm(prev => ({
+                    ...prev,
+                    repottingEntries: [...prev.repottingEntries, { plantName: "", potName: "", quantity: 1 }],
+                  }))}
+                  disabled={orderPlants.length === 0 && orderPots.length === 0}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  {translate("添加换盆记录", "Add Repot Entry")}
+                </Button>
+              </div>
+            )}
+            {(remarkForm.remarkCategory === "" || remarkForm.remarkCategory === "other") && (
+              <div>
+                <Label>{translate("备注内容", "Remark Content")}</Label>
+                <Textarea
+                  value={remarkForm.content}
+                  onChange={(e) => setRemarkForm(prev => ({ ...prev, content: e.target.value }))}
+                  rows={3}
+                  placeholder={translate("输入备注内容", "Enter remark content")}
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemarkDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={handleAddRemark} disabled={createRemarkMutation.isPending}>
+              {createRemarkMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
               {translate("保存", "Save")}
             </Button>
           </DialogFooter>

@@ -2053,3 +2053,15 @@
 - [x] 4. 后端 publicOrder.updateRemark 支持 repottingData 字段
 - [x] 5. getOrderBySecureToken 返回 isPot 字段用于区分植物和花盆
 - [x] 6. TypeScript 检查零错误
+
+## V2.0.69: 修复 OrderBrowsePage 导出/打印/Preview + OrderEditPage 备注和付款方式
+
+- [x] 修复 OrderBrowsePage 导出图片功能（使用 OrderDocument 组件）
+- [x] 修复 OrderBrowsePage 打印功能（打印订单单据而非整个网页）
+- [x] 恢复 OrderBrowsePage Preview 单据按钮
+- [x] 三者共用同一份 OrderDocument 版面
+- [x] 恢复 OrderEditPage 备注区域（换盆/收货日期/其他）
+- [x] 修复 OrderEditPage 付款记录区域付款方式显示（从数据库读取）
+- [x] Cash 显示规则：仅自取时显示 Cash
+- [x] 删除未使用的 PaymentRecordsEditor 组件（修复 TS 错误）
+- [x] TypeScript 编译零错误
