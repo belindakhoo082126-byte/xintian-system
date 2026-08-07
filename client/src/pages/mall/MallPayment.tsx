@@ -15,6 +15,23 @@ const TYPE_ICONS: Record<string, any> = {
   other: Package,
 };
 
+// Unified payment info image — shown for all payment methods
+const UNIFIED_PAYMENT_IMAGE = "/manus-storage/pasted_file_BhQwTf_image_dcbe7a31.png";
+
+// Method-specific payment instructions (keyed by payment method name)
+const PAYMENT_INSTRUCTIONS: Record<string, string> = {
+  "Touch 'n Go eWallet QR": "请打开 Touch 'n Go eWallet，扫描二维码完成付款。\n汇款完成后，请截图并上传付款凭证。",
+  "DuitNow QR": "请使用任何支援 DuitNow QR 的银行或电子钱包扫描二维码完成付款。\n汇款完成后，请截图并上传付款凭证。",
+  "Public Bank Transfer": "请汇款至以下 Public Bank 户口。\n汇款完成后，请截图并上传付款凭证。",
+};
+
+function getPaymentInstruction(method: any): string {
+  const instr = PAYMENT_INSTRUCTIONS[method.name];
+  if (instr) return instr;
+  if (method.paymentInstruction) return method.paymentInstruction;
+  return "汇款完成后，请截图并上传付款凭证。";
+}
+
 export default function MallPayment() {
   const [location] = useLocation();
   const orderNumber = location.split("/").pop() || "";
@@ -62,7 +79,7 @@ export default function MallPayment() {
   const paidAmount = Number(order.paidAmount || 0);
   const remaining = totalAmount - paidAmount;
   const receiptAlreadyUploaded = order.physicalStatus === "receipt_uploaded";
-  const canUploadReceipt = ["pending", "receipt_uploaded"].includes(order.physicalStatus ?? "");
+  const canUploadReceipt = ["pending", "receipt_uploaded", "partial_payment"].includes(order.physicalStatus ?? "");
 
   async function handleUploadReceipt() {
     if (!selectedMethod) {
@@ -202,66 +219,28 @@ export default function MallPayment() {
               <CardTitle>{selectedMethod.name} - 付款详情</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* QR Code Display */}
-              {selectedMethod.type === "qr_code" && selectedMethod.qrImageUrl && (
-                <div className="flex flex-col items-center gap-3">
-                  <div className="relative group">
-                    <img src={selectedMethod.qrImageUrl} alt={`${selectedMethod.name} QR Code`} className="w-64 h-64 rounded-lg border-2 border-[#2d6a4f]/20" />
-                    <Button variant="outline" size="sm" className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setQrZoomOpen(true)}>
-                      <ZoomIn className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setQrZoomOpen(true)}>
-                      <ZoomIn className="h-4 w-4 mr-2" />放大 QR Code
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => downloadQr(selectedMethod.qrImageUrl, selectedMethod.name)}>
-                      <Download className="h-4 w-4 mr-2" />下载 QR Code
-                    </Button>
-                  </div>
+              {/* Unified Payment Info Image — shown for ALL payment methods */}
+              <div className="flex flex-col items-center gap-3">
+                <div className="relative group">
+                  <img src={UNIFIED_PAYMENT_IMAGE} alt="汇款资料" className="w-full max-w-md rounded-lg border-2 border-[#2d6a4f]/20" />
+                  <Button variant="outline" size="sm" className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setQrZoomOpen(true)}>
+                    <ZoomIn className="h-4 w-4" />
+                  </Button>
                 </div>
-              )}
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setQrZoomOpen(true)}>
+                    <ZoomIn className="h-4 w-4 mr-2" />放大图片
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => downloadQr(UNIFIED_PAYMENT_IMAGE, "payment-info")}>
+                    <Download className="h-4 w-4 mr-2" />下载图片
+                  </Button>
+                </div>
+              </div>
 
-              {/* Bank Transfer Details */}
-              {selectedMethod.type === "bank_transfer" && (
-                <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
-                  {selectedMethod.bankName && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">银行名称</span>
-                      <span className="font-medium">{selectedMethod.bankName}</span>
-                    </div>
-                  )}
-                  {selectedMethod.accountHolder && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">账户持有人</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{selectedMethod.accountHolder}</span>
-                        <Button variant="ghost" size="sm" onClick={() => copyToClipboard(selectedMethod.accountHolder, "账户持有人")}>
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                  {selectedMethod.accountNumber && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">银行账号</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-lg">{selectedMethod.accountNumber}</span>
-                        <Button variant="ghost" size="sm" onClick={() => copyToClipboard(selectedMethod.accountNumber, "银行账号")}>
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Payment Instruction */}
-              {selectedMethod.paymentInstruction && (
-                <div className="p-4 border rounded-lg bg-blue-50">
-                  <p className="text-sm"><strong>付款说明:</strong> {selectedMethod.paymentInstruction}</p>
-                </div>
-              )}
+              {/* Method-specific Payment Instruction */}
+              <div className="p-4 border rounded-lg bg-blue-50">
+                <p className="text-sm whitespace-pre-line"><strong>付款说明:</strong> {getPaymentInstruction(selectedMethod)}</p>
+              </div>
 
               {/* Upload Payment Proof */}
               {canUploadReceipt && !uploaded && (
@@ -291,20 +270,18 @@ export default function MallPayment() {
           </Card>
         )}
 
-        {/* QR Zoom Dialog */}
+        {/* Payment Info Zoom Dialog */}
         <Dialog open={qrZoomOpen} onOpenChange={setQrZoomOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>{selectedMethod?.name} QR Code</DialogTitle>
+              <DialogTitle>汇款资料</DialogTitle>
             </DialogHeader>
-            {selectedMethod?.qrImageUrl && (
-              <div className="flex flex-col items-center gap-3">
-                <img src={selectedMethod.qrImageUrl} alt="QR Code" className="max-w-full rounded-lg" />
-                <Button variant="outline" size="sm" onClick={() => downloadQr(selectedMethod.qrImageUrl, selectedMethod.name)}>
-                  <Download className="h-4 w-4 mr-2" />下载 QR Code
-                </Button>
-              </div>
-            )}
+            <div className="flex flex-col items-center gap-3">
+              <img src={UNIFIED_PAYMENT_IMAGE} alt="汇款资料" className="max-w-full rounded-lg" />
+              <Button variant="outline" size="sm" onClick={() => downloadQr(UNIFIED_PAYMENT_IMAGE, "payment-info")}>
+                <Download className="h-4 w-4 mr-2" />下载图片
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
 

@@ -15,6 +15,34 @@ const TYPE_ICONS: Record<string, any> = {
   other: Package,
 };
 
+// Unified payment info image — shown for all payment methods
+const UNIFIED_PAYMENT_IMAGE = "/manus-storage/pasted_file_BhQwTf_image_dcbe7a31.png";
+
+// Method-specific payment instructions (keyed by payment method name)
+const PAYMENT_INSTRUCTIONS: Record<string, { zh: string; en: string }> = {
+  "Touch 'n Go eWallet QR": {
+    zh: "请打开 Touch 'n Go eWallet，扫描二维码完成付款。\n汇款完成后，请截图并上传付款凭证。",
+    en: "Please open Touch 'n Go eWallet and scan the QR code to complete payment.\nAfter payment, please screenshot and upload the payment proof.",
+  },
+  "DuitNow QR": {
+    zh: "请使用任何支援 DuitNow QR 的银行或电子钱包扫描二维码完成付款。\n汇款完成后，请截图并上传付款凭证。",
+    en: "Please use any DuitNow QR-supported bank or e-wallet to scan the QR code.\nAfter payment, please screenshot and upload the payment proof.",
+  },
+  "Public Bank Transfer": {
+    zh: "请汇款至以下 Public Bank 户口。\n汇款完成后，请截图并上传付款凭证。",
+    en: "Please transfer to the following Public Bank account.\nAfter payment, please screenshot and upload the payment proof.",
+  },
+};
+
+function getPaymentInstruction(method: any, lang: string): string {
+  const name = lang === "zh" ? method.name : method.name_en || method.name;
+  const instr = PAYMENT_INSTRUCTIONS[name];
+  if (instr) return lang === "zh" ? instr.zh : instr.en;
+  // Fallback to method's own instruction or generic text
+  if (method.paymentInstruction) return method.paymentInstruction;
+  return lang === "zh" ? "汇款完成后，请截图并上传付款凭证。" : "After payment, please screenshot and upload the payment proof.";
+}
+
 export default function CustomerPayment({ orderId, onBack }: { orderId: number; onBack: () => void }) {
   const [selectedMethod, setSelectedMethod] = useState<any>(null);
   const [qrZoomOpen, setQrZoomOpen] = useState(false);
@@ -177,77 +205,40 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
             <CardTitle>{lang === "zh" ? selectedMethod.name : selectedMethod.name_en || selectedMethod.name} - {translate("付款详情", "Payment Details")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* QR Code Display */}
-            {selectedMethod.type === "qr_code" && selectedMethod.qrImageUrl && (
-              <div className="flex flex-col items-center gap-3">
-                <div className="relative group">
-                  <img
-                    src={selectedMethod.qrImageUrl}
-                    alt={`${lang === "zh" ? selectedMethod.name : selectedMethod.name_en || selectedMethod.name} ${translate("QR Code", "QR Code")}`}
-                    className="w-64 h-64 rounded-lg border-2 border-primary/20"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={() => setQrZoomOpen(true)}
-                  >
-                    <ZoomIn className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setQrZoomOpen(true)}>
-                    <ZoomIn className="h-4 w-4 mr-2" />{translate("放大 QR Code", "Zoom QR Code")}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => downloadQr(selectedMethod.qrImageUrl, selectedMethod.name)}>
-                    <Download className="h-4 w-4 mr-2" />{translate("下载 QR Code", "Download QR Code")}
-                  </Button>
-                </div>
+            {/* Unified Payment Info Image — shown for ALL payment methods */}
+            <div className="flex flex-col items-center gap-3">
+              <div className="relative group">
+                <img
+                  src={UNIFIED_PAYMENT_IMAGE}
+                  alt={translate("汇款资料", "Payment Info")}
+                  className="w-full max-w-md rounded-lg border-2 border-primary/20"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={() => setQrZoomOpen(true)}
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
               </div>
-            )}
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setQrZoomOpen(true)}>
+                  <ZoomIn className="h-4 w-4 mr-2" />{translate("放大图片", "Zoom Image")}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => downloadQr(UNIFIED_PAYMENT_IMAGE, "payment-info")}>
+                  <Download className="h-4 w-4 mr-2" />{translate("下载图片", "Download Image")}
+                </Button>
+              </div>
+            </div>
 
-            {/* Bank Transfer Details */}
-            {selectedMethod.type === "bank_transfer" && (
-              <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
-                {selectedMethod.bankName && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">{translate("银行名称", "Bank Name")}</span>
-                    <span className="font-medium">{selectedMethod.bankName}</span>
-                  </div>
-                )}
-                {selectedMethod.accountHolder && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">{translate("账户持有人", "Account Holder")}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{selectedMethod.accountHolder}</span>
-                      <Button variant="ghost" size="sm" onClick={() => copyToClipboard(selectedMethod.accountHolder, translate("账户持有人", "Account Holder"))}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-                {selectedMethod.accountNumber && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">{translate("银行账号", "Account Number")}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-lg">{selectedMethod.accountNumber}</span>
-                      <Button variant="ghost" size="sm" onClick={() => copyToClipboard(selectedMethod.accountNumber, translate("银行账号", "Account Number"))}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Payment Instruction */}
-            {selectedMethod.paymentInstruction && (
-              <div className="p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
-                <p className="text-sm">
-                  <strong>{translate("付款说明:", "Payment Instructions:")}</strong> {selectedMethod.paymentInstruction}
-                </p>
-              </div>
-            )}
+            {/* Method-specific Payment Instruction */}
+            <div className="p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
+              <p className="text-sm whitespace-pre-line">
+                <strong>{translate("付款说明:", "Payment Instructions:")}</strong>
+                {getPaymentInstruction(selectedMethod, lang)}
+              </p>
+            </div>
 
             {/* Upload Payment Proof */}
             <div className="space-y-3 pt-4 border-t">
@@ -283,18 +274,16 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
 
       {/* QR Zoom Dialog */}
       <Dialog open={qrZoomOpen} onOpenChange={setQrZoomOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{lang === "zh" ? selectedMethod?.name : selectedMethod?.name_en || selectedMethod?.name} {translate("QR Code", "QR Code")}</DialogTitle>
+            <DialogTitle>{translate("汇款资料", "Payment Info")}</DialogTitle>
           </DialogHeader>
-          {selectedMethod?.qrImageUrl && (
-            <div className="flex flex-col items-center gap-3">
-              <img src={selectedMethod.qrImageUrl} alt={translate("QR Code", "QR Code")} className="max-w-full rounded-lg" />
-              <Button variant="outline" size="sm" onClick={() => downloadQr(selectedMethod.qrImageUrl, selectedMethod.name)}>
-                <Download className="h-4 w-4 mr-2" />{translate("下载 QR Code", "Download QR Code")}
-              </Button>
-            </div>
-          )}
+          <div className="flex flex-col items-center gap-3">
+            <img src={UNIFIED_PAYMENT_IMAGE} alt={translate("汇款资料", "Payment Info")} className="max-w-full rounded-lg" />
+            <Button variant="outline" size="sm" onClick={() => downloadQr(UNIFIED_PAYMENT_IMAGE, "payment-info")}>
+              <Download className="h-4 w-4 mr-2" />{translate("下载图片", "Download Image")}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

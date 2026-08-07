@@ -2239,3 +2239,7 @@
 - [x] V2.0.87: 实现部分汇款自动判断逻辑 - addOrderPayment中付款金额<订单总额时设为partial_payment，付清后设为receipt_uploaded
 - [x] V2.0.87: 客户上传付款凭证时也支持部分汇款状态判断
 - [x] V2.0.87: TypeScript编译检查 + 测试通过 + 保存checkpoint
+
+- [x] V2.0.88: 修改CustomerPayment.tsx - 所有付款方式统一显示同一张汇款资料图片，只切换付款方式名称和说明文字
+- [x] V2.0.88: 修改MallPayment.tsx - 同上修改商城端付款页面
+- [x] V2.0.88: TypeScript检查 + 保存checkpoint
