@@ -485,7 +485,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         creditUsed: creditUsed !== "0" ? creditUsed : undefined,
         recipientName: recipientForm.recipientName || undefined,
         recipientPhone: recipientForm.recipientPhone || undefined,
-        remark: remark || undefined,
+        remark: remark || (createRemarkCategory === "desired_delivery_date" && createRemarkDeliveryDate ? createRemarkDeliveryDate : undefined),
         remarkCategory: createRemarkCategory || undefined,
         remarkDeliveryDate: createRemarkDeliveryDate || undefined,
         repottingData: createRemarkCategory === "repotting" && repottingEntries.length > 0 ? JSON.stringify(repottingEntries) : undefined,

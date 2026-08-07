@@ -2087,3 +2087,12 @@
 - [x] 导出图片：显示商品照片 (showProductImage=true)
 - [x] 打印：不显示商品照片 (showProductImage=false)
 - [x] TypeScript 编译零错误
+
+## V2.0.72: 修复选树身和发货日期备注无法保存
+
+- [x] 后端 orderRemarks.create Zod enum 新增 select_tree
+- [x] 后端 orderRemarks.update Zod enum 新增 select_tree
+- [x] 后端 orders.create 新增 desired_delivery_date 无备注时用日期作为 content
+- [x] 前端 OrderEditPage handleAddRemark: 发货日期无备注时用日期作为 content
+- [x] 前端 OrderCreatePage: 发货日期无备注时用日期作为 remark
+- [x] TypeScript 编译零错误

@@ -206,10 +206,17 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
       toast.error(translate("请输入备注内容", "Please enter remark content"));
       return;
     }
+    // Build content: for desired_delivery_date with empty note, use date as content fallback
+    let contentToSend = remarkForm.content;
+    if (remarkForm.remarkCategory === "desired_delivery_date" && !contentToSend) {
+      contentToSend = remarkForm.desiredDeliveryDate; // use date as content so DB notNull is satisfied
+    } else if (remarkForm.remarkCategory === "repotting" && !contentToSend) {
+      contentToSend = "换盆备注";
+    }
     createRemarkMutation.mutate({
       orderId,
       type: remarkForm.type,
-      content: remarkForm.content || (remarkForm.remarkCategory === "repotting" ? "换盆备注" : ""),
+      content: contentToSend,
       remarkCategory: remarkForm.remarkCategory || "other",
       desiredDeliveryDate: remarkForm.remarkCategory === "desired_delivery_date" ? remarkForm.desiredDeliveryDate : undefined,
       repottingData: remarkForm.remarkCategory === "repotting" && remarkForm.repottingEntries.length > 0

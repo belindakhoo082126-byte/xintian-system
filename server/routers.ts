@@ -1144,9 +1144,19 @@ export const appRouter = router({
               type: "internal",
               content: input.remark.trim(),
               createdBy: ctx.user?.name || "admin",
-              remarkCategory: (input.remarkCategory as "repotting" | "desired_delivery_date" | "other") || "other",
+              remarkCategory: (input.remarkCategory as "repotting" | "desired_delivery_date" | "select_tree" | "other") || "other",
               desiredDeliveryDate: input.remarkDeliveryDate || undefined,
               repottingData: input.repottingData || undefined,
+            }).catch(() => {});
+          } else if (input.remarkCategory === "desired_delivery_date" && input.remarkDeliveryDate) {
+            // V2.0.72: Save desired_delivery_date even without text remark (date is enough)
+            await db.createOrderRemark({
+              orderId: result.orderId,
+              type: "internal",
+              content: input.remarkDeliveryDate,
+              createdBy: ctx.user?.name || "admin",
+              remarkCategory: "desired_delivery_date",
+              desiredDeliveryDate: input.remarkDeliveryDate,
             }).catch(() => {});
           } else if (input.repottingData && input.remarkCategory === "repotting") {
             // V2.0.60: Save repotting data even without text remark
@@ -3744,7 +3754,7 @@ export const appRouter = router({
       type: z.enum(["live", "customer", "internal"]),
       content: z.string().min(1),
       createdBy: z.string().optional(),
-      remarkCategory: z.enum(["repotting", "desired_delivery_date", "other"]).optional(),
+      remarkCategory: z.enum(["repotting", "desired_delivery_date", "select_tree", "other"]).optional(),
       desiredDeliveryDate: z.string().optional(),
       desiredDeliveryReason: z.string().optional(),
       repottingData: z.string().optional(),
@@ -3764,7 +3774,7 @@ export const appRouter = router({
     update: adminProcedure.input(z.object({
       id: z.number(),
       content: z.string().optional(),
-      remarkCategory: z.enum(["repotting", "desired_delivery_date", "other"]).optional(),
+      remarkCategory: z.enum(["repotting", "desired_delivery_date", "select_tree", "other"]).optional(),
       desiredDeliveryDate: z.string().optional(),
       desiredDeliveryReason: z.string().optional(),
       repottingData: z.string().optional(),
