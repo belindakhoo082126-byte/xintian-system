@@ -6,6 +6,10 @@ export type FollowUpStats = {
   notificationFailedCount?: number;
   stockExceptionCount?: number;
   overdueCount?: number;
+  partialPaymentCount?: number;
+  overPaymentCount?: number;
+  amountChangedCount?: number;
+  otherCount?: number;
 };
 
 /**
@@ -24,6 +28,10 @@ export function getFollowUpDisplayState(
     notificationFailedCount: stats?.notificationFailedCount ?? 0,
     stockExceptionCount: stats?.stockExceptionCount ?? 0,
     overdueCount: stats?.overdueCount ?? 0,
+    partialPaymentCount: stats?.partialPaymentCount ?? 0,
+    overPaymentCount: stats?.overPaymentCount ?? 0,
+    amountChangedCount: stats?.amountChangedCount ?? 0,
+    otherCount: stats?.otherCount ?? 0,
     itemCount: items?.length ?? 0,
   };
 }

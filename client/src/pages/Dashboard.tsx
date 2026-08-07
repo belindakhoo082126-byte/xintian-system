@@ -243,10 +243,34 @@ export default function Dashboard() {
                 <p className="mt-1 text-2xl font-bold text-purple-600">{followUpDisplay.notificationFailedCount}</p>
               </div>
             </Link>
+            <Link href="/orders?special=1&type=partial_payment">
+              <div className="rounded-lg border border-orange-100 bg-background/70 p-3 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors cursor-pointer">
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "部分汇款" : "Partial Payment"}</p>
+                <p className="mt-1 text-2xl font-bold text-orange-600">{followUpDisplay.partialPaymentCount}</p>
+              </div>
+            </Link>
+            <Link href="/orders?special=1&type=over_payment">
+              <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer">
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "多汇款" : "Over Payment"}</p>
+                <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.overPaymentCount}</p>
+              </div>
+            </Link>
+            <Link href="/orders?special=1&type=amount_changed">
+              <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer">
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "金额异常" : "Amount Changed"}</p>
+                <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.amountChangedCount}</p>
+              </div>
+            </Link>
             <Link href="/orders?special=1&type=stock_exception">
               <div className="rounded-lg border border-amber-100 bg-background/70 p-3 dark:border-amber-900/50 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "库存异常" : "Stock Exception"}</p>
                 <p className="mt-1 text-2xl font-bold text-amber-600">{followUpDisplay.stockExceptionCount}</p>
+              </div>
+            </Link>
+            <Link href="/orders?special=1&type=other">
+              <div className="rounded-lg border border-gray-100 bg-background/70 p-3 dark:border-gray-900/50 hover:bg-gray-50 dark:hover:bg-gray-950/20 transition-colors cursor-pointer">
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "其他" : "Other"}</p>
+                <p className="mt-1 text-2xl font-bold text-gray-600">{followUpDisplay.otherCount}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=overdue">

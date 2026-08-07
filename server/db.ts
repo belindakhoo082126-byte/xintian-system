@@ -1086,15 +1086,41 @@ export async function addOrderPayment(data: {
   if (order.length > 0) {
     const totalAmount = parseFloat(String(order[0].totalAmount));
     let newStatus = order[0].physicalStatus;
+    let specialOrderType: string | null = null;
+    let isSpecialOrder = order[0].isSpecialOrder;
+    let specialOrderSource = (order[0] as any).specialOrderSource || "manual";
+    let specialOrderStatus = (order[0] as any).specialOrderStatus || "pending";
     if (totalPaid >= totalAmount) {
       newStatus = "receipt_uploaded";
+      // Check for over-payment (paid more than order total)
+      if (totalPaid > totalAmount + 0.01) {
+        specialOrderType = "over_payment";
+        isSpecialOrder = true;
+        specialOrderSource = "system";
+        specialOrderStatus = "pending";
+      } else if (isSpecialOrder && specialOrderType === "partial_payment") {
+        // Was partial payment, now fully paid — resolve special order
+        isSpecialOrder = false;
+        specialOrderType = null;
+        specialOrderStatus = "resolved";
+      }
     } else if (totalPaid > 0) {
       newStatus = "partial_payment";
+      // Auto-set special order for partial payment
+      specialOrderType = "partial_payment";
+      isSpecialOrder = true;
+      specialOrderSource = "system";
+      specialOrderStatus = "pending";
     }
     await db.update(orders).set({
       paidAmount: totalPaid.toFixed(2),
       physicalStatus: newStatus as any,
       paymentUploadedAt: new Date(),
+      isSpecialOrder,
+      specialOrderType: specialOrderType as any,
+      specialOrderSource: specialOrderSource as any,
+      specialOrderStatus: specialOrderStatus as any,
+      specialOrderUpdatedAt: new Date(),
     }).where(eq(orders.id, data.orderId));
   }
 
@@ -7222,6 +7248,10 @@ export async function getSpecialOrderFollowUpStats() {
     notificationFailedCount: 0,
     stockExceptionCount: 0,
     overdueCount: 0,
+    partialPaymentCount: 0,
+    overPaymentCount: 0,
+    amountChangedCount: 0,
+    otherCount: 0,
     totalPending: 0,
   };
   // V3.2: Read directly from orders.specialOrderType — single source of truth
@@ -7246,6 +7276,10 @@ export async function getSpecialOrderFollowUpStats() {
   const notificationFailedCount = typeCounts['notification_failed'] || 0;
   const stockExceptionCount = typeCounts['stock_exception'] || 0;
   const overdueCount = typeCounts['overdue'] || 0;
+  const partialPaymentCount = typeCounts['partial_payment'] || 0;
+  const overPaymentCount = typeCounts['over_payment'] || 0;
+  const amountChangedCount = typeCounts['amount_changed'] || 0;
+  const otherCount = typeCounts['other'] || 0;
   const totalPending = Object.values(typeCounts).reduce((a, b) => a + b, 0);
   return {
     pendingShippingCount,
@@ -7255,6 +7289,10 @@ export async function getSpecialOrderFollowUpStats() {
     notificationFailedCount,
     stockExceptionCount,
     overdueCount,
+    partialPaymentCount,
+    overPaymentCount,
+    amountChangedCount,
+    otherCount,
     totalPending,
   };
 }
@@ -7330,11 +7368,11 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
     let specialTypeColor = '';
     switch (item.specialOrderType) {
       case 'pending_shipping':
-        specialTypeLabel = '等待补运费';
+        specialTypeLabel = '待补运费';
         specialTypeColor = 'orange';
         break;
       case 'pending_refund':
-        specialTypeLabel = '等待退款';
+        specialTypeLabel = '待退款';
         specialTypeColor = 'red';
         break;
       case 'company_bear':
@@ -7346,11 +7384,11 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
         specialTypeColor = 'yellow';
         break;
       case 'incomplete_info':
-        specialTypeLabel = '客户资料不完整';
+        specialTypeLabel = '资料异常';
         specialTypeColor = 'blue';
         break;
       case 'notification_failed':
-        specialTypeLabel = '自动通知失败';
+        specialTypeLabel = '通知失败';
         specialTypeColor = 'purple';
         break;
       case 'stock_exception':
@@ -7358,8 +7396,24 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
         specialTypeColor = 'amber';
         break;
       case 'overdue':
-        specialTypeLabel = '超过24小时未处理';
+        specialTypeLabel = '超时未处理';
         specialTypeColor = 'red';
+        break;
+      case 'partial_payment':
+        specialTypeLabel = '部分汇款';
+        specialTypeColor = 'orange';
+        break;
+      case 'over_payment':
+        specialTypeLabel = '多汇款';
+        specialTypeColor = 'red';
+        break;
+      case 'amount_changed':
+        specialTypeLabel = '金额异常';
+        specialTypeColor = 'red';
+        break;
+      case 'other':
+        specialTypeLabel = '其他';
+        specialTypeColor = 'gray';
         break;
       default:
         specialTypeLabel = '其他特别处理';

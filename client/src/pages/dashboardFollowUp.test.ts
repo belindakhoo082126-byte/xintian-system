@@ -11,6 +11,10 @@ describe("getFollowUpDisplayState", () => {
       notificationFailedCount: 0,
       stockExceptionCount: 0,
       overdueCount: 0,
+      partialPaymentCount: 0,
+      overPaymentCount: 0,
+      amountChangedCount: 0,
+      otherCount: 0,
       itemCount: 0,
     });
   });
@@ -24,6 +28,10 @@ describe("getFollowUpDisplayState", () => {
       notificationFailedCount: 4,
       stockExceptionCount: 2,
       overdueCount: 1,
+      partialPaymentCount: 5,
+      overPaymentCount: 1,
+      amountChangedCount: 2,
+      otherCount: 3,
     }, [{ id: 1 }, { id: 2 }])).toEqual({
       pendingShippingCount: 2,
       pendingRefundCount: 1,
@@ -32,6 +40,10 @@ describe("getFollowUpDisplayState", () => {
       notificationFailedCount: 4,
       stockExceptionCount: 2,
       overdueCount: 1,
+      partialPaymentCount: 5,
+      overPaymentCount: 1,
+      amountChangedCount: 2,
+      otherCount: 3,
       itemCount: 2,
     });
   });
@@ -50,6 +62,10 @@ describe("getFollowUpDisplayState", () => {
       notificationFailedCount: 0,
       stockExceptionCount: 0,
       overdueCount: 0,
+      partialPaymentCount: 0,
+      overPaymentCount: 0,
+      amountChangedCount: 0,
+      otherCount: 0,
       itemCount: 0,
     });
   });

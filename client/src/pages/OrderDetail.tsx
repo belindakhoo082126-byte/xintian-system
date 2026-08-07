@@ -532,15 +532,23 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                   order.specialOrderType === "notification_failed" ? "bg-purple-100 text-purple-700" :
                   order.specialOrderType === "stock_exception" ? "bg-amber-100 text-amber-700" :
                   order.specialOrderType === "overdue" ? "bg-red-100 text-red-700" :
+                  order.specialOrderType === "partial_payment" ? "bg-orange-100 text-orange-700" :
+                  order.specialOrderType === "over_payment" ? "bg-red-100 text-red-700" :
+                  order.specialOrderType === "amount_changed" ? "bg-red-100 text-red-700" :
+                  order.specialOrderType === "other" ? "bg-gray-100 text-gray-700" :
                   "bg-gray-100 text-gray-700"
                 } variant="secondary">
                   {order.specialOrderType === "pending_shipping" ? translate("待补运费", "Pending Shipping") :
                    order.specialOrderType === "pending_refund" ? translate("待退款", "Pending Refund") :
                    order.specialOrderType === "logistics_error" ? translate("物流异常", "Logistics Error") :
-                   order.specialOrderType === "incomplete_info" ? translate("客户资料不完整", "Incomplete Info") :
-                   order.specialOrderType === "notification_failed" ? translate("自动通知失败", "Notification Failed") :
+                   order.specialOrderType === "incomplete_info" ? translate("资料异常", "Incomplete Info") :
+                   order.specialOrderType === "notification_failed" ? translate("通知失败", "Notification Failed") :
                    order.specialOrderType === "stock_exception" ? translate("库存异常", "Stock Exception") :
-                   order.specialOrderType === "overdue" ? translate("超过24小时未处理", "Overdue >24h") :
+                   order.specialOrderType === "overdue" ? translate("超时未处理", "Overdue >24h") :
+                   order.specialOrderType === "partial_payment" ? translate("部分汇款", "Partial Payment") :
+                   order.specialOrderType === "over_payment" ? translate("多汇款", "Over Payment") :
+                   order.specialOrderType === "amount_changed" ? translate("金额异常", "Amount Changed") :
+                   order.specialOrderType === "other" ? translate("其他", "Other") :
                    translate("其他", "Other")}
                 </Badge>
                 <Badge variant="outline" className="text-xs">
@@ -843,10 +851,13 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                   <SelectItem value="pending_shipping">{translate("待补运费", "Pending Shipping")}</SelectItem>
                   <SelectItem value="pending_refund">{translate("待退款", "Pending Refund")}</SelectItem>
                   <SelectItem value="logistics_error">{translate("物流异常", "Logistics Error")}</SelectItem>
-                  <SelectItem value="incomplete_info">{translate("客户资料不完整", "Incomplete Info")}</SelectItem>
-                  <SelectItem value="notification_failed">{translate("自动通知失败", "Notification Failed")}</SelectItem>
+                  <SelectItem value="incomplete_info">{translate("资料异常", "Incomplete Info")}</SelectItem>
+                  <SelectItem value="notification_failed">{translate("通知失败", "Notification Failed")}</SelectItem>
                   <SelectItem value="stock_exception">{translate("库存异常", "Stock Exception")}</SelectItem>
-                  <SelectItem value="overdue">{translate("超过24小时未处理", "Overdue >24h")}</SelectItem>
+                  <SelectItem value="partial_payment">{translate("部分汇款", "Partial Payment")}</SelectItem>
+                  <SelectItem value="over_payment">{translate("多汇款", "Over Payment")}</SelectItem>
+                  <SelectItem value="amount_changed">{translate("金额异常", "Amount Changed")}</SelectItem>
+                  <SelectItem value="other">{translate("其他（Admin手动）", "Other (Manual)")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

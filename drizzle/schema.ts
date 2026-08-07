@@ -569,7 +569,20 @@ export const orders = mysqlTable("orders", {
   shippingLoss: decimal("shippingLoss", { precision: 10, scale: 2 }),
   // V1.2: Special order flag
   isSpecialOrder: boolean("isSpecialOrder").default(false).notNull(),
-  specialOrderType: mysqlEnum("specialOrderType", ["pending_shipping", "pending_refund", "company_bear", "logistics_error", "incomplete_info", "notification_failed", "stock_exception", "overdue"]),
+  specialOrderType: mysqlEnum("specialOrderType", [
+    "pending_shipping",      // 待补运费
+    "pending_refund",        // 待退款
+    "company_bear",         // 公司承担
+    "logistics_error",      // 物流异常
+    "incomplete_info",      // 资料异常
+    "notification_failed",  // 通知失败
+    "stock_exception",      // 库存异常
+    "overdue",              // 超时未处理
+    "partial_payment",      // 部分汇款
+    "over_payment",         // 多汇款
+    "amount_changed",       // 付款金额变更
+    "other",                // 其他（Admin手动）
+  ]),
   specialOrderStatus: mysqlEnum("specialOrderStatus", ["pending", "resolved", "cancelled"]).default("pending"),
   // V3.2: Special status source (system auto vs manual)
   specialOrderSource: mysqlEnum("specialOrderSource", ["system", "manual"]).default("manual"),

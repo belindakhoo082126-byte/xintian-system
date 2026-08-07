@@ -2243,3 +2243,12 @@
 - [x] V2.0.88: 修改CustomerPayment.tsx - 所有付款方式统一显示同一张汇款资料图片，只切换付款方式名称和说明文字
 - [x] V2.0.88: 修改MallPayment.tsx - 同上修改商城端付款页面
 - [x] V2.0.88: TypeScript检查 + 保存checkpoint
+
+- [x] V2.0.89: 更新schema.ts specialOrderType enum - 新增partial_payment/over_payment/amount_changed/other类型
+- [x] V2.0.89: 生成迁移SQL并执行数据库迁移
+- [x] V2.0.89: 实现addOrderPayment自动判断部分汇款/多汇款设特别订单
+- [x] V2.0.89: 更新getSpecialOrderFollowUpStats和getSpecialOrderFollowUpList支持新类型和颜色分类
+- [x] V2.0.89: 更新Dashboard.tsx特别订单待跟进模块显示新类型统计卡片
+- [x] V2.0.89: 更新OrderDetail.tsx特别订单管理UI支持新类型选择
+- [x] V2.0.89: routers.ts updateSpecialStatus已使用z.string().optional()无需修改，兼容新类型
+- [x] V2.0.89: TypeScript检查 + 测试 + 保存checkpoint
