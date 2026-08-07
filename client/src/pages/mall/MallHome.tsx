@@ -1,11 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search, ShoppingCart, Phone, MessageCircle, MapPin, ChevronRight, Home as HomeIcon, Package, Boxes } from "lucide-react";
+import { Search, ShoppingCart, Phone, MessageCircle, MapPin, ChevronRight, Home as HomeIcon, Package, Boxes, Facebook, Navigation, X } from "lucide-react";
 import { MallLangToggle } from "@/components/MallLangToggle";
 
 export default function MallHome() {
@@ -28,6 +28,17 @@ export default function MallHome() {
   }, []);
 
   const cartCount = cart.reduce((sum: number, i: any) => sum + i.quantity, 0);
+  const [addOnOrder, setAddOnOrder] = useState<any>(null);
+  const [showAddOnBanner, setShowAddOnBanner] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("xintian_mall_add_on_order");
+      if (saved) {
+        setAddOnOrder(JSON.parse(saved));
+        setShowAddOnBanner(true);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#f8f9fa]">
@@ -215,25 +226,57 @@ export default function MallHome() {
         )}
       </main>
 
+      {/* Add-on Order Banner */}
+      {showAddOnBanner && addOnOrder && (
+        <div className="sticky top-0 z-[60] bg-[#2d6a4f] text-white">
+          <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm">
+              <Package className="h-4 w-4 shrink-0" />
+              <span>正在为订单 <strong>{addOnOrder.orderNumber}</strong> 加单 — 选购完成后前往结算</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {cartCount > 0 && (
+                <Link href="/mall/checkout">
+                  <Button size="sm" variant="secondary" className="bg-white text-[#2d6a4f] hover:bg-gray-100">去结算 ({cartCount})</Button>
+                </Link>
+              )}
+              <button
+                onClick={() => { setShowAddOnBanner(false); sessionStorage.removeItem("xintian_mall_add_on_order"); }}
+                className="text-white/80 hover:text-white p-1"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Quick Contact Floating Buttons */}
       {quickContacts && quickContacts.length > 0 && (
-        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-          {quickContacts.map((c: any) => (
-            <a
-              key={c.id}
-              href={c.linkUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-white shadow-lg rounded-full p-3 hover:scale-110 transition-transform border"
-              title={c.name}
-            >
-              {c.type === "whatsapp" && <MessageCircle className="h-6 w-6 text-green-600" />}
-              {c.type === "messenger" && <MessageCircle className="h-6 w-6 text-blue-600" />}
-              {c.type === "facebook_page" && <MessageCircle className="h-6 w-6 text-blue-500" />}
-              {c.type === "waze" && <MapPin className="h-6 w-6 text-blue-700" />}
-              {c.type === "google_map" && <MapPin className="h-6 w-6 text-red-500" />}
-            </a>
-          ))}
+        <div className="fixed bottom-5 right-4 z-50 flex flex-col gap-2.5">
+          {quickContacts.map((c: any) => {
+            const iconMap: Record<string, { Icon: any; bg: string; label: string }> = {
+              whatsapp: { Icon: MessageCircle, bg: "bg-[#25D366] hover:bg-[#1da851]", label: "WhatsApp" },
+              messenger: { Icon: MessageCircle, bg: "bg-[#0084FF] hover:bg-[#0066cc]", label: "FB 私聊" },
+              facebook_page: { Icon: Facebook, bg: "bg-[#1877F2] hover:bg-[#0d5fb8]", label: "FB Page" },
+              waze: { Icon: Navigation, bg: "bg-[#33CCFF] hover:bg-[#1ab5e6]", label: "Waze" },
+              google_map: { Icon: MapPin, bg: "bg-[#EA4335] hover:bg-[#c53224]", label: "Location" },
+            };
+            const cfg = iconMap[c.type] || { Icon: MessageCircle, bg: "bg-gray-600 hover:bg-gray-700", label: c.name };
+            const { Icon } = cfg;
+            return (
+              <a
+                key={c.id}
+                href={c.linkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`group flex items-center gap-2 ${cfg.bg} text-white shadow-lg rounded-full pl-3 pr-3 py-2.5 transition-all hover:scale-105 hover:shadow-xl`}
+                title={c.name}
+              >
+                <Icon className="h-5 w-5 shrink-0" />
+                <span className="text-xs font-medium whitespace-nowrap max-w-0 overflow-hidden group-hover:max-w-[100px] transition-all duration-300 opacity-0 group-hover:opacity-100">{cfg.label}</span>
+              </a>
+            );
+          })}
         </div>
       )}
 

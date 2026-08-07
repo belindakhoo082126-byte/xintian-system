@@ -2190,3 +2190,14 @@
 - [x] 前端：Merge 对话框完善（选择合并目标 + 确认提示 + 合并预览）
 - [x] 前端：客户详情新增 Timeline 显示
 - [x] 测试通过并保存 Checkpoint
+
+## V2.0.82: 客户点击链接后的页面修复
+- [x] 后端：getOrderBySecureToken 增加 discountReason 字段返回
+- [x] 前端：CustomerOrderPage 显示折扣原因和额外费用原因
+- [x] 数据库：DuitNow QR 和 TnG eWallet QR 更新为真实 QR 图片
+- [x] 前端：MallHome 增加加单横幅提示（显示订单号 + 去结算按钮）
+- [x] 前端：goToMallForAddOn 清空旧购物车，确保加单流程干净
+- [x] 数据库：Quick Contacts 更新为正确链接（WhatsApp/FB Messenger/FB Page/Google Maps）
+- [x] 前端：浮动按钮优化（品牌色 + 悬停展开标签 + 正确图标）
+- [x] TypeScript 编译零错误
+- [x] 270 项测试全部通过

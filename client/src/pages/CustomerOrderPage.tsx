@@ -193,6 +193,8 @@ export default function CustomerOrderPage(props: any) {
       shippingAddress: o.shippingAddress || "",
       shippingMethod: o.shippingMethod || "west_malaysia",
     }));
+    // Clear any existing cart so the user starts fresh
+    localStorage.removeItem("mall_cart");
     window.location.assign("/mall");
   }
 
@@ -420,7 +422,12 @@ export default function CustomerOrderPage(props: any) {
                 {/* 额外费用 */}
                 {parseFloat(o.extraCharge || "0") > 0 && (
                   <div className="flex justify-between">
-                    <span>{o.extraChargeDescription || "额外费用"}</span>
+                    <div className="flex flex-col">
+                      <span>{o.extraChargeDescription || "额外费用"}</span>
+                      {o.extraChargeDescription && (
+                        <span className="text-xs text-muted-foreground">原因: {o.extraChargeDescription}</span>
+                      )}
+                    </div>
                     <span>RM {o.extraCharge}</span>
                   </div>
                 )}
@@ -428,7 +435,12 @@ export default function CustomerOrderPage(props: any) {
                 {/* Discount */}
                 {parseFloat(o.discountAmount || "0") > 0 && (
                   <div className="flex justify-between text-emerald-600">
-                    <span>折扣 (Discount)</span>
+                    <div className="flex flex-col">
+                      <span>折扣 (Discount)</span>
+                      {o.discountReason && (
+                        <span className="text-xs text-muted-foreground">原因: {o.discountReason}</span>
+                      )}
+                    </div>
                     <span>-RM {o.discountAmount}</span>
                   </div>
                 )}

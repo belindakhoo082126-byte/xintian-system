@@ -11065,6 +11065,7 @@ export async function getOrderBySecureToken(orderNumber: string, token: string) 
     paidAmount: orders.paidAmount,
     shippingFee: orders.shippingFee,
     discountAmount: orders.discountAmount,
+    discountReason: orders.discountReason,
     extraCharge: orders.extraCharge,
     extraChargeDescription: orders.extraChargeDescription,
     creditUsed: orders.creditUsed,
