@@ -302,12 +302,12 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   }, [manualItems]);
 
   const { data: shippingResult } = trpc.orders.calculateShipping.useQuery(
-    { totalWeight, orderTotal: settledAmount },
-    { enabled: shippingMethod === "west_malaysia" && manualItems.length > 0 }
+    { totalWeight, orderTotal: settledAmount, shippingMethod: shippingMethod as any },
+    { enabled: manualItems.length > 0 }
   );
 
   const shippingFee = shippingMethod === "self_pickup" ? 0 : (shippingResult?.shippingFee ?? 0);
-  const freeShipping = shippingResult?.freeShipping ?? false;
+  const freeShipping = shippingResult?.isFreeShipping ?? false;
 
   const totalAmount = useMemo(() => {
     return itemsSubtotal - discountNum + extraChargeNum + shippingFee - creditUsedNum;

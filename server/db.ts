@@ -3718,8 +3718,16 @@ export async function mallCheckout(data: {
       // 未满 RM150：10kg 以内 RM15，超过 10kg 每公斤 RM3
       shippingFee = 15 + (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3);
     }
+  } else if (data.shippingMethod === "east_malaysia_poslaju") {
+    // V2.0.80: 东马 PosLaju 预收 RM50（2kg 内），打包后 API 计算实际运费
+    shippingFee = 50;
+  } else if (data.shippingMethod === "east_malaysia_shopee") {
+    // V2.0.80: 东马 Shopee 独立运费规则（不使用西马免邮，不使用 PosLaju 预收）
+    // 基础运费 RM15（2kg 内），超过 2kg 每 kg 加 RM8
+    shippingFee = 15 + (totalWeight <= 2 ? 0 : Math.ceil(totalWeight - 2) * 8);
   } else if (data.shippingMethod === "east_malaysia") {
-    shippingFee = totalWeight <= 2 ? 15 : 15; // Base fee, remaining via Shopee
+    // 兼容旧数据：默认走 Shopee 规则
+    shippingFee = 15 + (totalWeight <= 2 ? 0 : Math.ceil(totalWeight - 2) * 8);
   } else if (data.shippingMethod === "self_pickup") {
     shippingFee = 0;
   } else if (data.shippingMethod === "lalamove") {
@@ -3769,6 +3777,10 @@ export async function mallCheckout(data: {
       } else {
         newShippingFee = 15 + (newWeight <= 10 ? 0 : Math.ceil(newWeight - 10) * 3);
       }
+    } else if (method === "east_malaysia_poslaju") {
+      newShippingFee = 50;
+    } else if (method === "east_malaysia_shopee" || method === "east_malaysia") {
+      newShippingFee = 15 + (newWeight <= 2 ? 0 : Math.ceil(newWeight - 2) * 8);
     }
     const newTotal = newSubtotal + newShippingFee;
     const paidAmount = parseFloat((existingOrder as any)?.paidAmount || "0");
@@ -6240,6 +6252,77 @@ export function splitOrderItems(items: Array<{
 // ============================================================================
 
 /**
+ * V2.0.80: Process actual weight for East Malaysia PosLaju.
+ * Calls ParcelKing API to get real shipping cost, adds RM5 handling fee.
+ * Compares with customer prepaid RM50 and determines if special order is needed.
+ */
+export async function processEastMalaysiaPosLajuWeight(
+  actualWeightKg: number,
+  customerPaidShipping: number,
+  shippingAddress: string,
+  shippingPostcode: string,
+  shippingState: string,
+): Promise<{
+  actualShippingFee: number;
+  apiShippingFee: number;
+  handlingFee: number;
+  difference: number;
+  needsSpecialOrder: boolean;
+  specialOrderType: "pending_shipping" | "pending_refund" | null;
+}> {
+  const HANDLING_FEE = 5;
+  let apiShippingFee = 0;
+  let actualShippingFee = 0;
+
+  try {
+    // Call ParcelKing API for real shipping rate
+    const { priceQuery, isParcelKingConfigured } = await import("./parcelking");
+    if (isParcelKingConfigured()) {
+      const result = await priceQuery({
+        from_postcode: "50000", // Default origin (KL)
+        to_postcode: shippingPostcode || "",
+        parcel_weight_kg: actualWeightKg,
+        from_state: "Kuala Lumpur",
+        to_state: shippingState || "",
+      });
+      // Find PosLaju service (service_id may vary, find the cheapest)
+      if (result.services && result.services.length > 0) {
+        const poslajuService = result.services.find((s: any) =>
+          s.courier_name?.toLowerCase().includes("poslaju") ||
+          s.service_name?.toLowerCase().includes("poslaju")
+        ) || result.services[0]; // fallback to first service
+        apiShippingFee = Number(poslajuService.total_price || poslajuService.shipping_fee || 0);
+      }
+    }
+  } catch (error) {
+    console.error("[processEastMalaysiaPosLajuWeight] ParcelKing API error:", error);
+  }
+
+  // Fallback: if API didn't return a price, use weight-based estimate
+  if (apiShippingFee <= 0) {
+    // Estimate: RM15 base (2kg) + RM8/kg excess
+    apiShippingFee = 15 + (actualWeightKg <= 2 ? 0 : Math.ceil(actualWeightKg - 2) * 8);
+  }
+
+  actualShippingFee = apiShippingFee + HANDLING_FEE;
+  const difference = actualShippingFee - customerPaidShipping;
+  const needsSpecialOrder = Math.abs(difference) > 0.01;
+  let specialOrderType: "pending_shipping" | "pending_refund" | null = null;
+  if (needsSpecialOrder) {
+    specialOrderType = difference > 0 ? "pending_shipping" : "pending_refund";
+  }
+
+  return {
+    actualShippingFee,
+    apiShippingFee,
+    handlingFee: HANDLING_FEE,
+    difference,
+    needsSpecialOrder,
+    specialOrderType,
+  };
+}
+
+/**
  * Recalculate shipping fee based on actual weight and determine if special order is needed.
  * Returns the difference and whether a special order should be created.
  */
@@ -6292,7 +6375,7 @@ export function processActualWeight(
 
 export async function createSpecialOrderAction(
   orderId: number,
-  actionType: "notify_shortage" | "confirm_received" | "refund" | "company_bear" | "remark",
+  actionType: "notify_shortage" | "confirm_received" | "refund" | "company_bear" | "remark" | "convert_to_credit",
   amount: number,
   performedBy: string,
   remark?: string

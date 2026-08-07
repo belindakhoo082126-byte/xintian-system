@@ -18,10 +18,12 @@ describe("Parcel King — Live Key Validation", () => {
   });
 
   it("should successfully fetch balance from live API", async () => {
+    // This test hits the live ParcelKing API, which may take >5s
+
     const balance = await getBalance();
     expect(balance.status).toBe("OK");
     expect(balance.result.balance).toBeDefined();
     expect(typeof balance.result.balance).toBe("number");
     expect(balance.result.currency).toBeDefined();
-  });
+  }, 15000);
 });

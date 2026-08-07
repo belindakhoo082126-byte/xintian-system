@@ -2169,3 +2169,15 @@
 - [x] handleSmartPaste: 勾选「买家是收件人」时才同步收件人姓名到客户姓名
 - [x] TypeScript 编译零错误
 - [x] 270 项测试全部通过
+
+## V2.0.80: 配送系统修复 - 东马 PosLaju/Shopee 独立运费规则
+- [x] db.ts: createOrderWithSplit 运费计算区分 east_malaysia_poslaju (RM50预收) 和 east_malaysia_shopee (独立规则)
+- [x] db.ts: 新增 processEastMalaysiaPosLajuWeight 函数（ParcelKing API + RM5 Handling Fee）
+- [x] routers.ts: calculateShipping 支持东马 PosLaju/Shopee
+- [x] routers.ts: updateActualWeight 东马 PosLaju 调用 API 获取实际运费
+- [x] routers.ts: processSpecialOrder 新增 convert_to_credit 退款转 Credit 选项
+- [x] schema.ts: specialOrderActions actionType 新增 convert_to_credit
+- [x] CustomerOrderPage.tsx: 拆分东马配送为 PosLaju 和 Shopee 两个选项
+- [x] PackingDetail.tsx: 新增「转 Credit」按钮 + 自动发送 Messenger 通知
+- [x] TypeScript 编译零错误
+- [x] 270 项测试全部通过

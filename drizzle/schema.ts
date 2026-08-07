@@ -1480,6 +1480,7 @@ export const specialOrderActions = mysqlTable("special_order_actions", {
     "refund",             // 退款
     "company_bear",       // 公司承担
     "remark",             // 备注
+    "convert_to_credit",  // V2.0.80: 运费差额转 Credit
   ]).notNull(),
   // Amount involved
   amount: decimal("amount", { precision: 10, scale: 2 }).default("0"),

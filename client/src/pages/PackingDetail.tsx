@@ -689,6 +689,24 @@ export default function PackingDetail() {
                           {translate("退款", "Refund")}
                         </Button>
                       )}
+                      {detail.specialOrderType === "pending_refund" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                          onClick={() => {
+                            specialOrderMutation.mutate({
+                              orderId,
+                              actionType: "convert_to_credit",
+                              amount: Math.abs(Number(detail.shippingDifference || 0)),
+                              remark: translate("运费差额转为客户 Credit", "Convert shipping difference to customer Credit"),
+                            });
+                          }}
+                          disabled={specialOrderMutation.isPending}
+                        >
+                          {translate("转 Credit", "Convert to Credit")}
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="secondary"

@@ -1399,10 +1399,23 @@ export const appRouter = router({
       .input(z.object({
         totalWeight: z.number(),
         orderTotal: z.number(),
+        shippingMethod: z.enum(["west_malaysia", "east_malaysia", "east_malaysia_poslaju", "east_malaysia_shopee", "lalamove", "self_pickup"]).optional(),
       }))
       .query(async ({ input }) => {
+        const method = input.shippingMethod || "west_malaysia";
+        if (method === "east_malaysia_poslaju") {
+          // V2.0.80: 东马 PosLaju 预收 RM50
+          return { shippingFee: 50, isFreeShipping: false, threshold: 0, shippingMethod: method };
+        } else if (method === "east_malaysia_shopee" || method === "east_malaysia") {
+          // V2.0.80: 东马 Shopee 独立规则：RM15（2kg内）+ RM8/kg 超出
+          const fee = 15 + (input.totalWeight <= 2 ? 0 : Math.ceil(input.totalWeight - 2) * 8);
+          return { shippingFee: fee, isFreeShipping: false, threshold: 0, shippingMethod: method };
+        } else if (method === "self_pickup" || method === "lalamove") {
+          return { shippingFee: 0, isFreeShipping: false, threshold: 0, shippingMethod: method };
+        }
+        // West Malaysia (default)
         const result = db.calculateWestMalaysiaShipping(input.totalWeight, input.orderTotal);
-        return { ...result, threshold: 150 };
+        return { ...result, threshold: 150, shippingMethod: method };
       }),
     // V2.0.33: Send checkout link to Messenger
     sendCheckout: adminProcedure
@@ -4147,16 +4160,33 @@ export const appRouter = router({
       
       const itemsSubtotal = Number(order.physicalSubtotal || 0);
       const customerPaidShipping = Number(order.customerPaidShipping || order.shippingFee || 0);
+      const shippingMethod = (order as any).shippingMethod || "west_malaysia";
       
-      // Process actual weight
-      const result = db.processActualWeight(
-        input.actualWeight,
-        customerPaidShipping,
-        itemsSubtotal,
-        false, // normal order (not standalone)
-        null,
-        0
-      );
+      let result;
+      
+      // V2.0.80: East Malaysia PosLaju uses ParcelKing API + RM5 handling fee
+      if (shippingMethod === "east_malaysia_poslaju") {
+        const shippingAddr = (order as any).shippingAddress || "";
+        const postcode = (order as any).shippingPostcode || "";
+        const state = (order as any).shippingState || "";
+        result = await db.processEastMalaysiaPosLajuWeight(
+          input.actualWeight,
+          customerPaidShipping,
+          shippingAddr,
+          postcode,
+          state,
+        );
+      } else {
+        // Normal processing for West Malaysia / Shopee / others
+        result = db.processActualWeight(
+          input.actualWeight,
+          customerPaidShipping,
+          itemsSubtotal,
+          false,
+          null,
+          0
+        );
+      }
       
       // Update order with actual weight and shipping details
       await db.updateOrderActualWeight(
@@ -4164,13 +4194,13 @@ export const appRouter = router({
         input.actualWeight,
         result.actualShippingFee,
         result.difference,
-        result.difference < 0 ? Math.abs(result.difference) : null, // shippingLoss
-        result.difference > 0 ? result.difference : null, // shippingProfit (company profit from overcharge)
+        result.difference < 0 ? Math.abs(result.difference) : null,
+        result.difference > 0 ? result.difference : null,
         result.needsSpecialOrder,
         result.specialOrderType
       );
       
-      // If special order needed, create notification
+      // If special order needed, create notification + send Messenger notification
       if (result.needsSpecialOrder) {
         await db.createSpecialOrderAction(
           input.orderId,
@@ -4181,6 +4211,24 @@ export const appRouter = router({
             ? `Need to collect RM${Math.abs(result.difference).toFixed(2)} additional shipping fee`
             : `Need to refund RM${Math.abs(result.difference).toFixed(2)} shipping fee`
         );
+        
+        // V2.0.80: Auto-send Messenger notification to customer about shipping difference
+        if ((order as any).messengerId) {
+          try {
+            const { sendTextMessage } = await import("./messenger");
+            const diff = Math.abs(result.difference);
+            const orderNumber = (order as any).orderNumber || "";
+            let message: string;
+            if (result.specialOrderType === "pending_refund") {
+              message = `您好，感恩您的支持 ❤️\n\n您的订单 ${orderNumber} 已完成打包。\n实际运费为 RM${result.actualShippingFee.toFixed(2)}，您已预付 RM${customerPaidShipping.toFixed(2)}。\n多收运费 RM${diff.toFixed(2)}，我们将安排退款，或依您的选择转换为 Credit。\n如有疑问欢迎联系我们，谢谢。`;
+            } else {
+              message = `您好，感恩您的支持 ❤️\n\n您的订单 ${orderNumber} 已完成打包。\n实际运费为 RM${result.actualShippingFee.toFixed(2)}，您已预付 RM${customerPaidShipping.toFixed(2)}。\n尚需补运费 RM${diff.toFixed(2)}。\n完成补款后我们将尽快安排寄出，谢谢。`;
+            }
+            await sendTextMessage((order as any).messengerId, message);
+          } catch (e) {
+            console.error("[updateActualWeight] Failed to send Messenger notification:", e);
+          }
+        }
       }
       
       return {
@@ -4189,6 +4237,8 @@ export const appRouter = router({
         difference: result.difference,
         needsSpecialOrder: result.needsSpecialOrder,
         specialOrderType: result.specialOrderType,
+        apiShippingFee: (result as any).apiShippingFee,
+        handlingFee: (result as any).handlingFee,
       };
     }),
     
@@ -4211,7 +4261,7 @@ export const appRouter = router({
     // Process special order action
     processSpecialOrder: shippingProcedure.input(z.object({
       orderId: z.number(),
-      actionType: z.enum(["notify_shortage", "confirm_received", "refund", "company_bear", "remark"]),
+      actionType: z.enum(["notify_shortage", "confirm_received", "refund", "company_bear", "remark", "convert_to_credit"]),
       amount: z.number().optional(),
       remark: z.string().optional(),
     })).mutation(async ({ ctx, input }) => {
@@ -4223,8 +4273,26 @@ export const appRouter = router({
         input.remark
       );
       
+      // V2.0.80: If convert_to_credit, add credit to customer and resolve
+      if (input.actionType === "convert_to_credit" && input.amount && input.amount > 0) {
+        const order = await db.getOrderById(input.orderId);
+        if (order) {
+          const customerId = (order as any).customerId;
+          if (customerId) {
+            const orderNumber = (order as any).orderNumber || "";
+            await db.adjustCustomerCredit(
+              customerId,
+              input.amount,
+              `东马 PosLaju 运费差额退款（订单 ${orderNumber}）`,
+              ctx.user?.id || 0,
+              ctx.user?.name || "Admin",
+            );
+          }
+        }
+      }
+      
       // If company_bear or confirm_received, resolve the special order
-      if (input.actionType === "company_bear" || input.actionType === "confirm_received" || input.actionType === "refund") {
+      if (input.actionType === "company_bear" || input.actionType === "confirm_received" || input.actionType === "refund" || input.actionType === "convert_to_credit") {
         const dbConn = await db.getDb();
         if (dbConn) {
           const { orders } = await import("../drizzle/schema");

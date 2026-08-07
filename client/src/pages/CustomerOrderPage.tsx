@@ -30,7 +30,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }>
 
 const SHIPPING_METHODS = [
   { value: "west_malaysia", label: "西马配送" },
-  { value: "east_malaysia", label: "东马配送" },
+  { value: "east_malaysia_poslaju", label: "东马 PosLaju" },
+  { value: "east_malaysia_shopee", label: "东马 Shopee" },
   { value: "self_pickup", label: "自取" },
   { value: "lalamove", label: "Lalamove" },
 ];
