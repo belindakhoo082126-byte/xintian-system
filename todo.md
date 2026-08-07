@@ -2130,3 +2130,15 @@
 - [x] 确认 Orders.tsx 已有正确的标签显示
 - [x] TypeScript 编译零错误
 - [x] 270 项测试全部通过（1项网络超时为 flaky test，重跑通过）
+
+## V2.0.77: 统一复制结单链接内容格式
+- [x] Orders.tsx 列表行：复制结单通知改为统一模板格式
+- [x] Orders.tsx 详情弹窗：复制链接改为复制完整消息模板
+- [x] Orders.tsx 详情弹窗：WhatsApp/Messenger 分享也使用统一模板
+- [x] Orders.tsx 列表行：Messenger 发送/重新发送也使用统一模板
+- [x] Orders.tsx 详情弹窗：重新发送也使用统一模板
+- [x] server/routers.ts：后端 4 处默认模板统一更新
+- [x] SystemSettings.tsx：placeholder 文本统一更新
+- [x] OrderBrowsePage.tsx：确认模板格式已正确（作为基准）
+- [x] TypeScript 编译零错误
+- [x] 270 项测试全部通过
