@@ -2231,3 +2231,5 @@
 - [x] 客户Timeline改为活动记录（Admin建立订单/直播捉单/商城下单/Credit异动/Black List）
 - [x] 地址自动同步：首次建单时自动写入客户Profile
 - [x] TypeScript 编译零错误 + 270 项测试全部通过
+
+- [x] V2.0.86: 修复Admin订单创建表单(Orders.tsx)收件人资料同步 - 新增recipientName/recipientPhone栏位、买家是收件人Checkbox自动同步、选择现有客户时自动带入收件人资料、所有createOrderMutation调用传递recipient字段

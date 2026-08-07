@@ -111,6 +111,21 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     facebookName: "", facebookId: "", messengerId: "",
     name: "", phoneNumber: "", address: "", shippingMethod: "west_malaysia",
   });
+  // V2.0.86: Recipient form (separate from buyer/customer info)
+  const [recipientForm, setRecipientForm] = useState({
+    recipientName: "", recipientPhone: "",
+  });
+  const [buyerIsRecipient, setBuyerIsRecipient] = useState(true);
+  // V2.0.86: Auto-sync customer name/phone to recipient when buyer is recipient
+  useEffect(() => {
+    if (buyerIsRecipient) {
+      setRecipientForm(prev => ({
+        ...prev,
+        recipientName: customerForm.name,
+        recipientPhone: customerForm.phoneNumber,
+      }));
+    }
+  }, [customerForm.name, customerForm.phoneNumber, buyerIsRecipient]);
   const [orderNature, setOrderNature] = useState("retail");
   const [orderSource, setOrderSource] = useState("manual");
   const [isWalkIn, setIsWalkIn] = useState(false);
@@ -238,6 +253,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
         shippingMethod: customerForm.shippingMethod || undefined,
         orderNature,
         orderSource: orderSource,
+        recipientName: recipientForm.recipientName || undefined,
+        recipientPhone: recipientForm.recipientPhone || undefined,
       });
     },
     onError: (e) => toast.error(translate("客户创建失败: {message}", "Customer creation failed: {message}", { message: e.message })),
@@ -250,6 +267,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       setCreateOpen(false);
       setManualItems([]);
       setCustomerForm({ facebookName: "", facebookId: "", messengerId: "", name: "", phoneNumber: "", address: "", shippingMethod: "west_malaysia" });
+      setRecipientForm({ recipientName: "", recipientPhone: "" });
+      setBuyerIsRecipient(true);
       setSelectedCustomerId(undefined);
       setCustomerSearchQuery("");
       setProductSearchQuery("");
@@ -425,6 +444,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
         shippingMethod: customerForm.shippingMethod || undefined,
         orderNature,
         orderSource,
+        recipientName: recipientForm.recipientName || undefined,
+        recipientPhone: recipientForm.recipientPhone || undefined,
       });
     } else {
       findCustomerMutation.mutate({
@@ -1661,6 +1682,11 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                           phoneNumber: c.phoneNumber || "",
                           address: c.address || "",
                         });
+                        // V2.0.86: Auto-populate recipient from customer profile
+                        setRecipientForm({
+                          recipientName: c.name || c.displayName || "",
+                          recipientPhone: c.phoneNumber || "",
+                        });
                         setCustomerSearchQuery("");
                       }} className="w-full text-left p-2 rounded hover:bg-muted text-sm">
                         <span className="font-medium">{c.name || c.facebookName || c.displayName || "Unknown"}</span>
@@ -1673,7 +1699,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               {selectedCustomerId && (
                 <Badge variant="secondary" className="w-fit">
                   {translate("已选客户 ID", "Selected Customer ID")}: {selectedCustomerId}
-                  <button onClick={() => { setSelectedCustomerId(undefined); setCustomerForm({ facebookName: "", facebookId: "", messengerId: "", name: "", phoneNumber: "", address: "", shippingMethod: "west_malaysia" }); }} className="ml-2">×</button>
+                  <button onClick={() => { setSelectedCustomerId(undefined); setCustomerForm({ facebookName: "", facebookId: "", messengerId: "", name: "", phoneNumber: "", address: "", shippingMethod: "west_malaysia" }); setRecipientForm({ recipientName: "", recipientPhone: "" }); }} className="ml-2">×</button>
                 </Badge>
               )}
               <div className="grid grid-cols-2 gap-3">
@@ -1714,6 +1740,35 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               <div>
                 <Label className="text-xs">{translate("收件地址", "Shipping Address")}</Label>
                 <Textarea value={customerForm.address} onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })} rows={2} />
+              </div>
+              {/* V2.0.86: Recipient info section */}
+              <div className="border-t pt-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="buyer-recipient-orders"
+                    checked={buyerIsRecipient}
+                    onCheckedChange={(v) => setBuyerIsRecipient(v === true)}
+                  />
+                  <Label htmlFor="buyer-recipient-orders" className="text-sm cursor-pointer">{translate("买家是收件人", "Buyer is Recipient")}</Label>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">{translate("收件人姓名", "Recipient Name")}</Label>
+                    <Input
+                      value={recipientForm.recipientName}
+                      onChange={(e) => { setRecipientForm({ ...recipientForm, recipientName: e.target.value }); if (buyerIsRecipient) setBuyerIsRecipient(false); }}
+                      placeholder={translate("收件人姓名", "Recipient Name")}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">{translate("收件人电话", "Recipient Phone")}</Label>
+                    <Input
+                      value={recipientForm.recipientPhone}
+                      onChange={(e) => { setRecipientForm({ ...recipientForm, recipientPhone: e.target.value }); if (buyerIsRecipient) setBuyerIsRecipient(false); }}
+                      placeholder="012-3456789"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
