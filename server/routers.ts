@@ -1414,7 +1414,8 @@ export const appRouter = router({
         if (!order.messengerId) throw new Error("No Messenger ID for this order");
         try {
           const { sendTextMessage } = await import("./messenger");
-          const baseUrl = "https://xintian.com.my";
+          const mallSettings = await db.getMallSettings();
+          const baseUrl = (mallSettings as any)?.domain ? `https://${(mallSettings as any).domain}` : "https://www.xintian.com.my";
           const fullLink = `${baseUrl}${order.checkoutLink}`;
           const settings = await db.getSystemSettings();
           const template = (settings as any)?.checkoutMessageTemplate ||
@@ -1477,7 +1478,8 @@ export const appRouter = router({
           }
           isFirstSend = false;
           const { sendTextMessage } = await import("./messenger");
-          const baseUrl = "https://xintian.com.my";
+          const mallSettings = await db.getMallSettings();
+          const baseUrl = (mallSettings as any)?.domain ? `https://${(mallSettings as any).domain}` : "https://www.xintian.com.my";
           const fullLink = `${baseUrl}${order.checkoutLink}`;
           const message = template
             .replace(/\{link\}/g, fullLink)
@@ -1535,7 +1537,8 @@ export const appRouter = router({
           }
           isFirstSendSelected = false;
           const { sendTextMessage } = await import("./messenger");
-          const baseUrl = "https://xintian.com.my";
+          const mallSettings = await db.getMallSettings();
+          const baseUrl = (mallSettings as any)?.domain ? `https://${(mallSettings as any).domain}` : "https://www.xintian.com.my";
           const fullLink = `${baseUrl}${order.checkoutLink}`;
           const message = template
             .replace(/\{link\}/g, fullLink)
@@ -1580,7 +1583,8 @@ export const appRouter = router({
         if (!order.messengerId) throw new Error("No Messenger ID for this order");
         try {
           const { sendTextMessage } = await import("./messenger");
-          const baseUrl = "https://xintian.com.my";
+          const mallSettings = await db.getMallSettings();
+          const baseUrl = (mallSettings as any)?.domain ? `https://${(mallSettings as any).domain}` : "https://www.xintian.com.my";
           const fullLink = `${baseUrl}${order.checkoutLink}`;
           const settings = await db.getSystemSettings();
           const template = (settings as any)?.checkoutMessageTemplate ||

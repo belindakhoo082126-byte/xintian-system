@@ -2110,3 +2110,13 @@
 - [x] 备注类型颜色 Tag：发货日期(黄) / 选树身(蓝) / 换盆(绿) / 其他(灰)
 - [x] 点击卡片直接进入订单详情
 - [x] 卡片显示订单号、时间、所有备注类型 Tag
+
+## V2.0.75: 修复复制结单链接 - 统一使用动态域名
+- [x] OrderBrowsePage.tsx: 硬编码 https://xintian.com.my 改为 window.location.origin
+- [x] OrderBrowsePage.tsx: 复制结单链接改为复制完整消息文本（含订单号、链接、免邮说明）
+- [x] Orders.tsx: 8处硬编码 https://xintian.com.my 改为 window.location.origin
+- [x] server/routers.ts: 4处硬编码 baseUrl 改为从 mallSettings.domain 动态读取，fallback www.xintian.com.my
+- [x] server/messenger.ts: 3处硬编码 manus.space 改为 www.xintian.com.my
+- [x] server/messenger.ts: 旧版 query-string 链接格式 (?token=) 统一为 path 格式 (/{token})
+- [x] TypeScript 编译零错误
+- [x] esbuild 缓存错误已清除（重启 dev server 后确认）

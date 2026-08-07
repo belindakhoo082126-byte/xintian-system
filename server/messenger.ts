@@ -304,7 +304,7 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
 
         // Send the "查询订单及结账" button
         if (orderResult.secureToken && orderResult.orderNumber) {
-          const checkoutUrl = `${process.env.VITE_FRONTEND_FORGE_API_URL?.replace('/api', '') || ''}/order/${orderResult.orderNumber}?token=${orderResult.secureToken}`;
+          const checkoutUrl = `${process.env.VITE_PUBLIC_URL || 'https://www.xintian.com.my'}/order/${orderResult.orderNumber}/${orderResult.secureToken}`;
           await sendButtonMessage(psid, "查询订单及结账", [
             { title: "查询订单及结账", url: checkoutUrl },
           ]);
@@ -986,7 +986,7 @@ async function processComment(params: {
           if (isMerged) {
             // V2.0.2: Merged order notification with detailed product info and "查询订单及结账" button
             const mergeOrderUrl = orderResult.secureToken
-              ? `${process.env.VITE_PUBLIC_URL || 'https://xintianfb-mkjyuzze.manus.space'}/order/${orderResult.orderNumber}/${orderResult.secureToken}`
+              ? `${process.env.VITE_PUBLIC_URL || 'https://www.xintian.com.my'}/order/${orderResult.orderNumber}/${orderResult.secureToken}`
               : null;
             const mergeDetailLines = matched.map((m: any) => `• ${m.productName}${m.variationName ? ` (${m.variationName})` : ''} ×${m.quantity} @ RM ${m.unitPrice}`).join('\n');
             const mergeText = `${commenterName} 您好！已追加到订单 ${orderResult.orderNumber}\n\n新增商品:\n${mergeDetailLines}\n\n目前商品金额: RM ${orderResult.totalAmount}\n（运费将在填写收货地址后自动计算）`;
@@ -1000,7 +1000,7 @@ async function processComment(params: {
           } else {
             // V2.0.2: Send winner notification with detailed product info and "查询订单及结账" button
             const orderUrl = orderResult.secureToken
-              ? `${process.env.VITE_PUBLIC_URL || 'https://xintianfb-mkjyuzze.manus.space'}/order/${orderResult.orderNumber}/${orderResult.secureToken}`
+              ? `${process.env.VITE_PUBLIC_URL || 'https://www.xintian.com.my'}/order/${orderResult.orderNumber}/${orderResult.secureToken}`
               : null;
             const detailLines = matched.map((m: any) => `• ${m.productName}${m.variationName ? ` (${m.variationName})` : ''} ×${m.quantity} @ RM ${m.unitPrice} = RM ${(parseFloat(m.unitPrice) * m.quantity).toFixed(2)}`).join('\n');
             const notifText = `恭喜 ${commenterName} 成功下单 ✅\n\n订单编号: ${orderResult.orderNumber}\n\n${detailLines}\n\n目前商品金额: RM ${orderResult.totalAmount}\n（运费将在填写收货地址后自动计算，消费满 RM150 不含特价 10kg 内即可享用免邮福利）\n\n请点击下方按钮查看订单并完成结账~`;

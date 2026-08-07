@@ -407,8 +407,9 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           </Button>
           {o.checkoutLink && (
             <Button variant="outline" size="sm" onClick={() => {
-              const fullLink = `https://xintian.com.my${o.checkoutLink}`;
-              navigator.clipboard.writeText(fullLink);
+              const fullLink = `${window.location.origin}${o.checkoutLink}`;
+              const msg = `您好，感恩您的支持 ❤️\n\n目前还没收到您的汇款及确认信息。\n\n请您点击以下链接查询您的订单（${o.orderNumber || ""}）：\n\n${fullLink}\n\n进入订单后，除了可以查询订单，也可以继续到商城加单 ❤️\n\n西马消费满 RM150（特价商品除外），10kg 内即可享受免邮优惠。`;
+              navigator.clipboard.writeText(msg);
               toast.success(translate("结单链接已复制", "Checkout link copied"), { description: fullLink, duration: 5000 });
             }}>
               <Copy className="h-3 w-3 mr-1" />{translate("复制结单链接", "Copy Checkout Link")}
@@ -416,9 +417,9 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           )}
           {o.checkoutLink && o.messengerId && (
             <Button variant="outline" size="sm" onClick={() => {
-              const fullLink = `https://xintian.com.my${o.checkoutLink}`;
+              const fullLink = `${window.location.origin}${o.checkoutLink}`;
               const template =
-                "您好，目前还没收到您的汇款及确认信息\n\n请您点击以下链接或直接点击按钮（查询/结账订单）查询您的订单（{orderNumber}）\n\n进入订单里除了可以查询订单也可以进行在商城加单❤️\n\n西马消费🈵150不含特价10kg内即可享受免邮了\n\n{link}";
+                "您好，感恩您的支持 ❤️\n\n目前还没收到您的汇款及确认信息。\n\n请您点击以下链接查询您的订单（{orderNumber}）：\n\n{link}\n\n进入订单后，除了可以查询订单，也可以继续到商城加单 ❤️\n\n西马消费满 RM150（特价商品除外），10kg 内即可享受免邮优惠。";
               const msg = template.replace(/\{link\}/g, fullLink).replace(/\{orderNumber\}/g, o.orderNumber || "");
               sendCheckoutMutation.mutate({ orderId: orderId, customMessage: msg });
             }} disabled={sendCheckoutMutation.isPending}>
