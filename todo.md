@@ -2142,3 +2142,21 @@
 - [x] OrderBrowsePage.tsx：确认模板格式已正确（作为基准）
 - [x] TypeScript 编译零错误
 - [x] 270 项测试全部通过
+
+## V2.0.78: 客户管理 Credit 系统 + Black List 完善
+- [x] 数据库：新增 customer_credit_ledger 表（记录所有 Credit 变动）
+- [x] 后端：adjustCustomerCredit 写入 Ledger 记录（含原因、操作人）
+- [x] 后端：useCustomerCredit 写入 Ledger 记录（原因自动填写「扣除订单 + 订单编号」）
+- [x] 后端：refundCustomerCredit 写入 Ledger 记录
+- [x] 后端：订单创建时自动扣除 Credit（createOrderWithSplit + createOrderFromLiveCapture）
+- [x] 后端：updateOrderDetails 移除 creditUsed 手动编辑
+- [x] 后端：Black List 阻止 AI 自动下单（executeAutoOrderCapture 检查 isBlacklisted）
+- [x] 后端：新增 customers.getCreditLedger 查询 API
+- [x] 后端：routers.ts adjustCredit reason 改为必填
+- [x] 前端：OrderCreatePage Credit 栏位设为只读（自动计算）
+- [x] 前端：OrderEditPage Credit 栏位设为只读
+- [x] 前端：Customers.tsx Credit 原因改为必填
+- [x] 前端：Customers.tsx 客户详情新增 Credit Ledger 记录显示
+- [x] 前端：Customers.tsx 客户列表状态栏已有 Black List 显示
+- [x] TypeScript 编译零错误
+- [x] 270 项测试全部通过

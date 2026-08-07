@@ -2149,31 +2149,37 @@ export const appRouter = router({
         return await db.getMergeSuggestions(input?.status);
       }),
 
-    // V2.3: Adjust customer credit (add/deduct)
+    // V2.0.78: Adjust customer credit (add/deduct) — reason is now required
     adjustCredit: adminProcedure
       .input(z.object({
         customerId: z.number(),
         amount: z.string(),
-        reason: z.string().optional(),
+        reason: z.string().min(1, "原因必填"),
       }))
       .mutation(async ({ input, ctx }) => {
         const amount = parseFloat(input.amount);
         if (isNaN(amount) || amount === 0) throw new Error("Invalid amount");
-        return await db.adjustCustomerCredit(input.customerId, amount, input.reason || "", ctx.user.id);
+        return await db.adjustCustomerCredit(input.customerId, amount, input.reason, ctx.user.id, ctx.user.name || undefined);
       }),
 
-    // V2.3: Set blacklist status
+    // V2.0.78: Get customer credit ledger
+    getCreditLedger: adminProcedure
+      .input(z.object({
+        customerId: z.number(),
+      }))
+      .query(async ({ input }) => {
+        return await db.getCustomerCreditLedger(input.customerId);
+      }),
+
+    // V2.0.78: Set blacklist status — use db helper for audit trail
     setBlacklist: adminProcedure
       .input(z.object({
         customerId: z.number(),
         isBlacklisted: z.boolean(),
         reason: z.string().optional(),
       }))
-      .mutation(async ({ input }) => {
-        await db.updateCustomer(input.customerId, {
-          isBlacklisted: input.isBlacklisted,
-          blacklistReason: input.isBlacklisted ? (input.reason || "") : null,
-        } as any);
+      .mutation(async ({ input, ctx }) => {
+        await db.toggleCustomerBlacklist(input.customerId, input.isBlacklisted, input.reason || "", ctx.user.name || `Admin #${ctx.user.id}`);
         return { success: true };
       }),
   }),

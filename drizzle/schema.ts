@@ -2623,3 +2623,34 @@ export const orderSeq = mysqlTable("order_seq", {
 export type OrderSeq = typeof orderSeq.$inferSelect;
 export type InsertOrderSeq = typeof orderSeq.$inferInsert;
 
+
+// ============================================================================
+// V2.0.78: Customer Credit Ledger (客户 Credit 变动记录)
+// ============================================================================
+
+export const customerCreditLedger = mysqlTable("customer_credit_ledger", {
+  id: int("id").autoincrement().primaryKey(),
+  // Customer reference
+  customerId: int("customerId").notNull(),
+  // Amount change: positive for add, negative for deduct/use
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  // Balance after this change
+  balanceAfter: decimal("balanceAfter", { precision: 10, scale: 2 }).notNull(),
+  // Type of change
+  type: mysqlEnum("type", ["admin_add", "admin_deduct", "order_use", "order_refund"]).notNull(),
+  // Reason / note
+  reason: text("reason").notNull(),
+  // Related order ID (for order_use / order_refund)
+  orderId: int("orderId"),
+  // Order number for display (e.g. XT00017)
+  orderNumber: varchar("orderNumber", { length: 30 }),
+  // Who performed the action (admin name or "System")
+  performedBy: varchar("performedBy", { length: 255 }).notNull(),
+  // Admin user ID (if performed by admin)
+  adminId: int("adminId"),
+  // Timestamp
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CustomerCreditLedger = typeof customerCreditLedger.$inferSelect;
+export type InsertCustomerCreditLedger = typeof customerCreditLedger.$inferInsert;

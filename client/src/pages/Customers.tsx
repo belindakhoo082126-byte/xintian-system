@@ -64,6 +64,12 @@ export default function Customers() {
     { enabled: !!detailCustomer }
   );
 
+  // V2.0.78: Credit Ledger query
+  const { data: creditLedger } = trpc.customers.getCreditLedger.useQuery(
+    { customerId: detailCustomer?.id ?? 0 },
+    { enabled: !!detailCustomer }
+  );
+
   useEffect(() => {
     setDuplicates(duplicatesData ?? []);
   }, [duplicatesData]);
@@ -167,10 +173,14 @@ export default function Customers() {
       return;
     }
     const signedAmount = creditForm.type === "deduct" ? -Math.abs(amt) : Math.abs(amt);
+    if (!creditForm.reason.trim()) {
+      toast.error(translate("原因必填", "Reason is required"));
+      return;
+    }
     adjustCreditMutation.mutate({
       customerId: creditCustomer.id,
       amount: signedAmount.toFixed(2),
-      reason: creditForm.reason || undefined,
+      reason: creditForm.reason,
     });
   }
 
@@ -395,6 +405,44 @@ export default function Customers() {
                 )}
               </div>
 
+              {/* V2.0.78: Credit Ledger */}
+              <div>
+                <p className="text-sm font-medium mb-2">{translate("Credit 记录", "Credit Ledger")}</p>
+                {creditLedger && creditLedger.length > 0 ? (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {creditLedger.map((l: any) => {
+                      const isAdd = l.type === "admin_add";
+                      const isOrder = l.type === "order_deduct";
+                      return (
+                        <div key={l.id} className="flex items-center justify-between p-2 border rounded-lg text-sm">
+                          <div className="flex-1">
+                            <p className="font-medium">
+                              <span className={isAdd ? "text-green-600" : "text-red-600"}>
+                                {isAdd ? "+" : "-"}RM {parseFloat(l.amount).toFixed(2)}
+                              </span>
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {l.reason}
+                              {l.orderNumber && ` (订单 ${l.orderNumber})`}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(l.createdAt).toLocaleDateString()}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {isOrder ? translate("系统自动", "System") : l.operatorName || translate("Admin", "Admin")}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{translate("暂无 Credit 记录", "No credit records")}</p>
+                )}
+              </div>
+
               {/* Duplicates section */}
               {duplicates.length > 0 && (
                 <div className="p-4 border border-orange-200 rounded-lg bg-orange-50/50 dark:bg-orange-950/20">
@@ -581,10 +629,10 @@ export default function Customers() {
                 />
               </div>
               <div>
-                <Label>{translate("原因 / 备注（选填）", "Reason / Note (optional)")}</Label>
+                <Label>{translate("原因（必填）", "Reason (required)")} <span className="text-red-500">*</span></Label>
                 <Textarea
                   rows={2}
-                  placeholder={translate("例如：退款 / 手动调整 / 客户投诉补偿", "e.g. Refund / Manual adjustment / Customer complaint compensation")}
+                  placeholder={translate("例如：退款补偿 / 补扣运费 / 手动调整", "e.g. Refund compensation / Shipping fee deduction / Manual adjustment")}
                   value={creditForm.reason}
                   onChange={e => setCreditForm(prev => ({ ...prev, reason: e.target.value }))}
                 />

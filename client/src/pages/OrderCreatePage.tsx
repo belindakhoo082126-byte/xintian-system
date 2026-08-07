@@ -146,7 +146,14 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const [discountReason, setDiscountReason] = useState("");
   const [extraCharge, setExtraCharge] = useState("0");
   const [extraChargeDescription, setExtraChargeDescription] = useState("");
-  const [creditUsed, setCreditUsed] = useState("0");
+  // V2.0.78: Credit is now auto-calculated, not manually entered
+  const customerCreditBalance = parseFloat(selectedCustomer?.creditBalance || "0");
+  const autoCreditUsed = useMemo(() => {
+    const subtotal = manualItems.filter(i => i.productId !== undefined).reduce((sum, i) => sum + parseFloat(i.subtotal || "0"), 0);
+    return Math.min(customerCreditBalance, Math.max(0, subtotal - (parseFloat(discountAmount) || 0) + (parseFloat(extraCharge) || 0)));
+  }, [customerCreditBalance, manualItems, discountAmount, extraCharge]);
+  const creditUsed = autoCreditUsed.toFixed(2);
+  const creditUsedNum = autoCreditUsed;
 
   // Remarks
   const [remark, setRemark] = useState("");
@@ -224,7 +231,6 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         discountReason: discountReason || undefined,
         extraCharge,
         extraChargeDescription: extraChargeDescription || undefined,
-        creditUsed: creditUsed !== "0" ? creditUsed : undefined,
         recipientName: recipientForm.recipientName || undefined,
         recipientPhone: recipientForm.recipientPhone || undefined,
         repottingData: createRemarkCategory === "repotting" && repottingEntries.length > 0 ? JSON.stringify(repottingEntries) : undefined,
@@ -284,7 +290,6 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const itemsSubtotal = physicalSubtotal + membershipSubtotal;
   const discountNum = parseFloat(discountAmount) || 0;
   const extraChargeNum = parseFloat(extraCharge) || 0;
-  const creditUsedNum = parseFloat(creditUsed) || 0;
 
   // Settled amount for free shipping threshold
   const settledAmount = itemsSubtotal - discountNum;
@@ -442,14 +447,6 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
       toast.error(translate("请输入客户名称或 Facebook 名称", "Please enter customer name or Facebook name"));
       return;
     }
-    if (creditUsedNum > 0 && selectedCustomerId) {
-      const customerCredit = parseFloat(selectedCustomer?.creditBalance || "0");
-      if (creditUsedNum > customerCredit) {
-        toast.error(translate("使用Credit不得超过客户余额 (RM {balance})", "Credit used cannot exceed customer balance (RM {balance})", { balance: customerCredit.toFixed(2) }));
-        return;
-      }
-    }
-
     if (isWalkIn) {
       findCustomerMutation.mutate({
         name: customerForm.name || "Walk-in Customer",
@@ -482,7 +479,6 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         discountReason: discountReason || undefined,
         extraCharge,
         extraChargeDescription: extraChargeDescription || undefined,
-        creditUsed: creditUsed !== "0" ? creditUsed : undefined,
         recipientName: recipientForm.recipientName || undefined,
         recipientPhone: recipientForm.recipientPhone || undefined,
         remark: remark || (createRemarkCategory === "desired_delivery_date" && createRemarkDeliveryDate ? createRemarkDeliveryDate : undefined),
@@ -1072,8 +1068,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             {selectedCustomerId && selectedCustomer?.creditBalance && parseFloat(selectedCustomer.creditBalance) > 0 && (
               <>
                 <div>
-                  <Label className="text-xs">{translate("使用Credit", "Use Credit")}</Label>
-                  <Input type="number" value={creditUsed} onChange={(e) => setCreditUsed(e.target.value)} placeholder="0.00" />
+                  <Label className="text-xs">{translate("使用Credit (自动)", "Credit Used (Auto)")}</Label>
+                  <Input type="number" value={creditUsed} readOnly disabled className="bg-gray-100 dark:bg-gray-800 cursor-not-allowed" />
                 </div>
                 <div className="col-span-2 flex items-end">
                   <Badge variant="secondary" className="mb-2">

@@ -493,8 +493,8 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               <Input value={formData.extraChargeDescription} onChange={(e) => setFormData({ ...formData, extraChargeDescription: e.target.value })} />
             </div>
             <div>
-              <Label className="text-xs">{translate("使用Credit", "Credit Used")}</Label>
-              <Input type="number" value={formData.creditUsed} onChange={(e) => setFormData({ ...formData, creditUsed: e.target.value || "0" })} />
+              <Label className="text-xs">{translate("使用Credit (自动)", "Credit Used (Auto)")}</Label>
+              <Input type="number" value={formData.creditUsed} readOnly disabled className="bg-gray-100 dark:bg-gray-800 cursor-not-allowed" />
             </div>
             <div>
               <Label className="text-xs">{translate("运费", "Shipping Fee")}</Label>

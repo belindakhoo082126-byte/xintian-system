@@ -49,6 +49,8 @@ import {
   reservationRecords,
   // V2.0.43 imports - Order sequence counter
   orderSeq,
+  // V2.0.78 imports - Customer Credit Ledger
+  customerCreditLedger,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -604,8 +606,18 @@ export async function createOrderWithSplit(data: {
     shippingFee = shipResult.shippingFee;
   }
 
+  // V2.0.78: Auto-deduct credit from customer balance (no manual input)
+  // Read customer's current credit balance
+  const customer = await getCustomerById(data.customerId);
+  if (!customer) throw new Error("Customer not found");
+  const customerCreditBalance = parseFloat(customer.creditBalance?.toString() || "0");
+  // Auto-calculate credit used: min(available credit, pre-credit total)
+  const preCreditTotal = physicalSubtotal + membershipSubtotal - promotionDiscountNum - discountAmountNum + extraChargeNum + shippingFee;
+  const autoCreditUsed = Math.min(customerCreditBalance, Math.max(0, preCreditTotal));
+  const autoCreditUsedStr = autoCreditUsed.toFixed(2);
+
   // V2.2: Total = 商品小计 - 促销优惠 - 人工折扣 + 额外收费 + 运费 - 使用Credit
-  const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscountNum - discountAmountNum + extraChargeNum + shippingFee - creditUsedNum;
+  const totalAmount = preCreditTotal - autoCreditUsed;
   
   // V2.0.43: Generate sequential order number with XT/CXT prefix (XT00001, CXT00001)
   const prefix = data.orderCategory === "import" ? "CXT" : "XT";
@@ -643,7 +655,7 @@ export async function createOrderWithSplit(data: {
     promotionDiscount: data.promotionDiscount || null,
     extraCharge: data.extraCharge || null,
     extraChargeDescription: data.extraChargeDescription || null,
-    creditUsed: data.creditUsed || null,
+    creditUsed: autoCreditUsedStr,
     discountReason: data.discountReason || null,
   });
 
@@ -669,6 +681,11 @@ export async function createOrderWithSplit(data: {
     });
   }
 
+  // V2.0.78: Auto-deduct credit from customer and write ledger
+  if (autoCreditUsed > 0) {
+    await useCustomerCredit(data.customerId, autoCreditUsed, orderId, orderNumber);
+  }
+
   // Update customer stats
   await db.update(customers).set({
     totalOrders: sql`${customers.totalOrders} + 1`,
@@ -677,7 +694,7 @@ export async function createOrderWithSplit(data: {
   }).where(eq(customers.id, data.customerId));
 
   broadcastChanges(["orders", "inventory", "dashboard", "customers"]);
-  return { orderId, orderNumber, totalAmount: totalAmount.toFixed(2) };
+  return { orderId, orderNumber, totalAmount: totalAmount.toFixed(2), creditUsed: autoCreditUsedStr, creditRemaining: (customerCreditBalance - autoCreditUsed).toFixed(2) };
 }
 
 export async function updateOrderStatus(id: number, data: {
@@ -746,7 +763,7 @@ export async function updateOrderDetails(id: number, data: {
   discountReason?: string;
   extraCharge?: string;
   extraChargeDescription?: string;
-  creditUsed?: string;
+  // V2.0.78: creditUsed is now read-only (auto-calculated, not editable)
   promotionId?: number;
   promotionName?: string;
   promotionDiscount?: string;
@@ -767,7 +784,7 @@ export async function updateOrderDetails(id: number, data: {
   if (data.discountReason !== undefined) updateData.discountReason = data.discountReason;
   if (data.extraCharge !== undefined) updateData.extraCharge = data.extraCharge;
   if (data.extraChargeDescription !== undefined) updateData.extraChargeDescription = data.extraChargeDescription;
-  if (data.creditUsed !== undefined) updateData.creditUsed = data.creditUsed;
+  // V2.0.78: creditUsed is read-only, no longer updated from admin edits
   if (data.promotionId !== undefined) updateData.promotionId = data.promotionId;
   if (data.promotionName !== undefined) updateData.promotionName = data.promotionName;
   if (data.promotionDiscount !== undefined) updateData.promotionDiscount = data.promotionDiscount;
@@ -4166,35 +4183,59 @@ ${text}`;
 // V2.2: Customer Credit functions
 // ============================================================================
 
-export async function useCustomerCredit(customerId: number, amount: number, orderId: number) {
+export async function useCustomerCredit(customerId: number, amount: number, orderId: number, orderNumber?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const customer = await getCustomerById(customerId);
   if (!customer) throw new Error("Customer not found");
   const balance = parseFloat(customer.creditBalance?.toString() || "0");
   if (balance < amount) throw new Error(`Insufficient credit: ${balance} < ${amount}`);
+  const newBalance = balance - amount;
   await db.update(customers).set({
-    creditBalance: (balance - amount).toFixed(2),
+    creditBalance: newBalance.toFixed(2),
   }).where(eq(customers.id, customerId));
+  // Write ledger record
+  await db.insert(customerCreditLedger).values({
+    customerId,
+    amount: (-amount).toFixed(2),
+    balanceAfter: newBalance.toFixed(2),
+    type: "order_use",
+    reason: orderNumber ? `扣除订单 ${orderNumber}` : `扣除订单 #${orderId}`,
+    orderId,
+    orderNumber: orderNumber || null,
+    performedBy: "System",
+  });
   await logOrderOperation(orderId, "credit_used", `Used customer credit: RM${amount.toFixed(2)}`);
-  return { remainingCredit: (balance - amount).toFixed(2) };
+  return { remainingCredit: newBalance.toFixed(2) };
 }
 
-export async function refundCustomerCredit(customerId: number, amount: number, orderId: number) {
+export async function refundCustomerCredit(customerId: number, amount: number, orderId: number, orderNumber?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const customer = await getCustomerById(customerId);
   if (!customer) throw new Error("Customer not found");
   const balance = parseFloat(customer.creditBalance?.toString() || "0");
+  const newBalance = balance + amount;
   await db.update(customers).set({
-    creditBalance: (balance + amount).toFixed(2),
+    creditBalance: newBalance.toFixed(2),
   }).where(eq(customers.id, customerId));
+  // Write ledger record
+  await db.insert(customerCreditLedger).values({
+    customerId,
+    amount: amount.toFixed(2),
+    balanceAfter: newBalance.toFixed(2),
+    type: "order_refund",
+    reason: orderNumber ? `退回订单 ${orderNumber}` : `退回订单 #${orderId}`,
+    orderId,
+    orderNumber: orderNumber || null,
+    performedBy: "System",
+  });
   await logOrderOperation(orderId, "credit_refunded", `Refunded customer credit: RM${amount.toFixed(2)}`);
-  return { newBalance: (balance + amount).toFixed(2) };
+  return { newBalance: newBalance.toFixed(2) };
 }
 
 // V2.3: Adjust customer credit (add/deduct) from customer management
-export async function adjustCustomerCredit(customerId: number, amount: number, reason: string, adminId: number) {
+export async function adjustCustomerCredit(customerId: number, amount: number, reason: string, adminId: number, adminName?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const customer = await getCustomerById(customerId);
@@ -4205,7 +4246,32 @@ export async function adjustCustomerCredit(customerId: number, amount: number, r
   await db.update(customers).set({
     creditBalance: newBalance.toFixed(2),
   }).where(eq(customers.id, customerId));
+  // Write ledger record
+  const ledgerType = amount >= 0 ? "admin_add" : "admin_deduct";
+  await db.insert(customerCreditLedger).values({
+    customerId,
+    amount: amount.toFixed(2),
+    balanceAfter: newBalance.toFixed(2),
+    type: ledgerType,
+    reason: reason || (amount >= 0 ? "Admin 增加 Credit" : "Admin 扣除 Credit"),
+    performedBy: adminName || `Admin #${adminId}`,
+    adminId,
+  });
   return { newBalance: newBalance.toFixed(2), oldBalance: balance.toFixed(2) };
+}
+
+// ============================================================================
+// V2.0.78: Customer Credit Ledger query
+// ============================================================================
+
+export async function getCustomerCreditLedger(customerId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const ledger = await db.select().from(customerCreditLedger)
+    .where(eq(customerCreditLedger.customerId, customerId))
+    .orderBy(desc(customerCreditLedger.createdAt))
+    .limit(limit);
+  return ledger;
 }
 
 // ============================================================================
@@ -5016,6 +5082,11 @@ export async function createOrderFromLiveCapture(data: {
   }
   
   // Create new order
+  // V2.0.78: Auto-deduct credit from customer balance
+  const customerCreditBalance = parseFloat(customer.creditBalance?.toString() || "0");
+  const autoCreditUsed = Math.min(customerCreditBalance, Math.max(0, subtotal));
+  const finalTotal = subtotal - autoCreditUsed;
+
   const orderNumber = await generateOrderNumber("XT");
   const secureToken = generateSecureToken();
   const checkoutLink = `/order/${orderNumber}/${secureToken}`;
@@ -5030,7 +5101,7 @@ export async function createOrderFromLiveCapture(data: {
     physicalSubtotal: subtotal.toFixed(2),
     membershipSubtotal: "0.00",
     shippingFee: "0.00",
-    totalAmount: subtotal.toFixed(2),
+    totalAmount: finalTotal.toFixed(2),
     totalWeight: totalWeight.toFixed(2),
     physicalStatus: "pending",
     orderSource: "facebook_live",
@@ -5040,6 +5111,7 @@ export async function createOrderFromLiveCapture(data: {
     campaignId: data.campaignId || null,
     campaignName: data.campaignName || null,
     sourceType: data.sourceType || null,
+    creditUsed: autoCreditUsed.toFixed(2),
   });
   
     const orderId = (orderResult as any)[0].insertId;
@@ -5060,6 +5132,11 @@ export async function createOrderFromLiveCapture(data: {
     });
   }
   
+  // V2.0.78: Auto-deduct credit and write ledger
+  if (autoCreditUsed > 0) {
+    await useCustomerCredit(customer.id, autoCreditUsed, orderId, orderNumber);
+  }
+
   // Create live capture record
   await db.insert(liveOrderCaptures).values({
     commentId: data.commentId || null,
@@ -5075,8 +5152,8 @@ export async function createOrderFromLiveCapture(data: {
     commentDate: new Date(),
   });
   
-  broadcastChanges(["orders", "inventory", "dashboard"]);
-  return { orderId, orderNumber, totalAmount: subtotal.toFixed(2), secureToken };
+  broadcastChanges(["orders", "inventory", "dashboard", "customers"]);
+  return { orderId, orderNumber, totalAmount: finalTotal.toFixed(2), secureToken, creditUsed: autoCreditUsed.toFixed(2) };
 }
 
 // --- Get live order captures (admin) ---
@@ -10977,6 +11054,18 @@ export async function executeAutoOrderCapture(params: {
         matched: false,
         unmatchedKeywords,
         replyMessage: `抱歉，未找到对应商品。请确认关键词是否正确。`,
+      };
+    }
+  }
+
+  // V2.0.78: Black List check — block AI auto-order for blacklisted customers
+  if (params.customerPsid) {
+    const customer = await getCustomerByCommenter(params.customerName, params.customerPsid);
+    if (customer && customer.isBlacklisted) {
+      return {
+        success: false,
+        matched: true,
+        replyMessage: `抱歉，您的账号目前无法自动下单。如有疑问，请直接联系客服。`,
       };
     }
   }
