@@ -14,12 +14,10 @@ import { useI18n } from "@/contexts/I18nContext";
 import { getFollowUpDisplayState } from "./dashboardFollowUp";
 
 const REMARK_CATEGORY_LABELS: Record<string, { zh: string; en: string; color: string }> = {
-  repotting: { zh: "客户换盆", en: "Customer Repot", color: "bg-green-100 text-green-700" },
-  customer_other: { zh: "客户备注", en: "Customer Note", color: "bg-blue-100 text-blue-700" },
-  scheduled_shipping: { zh: "预约发货", en: "Scheduled Ship", color: "bg-purple-100 text-purple-700" },
-  internal_repotting: { zh: "后台换盆", en: "Internal Repot", color: "bg-amber-100 text-amber-700" },
-  select_tree: { zh: "选树身", en: "Select Tree", color: "bg-orange-100 text-orange-700" },
-  internal_other: { zh: "后台备注", en: "Internal Note", color: "bg-gray-100 text-gray-700" },
+  repotting: { zh: "换盆", en: "Repot", color: "bg-green-100 text-green-700" },
+  desired_delivery_date: { zh: "发货日期", en: "Ship Date", color: "bg-yellow-100 text-yellow-700" },
+  select_tree: { zh: "选树身", en: "Select Tree", color: "bg-blue-100 text-blue-700" },
+  other: { zh: "其他", en: "Other", color: "bg-gray-100 text-gray-700" },
 };
 
 export default function Dashboard() {
@@ -30,6 +28,33 @@ export default function Dashboard() {
   const followUpDisplay = getFollowUpDisplayState(followUpStats, followUpList);
   const { data: ordersWithRemarks } = trpc.orderRemarks.ordersWithRemarks.useQuery();
 
+  // Group remarks by orderId so each order shows as one card with multiple tags
+  const groupedRemarks = (() => {
+    const rows = (ordersWithRemarks as any) || [];
+    const map = new Map<number, { orderId: number; orderNumber: string; facebookName: string; createdAt: number; categories: string[] }>();
+    for (const r of rows) {
+      const existing = map.get(r.orderId);
+      if (existing) {
+        if (!existing.categories.includes(r.remarkCategory)) {
+          existing.categories.push(r.remarkCategory);
+        }
+        // Keep the latest createdAt
+        if (r.createdAt && new Date(r.createdAt).getTime() > existing.createdAt) {
+          existing.createdAt = new Date(r.createdAt).getTime();
+        }
+      } else {
+        map.set(r.orderId, {
+          orderId: r.orderId,
+          orderNumber: r.orderNumber || `#${r.orderId}`,
+          facebookName: r.facebookName || "",
+          createdAt: r.createdAt ? new Date(r.createdAt).getTime() : Date.now(),
+          categories: [r.remarkCategory],
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
+  })();
+  const pendingRemarkCount = groupedRemarks.length;
 
   if (isLoading) {
     return (
@@ -88,7 +113,7 @@ export default function Dashboard() {
 
 
   const pendingNotifications = (stats as any).pendingNotifications || [];
-  const pendingRemarkCount = (ordersWithRemarks as any)?.length || 0;
+
 
   return (
     <div className="space-y-6">
@@ -280,24 +305,31 @@ export default function Dashboard() {
           {pendingRemarkCount === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无备注订单" : "No orders with remarks"}</p>
           ) : (
-            (ordersWithRemarks as any).slice(0, 10).map((r: any) => {
-              const catInfo = REMARK_CATEGORY_LABELS[r.remarkCategory] || null;
+            groupedRemarks.slice(0, 10).map((r) => {
               return (
-                <Link key={r.remarkId} href={`/orders/${r.orderId}`}>
-                  <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
-                    {catInfo && (
-                      <Badge className={`shrink-0 ${catInfo.color}`} variant="secondary">
-                        {lang === "zh" ? catInfo.zh : catInfo.en}
-                      </Badge>
-                    )}
+                <Link key={r.orderId} href={`/orders/${r.orderId}`}>
+                  <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate">{r.content}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {r.orderNumber || `#${r.orderId}`} {r.facebookName ? `· ${r.facebookName}` : ""}
-                        {r.createdAt ? ` · ${new Date(r.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
-                      </p>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-medium">{r.orderNumber}</span>
+                        {r.facebookName && <span className="text-xs text-muted-foreground">· {r.facebookName}</span>}
+                        <span className="text-xs text-muted-foreground ml-auto">
+                          {new Date(r.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {r.categories.map((cat) => {
+                          const catInfo = REMARK_CATEGORY_LABELS[cat];
+                          if (!catInfo) return null;
+                          return (
+                            <Badge key={cat} className={`shrink-0 ${catInfo.color}`} variant="secondary">
+                              {lang === "zh" ? catInfo.zh : catInfo.en}
+                            </Badge>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
                   </div>
                 </Link>
               );

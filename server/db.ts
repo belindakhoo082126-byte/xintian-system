@@ -5374,13 +5374,8 @@ export async function getOrdersWithRemarks() {
     .leftJoin(customers, eq(orders.customerId, customers.id))
     .where(sql`${orders.physicalStatus} IN (${sql.join(activeStatuses.map(s => sql`${s}`), sql`,`)})`)
     .orderBy(desc(orderRemarks.createdAt));
-  // Deduplicate by orderId (same order with multiple remarks counts as 1)
-  const seen = new Set<number>();
-  return rows.filter((r: any) => {
-    if (seen.has(r.orderId)) return false;
-    seen.add(r.orderId);
-    return true;
-  });
+  // Group by orderId: return all remarks so frontend can show multiple tags per order
+  return rows;
 }
 
 // V3.0: Get all remarks with order info (for remark list page)
