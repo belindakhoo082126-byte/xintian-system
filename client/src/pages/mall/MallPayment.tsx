@@ -237,6 +237,42 @@ export default function MallPayment() {
                 </div>
               </div>
 
+              {/* Online Transfer Bank Details — shown only for bank_transfer type */}
+              {selectedMethod.type === "bank_transfer" && (
+                <div className="p-4 border-2 border-[#2d6a4f]/30 rounded-lg bg-green-50/50 space-y-3">
+                  <div className="flex items-center gap-2 text-[#2d6a4f] font-semibold">
+                    <University className="h-5 w-5" />
+                    <span>银行户口资料</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                      <div>
+                        <p className="text-xs text-muted-foreground">银行</p>
+                        <p className="font-semibold text-sm">Public Bank</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                      <div>
+                        <p className="text-xs text-muted-foreground">户口号码</p>
+                        <p className="font-mono font-semibold text-sm">3825375502</p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => copyToClipboard("3825375502", "户口号码")}>
+                        <Copy className="h-3.5 w-3.5 mr-1" />复制
+                      </Button>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                      <div>
+                        <p className="text-xs text-muted-foreground">户口名字</p>
+                        <p className="font-semibold text-sm">ECOLAND NURSERY</p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => copyToClipboard("ECOLAND NURSERY", "户口名字")}>
+                        <Copy className="h-3.5 w-3.5 mr-1" />复制
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Method-specific Payment Instruction */}
               <div className="p-4 border rounded-lg bg-blue-50">
                 <p className="text-sm whitespace-pre-line"><strong>付款说明:</strong> {getPaymentInstruction(selectedMethod)}</p>

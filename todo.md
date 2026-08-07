@@ -2293,3 +2293,6 @@
 - [x] V2.0.95: 移除SKU列 - PackingDetail.tsx改为Source来源
 - [x] V2.0.95: 移除SKU列 - OrderDocument.tsx新增Source来源列
 - [x] V2.0.95: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint
+
+- [x] V2.0.96: Online Transfer选中后显示银行户口资料（Public Bank, 3825375502, ECOLAND NURSERY）+ 复制按钮
+- [x] V2.0.96: TypeScript检查 + 测试 + 保存checkpoint
