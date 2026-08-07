@@ -9,11 +9,17 @@ import { Trash2, Minus, Plus, ShoppingCart, ChevronLeft, Package } from "lucide-
 export default function MallCart() {
   const [cart, setCart] = useState<any[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [addOnOrder, setAddOnOrder] = useState<any>(null);
 
   useEffect(() => {
     try {
       setCart(JSON.parse(localStorage.getItem("mall_cart") || "[]"));
     } catch { setCart([]); }
+    // V2.0.90: Read persistent order session
+    try {
+      const saved = localStorage.getItem("xintian_mall_add_on_order");
+      if (saved) setAddOnOrder(JSON.parse(saved));
+    } catch { /* ignore */ }
     setLoaded(true);
   }, []);
 
@@ -79,9 +85,17 @@ export default function MallCart() {
             ))}
 
             <Card className="mt-4">
-              <CardContent className="p-4 flex items-center justify-between">
-                <span className="text-lg font-semibold">合计: RM {subtotal.toFixed(2)}</span>
-                <Link href="/mall/checkout"><Button className="bg-[#2d6a4f] hover:bg-[#40916c]">去结算</Button></Link>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-lg font-semibold">合计: RM {subtotal.toFixed(2)}</span>
+                  <Link href="/mall/checkout"><Button className="bg-[#2d6a4f] hover:bg-[#40916c]">去结算</Button></Link>
+                </div>
+                {/* V2.0.90: Show return-to-order button when add-on session exists */}
+                {addOnOrder && (
+                  <a href={`/order/${addOnOrder.orderNumber}/${addOnOrder.token}`}>
+                    <Button variant="outline" className="w-full">返回原订单 ({addOnOrder.orderNumber})</Button>
+                  </a>
+                )}
               </CardContent>
             </Card>
           </div>

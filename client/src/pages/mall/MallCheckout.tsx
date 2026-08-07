@@ -66,6 +66,7 @@ export default function MallCheckout() {
   const secureAddOnMutation = trpc.mall.addToSecureOrder.useMutation({
     onSuccess: (data: any) => {
       localStorage.removeItem("mall_cart");
+      // V2.0.90: Keep the order session in localStorage so user can add more items later
       setOrderResult({ ...data, added: true });
       toast.success("商品已加入原订单，请返回订单链接完成付款");
     },
@@ -75,7 +76,8 @@ export default function MallCheckout() {
   useEffect(() => {
     try { setCart(JSON.parse(localStorage.getItem("mall_cart") || "[]")); } catch { setCart([]); }
     try {
-      const saved = sessionStorage.getItem("xintian_mall_add_on_order");
+      // V2.0.90: Use localStorage for persistent order session - survives across page navigations
+      const saved = localStorage.getItem("xintian_mall_add_on_order");
       if (saved) {
         const context = JSON.parse(saved);
         setSecureAddOnOrder(context);
@@ -86,10 +88,10 @@ export default function MallCheckout() {
           addressLine1: context.shippingAddress || current.addressLine1,
           shippingMethod: context.shippingMethod || current.shippingMethod,
         }));
-        sessionStorage.removeItem("xintian_mall_add_on_order");
+        // V2.0.90: DON'T remove the session - keep it persistent so user can add more items later
       }
     } catch {
-      sessionStorage.removeItem("xintian_mall_add_on_order");
+      localStorage.removeItem("xintian_mall_add_on_order");
     }
   }, []);
 
@@ -221,16 +223,14 @@ export default function MallCheckout() {
             <div className="pt-4 space-y-2">
               {orderResult.added && secureAddOnOrder ? (
                 <a href={`/order/${orderResult.orderNumber}/${secureAddOnOrder.token}`}>
-                  <Button className="w-full bg-[#2d6a4f] hover:bg-[#40916c]">返回原订单完成付款</Button>
+                  <Button className="w-full bg-[#2d6a4f] hover:bg-[#40916c]">返回原订单</Button>
                 </a>
               ) : (
                 <Link href={`/mall/payment/${orderResult.orderNumber}?phone=${encodeURIComponent(form.contactNumber || '')}`}>
                   <Button className="w-full bg-[#2d6a4f] hover:bg-[#40916c]">去付款</Button>
                 </Link>
               )}
-              <Link href="/mall/order-query">
-                <Button variant="outline" className="w-full">查询订单</Button>
-              </Link>
+              {/* V2.0.90: Removed "查询订单" button - redundant with "返回原订单" */}
               <Link href="/mall">
                 <Button variant="ghost" className="w-full">继续购物</Button>
               </Link>

@@ -185,7 +185,8 @@ export default function CustomerOrderPage(props: any) {
 
   function goToMallForAddOn() {
     if (!o) return;
-    sessionStorage.setItem("xintian_mall_add_on_order", JSON.stringify({
+    // V2.0.90: Use localStorage for persistent order session - survives across page navigations
+    localStorage.setItem("xintian_mall_add_on_order", JSON.stringify({
       orderNumber,
       token,
       customerName: o.customerName || "",
@@ -193,8 +194,7 @@ export default function CustomerOrderPage(props: any) {
       shippingAddress: o.shippingAddress || "",
       shippingMethod: o.shippingMethod || "west_malaysia",
     }));
-    // Clear any existing cart so the user starts fresh
-    localStorage.removeItem("mall_cart");
+    // V2.0.90: Don't clear cart - allow adding more items to existing cart across visits
     window.location.assign("/mall");
   }
 

@@ -32,7 +32,8 @@ export default function MallHome() {
   const [showAddOnBanner, setShowAddOnBanner] = useState(false);
   useEffect(() => {
     try {
-      const saved = sessionStorage.getItem("xintian_mall_add_on_order");
+      // V2.0.90: Use localStorage for persistent order session
+      const saved = localStorage.getItem("xintian_mall_add_on_order");
       if (saved) {
         setAddOnOrder(JSON.parse(saved));
         setShowAddOnBanner(true);
@@ -71,9 +72,12 @@ export default function MallHome() {
               {cartCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">{cartCount}</Badge>}
             </Button>
           </Link>
-          <Link href="/mall/order-query">
-            <Button variant="ghost" size="sm">订单查询</Button>
-          </Link>
+          {/* V2.0.90: Replace "订单查询" with "返回原订单" when add-on session exists */}
+          {addOnOrder ? (
+            <a href={`/order/${addOnOrder.orderNumber}/${addOnOrder.token}`}>
+              <Button variant="ghost" size="sm" className="text-[#2d6a4f]">返回原订单</Button>
+            </a>
+          ) : null}
           <MallLangToggle />
         </div>
         {/* Category bar */}
@@ -241,8 +245,9 @@ export default function MallHome() {
                 </Link>
               )}
               <button
-                onClick={() => { setShowAddOnBanner(false); sessionStorage.removeItem("xintian_mall_add_on_order"); }}
+                onClick={() => { setShowAddOnBanner(false); }}
                 className="text-white/80 hover:text-white p-1"
+                title="隐藏提示"
               >
                 <X className="h-4 w-4" />
               </button>

@@ -4172,6 +4172,7 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
     orderNumber: orders.orderNumber,
     secureToken: orders.secureToken,
     physicalStatus: orders.physicalStatus,
+    totalAmount: orders.totalAmount,
     membershipSubtotal: orders.membershipSubtotal,
     promotionDiscount: orders.promotionDiscount,
     discountAmount: orders.discountAmount,
@@ -4248,6 +4249,12 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
     remarkCategory: "other",
     createdBy: "客户结单页",
   });
+  // V2.0.90: Add order operation log for timeline tracking
+  await logOrderOperation(orderId, "mall_addon", `商城加单：${items.map((item) => `${item.productName} ×${item.quantity}`).join("、")}`, JSON.stringify({
+    items: items.map((item) => ({ name: item.productName, qty: item.quantity, price: item.unitPrice })),
+    totalBefore: target[0].totalAmount,
+    totalAfter: totalAmount.toFixed(2),
+  }), "客户结单页");
   broadcastChanges(["orders", "inventory", "dashboard", "customers"]);
 
   return {

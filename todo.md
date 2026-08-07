@@ -2252,3 +2252,11 @@
 - [x] V2.0.89: 更新OrderDetail.tsx特别订单管理UI支持新类型选择
 - [x] V2.0.89: routers.ts updateSpecialStatus已使用z.string().optional()无需修改，兼容新类型
 - [x] V2.0.89: TypeScript检查 + 测试 + 保存checkpoint
+
+- [x] V2.0.90: 修复结单链接手机端Bug - 确保Android/iPhone/Facebook内置浏览器都能正常打开
+- [x] V2.0.90: 实现Order Session绑定 - 结单链接进入时自动绑定当前订单到localStorage，跨页面持久化
+- [x] V2.0.90: 删除订单查询页面 - 返回原订单直接打开绑定的订单，不再要求输入订单号和电话
+- [x] V2.0.90: 修改商城加单逻辑 - 有Order Session时加入原订单而非新建购物车
+- [x] V2.0.90: 实现Order Timeline分类记录 - 商城加单自动记录到操作日志
+- [x] V2.0.90: 修改加单完成按钮 - 删除查询订单按钮
+- [x] V2.0.90: TypeScript检查 + 测试 + 保存checkpoint
