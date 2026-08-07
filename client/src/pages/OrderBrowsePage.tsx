@@ -119,11 +119,11 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
       // Render OrderDocument into the container using React
       const root = createRoot(container);
       await new Promise<void>((resolve) => {
-        root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} />);
+        root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} showProductImage={true} />);
         setTimeout(resolve, 500);
       });
-      // Wait for any images to load
-      await new Promise(r => setTimeout(r, 300));
+      // Wait for any images to load (including product images)
+      await new Promise(r => setTimeout(r, 1000));
       const targetEl = container.firstChild as HTMLElement;
       if (!targetEl) throw new Error("Failed to render order document");
       const canvas = await html2canvas(targetEl, {
@@ -201,7 +201,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
     prepareOrderDocumentExportHost(container);
     document.body.appendChild(container);
     const root = createRoot(container);
-    root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} />);
+    root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} showProductImage={false} />);
     setTimeout(() => {
       const targetEl = container.firstChild as HTMLElement;
       if (!targetEl) return;
@@ -830,6 +830,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
               variant="admin"
               logoDataUrl={previewLogoUrl}
               responsive
+              showProductImage={true}
             />
           </div>
         </DialogContent>

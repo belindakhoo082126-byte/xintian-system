@@ -2079,3 +2079,11 @@
 - [x] 回归检查：OrderCreatePage 备注区域正常
 - [x] 回归检查：CustomerOrderPage 付款方式过滤和换盆正常
 - [x] TypeScript 编译零错误
+
+## V2.0.71: Preview/导出图片显示商品照片，打印不显示
+
+- [x] OrderDocument 新增 showProductImage prop
+- [x] Preview 单据：显示商品照片 (showProductImage=true)
+- [x] 导出图片：显示商品照片 (showProductImage=true)
+- [x] 打印：不显示商品照片 (showProductImage=false)
+- [x] TypeScript 编译零错误

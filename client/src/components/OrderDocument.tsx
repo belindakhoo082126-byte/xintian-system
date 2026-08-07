@@ -58,6 +58,7 @@ export function OrderDocument({
   variant = "customer",
   logoDataUrl,
   responsive = false,
+  showProductImage = true,
 }: {
   order: any;
   remarks?: any[];
@@ -65,6 +66,8 @@ export function OrderDocument({
   logoDataUrl?: string;
   /** 仅供屏幕预览使用；导出 PNG 与打印仍维持固定 800px 版面。 */
   responsive?: boolean;
+  /** 是否显示商品照片（Preview 和导出图片时为 true，打印时为 false） */
+  showProductImage?: boolean;
 }) {
   const { translate, lang } = useI18n();
   const o = order;
@@ -233,6 +236,9 @@ export function OrderDocument({
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
           <thead>
             <tr>
+              {showProductImage && (
+                <th style={{ ...thStyle, width: "60px" }}>{translate("照片", "Photo")}</th>
+              )}
               <th style={thStyle}>{translate("商品", "Product")}</th>
               <th style={thStyle}>{translate("规格", "Variation")}</th>
               <th style={thRight}>{translate("数量", "Qty")}</th>
@@ -243,6 +249,25 @@ export function OrderDocument({
           <tbody>
             {(o.items || []).map((item: any, idx: number) => (
               <tr key={idx}>
+                {showProductImage && (
+                  <td style={{ ...tdStyle, width: "60px" }}>
+                    {item.productImage ? (
+                      <img
+                        src={item.productImage}
+                        alt={item.productName}
+                        style={{
+                          width: "50px",
+                          height: "50px",
+                          objectFit: "cover",
+                          borderRadius: "4px",
+                          display: "block",
+                        }}
+                      />
+                    ) : (
+                      <span style={{ color: C.textMuted, fontSize: "11px" }}>-</span>
+                    )}
+                  </td>
+                )}
                 <td style={tdStyle}>{item.productName}</td>
                 <td style={{ ...tdStyle, color: C.textLight }}>{item.variationName || "-"}</td>
                 <td style={tdRight}>{item.quantity}</td>
@@ -252,7 +277,7 @@ export function OrderDocument({
             ))}
             {(!o.items || o.items.length === 0) && (
               <tr>
-                <td colSpan={5} style={{ ...tdStyle, textAlign: "center", color: C.textMuted }}>{translate("无商品", "No items")}</td>
+                <td colSpan={showProductImage ? 6 : 5} style={{ ...tdStyle, textAlign: "center", color: C.textMuted }}>{translate("无商品", "No items")}</td>
               </tr>
             )}
           </tbody>
