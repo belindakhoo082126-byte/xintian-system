@@ -91,7 +91,7 @@ export default function MallProductDetail() {
             <span className="text-2xl">🌿</span>
             <span className="font-bold text-lg text-[#2d6a4f]">{settings?.shopName || t("心田", "Xintian")}</span>
           </Link>
-          <Link href="/mall/cart" className="ml-auto"><Button variant="ghost"><ShoppingCart className="h-5 w-5" /></Button></Link>
+          <Link href="/mall/checkout" className="ml-auto"><Button variant="ghost"><ShoppingCart className="h-5 w-5" /></Button></Link>
         </div>
       </header>
 

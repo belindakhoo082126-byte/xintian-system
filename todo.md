@@ -2269,3 +2269,8 @@
 - [x] V2.0.92: 实现金额自动重算逻辑 - itemsSubtotal实时从editItems计算
 - [x] V2.0.92: 后端updateOrderItems函数 + updateItems procedure + Timeline自动记录
 - [x] V2.0.92: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint
+
+- [x] V2.0.93: MallHome.tsx购物车图标改为直接跳转/mall/checkout（跳过MallCart列表页）
+- [x] V2.0.93: MallHome.tsx购物车数量Badge改为useState+useEffect监听cart-updated事件实时更新
+- [x] V2.0.93: MallProductDetail.tsx购物车图标改为直接跳转/mall/checkout
+- [x] V2.0.93: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint

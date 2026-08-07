@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -23,8 +23,15 @@ export default function MallHome() {
   const { data: products, isLoading: isProductsLoading } = trpc.mall.products.useQuery({ categoryId, search: searchQuery || undefined });
   const { data: bundles } = trpc.productBundles.mallList.useQuery();
 
-  const cart = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem("mall_cart") || "[]"); } catch { return []; }
+  // V2.0.93: Use state + event listener so cart count updates in real time when items are added
+  const [cart, setCart] = useState<any[]>([]);
+  useEffect(() => {
+    const loadCart = () => {
+      try { setCart(JSON.parse(localStorage.getItem("mall_cart") || "[]")); } catch { setCart([]); }
+    };
+    loadCart();
+    window.addEventListener("cart-updated", loadCart);
+    return () => window.removeEventListener("cart-updated", loadCart);
   }, []);
 
   const cartCount = cart.reduce((sum: number, i: any) => sum + i.quantity, 0);
@@ -66,7 +73,7 @@ export default function MallHome() {
               />
             </div>
           </div>
-          <Link href="/mall/cart">
+          <Link href="/mall/checkout">
             <Button variant="ghost" className="relative">
               <ShoppingCart className="h-5 w-5" />
               {cartCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">{cartCount}</Badge>}
