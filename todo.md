@@ -2201,3 +2201,14 @@
 - [x] 前端：浮动按钮优化（品牌色 + 悬停展开标签 + 正确图标）
 - [x] TypeScript 编译零错误
 - [x] 270 项测试全部通过
+
+## V2.0.83: 客户管理最终完善
+- [x] 修复 Credit Failed Query Bug（数据库表结构与 Drizzle schema 对齐）
+- [x] 客户列表移除 Email 列（简化显示）
+- [x] 客户列表保留会员等级列
+- [x] 客户列表新增 Checkbox 合并模式（选择多位客户 + 设定主客户 + 执行合并）
+- [x] 验证 Credit 系统：订单 Credit 只读自动带入、客户 Credit 同步扣除（已确认后端逻辑正确）
+- [x] 验证 Black List 禁止自动建单（已确认 executeAutoOrderCapture 中有黑名单检查）
+- [x] 验证搜索多条件支持（姓名、Facebook、电话、Email 等）
+- [x] 验证状态显示（彩色圆点 Normal/Blacklisted）
+- [x] 测试通过并保存 Checkpoint

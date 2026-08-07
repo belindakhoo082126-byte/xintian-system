@@ -11,7 +11,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Search, Eye, GitMerge, AlertTriangle, Pencil, Plus, DollarSign, Ban, CheckCircle, Loader2 } from "lucide-react";
+import { Search, Eye, GitMerge, AlertTriangle, Pencil, Plus, DollarSign, Ban, CheckCircle, Loader2, Mail, MapPin } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function Customers() {
   const { translate, lang } = useI18n();
@@ -52,6 +54,10 @@ export default function Customers() {
   const [mergeSource, setMergeSource] = useState<any>(null);
   const [mergeTarget, setMergeTarget] = useState<any>(null);
   const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
+  // V2.0.83: Checkbox-based merge selection
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState<Set<number>>(new Set());
+  const [mergeSelectMode, setMergeSelectMode] = useState(false);
+  const [mergePrimaryId, setMergePrimaryId] = useState<number | null>(null);
   const [detailTab, setDetailTab] = useState<"info" | "timeline">("info");
   const utils = trpc.useUtils();
 
@@ -227,6 +233,51 @@ export default function Customers() {
     setMergeDialogOpen(true);
   }
 
+  // V2.0.83: Checkbox-based merge selection functions
+  function toggleCustomerSelection(id: number) {
+    setSelectedCustomerIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function enterMergeMode() {
+    setMergeSelectMode(true);
+    setSelectedCustomerIds(new Set());
+    setMergePrimaryId(null);
+  }
+
+  function exitMergeMode() {
+    setMergeSelectMode(false);
+    setSelectedCustomerIds(new Set());
+    setMergePrimaryId(null);
+  }
+
+  function setPrimaryCustomer(id: number) {
+    setMergePrimaryId(id);
+    // Also select the primary if not already selected
+    setSelectedCustomerIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }
+
+  function executeCheckboxMerge() {
+    if (!mergePrimaryId || selectedCustomerIds.size < 2) return;
+    const selectedList = customers?.filter(c => selectedCustomerIds.has(c.id) && !c.mergedIntoCustomerId) || [];
+    const primary = selectedList.find(c => c.id === mergePrimaryId);
+    if (!primary) return;
+    const others = selectedList.filter(c => c.id !== mergePrimaryId);
+    if (others.length === 0) return;
+    // Set up merge dialog with first non-primary as source, primary as target
+    setMergeSource(others[0]);
+    setMergeTarget(primary);
+    setMergeDialogOpen(true);
+  }
+
   function confirmMerge() {
     mergeMutation.mutate({
       sourceId: mergeSource.id,
@@ -245,10 +296,19 @@ export default function Customers() {
             {translate("统一客户档案，支持多维度身份识别与合并", "Unified customer profiles, supporting multi-dimensional identification and merging")}
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          {translate("新增客户", "Add Customer")}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant={mergeSelectMode ? "default" : "outline"}
+            onClick={() => mergeSelectMode ? exitMergeMode() : enterMergeMode()}
+          >
+            <GitMerge className="h-4 w-4 mr-2" />
+            {mergeSelectMode ? translate("退出合并", "Exit Merge") : translate("合并客户", "Merge Customers")}
+          </Button>
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            {translate("新增客户", "Add Customer")}
+          </Button>
+        </div>
       </div>
 
       {mergeSuggestions && mergeSuggestions.length > 0 && (
@@ -275,15 +335,58 @@ export default function Customers() {
         </div>
       </div>
 
+      {/* V2.0.83: Merge mode toolbar */}
+      {mergeSelectMode && (
+        <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20">
+          <CardContent className="flex items-center justify-between py-3">
+            <div className="flex items-center gap-3">
+              <GitMerge className="h-5 w-5 text-blue-500" />
+              <div>
+                <p className="text-sm font-medium">
+                  {translate("已选择 {count} 位客户", "Selected {count} customers", { count: selectedCustomerIds.size })}
+                </p>
+                {selectedCustomerIds.size >= 2 && (
+                  <p className="text-xs text-muted-foreground">
+                    {mergePrimaryId
+                      ? translate("主客户已设定，点击执行合并", "Primary customer set, click Execute Merge")
+                      : translate("请点击星号设定主客户", "Click star icon to set primary customer")}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {selectedCustomerIds.size >= 2 && mergePrimaryId && (
+                <Button size="sm" onClick={executeCheckboxMerge}>
+                  <GitMerge className="h-4 w-4 mr-1" />
+                  {translate("执行合并", "Execute Merge")}
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={exitMergeMode}>
+                {translate("退出合并模式", "Exit Merge Mode")}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
+                {mergeSelectMode && (
+                  <TableHead className="w-10">
+                    {translate("选择", "Select")}
+                  </TableHead>
+                )}
+                {mergeSelectMode && (
+                  <TableHead className="w-10">
+                    {translate("主客户", "Primary")}
+                  </TableHead>
+                )}
                 <TableHead>{translate("客户姓名", "Customer Name")}</TableHead>
                 <TableHead>{translate("Facebook 名称", "Facebook Name")}</TableHead>
                 <TableHead>{translate("电话号码", "Phone Number")}</TableHead>
-                <TableHead>{translate("Email", "Email")}</TableHead>
                 <TableHead>{translate("订单数", "Orders")}</TableHead>
                 <TableHead>{translate("消费总额", "Total Spent")}</TableHead>
                 <TableHead>{translate("Credit", "Credit")}</TableHead>
@@ -294,15 +397,34 @@ export default function Customers() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={mergeSelectMode ? 12 : 10} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
               ) : customers?.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{translate("暂无客户", "No Customers")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={mergeSelectMode ? 12 : 10} className="text-center text-muted-foreground">{translate("暂无客户", "No Customers")}</TableCell></TableRow>
               ) : customers?.filter(c => !c.mergedIntoCustomerId).map(c => (
-                <TableRow key={c.id}>
+                <TableRow key={c.id} className={mergeSelectMode && selectedCustomerIds.has(c.id) ? "bg-blue-50/50 dark:bg-blue-950/20" : ""}>
+                  {mergeSelectMode && (
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedCustomerIds.has(c.id)}
+                        onCheckedChange={() => toggleCustomerSelection(c.id)}
+                      />
+                    </TableCell>
+                  )}
+                  {mergeSelectMode && (
+                    <TableCell>
+                      <button
+                        type="button"
+                        onClick={() => setPrimaryCustomer(c.id)}
+                        className={`text-lg ${mergePrimaryId === c.id ? "text-yellow-500" : "text-muted-foreground hover:text-yellow-400"}`}
+                        title={translate("设为主客户", "Set as primary customer")}
+                      >
+                        {mergePrimaryId === c.id ? "★" : "☆"}
+                      </button>
+                    </TableCell>
+                  )}
                   <TableCell className="font-medium">{c.name || "-"}</TableCell>
                   <TableCell>{c.facebookName || "-"}</TableCell>
                   <TableCell className="text-sm">{c.phoneNumber || "-"}</TableCell>
-                  <TableCell className="text-sm">{c.email || "-"}</TableCell>
                   <TableCell>{c.totalOrders}</TableCell>
                   <TableCell>RM {c.totalSpent}</TableCell>
                   <TableCell className="font-medium">RM {parseFloat(c.creditBalance || "0").toFixed(2)}</TableCell>
