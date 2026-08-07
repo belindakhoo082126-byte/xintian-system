@@ -738,16 +738,8 @@ export default function CustomerOrderPage(props: any) {
 
                       {selectedPaymentMethod && (
                         <div className="space-y-3 rounded-lg border bg-background p-4">
-                          {selectedPaymentMethod.type === "qr_code" && selectedPaymentMethod.qrImageUrl && (
-                            <div className="flex justify-center"><img src={selectedPaymentMethod.qrImageUrl} alt={`${selectedPaymentMethod.name} QR Code`} className="max-h-64 max-w-full rounded-lg border object-contain" /></div>
-                          )}
-                          {selectedPaymentMethod.type === "bank_transfer" && (
-                            <div className="space-y-2 text-sm">
-                              {selectedPaymentMethod.bankName && <div className="flex justify-between gap-4"><span className="text-muted-foreground">银行名称</span><span className="font-medium text-right">{selectedPaymentMethod.bankName}</span></div>}
-                              {selectedPaymentMethod.accountHolder && <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">账户持有人</span><span className="flex items-center gap-1 font-medium text-right">{selectedPaymentMethod.accountHolder}<Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(selectedPaymentMethod.accountHolder, "账户持有人")}><Copy className="h-3.5 w-3.5" /></Button></span></div>}
-                              {selectedPaymentMethod.accountNumber && <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">银行账号</span><span className="flex items-center gap-1 font-mono font-semibold text-right">{selectedPaymentMethod.accountNumber}<Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(selectedPaymentMethod.accountNumber, "银行账号")}><Copy className="h-3.5 w-3.5" /></Button></span></div>}
-                            </div>
-                          )}
+                          {/* V2.0.91: Unified payment image for all methods - no longer switching QR by method */}
+                          <div className="flex justify-center"><img src="/manus-storage/pasted_file_ywVQP7_image_59fb9825.png" alt="汇款资料" className="max-h-96 max-w-full rounded-lg border object-contain" /></div>
                           {selectedPaymentMethod.paymentInstruction && <p className="rounded-md bg-muted p-3 text-sm">{selectedPaymentMethod.paymentInstruction}</p>}
 
                           <div className="space-y-2 border-t pt-3">

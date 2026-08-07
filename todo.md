@@ -2260,3 +2260,6 @@
 - [x] V2.0.90: 实现Order Timeline分类记录 - 商城加单自动记录到操作日志
 - [x] V2.0.90: 修改加单完成按钮 - 删除查询订单按钮
 - [x] V2.0.90: TypeScript检查 + 测试 + 保存checkpoint
+
+- [x] V2.0.91: 统一客户结单页面汇款QR图片 - 使用新上传的统一汇款资料图片替换旧版TNG/DuitNow QR
+- [x] V2.0.91: TypeScript检查 + 保存checkpoint
