@@ -674,6 +674,9 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                      r.remarkCategory === "select_tree" ? translate("选树身", "Select Tree") :
                      translate("其他", "Other")}
                   </Badge>
+                  {r.type === "customer" && <Badge variant="secondary" className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">{translate("客户", "Customer")}</Badge>}
+                  {r.type === "internal" && <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">{translate("后台", "Admin")}</Badge>}
+                  {r.type === "live" && <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">{translate("直播", "Live")}</Badge>}
                   <span className="text-xs text-muted-foreground ml-auto">{new Date(r.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</span>
                 </div>
                 {r.remarkCategory === "desired_delivery_date" ? (

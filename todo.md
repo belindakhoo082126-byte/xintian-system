@@ -2120,3 +2120,13 @@
 - [x] server/messenger.ts: 旧版 query-string 链接格式 (?token=) 统一为 path 格式 (/{token})
 - [x] TypeScript 编译零错误
 - [x] esbuild 缓存错误已清除（重启 dev server 后确认）
+
+## V2.0.76: 修复订单备注来源标签 - Admin创建的备注显示为Admin
+- [x] OrderEditPage: 备注创建默认 type 从 "customer" 改为 "internal"
+- [x] OrderEditPage: 备注列表中的来源标签显示中文（客户/后台/直播）并带颜色区分
+- [x] OrderBrowsePage: 备注列表中添加来源标签（客户/后台/直播）并带颜色区分
+- [x] 确认客户结账页提交的备注 type 仍为 "customer"（publicOrder.updateRemark 已正确设置）
+- [x] 确认 OrderDetail.tsx 已有类型选择器和正确的标签显示
+- [x] 确认 Orders.tsx 已有正确的标签显示
+- [x] TypeScript 编译零错误
+- [x] 270 项测试全部通过（1项网络超时为 flaky test，重跑通过）
