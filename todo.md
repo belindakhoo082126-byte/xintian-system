@@ -2263,3 +2263,9 @@
 
 - [x] V2.0.91: 统一客户结单页面汇款QR图片 - 使用新上传的统一汇款资料图片替换旧版TNG/DuitNow QR
 - [x] V2.0.91: TypeScript检查 + 保存checkpoint
+
+- [x] V2.0.92: 新增订单状态编辑到OrderEditPage - 支持所有10种状态选择
+- [x] V2.0.92: 实现商品编辑功能 - 修改数量/售价/删除商品/新增商品搜索
+- [x] V2.0.92: 实现金额自动重算逻辑 - itemsSubtotal实时从editItems计算
+- [x] V2.0.92: 后端updateOrderItems函数 + updateItems procedure + Timeline自动记录
+- [x] V2.0.92: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint

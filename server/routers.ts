@@ -1211,12 +1211,34 @@ export const appRouter = router({
         promotionDiscount: z.string().optional(),
         shippingFee: z.string().optional(),
         totalAmount: z.string().optional(),
+        physicalStatus: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const { id, ...data } = input;
         await db.updateOrderDetails(id, data);
-        await db.logOrderOperation(id, "edit", `Order details updated by ${ctx.user?.name || "admin"}`, null, ctx.user?.name || "admin");
+        const desc = data.physicalStatus ? `Order details updated, status → ${data.physicalStatus} by ${ctx.user?.name || "admin"}` : `Order details updated by ${ctx.user?.name || "admin"}`;
+        await db.logOrderOperation(id, "edit", desc, null, ctx.user?.name || "admin");
         return { success: true };
+      }),
+    // V2.0.92: Update order items (add/edit/delete) with auto recalculation
+    updateItems: adminProcedure
+      .input(z.object({
+        orderId: z.number(),
+        items: z.array(z.object({
+          id: z.number().optional(),
+          productId: z.number().nullable().optional(),
+          productName: z.string(),
+          productSku: z.string().nullable().optional(),
+          quantity: z.number(),
+          unitPrice: z.string(),
+          variationId: z.number().nullable().optional(),
+          variationName: z.string().nullable().optional(),
+          itemSource: z.string().optional(),
+          priceType: z.string().optional(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.updateOrderItems(input.orderId, input.items, ctx.user?.name || "admin");
       }),
     // V2.2: Special order follow-up stats
     followUpStats: adminProcedure.query(async () => {

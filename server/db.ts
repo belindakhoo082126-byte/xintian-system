@@ -989,6 +989,7 @@ export async function updateOrderDetails(id: number, data: {
   promotionDiscount?: string;
   shippingFee?: string;
   totalAmount?: string;
+  physicalStatus?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -1010,14 +1011,196 @@ export async function updateOrderDetails(id: number, data: {
   if (data.promotionDiscount !== undefined) updateData.promotionDiscount = data.promotionDiscount;
   if (data.shippingFee !== undefined) updateData.shippingFee = data.shippingFee;
   if (data.totalAmount !== undefined) updateData.totalAmount = data.totalAmount;
+  if (data.physicalStatus !== undefined) {
+    updateData.physicalStatus = data.physicalStatus;
+    if (data.physicalStatus === "receipt_uploaded") updateData.paymentUploadedAt = new Date();
+    if (data.physicalStatus === "packing") updateData.paymentConfirmedAt = new Date();
+    if (data.physicalStatus === "shipped") updateData.shippedAt = new Date();
+    if (data.physicalStatus === "completed") updateData.completedAt = new Date();
+  }
 
   if (Object.keys(updateData).length > 0) {
     await db.update(orders).set(updateData).where(eq(orders.id, id));
-    await logOrderOperation(id, "edit", `Order details updated by admin`, null, null);
+    const desc = data.physicalStatus ? `Order details updated, status → ${data.physicalStatus}` : `Order details updated by admin`;
+    await logOrderOperation(id, "edit", desc, null, null);
   }
 
   broadcastChanges(["orders", "dashboard"]);
   return { success: true };
+}
+
+// V2.0.92: Update order items (add/edit/delete) with auto recalculation and timeline logging
+export async function updateOrderItems(orderId: number, items: Array<{
+  id?: number;
+  productId?: number | null;
+  productName: string;
+  productSku?: string | null;
+  quantity: number;
+  unitPrice: string;
+  variationId?: number | null;
+  variationName?: string | null;
+  itemSource?: string;
+  priceType?: string;
+}>, operator?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Get current order info for recalculation
+  const target = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    physicalStatus: orders.physicalStatus,
+    totalAmount: orders.totalAmount,
+    membershipSubtotal: orders.membershipSubtotal,
+    promotionDiscount: orders.promotionDiscount,
+    discountAmount: orders.discountAmount,
+    extraCharge: orders.extraCharge,
+    creditUsed: orders.creditUsed,
+    shippingMethod: orders.shippingMethod,
+  }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!target[0]) throw new Error("Order not found");
+  const prevTotal = target[0].totalAmount;
+
+  // Get current items for diff logging
+  const oldItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const oldItemsMap = new Map(oldItems.map((i: any) => [i.id, i]));
+
+  // Track changes for timeline
+  const changes: string[] = [];
+  const newItems = items.filter(i => !i.id);
+  const updatedItems = items.filter(i => i.id && oldItemsMap.has(i.id));
+  const deletedItems = oldItems.filter((i: any) => !items.some(ni => ni.id === i.id));
+
+  for (const ni of newItems) {
+    changes.push(`+ ${ni.productName} ×${ni.quantity} @RM${ni.unitPrice}`);
+  }
+  for (const ui of updatedItems) {
+    const old = oldItemsMap.get(ui.id!) as any;
+    const diffs: string[] = [];
+    if (old.quantity !== ui.quantity) diffs.push(`qty: ${old.quantity}→${ui.quantity}`);
+    if (parseFloat(old.unitPrice) !== parseFloat(ui.unitPrice)) diffs.push(`price: ${old.unitPrice}→${ui.unitPrice}`);
+    if ((old.variationName || "") !== (ui.variationName || "")) diffs.push(`variation: ${old.variationName || "-"}→${ui.variationName || "-"}`);
+    if (diffs.length > 0) changes.push(`~ ${ui.productName}: ${diffs.join(", ")}`);
+  }
+  for (const di of deletedItems) {
+    changes.push(`- ${(di as any).productName} ×${(di as any).quantity}`);
+  }
+
+  // Delete removed items (restore stock)
+  for (const di of deletedItems) {
+    const item = di as any;
+    if (item.variationId) {
+      await db.update(productVariations).set({
+        stockQuantity: sql`${productVariations.stockQuantity} + ${item.quantity}`,
+      }).where(eq(productVariations.id, item.variationId));
+    }
+    if (item.productId) {
+      await db.update(products).set({
+        stockQuantity: sql`${products.stockQuantity} + ${item.quantity}`,
+      }).where(eq(products.id, item.productId));
+    }
+    await db.delete(orderItems).where(eq(orderItems.id, item.id));
+  }
+
+  // Update existing items
+  for (const ui of updatedItems) {
+    const old = oldItemsMap.get(ui.id!) as any;
+    const qtyDiff = ui.quantity - old.quantity;
+    if (qtyDiff !== 0 && old.productId) {
+      if (old.variationId) {
+        await db.update(productVariations).set({
+          stockQuantity: sql`${productVariations.stockQuantity} - ${qtyDiff}`,
+        }).where(eq(productVariations.id, old.variationId));
+      }
+      await db.update(products).set({
+        stockQuantity: sql`${products.stockQuantity} - ${qtyDiff}`,
+      }).where(eq(products.id, old.productId));
+    }
+    const subtotal = (parseFloat(ui.unitPrice) * ui.quantity).toFixed(2);
+    await db.update(orderItems).set({
+      quantity: ui.quantity,
+      unitPrice: ui.unitPrice,
+      subtotal,
+      variationId: ui.variationId || null,
+      variationName: ui.variationName || null,
+    }).where(eq(orderItems.id, ui.id!));
+  }
+
+  // Insert new items
+  for (const ni of newItems) {
+    const subtotal = (parseFloat(ni.unitPrice) * ni.quantity).toFixed(2);
+    await db.insert(orderItems).values({
+      orderId,
+      productId: ni.productId || 0,
+      productName: ni.productName,
+      productSku: ni.productSku || null,
+      productType: "physical" as const,
+      quantity: ni.quantity,
+      unitPrice: ni.unitPrice,
+      subtotal,
+      variationId: ni.variationId || null,
+      variationName: ni.variationName || null,
+      priceType: (ni.priceType as "retail" | "wholesale" | "agent" | "special" | "manual") || "retail",
+      discount: "0.00",
+      itemSource: (ni.itemSource as "admin" | "facebook_live" | "messenger" | "mall") || "admin",
+    });
+    if (ni.productId) {
+      if (ni.variationId) {
+        await db.update(productVariations).set({
+          stockQuantity: sql`${productVariations.stockQuantity} - ${ni.quantity}`,
+        }).where(eq(productVariations.id, ni.variationId));
+      }
+      await db.update(products).set({
+        stockQuantity: sql`${products.stockQuantity} - ${ni.quantity}`,
+      }).where(eq(products.id, ni.productId));
+    }
+  }
+
+  // Recalculate totals
+  const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const physicalSubtotal = allItems
+    .filter((item: any) => item.productType === "physical" || item.productType === "gift")
+    .reduce((sum, item) => sum + parseFloat(item.subtotal || "0"), 0);
+  const totalWeight = allItems
+    .filter((item: any) => item.productType === "physical" || item.productType === "gift")
+    .reduce((sum, item) => sum + 0.5 * Number(item.quantity || 0), 0);
+  const specialSubtotal = allItems
+    .filter((item: any) => item.priceType === "special")
+    .reduce((sum, item) => sum + parseFloat(item.subtotal || "0"), 0);
+
+  const membershipSubtotal = parseFloat(target[0].membershipSubtotal || "0");
+  const promotionDiscount = parseFloat(target[0].promotionDiscount || "0");
+  const discountAmount = parseFloat(target[0].discountAmount || "0");
+  const extraCharge = parseFloat(target[0].extraCharge || "0");
+  const creditUsed = parseFloat(target[0].creditUsed || "0");
+  const eligibleSubtotal = physicalSubtotal + membershipSubtotal - specialSubtotal - promotionDiscount - discountAmount;
+
+  let shippingFee = 0;
+  if (target[0].shippingMethod === "west_malaysia") {
+    shippingFee = calculateWestMalaysiaShipping(totalWeight, eligibleSubtotal).shippingFee;
+  } else if (target[0].shippingMethod === "east_malaysia_shopee" || target[0].shippingMethod === "east_malaysia_poslaju") {
+    shippingFee = 15;
+  }
+
+  const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
+  await db.update(orders).set({
+    physicalSubtotal: physicalSubtotal.toFixed(2),
+    shippingFee: shippingFee.toFixed(2),
+    totalWeight: totalWeight.toFixed(2),
+    totalAmount: totalAmount.toFixed(2),
+  }).where(eq(orders.id, orderId));
+
+  // Log to timeline
+  if (changes.length > 0) {
+    await logOrderOperation(orderId, "admin_edit", `Admin修改商品：\n${changes.join("\n")}`, JSON.stringify({
+      totalBefore: prevTotal,
+      totalAfter: totalAmount.toFixed(2),
+      changes,
+    }), operator || "admin");
+  }
+
+  broadcastChanges(["orders", "inventory", "dashboard", "customers"]);
+  return { success: true, totalAmount: totalAmount.toFixed(2), shippingFee: shippingFee.toFixed(2) };
 }
 
 // ============================================================================

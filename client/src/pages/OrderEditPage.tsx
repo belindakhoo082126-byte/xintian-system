@@ -55,6 +55,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     orderNature: "retail",
     orderSource: "manual",
     orderCategory: "local",
+    physicalStatus: "pending",
     shippingMethod: "west_malaysia",
     shippingAddress: "",
     recipientName: "",
@@ -66,6 +67,12 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     creditUsed: "0",
     shippingFee: "0",
   });
+
+  // Editable items state
+  const [editItems, setEditItems] = useState<any[]>([]);
+  const [itemsModified, setItemsModified] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
+  const [showSearchResults, setShowSearchResults] = useState(false);
 
   // Payment records state
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
@@ -91,6 +98,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
         orderNature: o.orderNature || "retail",
         orderSource: o.orderSource || "manual",
         orderCategory: o.orderCategory || "local",
+        physicalStatus: o.physicalStatus || "pending",
         shippingMethod: o.shippingMethod || "west_malaysia",
         shippingAddress: o.shippingAddress || "",
         recipientName: o.recipientName || "",
@@ -102,6 +110,20 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
         creditUsed: o.creditUsed || "0",
         shippingFee: o.shippingFee || "0",
       });
+      // Load items into editable state
+      setEditItems((o.items || []).map((item: any) => ({
+        id: item.id,
+        productId: item.productId,
+        productName: item.productName,
+        productSku: item.productSku || null,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        variationId: item.variationId || null,
+        variationName: item.variationName || null,
+        itemSource: item.itemSource || "admin",
+        priceType: item.priceType || "normal",
+      })));
+      setItemsModified(false);
     }
   }, [order]);
 
@@ -113,6 +135,19 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     },
     onError: (e) => toast.error(translate("更新失败: {message}", "Update failed: {message}", { message: e.message })),
   });
+
+  const updateItemsMutation = trpc.orders.updateItems.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      toast.success(translate("商品更新成功", "Items updated successfully"));
+    },
+    onError: (e) => toast.error(translate("商品更新失败: {message}", "Items update failed: {message}", { message: e.message })),
+  });
+
+  const { data: searchResults } = trpc.orders.searchProductsForOrder.useQuery(
+    { query: productSearch },
+    { enabled: productSearch.length > 0 }
+  );
 
   const addPaymentMutation = trpc.orders.addPayment.useMutation({
     onSuccess: () => {
@@ -225,12 +260,44 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     });
   }
 
-  // Calculate total
+  // Calculate total from editItems (live) or order (fallback)
   const itemsSubtotal = useMemo(() => {
+    if (itemsModified && editItems.length > 0) {
+      return editItems.reduce((sum, item) => sum + (parseFloat(item.unitPrice) || 0) * (item.quantity || 0), 0);
+    }
     if (!order) return 0;
     const o = order as any;
     return parseFloat(o.physicalSubtotal || "0") + parseFloat(o.membershipSubtotal || "0");
-  }, [order]);
+  }, [order, editItems, itemsModified]);
+
+  // Item management functions
+  function updateEditItem(idx: number, field: string, value: any) {
+    setEditItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+    setItemsModified(true);
+  }
+
+  function removeEditItem(idx: number) {
+    setEditItems(prev => prev.filter((_, i) => i !== idx));
+    setItemsModified(true);
+  }
+
+  function addProductToItems(product: any) {
+    setEditItems(prev => [...prev, {
+      id: undefined,
+      productId: product.id,
+      productName: product.name,
+      productSku: product.sku || null,
+      quantity: 1,
+      unitPrice: product.sellingPrice || product.price || "0",
+      variationId: null,
+      variationName: null,
+      itemSource: "admin",
+      priceType: "normal",
+    }]);
+    setItemsModified(true);
+    setProductSearch("");
+    setShowSearchResults(false);
+  }
 
   const discountNum = parseFloat(formData.discountAmount) || 0;
   const extraChargeNum = parseFloat(formData.extraCharge) || 0;
@@ -262,7 +329,30 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     return (o.items || []).filter((item: any) => item.isPot && item.productType === "physical");
   }, [order]);
 
-  function handleSave() {
+  async function handleSave() {
+    // First save items if modified
+    if (itemsModified) {
+      try {
+        await updateItemsMutation.mutateAsync({
+          orderId,
+          items: editItems.map(item => ({
+            id: item.id,
+            productId: item.productId,
+            productName: item.productName,
+            productSku: item.productSku,
+            quantity: item.quantity,
+            unitPrice: String(item.unitPrice),
+            variationId: item.variationId,
+            variationName: item.variationName,
+            itemSource: item.itemSource || "admin",
+            priceType: item.priceType || "normal",
+          })),
+        });
+      } catch (e) {
+        return; // Error toast already shown by mutation
+      }
+    }
+    // Then save order details
     updateDetailsMutation.mutate({
       id: orderId,
       ...formData,
@@ -369,6 +459,24 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <Label className="text-xs">{translate("订单状态", "Order Status")}</Label>
+            <Select value={formData.physicalStatus} onValueChange={(v) => setFormData({ ...formData, physicalStatus: v })}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">{translate("未汇款订单", "Unpaid")}</SelectItem>
+                <SelectItem value="receipt_uploaded">{translate("待审核付款凭证", "Receipt Uploaded")}</SelectItem>
+                <SelectItem value="partial_payment">{translate("部分汇款", "Partial Payment")}</SelectItem>
+                <SelectItem value="hold">{translate("保留订单", "Hold")}</SelectItem>
+                <SelectItem value="packing">{translate("待包货", "Packing")}</SelectItem>
+                <SelectItem value="partial_shipped">{translate("部分发货", "Partial Shipped")}</SelectItem>
+                <SelectItem value="shipped">{translate("已发货", "Shipped")}</SelectItem>
+                <SelectItem value="completed">{translate("已完成", "Completed")}</SelectItem>
+                <SelectItem value="cancelled">{translate("已取消", "Cancelled")}</SelectItem>
+                <SelectItem value="special">{translate("特别订单", "Special")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
 
@@ -430,36 +538,100 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
         </CardContent>
       </Card>
 
-      {/* Section 4: Order Items (read-only) */}
+      {/* Section 4: Order Items (editable) */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Package className="h-4 w-4" />
             {translate("商品明细", "Order Items")}
+            {itemsModified && <Badge variant="secondary" className="text-xs ml-2 bg-amber-100 text-amber-700">{translate("已修改", "Modified")}</Badge>}
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setShowSearchResults(!showSearchResults)}>
+              <Plus className="h-3 w-3 mr-1" />{translate("新增商品", "Add Product")}
+            </Button>
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="space-y-3">
+          {/* Product Search */}
+          {showSearchResults && (
+            <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
+              <Input
+                placeholder={translate("搜索商品名称或SKU...", "Search product name or SKU...")}
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+                autoFocus
+              />
+              {searchResults && searchResults.length > 0 && (
+                <div className="max-h-60 overflow-y-auto space-y-1">
+                  {searchResults.slice(0, 10).map((p: any) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between p-2 rounded hover:bg-muted cursor-pointer border"
+                      onClick={() => addProductToItems(p)}
+                    >
+                      <div className="flex items-center gap-2">
+                        {p.imageUrl && <img src={p.imageUrl} alt={p.name} className="w-8 h-8 rounded object-cover" />}
+                        <div>
+                          <div className="text-sm font-medium">{p.name}</div>
+                          <div className="text-xs text-muted-foreground">RM {parseFloat(p.sellingPrice || p.price || 0).toFixed(2)}</div>
+                        </div>
+                      </div>
+                      <Plus className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {searchResults && searchResults.length === 0 && productSearch.length > 0 && (
+                <p className="text-sm text-muted-foreground text-center py-2">{translate("未找到商品", "No products found")}</p>
+              )}
+            </div>
+          )}
+          {/* Editable Items Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/50">
                 <tr>
-                  <th className="text-left p-3 font-medium">{translate("商品名称", "Product Name")}</th>
-                  <th className="text-left p-3 font-medium">{translate("规格", "Variation")}</th>
-                  <th className="text-right p-3 font-medium">{translate("数量", "Qty")}</th>
-                  <th className="text-right p-3 font-medium">{translate("单价", "Unit Price")}</th>
-                  <th className="text-right p-3 font-medium">{translate("小计", "Subtotal")}</th>
+                  <th className="text-left p-2 font-medium">{translate("商品名称", "Product Name")}</th>
+                  <th className="text-left p-2 font-medium">{translate("规格", "Variation")}</th>
+                  <th className="text-right p-2 font-medium w-20">{translate("数量", "Qty")}</th>
+                  <th className="text-right p-2 font-medium w-28">{translate("单价", "Unit Price")}</th>
+                  <th className="text-right p-2 font-medium w-24">{translate("小计", "Subtotal")}</th>
+                  <th className="w-10"></th>
                 </tr>
               </thead>
               <tbody>
-                {(o.items || []).map((item: any, idx: number) => (
+                {editItems.map((item: any, idx: number) => (
                   <tr key={idx} className="border-b last:border-0">
-                    <td className="p-3">{item.productName}</td>
-                    <td className="p-3 text-muted-foreground">{item.variationName || "-"}</td>
-                    <td className="p-3 text-right">{item.quantity}</td>
-                    <td className="p-3 text-right">RM {parseFloat(item.unitPrice).toFixed(2)}</td>
-                    <td className="p-3 text-right font-medium">RM {parseFloat(item.subtotal).toFixed(2)}</td>
+                    <td className="p-2">{item.productName}</td>
+                    <td className="p-2 text-muted-foreground">{item.variationName || "-"}</td>
+                    <td className="p-2">
+                      <Input
+                        type="number"
+                        className="h-8 w-16 text-right"
+                        value={item.quantity}
+                        min={1}
+                        onChange={(e) => updateEditItem(idx, "quantity", parseInt(e.target.value) || 1)}
+                      />
+                    </td>
+                    <td className="p-2">
+                      <Input
+                        type="number"
+                        className="h-8 w-24 text-right"
+                        value={item.unitPrice}
+                        step="0.01"
+                        onChange={(e) => updateEditItem(idx, "unitPrice", e.target.value)}
+                      />
+                    </td>
+                    <td className="p-2 text-right font-medium">RM {((parseFloat(item.unitPrice) || 0) * (item.quantity || 0)).toFixed(2)}</td>
+                    <td className="p-2">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeEditItem(idx)}>
+                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                      </Button>
+                    </td>
                   </tr>
                 ))}
+                {editItems.length === 0 && (
+                  <tr><td colSpan={6} className="p-4 text-center text-muted-foreground">{translate("无商品", "No items")}</td></tr>
+                )}
               </tbody>
             </table>
           </div>
