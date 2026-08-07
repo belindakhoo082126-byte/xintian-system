@@ -1147,17 +1147,28 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             <Select value={createRemarkCategory} onValueChange={(v) => setCreateRemarkCategory(v)}>
               <SelectTrigger className="w-full"><SelectValue placeholder={translate("选择备注类型（可选）", "Select remark type (optional)")} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="general">{translate("普通备注", "General Remark")}</SelectItem>
                 <SelectItem value="desired_delivery_date">{translate("发货日期", "Shipping Date")}</SelectItem>
                 <SelectItem value="repotting">{translate("换盆", "Repotting")}</SelectItem>
+                <SelectItem value="select_tree">{translate("选树身", "Select Tree")}</SelectItem>
                 <SelectItem value="other">{translate("其他", "Other")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           {createRemarkCategory === "desired_delivery_date" && (
-            <div>
-              <Label className="text-xs mb-1.5 block">{translate("预约发货日期", "Scheduled Shipping Date")}</Label>
-              <Input type="date" value={createRemarkDeliveryDate} onChange={(e) => setCreateRemarkDeliveryDate(e.target.value)} />
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs mb-1.5 block">{translate("预约发货日期", "Scheduled Shipping Date")} *</Label>
+                <Input type="date" value={createRemarkDeliveryDate} onChange={(e) => setCreateRemarkDeliveryDate(e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs mb-1.5 block">{translate("备注（选填）", "Note (optional)")}</Label>
+                <Input
+                  value={remark}
+                  onChange={(e) => setRemark(e.target.value)}
+                  placeholder={translate("如有特别要求可填写，否则可留空", "Enter if there are special requirements, otherwise leave blank")}
+                  className="text-sm"
+                />
+              </div>
             </div>
           )}
           {createRemarkCategory === "repotting" && (
@@ -1258,12 +1269,12 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               />
             </div>
           )}
-          {(createRemarkCategory === "" || createRemarkCategory === "general" || createRemarkCategory === "other") && (
+          {(createRemarkCategory === "" || createRemarkCategory === "general" || createRemarkCategory === "other" || createRemarkCategory === "select_tree") && (
             <Textarea
               value={remark}
               onChange={(e) => setRemark(e.target.value)}
               rows={2}
-              placeholder={translate("普通备注，例如：星期五才方便收货 / 送礼不要放价格 / 两张订单一起发", "General remark, e.g. Friday delivery preferred / No price tag for gift")}
+              placeholder={createRemarkCategory === "select_tree" ? translate("输入选树身要求，例如：要粗身 / 要高身 / 要多分支", "Enter tree selection requirements, e.g. thick trunk / tall / multi-branch") : translate("普通备注，例如：星期五才方便收货 / 送礼不要放价格 / 两张订单一起发", "General remark, e.g. Friday delivery preferred / No price tag for gift")}
             />
           )}
         </CardContent>

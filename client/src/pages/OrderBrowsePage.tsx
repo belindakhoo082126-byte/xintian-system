@@ -678,7 +678,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs">
                     {r.remarkCategory === "repotting" ? translate("换盆", "Repotting") :
-                     r.remarkCategory === "desired_delivery_date" ? translate("希望收货日期", "Desired Delivery Date") :
+                     r.remarkCategory === "desired_delivery_date" ? translate("发货日期", "Shipping Date") :
                      r.remarkCategory === "select_tree" ? translate("选树身", "Select Tree") :
                      translate("其他", "Other")}
                   </Badge>

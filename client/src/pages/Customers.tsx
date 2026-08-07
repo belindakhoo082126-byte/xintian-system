@@ -10,9 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Search, Eye, GitMerge, AlertTriangle, Pencil, Plus } from "lucide-react";
-
-
+import { Search, Eye, GitMerge, AlertTriangle, Pencil, Plus, DollarSign, Ban, CheckCircle, Loader2 } from "lucide-react";
 
 export default function Customers() {
   const { translate, lang } = useI18n();
@@ -32,7 +30,7 @@ export default function Customers() {
     partial_shipped: translate("部分发货", "Partial Shipped"),
     completed: translate("已完成", "Completed"),
     cancelled: translate("已取消", "Cancelled"),
-    }), [translate]);
+  }), [translate]);
 
   const [search, setSearch] = useState("");
   const [detailOpen, setDetailOpen] = useState(false);
@@ -42,6 +40,12 @@ export default function Customers() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newCustomer, setNewCustomer] = useState<any>({ name: "", phoneNumber: "", email: "", address: "" });
   const [duplicates, setDuplicates] = useState<any[]>([]);
+  const [creditDialogOpen, setCreditDialogOpen] = useState(false);
+  const [creditCustomer, setCreditCustomer] = useState<any>(null);
+  const [creditForm, setCreditForm] = useState({ amount: "", reason: "", type: "add" });
+  const [blacklistDialogOpen, setBlacklistDialogOpen] = useState(false);
+  const [blacklistCustomer, setBlacklistCustomer] = useState<any>(null);
+  const [blacklistForm, setBlacklistForm] = useState({ reason: "" });
   const utils = trpc.useUtils();
 
   const { data: customers, isLoading } = trpc.customers.list.useQuery({
@@ -92,6 +96,26 @@ export default function Customers() {
     onError: (e) => toast.error(translate("建立失败: {message}", "Creation failed: {message}", { message: e.message })),
   });
 
+  const adjustCreditMutation = trpc.customers.adjustCredit.useMutation({
+    onSuccess: (data) => {
+      utils.customers.invalidate();
+      toast.success(translate("Credit 已调整，新余额: RM {balance}", "Credit adjusted, new balance: RM {balance}", { balance: data.newBalance }));
+      setCreditDialogOpen(false);
+      setCreditForm({ amount: "", reason: "", type: "add" });
+    },
+    onError: (e) => toast.error(translate("调整失败: {message}", "Adjust failed: {message}", { message: e.message })),
+  });
+
+  const setBlacklistMutation = trpc.customers.setBlacklist.useMutation({
+    onSuccess: () => {
+      utils.customers.invalidate();
+      toast.success(translate("黑名单状态已更新", "Blacklist status updated"));
+      setBlacklistDialogOpen(false);
+      setBlacklistForm({ reason: "" });
+    },
+    onError: (e) => toast.error(translate("操作失败: {message}", "Operation failed: {message}", { message: e.message })),
+  });
+
   function openDetail(customer: any) {
     setDuplicates([]);
     setDetailCustomer(customer);
@@ -112,6 +136,8 @@ export default function Customers() {
       membershipLevel: customer.membershipLevel || "regular",
       isBlacklisted: customer.isBlacklisted || false,
       blacklistReason: customer.blacklistReason || "",
+      customerType: customer.customerType || "retail",
+      accountEmail: customer.accountEmail || "",
     });
     setEditOpen(true);
   }
@@ -128,20 +154,47 @@ export default function Customers() {
     findOrCreateMutation.mutate(newCustomer);
   }
 
+  function openCreditDialog(customer: any) {
+    setCreditCustomer(customer);
+    setCreditForm({ amount: "", reason: "", type: "add" });
+    setCreditDialogOpen(true);
+  }
+
+  function submitCredit() {
+    const amt = parseFloat(creditForm.amount);
+    if (isNaN(amt) || amt <= 0) {
+      toast.error(translate("请输入有效金额", "Please enter a valid amount"));
+      return;
+    }
+    const signedAmount = creditForm.type === "deduct" ? -Math.abs(amt) : Math.abs(amt);
+    adjustCreditMutation.mutate({
+      customerId: creditCustomer.id,
+      amount: signedAmount.toFixed(2),
+      reason: creditForm.reason || undefined,
+    });
+  }
+
+  function openBlacklistDialog(customer: any) {
+    setBlacklistCustomer(customer);
+    setBlacklistForm({ reason: customer.blacklistReason || "" });
+    setBlacklistDialogOpen(true);
+  }
+
+  function submitBlacklist() {
+    setBlacklistMutation.mutate({
+      customerId: blacklistCustomer.id,
+      isBlacklisted: !blacklistCustomer.isBlacklisted,
+      reason: blacklistForm.reason || undefined,
+    });
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{
-            translate("客户管理", "Customer Management")
-          }</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{translate("客户管理", "Customer Management")}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {
-            translate(
-              "统一客户档案，支持多维度身份识别与合并",
-              "Unified customer profiles, supporting multi-dimensional identification and merging"
-            )
-          }
+            {translate("统一客户档案，支持多维度身份识别与合并", "Unified customer profiles, supporting multi-dimensional identification and merging")}
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
@@ -185,16 +238,17 @@ export default function Customers() {
                 <TableHead>{translate("Email", "Email")}</TableHead>
                 <TableHead>{translate("订单数", "Orders")}</TableHead>
                 <TableHead>{translate("消费总额", "Total Spent")}</TableHead>
-                <TableHead>{translate("会员等级", "Membership Level")}</TableHead>
+                <TableHead>{translate("Credit", "Credit")}</TableHead>
+                <TableHead>{translate("会员等级", "Membership")}</TableHead>
                 <TableHead>{translate("状态", "Status")}</TableHead>
                 <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
               ) : customers?.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{translate("暂无客户", "No Customers")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{translate("暂无客户", "No Customers")}</TableCell></TableRow>
               ) : customers?.filter(c => !c.mergedIntoCustomerId).map(c => (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">{c.name || "-"}</TableCell>
@@ -203,6 +257,7 @@ export default function Customers() {
                   <TableCell className="text-sm">{c.email || "-"}</TableCell>
                   <TableCell>{c.totalOrders}</TableCell>
                   <TableCell>RM {c.totalSpent}</TableCell>
+                  <TableCell className="font-medium">RM {parseFloat(c.creditBalance || "0").toFixed(2)}</TableCell>
                   <TableCell>
                     <Badge variant="outline">
                       {MEMBERSHIP_LABELS[c.membershipLevel ?? ""] || c.membershipLevel || "-"}
@@ -217,11 +272,17 @@ export default function Customers() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex gap-1 justify-end">
-                      <Button variant="ghost" size="icon" onClick={() => openDetail(c)}>
+                      <Button variant="ghost" size="icon" onClick={() => openDetail(c)} title={translate("查看", "View")}>
                         <Eye className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(c)}>
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(c)} title={translate("编辑", "Edit")}>
                         <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => openCreditDialog(c)} title={translate("Credit 管理", "Credit Management")}>
+                        <DollarSign className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => openBlacklistDialog(c)} title={c.isBlacklisted ? translate("取消黑名单", "Un-blacklist") : translate("设置黑名单", "Blacklist")}>
+                        {c.isBlacklisted ? <CheckCircle className="h-4 w-4 text-green-600" /> : <Ban className="h-4 w-4 text-red-600" />}
                       </Button>
                     </div>
                   </TableCell>
@@ -284,9 +345,19 @@ export default function Customers() {
                   </Badge>
                 </div>
                 <div>
+                  <p className="text-muted-foreground">{translate("Credit 余额", "Credit Balance")}</p>
+                  <p className="font-bold text-blue-600">RM {parseFloat(detailCustomer.creditBalance || "0").toFixed(2)}</p>
+                </div>
+                <div>
                   <p className="text-muted-foreground">{translate("积分余额", "Points Balance")}</p>
                   <p className="font-medium">{detailCustomer.pointsBalance}</p>
                 </div>
+                {detailCustomer.isBlacklisted && (
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground">{translate("黑名单原因", "Blacklist Reason")}</p>
+                    <p className="text-sm text-red-600">{detailCustomer.blacklistReason || "-"}</p>
+                  </div>
+                )}
               </div>
 
               {/* Customer notes */}
@@ -418,7 +489,6 @@ export default function Customers() {
                   <option value="vip">{translate("VIP", "VIP")}</option>
                 </select>
               </div>
-              {/* V4: Customer Type (客户身份) */}
               <div>
                 <Label>{translate("客户身份", "Customer Type")}</Label>
                 <select
@@ -431,7 +501,6 @@ export default function Customers() {
                   <option value="agent">{translate("代理商", "Agent")}</option>
                 </select>
               </div>
-              {/* V4: Wholesale/Agent account email */}
               {(editData.customerType === "wholesale" || editData.customerType === "agent") && (
                 <div className="col-span-2">
                   <Label>{translate("批发/代理账户 Email", "Wholesale/Agent Account Email")}</Label>
@@ -441,23 +510,6 @@ export default function Customers() {
                     value={editData.accountEmail || ""}
                     onChange={e => setEditData({ ...editData, accountEmail: e.target.value })}
                   />
-                </div>
-              )}
-              <div>
-                <Label>{translate("黑名单", "Blacklisted")}</Label>
-                <select
-                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-                  value={editData.isBlacklisted ? "yes" : "no"}
-                  onChange={e => setEditData({ ...editData, isBlacklisted: e.target.value === "yes" })}
-                >
-                  <option value="no">{translate("否", "No")}</option>
-                  <option value="yes">{translate("是", "Yes")}</option>
-                </select>
-              </div>
-              {editData.isBlacklisted && (
-                <div className="col-span-2">
-                  <Label>{translate("黑名单原因", "Blacklist Reason")}</Label>
-                  <Input value={editData.blacklistReason || ""} onChange={e => setEditData({ ...editData, blacklistReason: e.target.value })} />
                 </div>
               )}
               <div className="col-span-2">
@@ -475,6 +527,126 @@ export default function Customers() {
             <Button variant="outline" onClick={() => setEditOpen(false)}>{translate("取消", "Cancel")}</Button>
             <Button onClick={submitEdit} disabled={updateMutation.isPending}>
               {updateMutation.isPending ? translate("保存中...", "Saving...") : translate("保存", "Save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Credit adjustment dialog */}
+      <Dialog open={creditDialogOpen} onOpenChange={setCreditDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("Credit 管理", "Credit Management")}</DialogTitle>
+          </DialogHeader>
+          {creditCustomer && (
+            <div className="space-y-4">
+              <div className="p-3 border rounded-lg bg-muted/30">
+                <p className="text-sm text-muted-foreground">{translate("客户", "Customer")}</p>
+                <p className="font-medium">{creditCustomer.name || creditCustomer.facebookName || "-"}</p>
+                <p className="text-sm text-muted-foreground mt-2">{translate("当前 Credit 余额", "Current Credit Balance")}</p>
+                <p className="font-bold text-blue-600 text-lg">RM {parseFloat(creditCustomer.creditBalance || "0").toFixed(2)}</p>
+              </div>
+              <div>
+                <Label>{translate("操作类型", "Action Type")}</Label>
+                <div className="flex gap-2 mt-1">
+                  <Button
+                    variant={creditForm.type === "add" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCreditForm(prev => ({ ...prev, type: "add" }))}
+                    className="flex-1"
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    {translate("加 Credit (+)", "Add Credit (+)")}
+                  </Button>
+                  <Button
+                    variant={creditForm.type === "deduct" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCreditForm(prev => ({ ...prev, type: "deduct" }))}
+                    className="flex-1"
+                  >
+                    <DollarSign className="h-4 w-4 mr-1" />
+                    {translate("扣 Credit (-)", "Deduct Credit (-)")}
+                  </Button>
+                </div>
+              </div>
+              <div>
+                <Label>{translate("金额 (RM)", "Amount (RM)")} *</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={creditForm.amount}
+                  onChange={e => setCreditForm(prev => ({ ...prev, amount: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>{translate("原因 / 备注（选填）", "Reason / Note (optional)")}</Label>
+                <Textarea
+                  rows={2}
+                  placeholder={translate("例如：退款 / 手动调整 / 客户投诉补偿", "e.g. Refund / Manual adjustment / Customer complaint compensation")}
+                  value={creditForm.reason}
+                  onChange={e => setCreditForm(prev => ({ ...prev, reason: e.target.value }))}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreditDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={submitCredit} disabled={adjustCreditMutation.isPending}>
+              {adjustCreditMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+              {translate("确认", "Confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Blacklist dialog */}
+      <Dialog open={blacklistDialogOpen} onOpenChange={setBlacklistDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {blacklistCustomer?.isBlacklisted
+                ? translate("取消黑名单", "Remove from Blacklist")
+                : translate("设置黑名单", "Set Blacklist")}
+            </DialogTitle>
+          </DialogHeader>
+          {blacklistCustomer && (
+            <div className="space-y-4">
+              <div className="p-3 border rounded-lg bg-muted/30">
+                <p className="text-sm text-muted-foreground">{translate("客户", "Customer")}</p>
+                <p className="font-medium">{blacklistCustomer.name || blacklistCustomer.facebookName || "-"}</p>
+                <p className="text-sm text-muted-foreground mt-1">{translate("电话", "Phone")}: {blacklistCustomer.phoneNumber || "-"}</p>
+              </div>
+              {!blacklistCustomer.isBlacklisted && (
+                <div>
+                  <Label>{translate("黑名单原因（选填）", "Blacklist Reason (optional)")}</Label>
+                  <Textarea
+                    rows={2}
+                    placeholder={translate("例如：恶意退款 / 屡次不付款 / 虚假订单", "e.g. Malicious refund / Repeated non-payment / Fake orders")}
+                    value={blacklistForm.reason}
+                    onChange={e => setBlacklistForm({ reason: e.target.value })}
+                  />
+                </div>
+              )}
+              {blacklistCustomer.isBlacklisted && (
+                <p className="text-sm text-muted-foreground">
+                  {translate("确认取消此客户的黑名单状态？取消后客户将恢复正常下单功能。", "Confirm removing this customer from blacklist? The customer will regain normal ordering access.")}
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBlacklistDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button
+              onClick={submitBlacklist}
+              disabled={setBlacklistMutation.isPending}
+              variant={blacklistCustomer?.isBlacklisted ? "default" : "destructive"}
+            >
+              {setBlacklistMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+              {blacklistCustomer?.isBlacklisted
+                ? translate("确认取消黑名单", "Confirm Un-blacklist")
+                : translate("确认设置黑名单", "Confirm Blacklist")}
             </Button>
           </DialogFooter>
         </DialogContent>

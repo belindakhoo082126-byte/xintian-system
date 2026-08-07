@@ -2065,3 +2065,17 @@
 - [x] Cash 显示规则：仅自取时显示 Cash
 - [x] 删除未使用的 PaymentRecordsEditor 组件（修复 TS 错误）
 - [x] TypeScript 编译零错误
+
+## V2.0.70: 客户Credit管理 + 备注类型修复 + 发货日期备注
+
+- [x] 客户管理增加 Edit Customer 功能
+- [x] 客户管理增加 加Credit/扣Credit 功能
+- [x] 客户管理增加 设置/取消黑名单 功能
+- [x] 备注类型固定为：发货日期、换盆、选树身、其他
+- [x] 发货日期备注：日期必填，备注选填
+- [x] 换盆功能保持昨天版本（植物选择+花盆选择+数量+多组）
+- [x] 回归检查：OrderBrowsePage Preview/Export/Print 正常
+- [x] 回归检查：OrderEditPage 备注区域和付款记录正常
+- [x] 回归检查：OrderCreatePage 备注区域正常
+- [x] 回归检查：CustomerOrderPage 付款方式过滤和换盆正常
+- [x] TypeScript 编译零错误

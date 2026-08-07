@@ -2134,6 +2134,34 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getMergeSuggestions(input?.status);
       }),
+
+    // V2.3: Adjust customer credit (add/deduct)
+    adjustCredit: adminProcedure
+      .input(z.object({
+        customerId: z.number(),
+        amount: z.string(),
+        reason: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const amount = parseFloat(input.amount);
+        if (isNaN(amount) || amount === 0) throw new Error("Invalid amount");
+        return await db.adjustCustomerCredit(input.customerId, amount, input.reason || "", ctx.user.id);
+      }),
+
+    // V2.3: Set blacklist status
+    setBlacklist: adminProcedure
+      .input(z.object({
+        customerId: z.number(),
+        isBlacklisted: z.boolean(),
+        reason: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        await db.updateCustomer(input.customerId, {
+          isBlacklisted: input.isBlacklisted,
+          blacklistReason: input.isBlacklisted ? (input.reason || "") : null,
+        } as any);
+        return { success: true };
+      }),
   }),
 
   // ===========================================================================

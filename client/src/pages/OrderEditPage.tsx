@@ -78,7 +78,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   const [remarkForm, setRemarkForm] = useState({
     type: "customer" as "live" | "customer" | "internal",
     content: "",
-    remarkCategory: "" as "" | "repotting" | "desired_delivery_date" | "other",
+    remarkCategory: "" as "" | "repotting" | "desired_delivery_date" | "select_tree" | "other",
     desiredDeliveryDate: "",
     repottingEntries: [] as Array<{ plantName: string; potName: string; quantity: number }>,
   });
@@ -196,7 +196,13 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   }
 
   function handleAddRemark() {
-    if (!remarkForm.content && remarkForm.remarkCategory !== "repotting") {
+    // For desired_delivery_date: date is required, content is optional
+    if (remarkForm.remarkCategory === "desired_delivery_date" && !remarkForm.desiredDeliveryDate) {
+      toast.error(translate("请选择发货日期", "Please select a shipping date"));
+      return;
+    }
+    // For select_tree and other: content is required
+    if ((remarkForm.remarkCategory === "" || remarkForm.remarkCategory === "other" || remarkForm.remarkCategory === "select_tree") && !remarkForm.content) {
       toast.error(translate("请输入备注内容", "Please enter remark content"));
       return;
     }
@@ -570,7 +576,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs">
                     {r.remarkCategory === "repotting" ? translate("换盆", "Repotting") :
-                     r.remarkCategory === "desired_delivery_date" ? translate("希望收货日期", "Desired Delivery Date") :
+                     r.remarkCategory === "desired_delivery_date" ? translate("发货日期", "Shipping Date") :
                      r.remarkCategory === "select_tree" ? translate("选树身", "Select Tree") :
                      translate("其他", "Other")}
                   </Badge>
@@ -708,20 +714,32 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               >
                 <SelectTrigger className="w-full"><SelectValue placeholder={translate("选择备注类型", "Select remark type")} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="other">{translate("其他备注", "Other Remark")}</SelectItem>
-                  <SelectItem value="desired_delivery_date">{translate("希望收货日期", "Desired Delivery Date")}</SelectItem>
+                  <SelectItem value="desired_delivery_date">{translate("发货日期", "Shipping Date")}</SelectItem>
                   <SelectItem value="repotting">{translate("换盆", "Repotting")}</SelectItem>
+                  <SelectItem value="select_tree">{translate("选树身", "Select Tree")}</SelectItem>
+                  <SelectItem value="other">{translate("其他", "Other")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             {remarkForm.remarkCategory === "desired_delivery_date" && (
-              <div>
-                <Label>{translate("预约发货日期", "Scheduled Shipping Date")}</Label>
-                <Input
-                  type="date"
-                  value={remarkForm.desiredDeliveryDate}
-                  onChange={(e) => setRemarkForm(prev => ({ ...prev, desiredDeliveryDate: e.target.value }))}
-                />
+              <div className="space-y-3">
+                <div>
+                  <Label>{translate("预约发货日期", "Scheduled Shipping Date")} *</Label>
+                  <Input
+                    type="date"
+                    value={remarkForm.desiredDeliveryDate}
+                    onChange={(e) => setRemarkForm(prev => ({ ...prev, desiredDeliveryDate: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label>{translate("备注（选填）", "Note (optional)")}</Label>
+                  <Textarea
+                    value={remarkForm.content}
+                    onChange={(e) => setRemarkForm(prev => ({ ...prev, content: e.target.value }))}
+                    rows={2}
+                    placeholder={translate("如有特别要求可填写，否则可留空", "Enter if there are special requirements, otherwise leave blank")}
+                  />
+                </div>
               </div>
             )}
             {remarkForm.remarkCategory === "repotting" && (
@@ -815,14 +833,14 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                 </Button>
               </div>
             )}
-            {(remarkForm.remarkCategory === "" || remarkForm.remarkCategory === "other") && (
+            {(remarkForm.remarkCategory === "" || remarkForm.remarkCategory === "other" || remarkForm.remarkCategory === "select_tree") && (
               <div>
                 <Label>{translate("备注内容", "Remark Content")}</Label>
                 <Textarea
                   value={remarkForm.content}
                   onChange={(e) => setRemarkForm(prev => ({ ...prev, content: e.target.value }))}
                   rows={3}
-                  placeholder={translate("输入备注内容", "Enter remark content")}
+                  placeholder={remarkForm.remarkCategory === "select_tree" ? translate("输入选树身要求，例如：要粗身 / 要高身 / 要多分支", "Enter tree selection requirements, e.g. thick trunk / tall / multi-branch") : translate("输入备注内容", "Enter remark content")}
                 />
               </div>
             )}

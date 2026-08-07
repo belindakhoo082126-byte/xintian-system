@@ -4193,6 +4193,21 @@ export async function refundCustomerCredit(customerId: number, amount: number, o
   return { newBalance: (balance + amount).toFixed(2) };
 }
 
+// V2.3: Adjust customer credit (add/deduct) from customer management
+export async function adjustCustomerCredit(customerId: number, amount: number, reason: string, adminId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const customer = await getCustomerById(customerId);
+  if (!customer) throw new Error("Customer not found");
+  const balance = parseFloat(customer.creditBalance?.toString() || "0");
+  const newBalance = balance + amount;
+  if (newBalance < 0) throw new Error(`Insufficient credit: balance ${balance.toFixed(2)} < ${Math.abs(amount).toFixed(2)}`);
+  await db.update(customers).set({
+    creditBalance: newBalance.toFixed(2),
+  }).where(eq(customers.id, customerId));
+  return { newBalance: newBalance.toFixed(2), oldBalance: balance.toFixed(2) };
+}
+
 // ============================================================================
 // V2.2: West Malaysia shipping fee calculation
 // ============================================================================
