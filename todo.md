@@ -2274,3 +2274,6 @@
 - [x] V2.0.93: MallHome.tsx购物车数量Badge改为useState+useEffect监听cart-updated事件实时更新
 - [x] V2.0.93: MallProductDetail.tsx购物车图标改为直接跳转/mall/checkout
 - [x] V2.0.93: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint
+
+- [x] V2.0.94: 修复OrderEditPage新增商品保存失败 - priceType传"normal"不在enum值内，改为"retail"
+- [x] V2.0.94: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint

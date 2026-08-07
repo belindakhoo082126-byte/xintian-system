@@ -121,7 +121,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
         variationId: item.variationId || null,
         variationName: item.variationName || null,
         itemSource: item.itemSource || "admin",
-        priceType: item.priceType || "normal",
+        priceType: item.priceType || "retail",
       })));
       setItemsModified(false);
     }
@@ -292,7 +292,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
       variationId: null,
       variationName: null,
       itemSource: "admin",
-      priceType: "normal",
+      priceType: "retail",
     }]);
     setItemsModified(true);
     setProductSearch("");
@@ -345,7 +345,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
             variationId: item.variationId,
             variationName: item.variationName,
             itemSource: item.itemSource || "admin",
-            priceType: item.priceType || "normal",
+            priceType: item.priceType || "retail",
           })),
         });
       } catch (e) {
