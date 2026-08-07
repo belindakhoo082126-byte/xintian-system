@@ -24,13 +24,13 @@ const HOLD_TYPE_LABELS_RAW: Record<string, { zh: string; en: string }> = {
 const STATUS_CONFIG_RAW: Record<string, { zh: string; en: string; variant: any; color: string }> = {
   pending: { zh: "未汇款订单", en: "Unpaid Order", variant: "outline", color: "text-yellow-600" },
   receipt_uploaded: { zh: "待审核付款凭证", en: "Pending Payment Verification", variant: "secondary", color: "text-blue-600" },
+  partial_payment: { zh: "部分汇款", en: "Partial Payment", variant: "secondary", color: "text-amber-600" },
   hold_order: { zh: "保留订单", en: "Hold Order", variant: "secondary", color: "text-purple-600" },
   packing: { zh: "待包货", en: "Pending Packing", variant: "default", color: "text-cyan-600" },
   partial_shipped: { zh: "部分发货", en: "Partial Shipped", variant: "secondary", color: "text-teal-600" },
   shipped: { zh: "已发货", en: "Shipped", variant: "default", color: "text-green-600" },
   completed: { zh: "已完成", en: "Completed", variant: "default", color: "text-green-700" },
   cancelled: { zh: "已取消", en: "Cancelled", variant: "destructive", color: "text-red-600" },
-  scheduled: { zh: "预约发货", en: "Scheduled Shipping", variant: "secondary", color: "text-indigo-600" },
 };
 
 const SOURCE_LABELS_RAW: Record<string, { zh: string; en: string }> = {
@@ -233,13 +233,13 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
 
       {/* Action Buttons */}
       <div className="flex flex-wrap gap-2">
-        {order?.physicalStatus === "receipt_uploaded" && (
+        {(order?.physicalStatus === "receipt_uploaded" || order?.physicalStatus === "partial_payment") && (
           <Button onClick={handleConfirmPayment} disabled={confirmPaymentMutation.isPending} className="bg-primary">
             <CheckCircle className="h-4 w-4 mr-2" />
             {translate("确认汇款", "Confirm Payment")}
           </Button>
         )}
-        {order?.physicalStatus === "receipt_uploaded" && (
+        {(order?.physicalStatus === "receipt_uploaded" || order?.physicalStatus === "partial_payment") && (
           <Button variant="outline" onClick={() => setHoldOpen(true)}>
             <PauseCircle className="h-4 w-4 mr-2" />
             {translate("保留订单", "Hold Order")}

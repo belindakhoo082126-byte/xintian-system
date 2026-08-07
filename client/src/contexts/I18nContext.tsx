@@ -79,7 +79,7 @@ const translations: Record<string, Record<Lang, string>> = {
   "status.partial_shipped": { zh: "部分发货", en: "Partial Shipped" },
   "status.completed": { zh: "已完成", en: "Completed" },
   "status.cancelled": { zh: "已取消", en: "Cancelled" },
-  "status.scheduled": { zh: "预约发货", en: "Scheduled Shipping" },
+  "status.partial_payment": { zh: "部分汇款", en: "Partial Payment" },
   "status.special": { zh: "特别订单", en: "Special Order" },
 
   // Order Detail

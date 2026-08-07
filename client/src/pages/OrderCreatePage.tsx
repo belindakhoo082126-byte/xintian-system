@@ -38,24 +38,24 @@ const SHIPPING_METHODS = {
 const LOCAL_ORDER_STATUSES = [
   { value: "pending", label: "未汇款订单", enLabel: "Unpaid Order" },
   { value: "receipt_uploaded", label: "待审核付款凭证", enLabel: "Pending Payment Verification" },
+  { value: "partial_payment", label: "部分汇款", enLabel: "Partial Payment" },
   { value: "packing", label: "待包货", enLabel: "Pending Packing" },
   { value: "partial_shipped", label: "部分发货", enLabel: "Partial Shipped" },
   { value: "shipped", label: "已发货", enLabel: "Shipped" },
   { value: "completed", label: "已完成", enLabel: "Completed" },
   { value: "cancelled", label: "已取消", enLabel: "Cancelled" },
-  { value: "scheduled", label: "预约发货", enLabel: "Scheduled Shipping" },
   { value: "hold_order", label: "保留订单", enLabel: "Hold Order" },
 ];
 
 const IMPORT_ORDER_STATUSES = [
   { value: "pending", label: "未汇款订单", enLabel: "Unpaid Order" },
   { value: "receipt_uploaded", label: "待审核付款凭证", enLabel: "Pending Payment Verification" },
+  { value: "partial_payment", label: "部分汇款", enLabel: "Partial Payment" },
   { value: "packing", label: "待包货", enLabel: "Pending Packing" },
   { value: "partial_shipped", label: "部分发货", enLabel: "Partial Shipped" },
   { value: "shipped", label: "已发货", enLabel: "Shipped" },
   { value: "completed", label: "已完成", enLabel: "Completed" },
   { value: "cancelled", label: "已取消", enLabel: "Cancelled" },
-  { value: "scheduled", label: "预约发货", enLabel: "Scheduled Shipping" },
   { value: "hold_order", label: "保留订单", enLabel: "Hold Order" },
 ];
 

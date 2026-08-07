@@ -21,13 +21,13 @@ import { useSearch, useLocation } from "wouter";
 const PHYSICAL_STATUS = {
   pending: { label: "未汇款订单", enLabel: "Unpaid Order", variant: "outline" },
   receipt_uploaded: { label: "待审核付款凭证", enLabel: "Pending Payment Verification", variant: "secondary" },
+  partial_payment: { label: "部分汇款", enLabel: "Partial Payment", variant: "secondary" },
   hold_order: { label: "保留订单", enLabel: "Hold Order", variant: "outline" },
   packing: { label: "待包货", enLabel: "Pending Packing", variant: "default" },
   partial_shipped: { label: "部分发货", enLabel: "Partial Shipped", variant: "secondary" },
   shipped: { label: "已发货", enLabel: "Shipped", variant: "default" },
   completed: { label: "已完成", enLabel: "Completed", variant: "default" },
   cancelled: { label: "已取消", enLabel: "Cancelled", variant: "destructive" },
-  scheduled: { label: "预约发货", enLabel: "Scheduled Shipping", variant: "secondary" },
   special: { label: "特别订单", enLabel: "Special Order", variant: "secondary" },
 } as const;
 

@@ -2917,7 +2917,7 @@ export const appRouter = router({
     
     transition: adminProcedure.input(z.object({
       orderId: z.number(),
-      toStatus: z.enum(["pending", "receipt_uploaded", "hold_order", "packing", "shipped", "partial_shipped", "completed", "cancelled", "scheduled"]),
+      toStatus: z.enum(["pending", "receipt_uploaded", "partial_payment", "hold_order", "packing", "shipped", "partial_shipped", "completed", "cancelled"]),
       notes: z.string().optional(),
     })).mutation(async ({ input, ctx }) => {
       const changedBy = ctx.user?.name || ctx.user?.openId || "admin";
@@ -3411,16 +3411,32 @@ export const appRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "请选择有效的付款方式" });
       }
 
-      const permittedStatuses = ["pending", "receipt_uploaded"];
+      const permittedStatuses = ["pending", "receipt_uploaded", "partial_payment"];
       if (!permittedStatuses.includes(result[0].physicalStatus || "")) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "当前订单状态不允许上传付款凭证" });
       }
 
-      await db.transitionOrderStatus(result[0].id, "receipt_uploaded", "商城顾客", "顾客已上传付款凭证");
+      // Check if this is a partial payment by comparing order total with any existing payments
+      const { orderPayments: opTable } = await import("../drizzle/schema");
+      let newStatus = "receipt_uploaded";
+      let totalPaidStr = "0";
+      try {
+        const existingPayments = await dbConn.select().from(opTable).where(eq(opTable.orderId, result[0].id));
+        if (Array.isArray(existingPayments) && existingPayments.length > 0) {
+          const totalPaid = existingPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
+          const totalAmount = parseFloat(String(result[0].totalAmount || "0"));
+          totalPaidStr = totalPaid.toFixed(2);
+          newStatus = totalPaid >= totalAmount ? "receipt_uploaded" : "partial_payment";
+        }
+      } catch {
+        // If query fails (e.g. no existing payments), default to receipt_uploaded
+      }
+      await db.transitionOrderStatus(result[0].id, newStatus, "商城顾客", "顾客已上传付款凭证");
       await db.updateOrderStatus(result[0].id, {
         receiptUrl: input.receiptUrl,
         paymentMethodId: paymentMethod.id,
         paymentMethodName: paymentMethod.name,
+        paidAmount: totalPaidStr,
       });
       return { success: true };
     }),

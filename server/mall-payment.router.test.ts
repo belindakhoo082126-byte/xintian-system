@@ -113,6 +113,7 @@ describe("mall.uploadReceipt authorization and audit", () => {
       receiptUrl: validInput.receiptUrl,
       paymentMethodId: 3,
       paymentMethodName: "Public Bank Transfer",
+      paidAmount: "0",
     });
   });
 

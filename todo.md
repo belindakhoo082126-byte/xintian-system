@@ -2233,3 +2233,9 @@
 - [x] TypeScript 编译零错误 + 270 项测试全部通过
 
 - [x] V2.0.86: 修复Admin订单创建表单(Orders.tsx)收件人资料同步 - 新增recipientName/recipientPhone栏位、买家是收件人Checkbox自动同步、选择现有客户时自动带入收件人资料、所有createOrderMutation调用传递recipient字段
+
+- [x] V2.0.87: 移除「预约发货」(scheduled) 订单状态 - 从Orders.tsx, OrderBrowsePage.tsx, OrderDetail.tsx, OrderCreatePage.tsx, OrderDocument.tsx, I18nContext.tsx的状态定义中移除
+- [x] V2.0.87: 新增「部分汇款」(partial_payment) 订单状态到所有状态定义和筛选器
+- [x] V2.0.87: 实现部分汇款自动判断逻辑 - addOrderPayment中付款金额<订单总额时设为partial_payment，付清后设为receipt_uploaded
+- [x] V2.0.87: 客户上传付款凭证时也支持部分汇款状态判断
+- [x] V2.0.87: TypeScript编译检查 + 测试通过 + 保存checkpoint

@@ -26,13 +26,13 @@ import { prepareOrderDocumentExportHost } from "@/lib/orderDocumentExport";
 const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
   pending: { zh: "未汇款订单", en: "Unpaid Order", variant: "outline" },
   receipt_uploaded: { zh: "待审核付款凭证", en: "Pending Payment Verification", variant: "secondary" },
+  partial_payment: { zh: "部分汇款", en: "Partial Payment", variant: "secondary" },
   hold_order: { zh: "保留订单", en: "Hold Order", variant: "secondary" },
   packing: { zh: "待包货", en: "Pending Packing", variant: "default" },
   partial_shipped: { zh: "部分发货", en: "Partial Shipped", variant: "secondary" },
   shipped: { zh: "已发货", en: "Shipped", variant: "default" },
   completed: { zh: "已完成", en: "Completed", variant: "default" },
   cancelled: { zh: "已取消", en: "Cancelled", variant: "destructive" },
-  scheduled: { zh: "预约发货", en: "Scheduled Shipping", variant: "secondary" },
   special: { zh: "特别订单", en: "Special Order", variant: "secondary" },
 };
 

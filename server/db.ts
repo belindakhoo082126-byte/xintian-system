@@ -923,6 +923,7 @@ export async function updateOrderStatus(id: number, data: {
   receiptUrl?: string;
   paymentMethodId?: number;
   paymentMethodName?: string;
+  paidAmount?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -934,6 +935,7 @@ export async function updateOrderStatus(id: number, data: {
   if (data.receiptUrl !== undefined) updateData.receiptUrl = data.receiptUrl;
   if (data.paymentMethodId !== undefined) updateData.paymentMethodId = data.paymentMethodId;
   if (data.paymentMethodName !== undefined) updateData.paymentMethodName = data.paymentMethodName;
+  if (data.paidAmount !== undefined) updateData.paidAmount = data.paidAmount;
 
   if (data.physicalStatus === "receipt_uploaded") updateData.paymentUploadedAt = new Date();
   // payment_confirmed is deprecated; use packing for confirmed payments
@@ -1085,9 +1087,9 @@ export async function addOrderPayment(data: {
     const totalAmount = parseFloat(String(order[0].totalAmount));
     let newStatus = order[0].physicalStatus;
     if (totalPaid >= totalAmount) {
-      newStatus = "packing";
-    } else if (totalPaid > 0) {
       newStatus = "receipt_uploaded";
+    } else if (totalPaid > 0) {
+      newStatus = "partial_payment";
     }
     await db.update(orders).set({
       paidAmount: totalPaid.toFixed(2),

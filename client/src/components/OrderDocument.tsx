@@ -11,13 +11,13 @@ const SHIPPING_LABELS: Record<string, { zh: string; en: string }> = {
 const STATUS_LABELS: Record<string, { zh: string; en: string }> = {
   pending: { zh: "未汇款订单", en: "Unpaid Order" },
   receipt_uploaded: { zh: "待审核付款凭证", en: "Pending Payment Verification" },
+  partial_payment: { zh: "部分汇款", en: "Partial Payment" },
   hold_order: { zh: "保留订单", en: "Hold Order" },
   packing: { zh: "待包货", en: "Pending Packing" },
   partial_shipped: { zh: "部分发货", en: "Partial Shipped" },
   shipped: { zh: "已发货", en: "Shipped" },
   completed: { zh: "已完成", en: "Completed" },
   cancelled: { zh: "已取消", en: "Cancelled" },
-  scheduled: { zh: "预约发货", en: "Scheduled Shipping" },
   special: { zh: "特别订单", en: "Special Order" },
 };
 
