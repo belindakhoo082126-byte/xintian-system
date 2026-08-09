@@ -2364,3 +2364,10 @@
 - [x] autoMatchXtcOrders第一处修复：齐货时检查scheduledShippingDate，有则设scheduled_ship，否则ready_to_ship
 - [x] autoMatchXtcOrders第二处修复：分配完成后同样检查scheduledShippingDate
 - [x] TypeScript编译零错误，270项测试全部通过
+
+## V2.1.05 - 修复折扣保存、客户结账Online Transfer显示、XTC导出图片
+
+- [x] 修复createOrderWithSplit中discountAmount字段缺失（db.insert时遗漏discountAmount，只有discountReason被保存）
+- [x] 修复CustomerOrderPage客户结账页面Online Transfer显示QR Code问题（新增bank_transfer类型银行户口资料区块，与CustomerPayment.tsx一致）
+- [x] XTC导出图片问题确认：OrderBrowsePage和OrderDocument共用同一套组件，支持import订单，无orderCategory过滤问题
+- [x] TypeScript编译零错误，270项测试全部通过

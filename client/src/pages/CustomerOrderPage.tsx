@@ -745,6 +745,41 @@ export default function CustomerOrderPage(props: any) {
                           {/* V2.0.91: Unified payment image for all methods - no longer switching QR by method */}
                           <div className="flex justify-center"><img src="/manus-storage/pasted_file_ywVQP7_image_59fb9825.png" alt="汇款资料" className="max-h-96 max-w-full rounded-lg border object-contain" /></div>
                           {selectedPaymentMethod.paymentInstruction && <p className="rounded-md bg-muted p-3 text-sm">{selectedPaymentMethod.paymentInstruction}</p>}
+                          {/* V2.1.05: Online Transfer bank details — shown only for bank_transfer type */}
+                          {selectedPaymentMethod.type === "bank_transfer" && (
+                            <div className="p-4 border-2 border-primary/30 rounded-lg bg-green-50/50 dark:bg-green-950/20 space-y-3">
+                              <div className="flex items-center gap-2 font-semibold">
+                                <University className="h-5 w-5" />
+                                <span>银行户口资料</span>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between p-3 bg-white dark:bg-card rounded-lg border">
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">银行</p>
+                                    <p className="font-semibold text-sm">Public Bank</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-between p-3 bg-white dark:bg-card rounded-lg border">
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">户口号码</p>
+                                    <p className="font-mono font-semibold text-sm">3825375502</p>
+                                  </div>
+                                  <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText("3825375502"); toast.success("已复制户口号码"); }}>
+                                    <Copy className="h-3.5 w-3.5 mr-1" />复制
+                                  </Button>
+                                </div>
+                                <div className="flex items-center justify-between p-3 bg-white dark:bg-card rounded-lg border">
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">户口名字</p>
+                                    <p className="font-semibold text-sm">ECOLAND NURSERY</p>
+                                  </div>
+                                  <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText("ECOLAND NURSERY"); toast.success("已复制户口名字"); }}>
+                                    <Copy className="h-3.5 w-3.5 mr-1" />复制
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
 
                           <div className="space-y-2 border-t pt-3">
                             <p className="text-sm font-medium">上传付款凭证</p>

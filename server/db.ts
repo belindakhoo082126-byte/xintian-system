@@ -892,6 +892,7 @@ export async function createOrderWithSplit(data: {
     extraCharge: data.extraCharge || null,
     extraChargeDescription: data.extraChargeDescription || null,
     creditUsed: autoCreditUsedStr,
+    discountAmount: data.discountAmount || null,
     discountReason: data.discountReason || null,
     // V2.0.85: Save recipient info on order
     recipientName: data.recipientName || null,
