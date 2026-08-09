@@ -127,8 +127,10 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     name: "", phoneNumber: "", address: "", shippingMethod: "west_malaysia",
   });
   // V2.0.86: Recipient form (separate from buyer/customer info)
+  // V2.1.07: Added recipient address fields for auto-fill from customer profile
   const [recipientForm, setRecipientForm] = useState({
     recipientName: "", recipientPhone: "",
+    recipientAddress: "", recipientCity: "", recipientState: "", recipientPostcode: "", recipientCountry: "",
   });
   const [buyerIsRecipient, setBuyerIsRecipient] = useState(true);
   // V2.0.86: Auto-sync customer name/phone to recipient when buyer is recipient
@@ -284,7 +286,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       setCreateOpen(false);
       setManualItems([]);
       setCustomerForm({ facebookName: "", facebookId: "", messengerId: "", name: "", phoneNumber: "", address: "", shippingMethod: "west_malaysia" });
-      setRecipientForm({ recipientName: "", recipientPhone: "" });
+      setRecipientForm({ recipientName: "", recipientPhone: "", recipientAddress: "", recipientCity: "", recipientState: "", recipientPostcode: "", recipientCountry: "" });
       setBuyerIsRecipient(true);
       setSelectedCustomerId(undefined);
       setCustomerSearchQuery("");
@@ -738,7 +740,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                     />
                   </TableCell>
                   <TableCell className="font-mono text-sm">{o.orderNumber}</TableCell>
-                  <TableCell>{o.facebookName || "-"}</TableCell>
+                  <TableCell>{(o as any).customerName || o.facebookName || "-"}</TableCell>
                   <TableCell>
                     <span className="text-xs text-muted-foreground">
                       {ORDER_SOURCE[(o as any).orderSource as keyof typeof ORDER_SOURCE]
@@ -1705,10 +1707,15 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                           phoneNumber: c.phoneNumber || "",
                           address: c.address || "",
                         });
-                        // V2.0.86: Auto-populate recipient from customer profile
+                        // V2.0.86/V2.1.07: Auto-populate recipient from customer profile (including address)
                         setRecipientForm({
                           recipientName: c.name || c.displayName || "",
                           recipientPhone: c.phoneNumber || "",
+                          recipientAddress: c.address || "",
+                          recipientCity: c.city || "",
+                          recipientState: c.state || "",
+                          recipientPostcode: c.postalCode || "",
+                          recipientCountry: c.country || "",
                         });
                         setCustomerSearchQuery("");
                       }} className="w-full text-left p-2 rounded hover:bg-muted text-sm">
@@ -1722,7 +1729,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               {selectedCustomerId && (
                 <Badge variant="secondary" className="w-fit">
                   {translate("已选客户 ID", "Selected Customer ID")}: {selectedCustomerId}
-                  <button onClick={() => { setSelectedCustomerId(undefined); setCustomerForm({ facebookName: "", facebookId: "", messengerId: "", name: "", phoneNumber: "", address: "", shippingMethod: "west_malaysia" }); setRecipientForm({ recipientName: "", recipientPhone: "" }); }} className="ml-2">×</button>
+                  <button onClick={() => { setSelectedCustomerId(undefined); setCustomerForm({ facebookName: "", facebookId: "", messengerId: "", name: "", phoneNumber: "", address: "", shippingMethod: "west_malaysia" }); setRecipientForm({ recipientName: "", recipientPhone: "", recipientAddress: "", recipientCity: "", recipientState: "", recipientPostcode: "", recipientCountry: "" }); }} className="ml-2">×</button>
                 </Badge>
               )}
               <div className="grid grid-cols-2 gap-3">

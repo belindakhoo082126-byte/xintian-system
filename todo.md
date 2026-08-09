@@ -2371,3 +2371,17 @@
 - [x] 修复CustomerOrderPage客户结账页面Online Transfer显示QR Code问题（新增bank_transfer类型银行户口资料区块，与CustomerPayment.tsx一致）
 - [x] XTC导出图片问题确认：OrderBrowsePage和OrderDocument共用同一套组件，支持import订单，无orderCategory过滤问题
 - [x] TypeScript编译零错误，270项测试全部通过
+
+## V2.1.06 - Online Transfer不显示QR图片
+
+- [x] 客户结账页面选择Online Transfer时不显示QR图片，只显示银行户口资料
+- [x] QR图片仅在TNG/DuitNow（qr_code类型）时显示
+- [x] TypeScript编译零错误
+
+## V2.1.07 - 订单列表客户名称显示+客户地址自动带入
+
+- [x] 修复getOrders函数：LEFT JOIN customers表，返回customerName和customerPhone字段
+- [x] 修复Orders.tsx订单列表：显示customerName（从JOIN获取）而非仅facebookName
+- [x] 修复recipientForm：新增recipientAddress/recipientCity/recipientState/recipientPostcode/recipientCountry字段
+- [x] 选择已有客户时自动带入客户地址到收件人资料（address/city/state/postalCode/country）
+- [x] TypeScript编译零错误，270项测试全部通过

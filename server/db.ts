@@ -581,7 +581,53 @@ export async function getOrders(filters?: {
 }) {
   const db = await getDb();
   if (!db) return [];
-  let query = db.select().from(orders);
+  // V2.1.07: LEFT JOIN customers to return customerName for order list display
+  // Use raw select to avoid TypeScript issues with spreading table columns
+  let query = db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    customerId: orders.customerId,
+    facebookName: orders.facebookName,
+    facebookId: orders.facebookId,
+    messengerId: orders.messengerId,
+    orderType: orders.orderType,
+    orderCategory: (orders as any).orderCategory,
+    importStatus: (orders as any).importStatus,
+    physicalStatus: orders.physicalStatus,
+    membershipStatus: orders.membershipStatus,
+    totalAmount: orders.totalAmount,
+    paidAmount: orders.paidAmount,
+    shippingAddress: orders.shippingAddress,
+    shippingMethod: orders.shippingMethod,
+    trackingNumber: orders.trackingNumber,
+    orderNature: (orders as any).orderNature,
+    orderSource: (orders as any).orderSource,
+    sourceName: orders.sourceName,
+    salesChannel: (orders as any).salesChannel,
+    isSpecialOrder: (orders as any).isSpecialOrder,
+    specialOrderStatus: (orders as any).specialOrderStatus,
+    specialOrderType: (orders as any).specialOrderType,
+    notificationStatus: orders.notificationStatus,
+    notificationSentAt: orders.notificationSentAt,
+    recipientName: orders.recipientName,
+    recipientPhone: orders.recipientPhone,
+    recipientCity: orders.recipientCity,
+    recipientState: orders.recipientState,
+    recipientPostcode: orders.recipientPostcode,
+    recipientCountry: orders.recipientCountry,
+    discountAmount: (orders as any).discountAmount,
+    discountReason: (orders as any).discountReason,
+    extraCharge: (orders as any).extraCharge,
+    extraChargeDescription: (orders as any).extraChargeDescription,
+    creditUsed: orders.creditUsed,
+    totalWeight: orders.totalWeight,
+    scheduledShippingDate: (orders as any).scheduledShippingDate,
+    liveRoomId: (orders as any).liveRoomId,
+    createdAt: orders.createdAt,
+    customerName: customers.name,
+    customerPhone: customers.phoneNumber,
+  }).from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id)) as any;
   const conditions: any[] = [];
   if (filters?.physicalStatus) conditions.push(eq(orders.physicalStatus, filters.physicalStatus as any));
   if (filters?.importStatus) conditions.push(eq((orders as any).importStatus, filters.importStatus as any));
