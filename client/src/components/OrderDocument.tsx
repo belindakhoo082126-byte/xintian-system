@@ -91,7 +91,7 @@ export function OrderDocument({
   const o = order;
   const isAdmin = variant === "admin";
   // Filter remarks for customer copy — hide internal remarks
-  const visibleRemarks = isAdmin ? (remarks || []) : (remarks || []).filter((r: any) => r.type !== "internal" && r.type !== "live");
+  const visibleRemarks = isAdmin ? (remarks || []) : (remarks || []).filter((r: any) => r.type !== "internal");
   const shippingCfg = SHIPPING_LABELS[o.shippingMethod] || { zh: o.shippingMethod, en: o.shippingMethod };
   const isImportOrder = o.orderCategory === "import";
   const statusCfg = isImportOrder

@@ -2402,3 +2402,10 @@
 - [x] OrderBrowsePage handleExportImage：导出前预转换所有商品图片为base64 dataURL
 - [x] OrderBrowsePage handlePrint：打印前同样预转换商品图片
 - [x] TypeScript编译零错误，270项测试全部通过
+
+## V2.1.10 - 修复正式单据不显示备注 + Activity Log结构化
+
+- [x] OrderEditPage备注默认type从"internal"改为"customer"，让Preview/Export/Print可见
+- [x] Orders.tsx备注默认type从"internal"改为"customer"
+- [x] OrderDocument customer variant只过滤internal备注，不过滤live备注（直播备注客户也应看到）
+- [x] TypeScript编译零错误，270项测试全部通过

@@ -85,7 +85,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   // Remark state
   const [remarkDialogOpen, setRemarkDialogOpen] = useState(false);
   const [remarkForm, setRemarkForm] = useState({
-    type: "internal" as "live" | "customer" | "internal",
+    type: "customer" as "live" | "customer" | "internal",
     content: "",
     remarkCategory: "" as "" | "repotting" | "desired_delivery_date" | "select_tree" | "other",
     desiredDeliveryDate: "",
@@ -169,7 +169,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
       toast.success(translate("备注已添加", "Remark added"));
       setRemarkDialogOpen(false);
       setRemarkForm({
-        type: "internal",
+        type: "customer",
         content: "",
         remarkCategory: "",
         desiredDeliveryDate: "",

@@ -1417,7 +1417,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         } else {
                           createRemarkMutation.mutate({
                             orderId: orderDetail.id,
-                            type: "internal",
+                            type: "customer",
                             content: submitContent || "",
                             remarkCategory: remarkForm.remarkCategory as any,
                             desiredDeliveryDate: remarkForm.desiredDeliveryDate || undefined,
