@@ -1014,6 +1014,7 @@ export async function updateOrderDetails(id: number, data: {
   shippingFee?: string;
   totalAmount?: string;
   physicalStatus?: string;
+  importStatus?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -1041,6 +1042,9 @@ export async function updateOrderDetails(id: number, data: {
     if (data.physicalStatus === "packing") updateData.paymentConfirmedAt = new Date();
     if (data.physicalStatus === "shipped") updateData.shippedAt = new Date();
     if (data.physicalStatus === "completed") updateData.completedAt = new Date();
+  }
+  if (data.importStatus !== undefined) {
+    updateData.importStatus = data.importStatus;
   }
 
   if (Object.keys(updateData).length > 0) {

@@ -1212,11 +1212,13 @@ export const appRouter = router({
         shippingFee: z.string().optional(),
         totalAmount: z.string().optional(),
         physicalStatus: z.string().optional(),
+        importStatus: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const { id, ...data } = input;
         await db.updateOrderDetails(id, data);
-        const desc = data.physicalStatus ? `Order details updated, status → ${data.physicalStatus} by ${ctx.user?.name || "admin"}` : `Order details updated by ${ctx.user?.name || "admin"}`;
+        const statusChanged = data.physicalStatus || data.importStatus;
+        const desc = statusChanged ? `Order details updated, status → ${data.physicalStatus || data.importStatus} by ${ctx.user?.name || "admin"}` : `Order details updated by ${ctx.user?.name || "admin"}`;
         await db.logOrderOperation(id, "edit", desc, null, ctx.user?.name || "admin");
         return { success: true };
       }),

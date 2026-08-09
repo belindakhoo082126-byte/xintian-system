@@ -673,7 +673,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <div>
               <Label className="text-xs">{translate("折扣金额", "Discount Amount")}</Label>
-              <Input type="number" value={formData.discountAmount} onChange={(e) => setFormData({ ...formData, discountAmount: e.target.value || "0" })} />
+              <Input type="number" value={formData.discountAmount} onChange={(e) => setFormData({ ...formData, discountAmount: e.target.value })} placeholder="0" />
             </div>
             <div className="col-span-2">
               <Label className="text-xs">{translate("折扣原因", "Discount Reason")}</Label>
@@ -681,7 +681,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
             </div>
             <div>
               <Label className="text-xs">{translate("额外收费", "Extra Charge")}</Label>
-              <Input type="number" value={formData.extraCharge} onChange={(e) => setFormData({ ...formData, extraCharge: e.target.value || "0" })} />
+              <Input type="number" value={formData.extraCharge} onChange={(e) => setFormData({ ...formData, extraCharge: e.target.value })} placeholder="0" />
             </div>
             <div className="col-span-2">
               <Label className="text-xs">{translate("收费说明", "Charge Description")}</Label>
@@ -693,7 +693,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
             </div>
             <div>
               <Label className="text-xs">{translate("运费", "Shipping Fee")}</Label>
-              <Input type="number" value={formData.shippingFee} onChange={(e) => setFormData({ ...formData, shippingFee: e.target.value || "0" })} />
+              <Input type="number" value={formData.shippingFee} onChange={(e) => setFormData({ ...formData, shippingFee: e.target.value })} placeholder="0" />
             </div>
           </div>
 

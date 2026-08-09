@@ -2328,3 +2328,8 @@
 - [x] V2.1.00: 10) CustomerOrderPage前端新增Partial Payment/Hold Order/Scheduled Ship状态
 - [x] V2.1.00: 11) 订单编号前缀CXT→XTC修复（db.ts + OrderCreatePage.tsx）
 - [x] V2.1.00: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint
+
+- [x] V2.1.01: 修复中国代购订单折扣和额外收费输入问题
+- [x] V2.1.01: 1) 折扣金额和额外收费输入框无法清零（e.target.value || "0"导致无法删除）
+- [x] V2.1.01: 2) 折扣原因和收费说明在OrderDetail订单详情页不显示
+- [x] V2.1.01: 3) 确保import订单和local订单的折扣/额外收费行为一致

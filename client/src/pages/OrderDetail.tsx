@@ -410,8 +410,14 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
               </div>
               {Number(order.discountAmount) > 0 && (
                 <div className="flex justify-between text-orange-600">
-                  <span>{translate("折扣", "Discount")}</span>
+                  <span>{translate("折扣", "Discount")}{order.discountReason ? ` (${order.discountReason})` : ""}</span>
                   <span>-RM {Number(order.discountAmount).toFixed(2)}</span>
+                </div>
+              )}
+              {Number(order.extraCharge) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{translate("额外收费", "Extra Charge")}{order.extraChargeDescription ? ` (${order.extraChargeDescription})` : ""}</span>
+                  <span>+RM {Number(order.extraCharge).toFixed(2)}</span>
                 </div>
               )}
               <div className="flex justify-between">
