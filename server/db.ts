@@ -51,6 +51,8 @@ import {
   orderSeq,
   // V2.0.78 imports - Customer Credit Ledger
   customerCreditLedger,
+  // V2.0.98 imports - CN/IB enhancements
+  ibDifferences, stockAllocations, costAdjustmentLogs,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -12580,4 +12582,407 @@ export async function getCnIbCostProfit(batchId: number) {
       differenceReason: (item as any).differenceReason || 'none',
     })),
   };
+}
+
+// ============================================================================
+// V2.0.98: CN/IB 4 Key Rules + Priority Stock Allocation
+// ============================================================================
+
+// Rule 1: Priority-based stock allocation (by fullPaymentConfirmedAt)
+export async function allocateStockByPriority(batchId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+
+  const batch = await getImportBatchById(batchId);
+  if (!batch) throw new Error('Batch not found');
+
+  const batchItems = await getImportBatchItems(batchId);
+
+  // Get all linked XTC orders that are waiting for stock
+  const linkedOrders = await db.select().from(orders).where(
+    eq((orders as any).importBatchId, batchId as any)
+  );
+
+  // Filter orders that need stock (not cancelled/completed)
+  const activeOrders = linkedOrders.filter(
+    o => o.physicalStatus !== 'cancelled' && o.physicalStatus !== 'completed'
+  );
+
+  // Sort by fullPaymentConfirmedAt ascending (earliest full payment first)
+  // If no fullPaymentConfirmedAt, sort by paymentConfirmedAt, then by createdAt as fallback
+  activeOrders.sort((a, b) => {
+    const aTime = (a as any).fullPaymentConfirmedAt || (a as any).paymentConfirmedAt || a.createdAt;
+    const bTime = (b as any).fullPaymentConfirmedAt || (b as any).paymentConfirmedAt || b.createdAt;
+    return new Date(aTime).getTime() - new Date(bTime).getTime();
+  });
+
+  const allocations: Array<{
+    orderId: number;
+    orderNumber: string;
+    productId: number;
+    variantId: number | null;
+    allocatedQty: number;
+    requestedQty: number;
+    shortQty: number;
+  }> = [];
+
+  for (const bi of batchItems) {
+    const availableQty = bi.healthyQty || 0;
+    if (availableQty <= 0) continue;
+
+    // Collect all order items matching this batch item
+    const orderItemRequests: Array<{
+      orderId: number;
+      orderNumber: string;
+      productId: number;
+      variantId: number | null;
+      requestedQty: number;
+    }> = [];
+
+    for (const order of activeOrders) {
+      const orderItemsList = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+      for (const oi of orderItemsList) {
+        if (oi.productId === bi.productId && (oi.variationId || null) === (bi.variantId || null)) {
+          orderItemRequests.push({
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            productId: oi.productId,
+            variantId: oi.variationId || null,
+            requestedQty: oi.quantity || 0,
+          });
+        }
+      }
+    }
+
+    // Sort requests by priority (already sorted by fullPaymentConfirmedAt)
+    // Allocate stock in priority order
+    let remainingStock = availableQty;
+    for (const req of orderItemRequests) {
+      const allocated = Math.min(remainingStock, req.requestedQty);
+      const short = req.requestedQty - allocated;
+
+      if (allocated > 0) {
+        // Record allocation
+        await db.insert(stockAllocations).values({
+          batchId,
+          orderId: req.orderId,
+          orderNumber: req.orderNumber,
+          productId: req.productId,
+          variantId: req.variantId,
+          allocatedQty: allocated,
+          allocationType: 'auto',
+        } as any);
+
+        remainingStock -= allocated;
+      }
+
+      allocations.push({
+        orderId: req.orderId,
+        orderNumber: req.orderNumber,
+        productId: req.productId,
+        variantId: req.variantId,
+        allocatedQty: allocated,
+        requestedQty: req.requestedQty,
+        shortQty: short,
+      });
+    }
+  }
+
+  // Update XTC import status based on allocation results
+  for (const order of activeOrders) {
+    const orderAllocations = allocations.filter(a => a.orderId === order.id);
+    const allFulfilled = orderAllocations.length > 0 && orderAllocations.every(a => a.shortQty === 0);
+
+    let newImportStatus: string;
+    if (allFulfilled) {
+      newImportStatus = 'ready_to_ship';
+    } else {
+      newImportStatus = 'waiting_stock';
+    }
+
+    await db.update(orders).set({
+      importStatus: newImportStatus as any,
+    }).where(eq(orders.id, order.id));
+  }
+
+  return allocations;
+}
+
+// Rule 2: Create IB difference record
+export async function createIbDifference(data: {
+  batchId: number;
+  cnBatchNumber?: string;
+  supplierName?: string;
+  productId: number;
+  productName: string;
+  variantId?: number;
+  variantName?: string;
+  cnPurchaseQty: number;
+  ibReceivedQty: number;
+  differenceType: string;
+  reason?: string;
+  evidenceUrl?: string;
+  needsReplenish?: boolean;
+  needsRefund?: boolean;
+  notes?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+
+  const differenceQty = data.cnPurchaseQty - data.ibReceivedQty;
+
+  const [record] = await db.insert(ibDifferences).values({
+    batchId: data.batchId,
+    cnBatchNumber: data.cnBatchNumber || null,
+    supplierName: data.supplierName || null,
+    productId: data.productId,
+    productName: data.productName,
+    variantId: data.variantId || null,
+    variantName: data.variantName || null,
+    cnPurchaseQty: data.cnPurchaseQty,
+    ibReceivedQty: data.ibReceivedQty,
+    differenceQty,
+    differenceType: data.differenceType as any,
+    reason: data.reason || null,
+    evidenceUrl: data.evidenceUrl || null,
+    needsReplenish: data.needsReplenish || false,
+    needsRefund: data.needsRefund || false,
+    processStatus: 'pending',
+    notes: data.notes || null,
+  } as any).$returningId();
+
+  return record;
+}
+
+// Get IB differences for a batch
+export async function getIbDifferences(batchId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(ibDifferences).where(eq(ibDifferences.batchId, batchId));
+}
+
+// Rule 3: Link multiple CNs to the same XTC batch (parent-child relationship)
+export async function linkCnToParentBatch(batchId: number, parentBatchId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+
+  await db.update(importBatches).set({
+    parentBatchId,
+  } as any).where(eq(importBatches.id, batchId));
+
+  return { success: true };
+}
+
+// Get all CNs linked to the same parent batch
+export async function getLinkedCns(parentBatchId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Get the parent batch itself + all child batches
+  const parent = await getImportBatchById(parentBatchId);
+  const children = await db.select().from(importBatches).where(
+    eq((importBatches as any).parentBatchId, parentBatchId as any)
+  );
+
+  return [parent, ...children].filter(Boolean);
+}
+
+// Rule 4: Complete stock-in and lock costs
+export async function completeStockIn(batchId: number, operatorName?: string) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+
+  const batch = await getImportBatchById(batchId);
+  if (!batch) throw new Error('Batch not found');
+
+  // Verify all IB items have been verified
+  const items = await getImportBatchItems(batchId);
+  const unverified = items.filter(i => !i.itemStatus || i.itemStatus === 'pending');
+  if (unverified.length > 0) {
+    throw new Error(`仍有 ${unverified.length} 项商品未完成验货`);
+  }
+
+  // Lock the costs
+  await db.update(importBatches).set({
+    costLocked: true,
+    costLockedAt: new Date(),
+    status: 'all_arrived',
+  } as any).where(eq(importBatches.id, batchId));
+
+  // Run priority-based stock allocation
+  const allocations = await allocateStockByPriority(batchId);
+
+  // Log the operation
+  await logOrderOperation(
+    batchId,
+    'stock_in',
+    `完成入库 - 成本已锁定，执行优先分货 ${allocations.length} 项`,
+    null,
+    operatorName
+  );
+
+  return {
+    success: true,
+    costLocked: true,
+    allocations,
+    allocationCount: allocations.length,
+  };
+}
+
+// Rule 4: Unlock costs (requires reason)
+export async function unlockCosts(batchId: number, reason: string, operatorName: string) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+
+  const batch = await getImportBatchById(batchId);
+  if (!batch) throw new Error('Batch not found');
+
+  if (!(batch as any).costLocked) {
+    throw new Error('成本未锁定，无需解锁');
+  }
+
+  // Record the unlock in cost adjustment log
+  await db.insert(costAdjustmentLogs).values({
+    batchId,
+    fieldName: 'cost_unlock',
+    oldValue: 'locked',
+    newValue: 'unlocked',
+    reason,
+    operatorName,
+  } as any);
+
+  // Unlock the costs
+  await db.update(importBatches).set({
+    costLocked: false,
+    costLockedAt: null,
+  } as any).where(eq(importBatches.id, batchId));
+
+  return { success: true, unlocked: true };
+}
+
+// Rule 4: Re-lock costs after modification
+export async function relockCosts(batchId: number, operatorName: string) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+
+  await db.update(importBatches).set({
+    costLocked: true,
+    costLockedAt: new Date(),
+  } as any).where(eq(importBatches.id, batchId));
+
+  return { success: true, locked: true };
+}
+
+// Manual stock allocation adjustment (Admin override)
+export async function manualAdjustAllocation(data: {
+  batchId: number;
+  fromOrderId: number;
+  toOrderId: number;
+  productId: number;
+  variantId?: number;
+  qty: number;
+  reason: string;
+  operatorName: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+
+  // Get original allocation
+  const originalAlloc = await db.select().from(stockAllocations).where(
+    eq(stockAllocations.batchId, data.batchId)
+  );
+
+  const fromAlloc = originalAlloc.find(
+    a => a.orderId === data.fromOrderId &&
+         a.productId === data.productId &&
+         (a.variantId || null) === (data.variantId || null)
+  );
+
+  if (!fromAlloc) throw new Error('找不到原分配记录');
+
+  // Reduce from original
+  const newFromQty = fromAlloc.allocatedQty - data.qty;
+  await db.update(stockAllocations).set({
+    allocatedQty: newFromQty,
+  }).where(eq(stockAllocations.id, fromAlloc.id));
+
+  // Create new manual allocation for target order
+  await db.insert(stockAllocations).values({
+    batchId: data.batchId,
+    orderId: data.toOrderId,
+    orderNumber: '', // Will be filled by caller
+    productId: data.productId,
+    variantId: data.variantId || null,
+    allocatedQty: data.qty,
+    allocationType: 'manual',
+    originalOrderId: data.fromOrderId,
+    originalOrderNumber: '',
+    adjustmentReason: data.reason,
+    operatorName: data.operatorName,
+  } as any);
+
+  return { success: true };
+}
+
+// Update addOrderPayment to set fullPaymentConfirmedAt when fully paid
+export async function checkAndSetFullPaymentConfirmed(orderId: number) {
+  const db = await getDb();
+  if (!db) return;
+
+  const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (order.length === 0) return;
+
+  const totalAmount = parseFloat(String(order[0].totalAmount));
+  const paidAmount = parseFloat(String(order[0].paidAmount || '0'));
+
+  // If fully paid and fullPaymentConfirmedAt not yet set
+  if (paidAmount >= totalAmount && !(order[0] as any).fullPaymentConfirmedAt) {
+    await db.update(orders).set({
+      fullPaymentConfirmedAt: new Date(),
+    } as any).where(eq(orders.id, orderId));
+  }
+}
+
+// Get stock allocation summary for a batch
+export async function getStockAllocationSummary(batchId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const allocations = await db.select().from(stockAllocations).where(
+    eq(stockAllocations.batchId, batchId)
+  );
+
+  // Group by product/variant
+  const summary: Record<string, {
+    productId: number;
+    variantId: number | null;
+    totalAllocated: number;
+    orders: Array<{
+      orderId: number;
+      orderNumber: string;
+      allocatedQty: number;
+      allocationType: string;
+    }>;
+  }> = {};
+
+  for (const alloc of allocations) {
+    const key = `${alloc.productId}-${alloc.variantId || 0}`;
+    if (!summary[key]) {
+      summary[key] = {
+        productId: alloc.productId,
+        variantId: alloc.variantId,
+        totalAllocated: 0,
+        orders: [],
+      };
+    }
+    summary[key].totalAllocated += alloc.allocatedQty;
+    summary[key].orders.push({
+      orderId: alloc.orderId,
+      orderNumber: alloc.orderNumber,
+      allocatedQty: alloc.allocatedQty,
+      allocationType: alloc.allocationType,
+    });
+  }
+
+  return Object.values(summary);
 }

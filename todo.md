@@ -2299,3 +2299,13 @@
 
 - [x] V2.0.97: 中国代购系统重构 - XTC状态流程修正、CN进货单、IB到货检查单、自动匹配XTC、库存联动、成本利润计算
 - [x] V2.0.97: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint
+
+- [x] V2.0.98: CN/IB 4项关键规则补充
+- [x] V2.0.98: 1) 缺货分配规则 - IB到货不足时按全额付款确认时间优先分货
+- [x] V2.0.98: 2) IB差异记录表(ib_differences) - 正式差异记录，含供应商补货/退款追踪
+- [x] V2.0.98: 3) 同一XTC多个CN追加进货 - 累计IB到货，自动重新检查XTC齐货
+- [x] V2.0.98: 4) 完成入库/成本锁定 - IB完成入库后锁定实际成本，解锁需填原因
+- [x] V2.0.98: 5) orders表新增fullPaymentConfirmedAt字段
+- [x] V2.0.98: 6) importBatches表新增costLocked字段
+- [x] V2.0.98: 7) stock_allocations表 - 记录库存分配和人工调整
+- [x] V2.0.98: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint

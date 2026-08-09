@@ -552,6 +552,8 @@ export const orders = mysqlTable("orders", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   paymentUploadedAt: timestamp("paymentUploadedAt"),
   paymentConfirmedAt: timestamp("paymentConfirmedAt"),
+  // V2.0.98: Full payment confirmed at (when paidAmount >= totalAmount and confirmed by admin)
+  fullPaymentConfirmedAt: timestamp("fullPaymentConfirmedAt"),
   shippedAt: timestamp("shippedAt"),
   completedAt: timestamp("completedAt"),
   autoCompleteAt: timestamp("autoCompleteAt"),
@@ -1753,6 +1755,12 @@ export const importBatches = mysqlTable("import_batches", {
   ]).default("draft").notNull(),
   // IB generated flag (auto-generated when CN confirmed)
   ibGenerated: boolean("ibGenerated").default(false).notNull(),
+  // V2.0.98: Cost locked (after IB completion/入库, cost is locked)
+  costLocked: boolean("costLocked").default(false).notNull(),
+  // V2.0.98: Cost locked at timestamp
+  costLockedAt: timestamp("costLockedAt"),
+  // V2.0.98: Parent batch ID (for multi-CN追加进货, links additional CN to original batch)
+  parentBatchId: int("parentBatchId"),
   // Notes
   notes: text("notes"),
   // Timestamps
@@ -1833,6 +1841,125 @@ export const importBatchItems = mysqlTable("import_batch_items", {
 
 export type ImportBatchItem = typeof importBatchItems.$inferSelect;
 export type InsertImportBatchItem = typeof importBatchItems.$inferInsert;
+
+// ============================================================================
+// V2.0.98: IB Differences (IB差异记录)
+// ============================================================================
+
+export const ibDifferences = mysqlTable("ib_differences", {
+  id: int("id").autoincrement().primaryKey(),
+  // IB batch ID
+  batchId: int("batchId").notNull(),
+  // CN batch number (for reference)
+  cnBatchNumber: varchar("cnBatchNumber", { length: 50 }),
+  // Supplier name
+  supplierName: varchar("supplierName", { length: 255 }),
+  // Product ID and snapshot
+  productId: int("productId").notNull(),
+  productName: varchar("productName", { length: 255 }).notNull(),
+  variantId: int("variantId"),
+  variantName: varchar("variantName", { length: 255 }),
+  // CN purchase quantity
+  cnPurchaseQty: int("cnPurchaseQty").default(0).notNull(),
+  // IB actual received quantity
+  ibReceivedQty: int("ibReceivedQty").default(0).notNull(),
+  // Difference quantity (cnPurchaseQty - ibReceivedQty, negative = over-supply)
+  differenceQty: int("differenceQty").default(0).notNull(),
+  // Difference type
+  differenceType: mysqlEnum("differenceType", [
+    "shortage",       // 少货
+    "over_supply",    // 多货
+    "damaged",        // 损坏
+    "dead",           // 死亡
+    "wrong_item",     // 错货
+    "not_arrived",     // 未到货
+    "other",          // 其他
+  ]).default("shortage").notNull(),
+  // Reason
+  reason: text("reason"),
+  // Photo/evidence URL
+  evidenceUrl: varchar("evidenceUrl", { length: 500 }),
+  // Needs supplier replenishment
+  needsReplenish: boolean("needsReplenish").default(false).notNull(),
+  // Needs refund
+  needsRefund: boolean("needsRefund").default(false).notNull(),
+  // Processing status
+  processStatus: mysqlEnum("processStatus", [
+    "pending",        // 待处理
+    "in_progress",    // 处理中
+    "resolved",       // 已解决
+    "no_action",      // 无需处理
+  ]).default("pending").notNull(),
+  // Notes
+  notes: text("notes"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type IbDifference = typeof ibDifferences.$inferSelect;
+export type InsertIbDifference = typeof ibDifferences.$inferInsert;
+
+// ============================================================================
+// V2.0.98: Stock Allocations (库存分配记录)
+// ============================================================================
+
+export const stockAllocations = mysqlTable("stock_allocations", {
+  id: int("id").autoincrement().primaryKey(),
+  // Batch ID (IB that triggered allocation)
+  batchId: int("batchId").notNull(),
+  // Order ID (XTC order receiving allocation)
+  orderId: int("orderId").notNull(),
+  // Order number (snapshot)
+  orderNumber: varchar("orderNumber", { length: 50 }).notNull(),
+  // Product ID and variant
+  productId: int("productId").notNull(),
+  variantId: int("variantId"),
+  // Allocated quantity
+  allocatedQty: int("allocatedQty").default(0).notNull(),
+  // Allocation type: auto or manual
+  allocationType: mysqlEnum("allocationType", ["auto", "manual"]).default("auto").notNull(),
+  // For manual adjustments: original allocation info
+  originalOrderId: int("originalOrderId"),
+  originalOrderNumber: varchar("originalOrderNumber", { length: 50 }),
+  // Adjustment reason (for manual adjustments)
+  adjustmentReason: text("adjustmentReason"),
+  // Operator
+  operatorName: varchar("operatorName", { length: 255 }),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type StockAllocation = typeof stockAllocations.$inferSelect;
+export type InsertStockAllocation = typeof stockAllocations.$inferInsert;
+
+// ============================================================================
+// V2.0.98: Cost Adjustment Log (成本调整记录)
+// ============================================================================
+
+export const costAdjustmentLogs = mysqlTable("cost_adjustment_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  // Batch ID
+  batchId: int("batchId").notNull(),
+  // Field changed
+  fieldName: varchar("fieldName", { length: 100 }).notNull(),
+  // Item ID (if specific item)
+  itemId: int("itemId"),
+  // Old value
+  oldValue: varchar("oldValue", { length: 255 }),
+  // New value
+  newValue: varchar("newValue", { length: 255 }),
+  // Reason
+  reason: text("reason").notNull(),
+  // Operator
+  operatorName: varchar("operatorName", { length: 255 }),
+  // Timestamp
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CostAdjustmentLog = typeof costAdjustmentLogs.$inferSelect;
+export type InsertCostAdjustmentLog = typeof costAdjustmentLogs.$inferInsert;
 
 // ============================================================================
 // V3.1: Product Bundles (组合包管理)
@@ -2704,3 +2831,4 @@ export const customerCreditLedger = mysqlTable("customer_credit_ledger", {
 
 export type CustomerCreditLedger = typeof customerCreditLedger.$inferSelect;
 export type InsertCustomerCreditLedger = typeof customerCreditLedger.$inferInsert;
+

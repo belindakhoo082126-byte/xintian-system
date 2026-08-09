@@ -4869,6 +4869,101 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getCnIbCostProfit(input.batchId);
       }),
+
+    // V2.0.98: Priority stock allocation
+    allocateStock: adminProcedure
+      .input(z.object({ batchId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.allocateStockByPriority(input.batchId);
+      }),
+
+    // V2.0.98: Create IB difference record
+    createIbDifference: adminProcedure
+      .input(z.object({
+        batchId: z.number(),
+        cnBatchNumber: z.string().optional(),
+        supplierName: z.string().optional(),
+        productId: z.number(),
+        productName: z.string(),
+        variantId: z.number().optional(),
+        variantName: z.string().optional(),
+        cnPurchaseQty: z.number(),
+        ibReceivedQty: z.number(),
+        differenceType: z.string(),
+        reason: z.string().optional(),
+        evidenceUrl: z.string().optional(),
+        needsReplenish: z.boolean().optional(),
+        needsRefund: z.boolean().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createIbDifference(input);
+      }),
+
+    // V2.0.98: Get IB differences
+    getIbDifferences: adminProcedure
+      .input(z.object({ batchId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getIbDifferences(input.batchId);
+      }),
+
+    // V2.0.98: Link CN to parent batch (multiple CNs for same XTC)
+    linkCnToParent: adminProcedure
+      .input(z.object({ batchId: z.number(), parentBatchId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.linkCnToParentBatch(input.batchId, input.parentBatchId);
+      }),
+
+    // V2.0.98: Get linked CNs
+    getLinkedCns: adminProcedure
+      .input(z.object({ parentBatchId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getLinkedCns(input.parentBatchId);
+      }),
+
+    // V2.0.98: Complete stock-in and lock costs
+    completeStockIn: adminProcedure
+      .input(z.object({ batchId: z.number(), operatorName: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        return await db.completeStockIn(input.batchId, input.operatorName);
+      }),
+
+    // V2.0.98: Unlock costs (requires reason)
+    unlockCosts: adminProcedure
+      .input(z.object({ batchId: z.number(), reason: z.string(), operatorName: z.string() }))
+      .mutation(async ({ input }) => {
+        return await db.unlockCosts(input.batchId, input.reason, input.operatorName);
+      }),
+
+    // V2.0.98: Re-lock costs
+    relockCosts: adminProcedure
+      .input(z.object({ batchId: z.number(), operatorName: z.string() }))
+      .mutation(async ({ input }) => {
+        return await db.relockCosts(input.batchId, input.operatorName);
+      }),
+
+    // V2.0.98: Manual stock allocation adjustment
+    manualAdjustAllocation: adminProcedure
+      .input(z.object({
+        batchId: z.number(),
+        fromOrderId: z.number(),
+        toOrderId: z.number(),
+        productId: z.number(),
+        variantId: z.number().optional(),
+        qty: z.number(),
+        reason: z.string(),
+        operatorName: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.manualAdjustAllocation(input);
+      }),
+
+    // V2.0.98: Get stock allocation summary
+    getStockAllocation: adminProcedure
+      .input(z.object({ batchId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getStockAllocationSummary(input.batchId);
+      }),
   }),
 
   // ===========================================================================
