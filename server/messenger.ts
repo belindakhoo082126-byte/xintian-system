@@ -286,11 +286,33 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
   // as Facebook Live comments.
   if (text) {
     try {
-      const { executeAutoOrderCapture } = require("./db");
+      const { executeAutoOrderCapture, getLiveRooms } = require("./db");
+      // V2.1.02: Look up active live rooms to determine if this is an import preorder
+      let liveRoomId: number | undefined;
+      let liveType: string | undefined;
+      try {
+        const allRooms = await getLiveRooms({});
+        const now = new Date();
+        const activeRoom = (allRooms || []).find((r: any) => {
+          if (r.status === 'closed' || r.status === 'ended') return false;
+          if (r.liveType === 'import_preorder' && r.preorderEndDate) {
+            return new Date(r.preorderEndDate) > now;
+          }
+          return r.status === 'live' || r.status === 'preparing';
+        });
+        if (activeRoom) {
+          liveRoomId = activeRoom.id;
+          liveType = activeRoom.liveType;
+        }
+      } catch (liveErr: any) {
+        console.log("[Messenger] Live room lookup failed:", liveErr?.message);
+      }
       const orderResult = await executeAutoOrderCapture({
         customerName: storeResult?.customerName || psid,
         customerPsid: psid,
         message: text,
+        liveRoomId,
+        liveType,
         sourceType: "messenger",
         sourceName: "Messenger 私聊",
       });
@@ -958,11 +980,30 @@ async function processComment(params: {
       }
 
       if (matched.length > 0) {
+        // V2.1.02: Look up live room to get liveType for order routing
+        let liveRoomId: number | undefined;
+        let liveType: string | undefined;
+        try {
+          const { getLiveRooms } = require("./db");
+          const allRooms = await getLiveRooms({});
+          const matchingRoom = (allRooms || []).find((r: any) =>
+            r.facebookVideoId === postId ||
+            r.facebookLiveUrl?.includes(postId)
+          );
+          if (matchingRoom) {
+            liveRoomId = matchingRoom.id;
+            liveType = matchingRoom.liveType;
+          }
+        } catch (liveErr: any) {
+          console.log("[Facebook] Live room lookup failed:", liveErr?.message);
+        }
         const orderResult = await createOrderFromLiveCapture({
           commenterName,
           commentMessage,
           commentId,
           postId,
+          liveRoomId,
+          liveType,
           matchedProducts: matched.map((m: any) => ({
             keyword: m.keyword,
             quantity: m.quantity,

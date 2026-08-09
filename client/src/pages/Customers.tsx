@@ -35,6 +35,20 @@ export default function Customers() {
     cancelled: translate("已取消", "Cancelled"),
   }), [translate]);
 
+  // V2.1.02: XTC import order status labels
+  const IMPORT_STATUS_LABELS = useMemo<Record<string, string>>(() => ({
+    pending: translate("挂单", "Pending"),
+    receipt_uploaded: translate("待审核付款凭证", "Pending Verification"),
+    partial_payment: translate("部分汇款", "Partial Payment"),
+    waiting_stock: translate("待备货", "Waiting Stock"),
+    ready_to_ship: translate("待发货", "Ready to Ship"),
+    scheduled_ship: translate("预约发货", "Scheduled Ship"),
+    partial_shipped: translate("部分发货", "Partial Shipped"),
+    shipped: translate("已发货", "Shipped"),
+    completed: translate("已完成", "Completed"),
+    cancelled: translate("取消", "Cancelled"),
+  }), [translate]);
+
   const [search, setSearch] = useState("");
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailCustomer, setDetailCustomer] = useState<any>(null);
@@ -551,29 +565,63 @@ export default function Customers() {
                   </div>
                 )}
 
-                {/* Order history */}
+                {/* Order history - V2.1.02: Separate local and XTC orders */}
                 <div>
                   <p className="text-sm font-medium mb-2">{translate("历史订单", "Order History")}</p>
-                  {customerOrders && customerOrders.length > 0 ? (
-                    <div className="space-y-2">
-                      {customerOrders.map((o: any) => (
-                        <div key={o.id} className="flex items-center justify-between p-3 border rounded-lg text-sm">
+                  {customerOrders && customerOrders.length > 0 ? (() => {
+                    const localOrders = customerOrders.filter((o: any) => o.orderCategory !== 'import');
+                    const xtcOrders = customerOrders.filter((o: any) => o.orderCategory === 'import');
+                    return (
+                      <div className="space-y-4">
+                        {localOrders.length > 0 && (
                           <div>
-                            <p className="font-medium">{o.orderNumber}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(o.createdAt).toLocaleDateString()} · {PHYSICAL_STATUS_LABELS[o.physicalStatus] || o.physicalStatus}
-                            </p>
+                            <p className="text-xs font-medium text-muted-foreground mb-1.5">{translate("本地订单", "Local Orders")} ({localOrders.length})</p>
+                            <div className="space-y-2">
+                              {localOrders.map((o: any) => (
+                                <div key={o.id} className="flex items-center justify-between p-3 border rounded-lg text-sm">
+                                  <div>
+                                    <p className="font-medium">{o.orderNumber}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {new Date(o.createdAt).toLocaleDateString()} · {PHYSICAL_STATUS_LABELS[o.physicalStatus] || o.physicalStatus}
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="font-medium">RM {o.totalAmount}</p>
+                                    {o.trackingNumber && (
+                                      <p className="text-xs text-muted-foreground">Tracking: {o.trackingNumber}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="font-medium">RM {o.totalAmount}</p>
-                            {o.trackingNumber && (
-                              <p className="text-xs text-muted-foreground">Tracking: {o.trackingNumber}</p>
-                            )}
+                        )}
+                        {xtcOrders.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground mb-1.5">{translate("中国代购订单", "China Import Orders")} ({xtcOrders.length})</p>
+                            <div className="space-y-2">
+                              {xtcOrders.map((o: any) => (
+                                <div key={o.id} className="flex items-center justify-between p-3 border rounded-lg text-sm">
+                                  <div>
+                                    <p className="font-medium">{o.orderNumber}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {new Date(o.createdAt).toLocaleDateString()} · {IMPORT_STATUS_LABELS[o.importStatus] || o.importStatus || o.physicalStatus}
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="font-medium">RM {o.totalAmount}</p>
+                                    {o.trackingNumber && (
+                                      <p className="text-xs text-muted-foreground">Tracking: {o.trackingNumber}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
+                        )}
+                      </div>
+                    );
+                  })() : (
                     <p className="text-sm text-muted-foreground">{translate("暂无订单记录", "No order records")}</p>
                   )}
                 </div>

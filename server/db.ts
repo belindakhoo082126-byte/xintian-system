@@ -320,6 +320,8 @@ export async function getCustomerOrders(customerId: number) {
     id: orders.id,
     orderNumber: orders.orderNumber,
     orderType: orders.orderType,
+    orderCategory: orders.orderCategory,
+    importStatus: orders.importStatus,
     totalAmount: orders.totalAmount,
     paidAmount: orders.paidAmount,
     physicalStatus: orders.physicalStatus,
@@ -3799,8 +3801,9 @@ export async function getMergeableHoldOrderById(customerId: number, orderId: num
   const db = await getDb();
   if (!db) return null;
 
+  // V2.1.02: Only merge orders of the same category (local+local or import+import)
   const rows = unwrapMySqlRows<any>(await db.execute(sql`
-    SELECT h.*, o.orderNumber, o.customerId, o.totalAmount, o.paidAmount
+    SELECT h.*, o.orderNumber, o.customerId, o.totalAmount, o.paidAmount, o.orderCategory
     FROM hold_order_infos h
     INNER JOIN orders o ON h.orderId = o.id
     WHERE h.orderId = ${orderId}
@@ -5614,6 +5617,8 @@ export async function createOrderFromLiveCapture(data: {
   commentId?: string;
   postId?: string;
   liveVideoId?: string;
+  liveRoomId?: number;
+  liveType?: string;
   matchedProducts: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string }>;
   sourceName?: string;
   campaignId?: number;
@@ -5658,11 +5663,14 @@ export async function createOrderFromLiveCapture(data: {
   const totalWeight = data.matchedProducts.reduce((sum, p) => sum + 0.5 * p.quantity, 0);
   
   // Check for existing open order from same customer in same live room (for order merging)
-  // Same customer + same live room + order not yet closed = merge into existing order
+  // Same customer + same live room + same orderCategory + order not yet closed = merge into existing order
+  // V2.1.02: Only merge orders of the same category (local+local or import+import), never cross-merge
+  const isImportOrder = data.liveType === 'import_preorder';
+  const orderCategory = isImportOrder ? 'import' : 'local';
   let existingOrderId: number | null = null;
-  if (data.liveVideoId) {
+  if (data.liveVideoId || data.liveRoomId) {
     const existingOrders = await db.select().from(orders)
-      .where(sql`customerId = ${customer.id} AND orderSource = 'facebook_live' AND physicalStatus NOT IN ('closed', 'cancelled', 'completed')`)
+      .where(sql`customerId = ${customer.id} AND orderSource = 'facebook_live' AND orderCategory = ${orderCategory} AND physicalStatus NOT IN ('closed', 'cancelled', 'completed')`)
       .orderBy(desc(orders.createdAt))
       .limit(1);
     if (existingOrders.length > 0) {
@@ -5729,7 +5737,9 @@ export async function createOrderFromLiveCapture(data: {
   const autoCreditUsed = Math.min(customerCreditBalance, Math.max(0, subtotal));
   const finalTotal = subtotal - autoCreditUsed;
 
-  const orderNumber = await generateOrderNumber("XT");
+  // V2.1.02: Use XTC prefix for import_preorder live rooms, XT for normal live rooms
+  const prefix = isImportOrder ? "XTC" : "XT";
+  const orderNumber = await generateOrderNumber(prefix);
   const secureToken = generateSecureToken();
   const checkoutLink = `/order/${orderNumber}/${secureToken}`;
   const orderResult = await db.insert(orders).values({
@@ -5746,7 +5756,10 @@ export async function createOrderFromLiveCapture(data: {
     totalAmount: finalTotal.toFixed(2),
     totalWeight: totalWeight.toFixed(2),
     physicalStatus: "pending",
+    importStatus: isImportOrder ? "pending" : null,
     orderSource: "facebook_live",
+    orderCategory: orderCategory as any,
+    liveRoomId: data.liveRoomId || null,
     sourceName: data.sourceName || "Facebook Live",
     originalCustomerComment: data.commentMessage,
     commentDate: new Date(),
@@ -11772,6 +11785,8 @@ export async function executeAutoOrderCapture(params: {
   commentId?: string;
   postId?: string;
   liveVideoId?: string;
+  liveRoomId?: number;
+  liveType?: string;
   sourceType?: "facebook_live" | "facebook_post" | "facebook_reel" | "messenger" | "campaign_button";
   sourceName?: string;
   campaignId?: number;
@@ -11841,6 +11856,8 @@ export async function executeAutoOrderCapture(params: {
     commentId: params.commentId,
     postId: params.postId,
     liveVideoId: params.liveVideoId,
+    liveRoomId: params.liveRoomId,
+    liveType: params.liveType,
     matchedProducts,
     sourceName: params.sourceName || "Facebook",
     campaignId: params.campaignId,

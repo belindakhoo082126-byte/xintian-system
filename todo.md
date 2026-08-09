@@ -2333,3 +2333,15 @@
 - [x] V2.1.01: 1) 折扣金额和额外收费输入框无法清零（e.target.value || "0"导致无法删除）
 - [x] V2.1.01: 2) 折扣原因和收费说明在OrderDetail订单详情页不显示
 - [x] V2.1.01: 3) 确保import订单和local订单的折扣/额外收费行为一致
+
+## V2.1.02: 中国代购订单自动来源及本地订单分流逻辑
+
+- [x] 直播捉单根据直播类型自动分流（liveType=import_preorder→XTC，normal→XT）
+- [x] createOrderFromLiveCapture合并逻辑新增orderCategory过滤（禁止跨类型合并）
+- [x] executeAutoOrderCapture新增liveRoomId/liveType参数传递
+- [x] Messenger私聊自动下单查找活跃直播房获取liveType
+- [x] Facebook评论捉单查找匹配直播房获取liveRoomId/liveType
+- [x] getMergeableHoldOrderById新增orderCategory字段（商城加单合并也限制同类型）
+- [x] getCustomerOrders新增orderCategory和importStatus返回字段
+- [x] Customers.tsx客户详情页分开显示本地订单和中国代购订单
+- [x] TypeScript编译零错误，270项测试全部通过
