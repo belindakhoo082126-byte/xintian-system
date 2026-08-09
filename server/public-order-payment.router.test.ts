@@ -6,6 +6,7 @@ vi.mock("./db", () => ({
   getPaymentMethodById: vi.fn(),
   transitionOrderStatus: vi.fn(),
   updateOrderStatus: vi.fn(),
+  addOrderPayment: vi.fn(),
 }));
 
 vi.mock("./messenger", () => ({
@@ -42,6 +43,7 @@ describe("publicOrder.submitPaymentReceipt", () => {
     vi.mocked(dbMock.getOrderBySecureToken).mockResolvedValue({
       id: 501,
       physicalStatus: "pending",
+      totalAmount: "176.00",
     } as any);
     vi.mocked(dbMock.getPaymentMethodById).mockResolvedValue({
       id: 7,
@@ -50,6 +52,7 @@ describe("publicOrder.submitPaymentReceipt", () => {
     } as any);
     vi.mocked(dbMock.transitionOrderStatus).mockResolvedValue({} as any);
     vi.mocked(dbMock.updateOrderStatus).mockResolvedValue({} as any);
+    vi.mocked(dbMock.addOrderPayment).mockResolvedValue({} as any);
   });
 
   it("拒绝系统存储以外的付款凭证链接", async () => {
@@ -69,6 +72,14 @@ describe("publicOrder.submitPaymentReceipt", () => {
     const caller = appRouter.createCaller(createPublicContext());
 
     await expect(caller.publicOrder.submitPaymentReceipt(validInput)).resolves.toEqual({ success: true });
+    // V2.1.11: Should create a payment record with customer_upload source
+    expect(dbMock.addOrderPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 501,
+        paymentSource: "customer_upload",
+        receiptUrl: validInput.receiptUrl,
+      })
+    );
     expect(dbMock.transitionOrderStatus).toHaveBeenCalledWith(
       501,
       "receipt_uploaded",
@@ -82,10 +93,11 @@ describe("publicOrder.submitPaymentReceipt", () => {
     });
   });
 
-  it("拒绝已提交付款凭证的订单再次上传", async () => {
+  it("拒绝已发货订单再次上传付款凭证", async () => {
     vi.mocked(dbMock.getOrderBySecureToken).mockResolvedValue({
       id: 501,
-      physicalStatus: "receipt_uploaded",
+      physicalStatus: "shipped",
+      totalAmount: "176.00",
     } as any);
     const caller = appRouter.createCaller(createPublicContext());
 

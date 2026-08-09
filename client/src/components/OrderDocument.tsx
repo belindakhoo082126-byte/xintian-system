@@ -392,8 +392,10 @@ export function OrderDocument({
                   <td style={{ ...tdRight, fontWeight: 500 }}>RM {parseFloat(p.amount).toFixed(2)}</td>
                   <td style={tdStyle}>{p.paymentMethodName || p.paymentMethod || "-"}</td>
                   <td style={tdStyle}>
-                    {p.verified ? (
-                      <span style={{ color: C.greenPaid, fontWeight: 500 }}>{translate("已确认", "Verified")}</span>
+                    {p.reviewStatus === 'approved' ? (
+                      <span style={{ color: C.greenPaid, fontWeight: 500 }}>{translate("已确认", "Approved")}</span>
+                    ) : p.reviewStatus === 'rejected' ? (
+                      <span style={{ color: C.red, fontWeight: 500 }}>{translate("审核失败", "Rejected")}</span>
                     ) : (
                       <span style={{ color: C.orange }}>{translate("待审核", "Pending")}</span>
                     )}

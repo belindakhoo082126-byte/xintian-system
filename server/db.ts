@@ -1365,9 +1365,13 @@ export async function addOrderPayment(data: {
   paymentDate?: Date;
   operatorName?: string;
   notes?: string;
+  paymentSource?: 'customer_upload' | 'admin_manual';
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  const paymentSource = data.paymentSource || 'admin_manual';
+  const reviewStatus = paymentSource === 'admin_manual' ? 'approved' : 'pending';
 
   await db.insert(orderPayments).values({
     orderId: data.orderId,
@@ -1377,11 +1381,21 @@ export async function addOrderPayment(data: {
     paymentDate: data.paymentDate || new Date(),
     operatorName: data.operatorName || null,
     notes: data.notes || null,
+    paymentSource,
+    reviewStatus,
   });
 
-  // Update order paidAmount
+  // Log activity
+  if (paymentSource === 'customer_upload') {
+    await logOrderOperation(data.orderId, 'payment', `客户上传付款凭证 RM${data.amount}`, null, 'customer');
+  } else {
+    await logOrderOperation(data.orderId, 'payment', `Admin新增付款 RM${data.amount}，状态：已确认`, null, data.operatorName);
+  }
+
+  // Update order paidAmount — only count approved payments
   const allPayments = await db.select().from(orderPayments).where(eq(orderPayments.orderId, data.orderId));
-  const totalPaid = allPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
+  const approvedPayments = allPayments.filter((p: any) => p.reviewStatus === 'approved');
+  const totalPaid = approvedPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
   const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
   if (order.length > 0) {
     const totalAmount = parseFloat(String(order[0].totalAmount));
@@ -1446,7 +1460,119 @@ export async function addOrderPayment(data: {
   // Set fullPaymentConfirmedAt if fully paid
   await checkAndSetFullPaymentConfirmed(data.orderId);
 
-  await logOrderOperation(data.orderId, "payment", `Payment recorded: RM${data.amount}`, null, data.operatorName);
+  broadcastChanges(["orders", "dashboard"]);
+}
+
+// ============================================================================
+// V2.1.11: Review Payment (审核通过/审核失败)
+// ============================================================================
+
+export async function reviewPayment(data: {
+  paymentId: number;
+  action: 'approve' | 'reject';
+  rejectReason?: string;
+  reviewerName: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Get the payment record
+  const payment = await db.select().from(orderPayments).where(eq(orderPayments.id, data.paymentId)).limit(1);
+  if (payment.length === 0) throw new Error("Payment record not found");
+  if (payment[0].reviewStatus !== 'pending') throw new Error("Payment already reviewed");
+
+  const reviewStatus = data.action === 'approve' ? 'approved' : 'rejected';
+  const reviewedAt = Date.now();
+
+  await db.update(orderPayments).set({
+    reviewStatus,
+    reviewedBy: data.reviewerName,
+    reviewedAt,
+    rejectReason: data.rejectReason || null,
+  }).where(eq(orderPayments.id, data.paymentId));
+
+  const orderId = payment[0].orderId;
+  const amount = payment[0].amount;
+
+  // Log activity
+  if (data.action === 'approve') {
+    await logOrderOperation(orderId, 'payment', `付款审核通过 RM${amount}`, null, data.reviewerName);
+  } else {
+    await logOrderOperation(orderId, 'payment', `付款审核失败 RM${amount}${data.rejectReason ? '，原因：' + data.rejectReason : ''}`, null, data.reviewerName);
+  }
+
+  // Recalculate paidAmount — only count approved payments
+  const allPayments = await db.select().from(orderPayments).where(eq(orderPayments.orderId, orderId));
+  const approvedPayments = allPayments.filter((p: any) => p.reviewStatus === 'approved');
+  const totalPaid = approvedPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
+
+  const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (order.length > 0) {
+    const totalAmount = parseFloat(String(order[0].totalAmount));
+    let newStatus = order[0].physicalStatus;
+    let specialOrderType: string | null = null;
+    let isSpecialOrder = order[0].isSpecialOrder;
+    let specialOrderSource = (order[0] as any).specialOrderSource || "manual";
+    let specialOrderStatus = (order[0] as any).specialOrderStatus || "pending";
+
+    if (totalPaid >= totalAmount) {
+      newStatus = "receipt_uploaded";
+      if (totalPaid > totalAmount + 0.01) {
+        specialOrderType = "over_payment";
+        isSpecialOrder = true;
+        specialOrderSource = "system";
+        specialOrderStatus = "pending";
+      } else if (isSpecialOrder && specialOrderType === "partial_payment") {
+        isSpecialOrder = false;
+        specialOrderType = null;
+        specialOrderStatus = "resolved";
+      }
+    } else if (totalPaid > 0) {
+      newStatus = "partial_payment";
+      specialOrderType = "partial_payment";
+      isSpecialOrder = true;
+      specialOrderSource = "system";
+      specialOrderStatus = "pending";
+    } else {
+      // No approved payments — reset to pending
+      newStatus = "pending";
+      if (isSpecialOrder && specialOrderType === "partial_payment") {
+        isSpecialOrder = false;
+        specialOrderType = null;
+        specialOrderStatus = "resolved";
+      }
+    }
+
+    // For import orders, also update importStatus
+    let importStatusUpdate: string | null = null;
+    if (order[0].orderCategory === 'import') {
+      if (totalPaid >= totalAmount) {
+        importStatusUpdate = 'waiting_stock';
+      } else if (totalPaid > 0) {
+        importStatusUpdate = 'partial_payment';
+      } else {
+        importStatusUpdate = 'pending';
+      }
+    }
+
+    const updateSet: any = {
+      paidAmount: totalPaid.toFixed(2),
+      physicalStatus: newStatus as any,
+      isSpecialOrder,
+      specialOrderType: specialOrderType as any,
+      specialOrderSource: specialOrderSource as any,
+      specialOrderStatus: specialOrderStatus as any,
+      specialOrderUpdatedAt: new Date(),
+    };
+    if (importStatusUpdate) {
+      updateSet.importStatus = importStatusUpdate;
+    }
+    await db.update(orders).set(updateSet).where(eq(orders.id, orderId));
+
+    // Set fullPaymentConfirmedAt if fully paid
+    await checkAndSetFullPaymentConfirmed(orderId);
+  }
+
   broadcastChanges(["orders", "dashboard"]);
 }
 

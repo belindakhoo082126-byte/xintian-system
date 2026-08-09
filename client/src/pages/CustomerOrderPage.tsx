@@ -494,6 +494,18 @@ export default function CustomerOrderPage(props: any) {
                       <div>
                         <span className="font-medium">{p.paymentMethodName || p.paymentMethod || "-"}</span>
                         <span className="text-muted-foreground ml-2">{new Date(p.paymentDate || p.createdAt).toLocaleString("zh-CN")}</span>
+                        {p.reviewStatus === 'pending' && (
+                          <Badge className="ml-2 bg-orange-100 text-orange-700">待审核</Badge>
+                        )}
+                        {p.reviewStatus === 'approved' && (
+                          <Badge className="ml-2 bg-green-100 text-green-700">已确认</Badge>
+                        )}
+                        {p.reviewStatus === 'rejected' && (
+                          <Badge className="ml-2 bg-red-100 text-red-700">审核失败</Badge>
+                        )}
+                        {p.reviewStatus === 'rejected' && p.rejectReason && (
+                          <span className="text-red-500 text-xs ml-2">{p.rejectReason}</span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-medium">RM {parseFloat(p.amount).toFixed(2)}</span>

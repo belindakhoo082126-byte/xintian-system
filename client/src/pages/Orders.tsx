@@ -153,6 +153,9 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const [cancelReason, setCancelReason] = useState("");
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectPaymentId, setRejectPaymentId] = useState<number | null>(null);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const receiptFileRef = useRef<HTMLInputElement>(null);
   const [remarkForm, setRemarkForm] = useState({ remarkCategory: "", content: "", desiredDeliveryDate: "", desiredDeliveryReason: "", repottingData: "" });
@@ -307,6 +310,17 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       setPaymentForm({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
     },
     onError: (e) => toast.error(translate("添加付款失败: {message}", "Payment failed: {message}", { message: e.message })),
+  });
+
+  const reviewPaymentMutation = trpc.orders.reviewPayment.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      if (detailOrderId) refetchDetail();
+      toast.success(translate("付款审核已更新", "Payment review updated"));
+      setRejectDialogOpen(false);
+      setRejectReason("");
+    },
+    onError: (e) => toast.error(translate("审核失败: {message}", "Review failed: {message}", { message: e.message })),
   });
 
   const cancelOrderMutation = trpc.orders.cancelOrder.useMutation({
@@ -552,7 +566,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     cancelOrderMutation.mutate({ id: detailOrderId, reason: cancelReason });
   }
 
-  const totalPaid = orderDetail?.payments?.reduce((sum: number, p: any) => sum + parseFloat(String(p.amount)), 0) || 0;
+  const totalPaid = orderDetail?.payments?.filter((p: any) => p.reviewStatus === 'approved').reduce((sum: number, p: any) => sum + parseFloat(String(p.amount)), 0) || 0;
   const totalAmount = orderDetail ? parseFloat(String(orderDetail.totalAmount)) : 0;
   const remainingAmount = totalAmount - totalPaid;
 
@@ -1152,8 +1166,10 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         <TableHead>{translate("日期", "Date")}</TableHead>
                         <TableHead>{translate("金额", "Amount")}</TableHead>
                         <TableHead>{translate("付款方式", "Method")}</TableHead>
+                        <TableHead>{translate("审核状态", "Status")}</TableHead>
                         <TableHead>{translate("备注", "Notes")}</TableHead>
                         <TableHead>{translate("操作人", "Recorded By")}</TableHead>
+                        <TableHead>{translate("操作", "Action")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1161,9 +1177,73 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         <TableRow key={p.id}>
                           <TableCell className="text-sm">{new Date(p.createdAt).toLocaleString()}</TableCell>
                           <TableCell className="font-semibold text-green-600">RM {p.amount}</TableCell>
-                          <TableCell>{p.paymentMethodName || "-"}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{p.notes || "-"}</TableCell>
-                          <TableCell className="text-sm">{p.recordedBy || "-"}</TableCell>
+                          <TableCell>{p.paymentMethodName || p.paymentMethod || "-"}</TableCell>
+                          <TableCell>
+                            {p.reviewStatus === 'approved' && (
+                              <Badge className="bg-green-100 text-green-700">{translate("已确认", "Approved")}</Badge>
+                            )}
+                            {p.reviewStatus === 'pending' && (
+                              <Badge className="bg-orange-100 text-orange-700">{translate("待审核", "Pending")}</Badge>
+                            )}
+                            {p.reviewStatus === 'rejected' && (
+                              <Badge className="bg-red-100 text-red-700">{translate("审核失败", "Rejected")}</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {p.notes || "-"}
+                            {p.rejectReason && (
+                              <div className="text-red-500 text-xs mt-1">{p.rejectReason}</div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {p.operatorName || (p.paymentSource === 'customer_upload' ? translate("客户", "Customer") : "-")}
+                            {p.reviewedBy && (
+                              <div className="text-xs text-muted-foreground">{translate("审核人", "Reviewer")}: {p.reviewedBy}</div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {p.reviewStatus === 'pending' && (
+                              <div className="flex gap-1">
+                                {p.receiptUrl && (
+                                  <a href={p.receiptUrl} target="_blank" rel="noreferrer">
+                                    <Button size="sm" variant="outline" className="h-7 px-2">
+                                      <Eye className="h-3 w-3 mr-1" />{translate("查看", "View")}
+                                    </Button>
+                                  </a>
+                                )}
+                                <Button
+                                  size="sm"
+                                  className="h-7 px-2 bg-green-600 hover:bg-green-700"
+                                  disabled={reviewPaymentMutation.isPending}
+                                  onClick={() => {
+                                    reviewPaymentMutation.mutate({ paymentId: p.id, action: 'approve' });
+                                  }}
+                                >
+                                  <CheckCircle className="h-3 w-3 mr-1" />{translate("通过", "Approve")}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="h-7 px-2"
+                                  disabled={reviewPaymentMutation.isPending}
+                                  onClick={() => {
+                                    setRejectPaymentId(p.id);
+                                    setRejectReason("");
+                                    setRejectDialogOpen(true);
+                                  }}
+                                >
+                                  <X className="h-3 w-3 mr-1" />{translate("失败", "Reject")}
+                                </Button>
+                              </div>
+                            )}
+                            {p.reviewStatus === 'approved' && p.receiptUrl && (
+                              <a href={p.receiptUrl} target="_blank" rel="noreferrer">
+                                <Button size="sm" variant="ghost" className="h-7 px-2">
+                                  <Eye className="h-3 w-3" />
+                                </Button>
+                              </a>
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

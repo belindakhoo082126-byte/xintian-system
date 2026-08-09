@@ -1289,6 +1289,24 @@ export const appRouter = router({
           receiptUrl: input.receiptUrl,
           operatorName: ctx.user?.name || "admin",
           notes: input.notes,
+          paymentSource: 'admin_manual',
+        });
+        return { success: true };
+      }),
+
+    // V2.1.11: Review payment (approve/reject)
+    reviewPayment: adminProcedure
+      .input(z.object({
+        paymentId: z.number(),
+        action: z.enum(['approve', 'reject']),
+        rejectReason: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.reviewPayment({
+          paymentId: input.paymentId,
+          action: input.action,
+          rejectReason: input.rejectReason,
+          reviewerName: ctx.user?.name || "admin",
         });
         return { success: true };
       }),
@@ -6273,7 +6291,7 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         if (!order) {
           throw new TRPCError({ code: 'NOT_FOUND', message: '订单不存在或链接无效' });
         }
-        if (order.physicalStatus !== 'pending') {
+        if (order.physicalStatus !== 'pending' && order.physicalStatus !== 'partial_payment' && order.physicalStatus !== 'receipt_uploaded') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: '当前订单状态不允许上传付款凭证' });
         }
 
@@ -6282,6 +6300,14 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
           throw new TRPCError({ code: 'BAD_REQUEST', message: '请选择有效的付款方式' });
         }
 
+        // V2.1.11: Create payment record with paymentSource=customer_upload, reviewStatus=pending
+        await db.addOrderPayment({
+          orderId: order.id,
+          amount: String(order.totalAmount),
+          paymentMethod: paymentMethod.name,
+          receiptUrl: input.receiptUrl,
+          paymentSource: 'customer_upload',
+        });
         await db.transitionOrderStatus(order.id, 'receipt_uploaded', '客户结单页', '客户已上传付款凭证');
         await db.updateOrderStatus(order.id, {
           receiptUrl: input.receiptUrl,

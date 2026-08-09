@@ -2409,3 +2409,18 @@
 - [x] Orders.tsx备注默认type从"internal"改为"customer"
 - [x] OrderDocument customer variant只过滤internal备注，不过滤live备注（直播备注客户也应看到）
 - [x] TypeScript编译零错误，270项测试全部通过
+
+## V2.1.11 - 付款记录审核逻辑修复
+- [x] 调查现有order_payments表schema和addOrderPayment函数
+- [x] 数据库Schema更新：order_payments新增paymentSource/reviewStatus/reviewedBy/reviewedAt/rejectReason字段
+- [x] 后端addOrderPayment区分customer_upload(默认pending)和admin_manual(默认approved)
+- [x] 后端新增reviewPayment函数：审核通过/审核失败API
+- [x] 已付款金额计算：只统计reviewStatus=approved的付款
+- [x] 前端Orders.tsx：付款记录显示审核状态+审核通过/失败按钮+拒绝原因对话框
+- [x] 前端CustomerOrderPage：付款记录显示审核状态(待审核/已确认/审核失败)
+- [x] OrderDocument：Preview/Export/Print显示审核状态(已确认/待审核/审核失败)不显示截图
+- [x] submitPaymentReceipt：客户上传凭证创建payment记录(paymentSource=customer_upload, reviewStatus=pending)
+- [x] submitPaymentReceipt：允许partial_payment和receipt_uploaded状态再次上传
+- [x] Activity Log同步记录付款审核操作(审核通过/审核失败/Admin新增付款)
+- [x] TypeScript编译零错误，270项测试全部通过
+- [ ] 保存V2.1.11 checkpoint

@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, json, uniqueIndex, date } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, json, uniqueIndex, date, bigint } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -2086,6 +2086,12 @@ export const orderPayments = mysqlTable("order_payments", {
   operatorName: varchar("operatorName", { length: 255 }),
   // Notes
   notes: text("notes"),
+  // V2.1.11: Payment source and review status
+  paymentSource: varchar("paymentSource", { length: 50 }).notNull().default("admin_manual"),
+  reviewStatus: varchar("reviewStatus", { length: 20 }).notNull().default("approved"),
+  reviewedBy: varchar("reviewedBy", { length: 255 }),
+  reviewedAt: bigint("reviewedAt", { mode: "number" }),
+  rejectReason: text("rejectReason"),
   // Timestamp
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
