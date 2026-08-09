@@ -14,6 +14,7 @@ import { Plus, Pencil, Trash2, Plane, Package, Calculator, CheckCircle2, AlertTr
 import { toast } from "sonner";
 
 const statusLabels: Record<string, string> = {
+  draft: "草稿",
   in_progress: "进行中",
   closed: "已截止",
   purchased: "已采购",
@@ -25,6 +26,7 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
+  draft: "bg-gray-100 text-gray-500",
   in_progress: "bg-blue-100 text-blue-700",
   closed: "bg-orange-100 text-orange-700",
   purchased: "bg-purple-100 text-purple-700",
@@ -43,6 +45,18 @@ const itemStatusLabels: Record<string, string> = {
   damaged: "损坏",
   dead: "死亡",
   missing: "遗漏",
+  wrong_item: "错发",
+};
+
+const differenceReasonLabels: Record<string, string> = {
+  none: "无差异",
+  supplier_short: "供应商少发",
+  over_supply: "供应商多发",
+  damaged: "运输损坏",
+  dead: "到货死亡",
+  wrong_item: "错发商品",
+  not_arrived: "未到货",
+  other: "其他",
 };
 
 export default function ImportBatches() {
@@ -89,8 +103,11 @@ export default function ImportBatches() {
     preorderEndDate: "",
     shippingMethod: "air" as "air" | "sea",
     chinaShippingCost: "0",
-    status: "in_progress" as string,
+    status: "draft" as string,
     notes: "",
+    supplierOrderNumber: "",
+    chinaTrackingNumber: "",
+    otherFees: "0",
   });
 
   const liveRoomsQuery = trpc.liveRooms.list.useQuery({});
@@ -139,6 +156,32 @@ export default function ImportBatches() {
     onError: (e: any) => toast.error("分摊失败: " + e.message),
   });
 
+  const confirmCnMutation = trpc.importBatches.confirmCn.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`CN确认成功！预计成本: RM ${data.estimatedCost?.toFixed(2)}`);
+      queryClient.importBatches.list.invalidate();
+      queryClient.importBatches.items.invalidate();
+    },
+    onError: (e: any) => toast.error("CN确认失败: " + e.message),
+  });
+
+  const completeIbMutation = trpc.importBatches.completeIb.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`IB验货完成！库存已更新，${data.matchedOrders || 0}张XTC订单已自动匹配`);
+      queryClient.importBatches.list.invalidate();
+      queryClient.importBatches.items.invalidate();
+    },
+    onError: (e: any) => toast.error("IB完成失败: " + e.message),
+  });
+
+  const allocateAllMutation = trpc.importBatches.allocateAllCosts.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`费用分摊完成！`);
+      queryClient.importBatches.items.invalidate();
+    },
+    onError: (e: any) => toast.error("分摊失败: " + e.message),
+  });
+
   const upsertItemMutation = trpc.importBatches.upsertItem.useMutation({
     onSuccess: () => {
       toast.success("商品明细已更新");
@@ -151,7 +194,8 @@ export default function ImportBatches() {
     setFormData({
       batchNumber: "", batchName: "", sourceCountry: "中国", supplierName: "",
       liveRoomId: "", preorderStartDate: "", preorderEndDate: "",
-      shippingMethod: "air", chinaShippingCost: "0", status: "in_progress", notes: "",
+      shippingMethod: "air", chinaShippingCost: "0", status: "draft", notes: "",
+      supplierOrderNumber: "", chinaTrackingNumber: "", otherFees: "0",
     });
     setEditingId(null);
   }
@@ -168,8 +212,11 @@ export default function ImportBatches() {
       preorderEndDate: batch.preorderEndDate ? new Date(batch.preorderEndDate).toISOString().slice(0, 16) : "",
       shippingMethod: batch.shippingMethod || "air",
       chinaShippingCost: batch.chinaShippingCost?.toString() || "0",
-      status: batch.status || "in_progress",
+      status: batch.status || "draft",
       notes: batch.notes || "",
+      supplierOrderNumber: batch.supplierOrderNumber || "",
+      chinaTrackingNumber: batch.chinaTrackingNumber || "",
+      otherFees: batch.otherFees?.toString() || "0",
     });
     setDialogOpen(true);
   }
@@ -191,6 +238,9 @@ export default function ImportBatches() {
       chinaShippingCost: formData.chinaShippingCost,
       status: formData.status,
       notes: formData.notes || undefined,
+      supplierOrderNumber: formData.supplierOrderNumber || undefined,
+      chinaTrackingNumber: formData.chinaTrackingNumber || undefined,
+      otherFees: formData.otherFees || undefined,
     };
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...payload });
@@ -278,6 +328,18 @@ export default function ImportBatches() {
                   </SelectContent>
                 </Select>
               </div>
+              <div>
+                <Label>供应商订单号</Label>
+                <Input value={formData.supplierOrderNumber} onChange={e => setFormData({ ...formData, supplierOrderNumber: e.target.value })} placeholder="供应商订单号" />
+              </div>
+              <div>
+                <Label>中国快递单号</Label>
+                <Input value={formData.chinaTrackingNumber} onChange={e => setFormData({ ...formData, chinaTrackingNumber: e.target.value })} placeholder="中国快递单号" />
+              </div>
+              <div>
+                <Label>其他费用 (RM)</Label>
+                <Input type="number" value={formData.otherFees} onChange={e => setFormData({ ...formData, otherFees: e.target.value })} />
+              </div>
               <div className="col-span-2">
                 <Label>备注</Label>
                 <Textarea value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} rows={2} />
@@ -360,7 +422,41 @@ export default function ImportBatches() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">批次商品明细</h2>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
+                  {urlTab === 'cn' && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => confirmCnMutation.mutate({ batchId: selectedBatchId })}
+                      disabled={confirmCnMutation.isPending}
+                      className="gap-2"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      确认采购 (CN)
+                    </Button>
+                  )}
+                  {urlTab === 'ib' && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => completeIbMutation.mutate({ batchId: selectedBatchId })}
+                      disabled={completeIbMutation.isPending}
+                      className="gap-2"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      完成验货 (IB)
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => allocateAllMutation.mutate({ batchId: selectedBatchId })}
+                    disabled={allocateAllMutation.isPending}
+                    className="gap-2"
+                  >
+                    <Calculator className="h-4 w-4" />
+                    分摊所有费用
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -369,7 +465,7 @@ export default function ImportBatches() {
                     className="gap-2"
                   >
                     <Calculator className="h-4 w-4" />
-                    分摊运费
+                    仅分摊运费
                   </Button>
                 </div>
               </div>
@@ -398,6 +494,7 @@ export default function ImportBatches() {
                           <TableHead>单位成本</TableHead>
                           <TableHead>分摊运费</TableHead>
                           <TableHead>总成本</TableHead>
+                          <TableHead>差异原因</TableHead>
                           <TableHead>状态</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -459,6 +556,13 @@ export default function ImportBatches() {
                             </TableCell>
                             <TableCell className="text-sm">{item.allocatedShippingCost ? `RM ${item.allocatedShippingCost}` : "-"}</TableCell>
                             <TableCell className="text-sm font-medium">{item.totalUnitCost ? `RM ${item.totalUnitCost}` : "-"}</TableCell>
+                            <TableCell className="text-xs">
+                              {item.differenceReason && item.differenceReason !== 'none' ? (
+                                <span className="text-amber-600">{differenceReasonLabels[item.differenceReason] || item.differenceReason}</span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
                             <TableCell>
                               <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
                                 item.itemStatus === "all_arrived" ? "bg-green-100 text-green-700" :

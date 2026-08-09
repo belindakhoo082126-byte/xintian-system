@@ -607,17 +607,17 @@ export const orders = mysqlTable("orders", {
   liveRoomId: int("liveRoomId"),
   // V2.0: Import preorder status (代购订单状态流程)
   importStatus: mysqlEnum("importStatus", [
-    "waiting_payment",      // 等待付款
-    "paid_waiting_close",   // 已付款（等待代购截止）
-    "waiting_purchase",     // 等待统一采购
-    "purchased",            // 已向中国采购
-    "supplier_preparing",   // 供应商备货中
-    "in_transit",           // 运输中
-    "arriving_inspection",  // 到货验收中
-    "ready_to_ship",        // 待发货
-    "shipped",              // 已发货
-    "completed",            // 完成
-  ]).default("waiting_payment"),
+    "pending",              // 挂单（未汇款）
+    "receipt_uploaded",    // 待审核付款凭证
+    "partial_payment",      // 部分汇款
+    "waiting_stock",        // 待备货（等待IB验货齐货）
+    "ready_to_ship",       // 待发货（齐货可发货）
+    "scheduled_ship",      // 预约发货
+    "partial_shipped",     // 部分发货
+    "shipped",             // 已发货
+    "completed",           // 完成
+    "cancelled",           // 取消
+  ]).default("pending"),
   // V2.0.85: Recipient info (stored on order for display)
   recipientName: varchar("recipientName", { length: 255 }),
   recipientPhone: varchar("recipientPhone", { length: 50 }),
@@ -1710,7 +1710,7 @@ export type InsertLiveCommentNote = typeof liveCommentNotes.$inferInsert;
 
 export const importBatches = mysqlTable("import_batches", {
   id: int("id").autoincrement().primaryKey(),
-  // Batch number (e.g. CN-2026-08-01)
+  // CN number (e.g. CN00001)
   batchNumber: varchar("batchNumber", { length: 50 }).notNull().unique(),
   // Batch name
   batchName: varchar("batchName", { length: 255 }).notNull(),
@@ -1718,6 +1718,10 @@ export const importBatches = mysqlTable("import_batches", {
   sourceCountry: varchar("sourceCountry", { length: 100 }).default("中国").notNull(),
   // Supplier name
   supplierName: varchar("supplierName", { length: 255 }),
+  // Supplier order number (for tracking with supplier)
+  supplierOrderNumber: varchar("supplierOrderNumber", { length: 100 }),
+  // China tracking number (for shipping tracking)
+  chinaTrackingNumber: varchar("chinaTrackingNumber", { length: 255 }),
   // Linked live room
   liveRoomId: int("liveRoomId"),
   // Preorder window
@@ -1729,17 +1733,26 @@ export const importBatches = mysqlTable("import_batches", {
   shippingMethod: mysqlEnum("shippingMethod", ["air", "sea"]),
   // China shipping cost (total, in RM)
   chinaShippingCost: decimal("chinaShippingCost", { precision: 12, scale: 2 }).default("0"),
+  // Other purchase fees (packaging, handling, etc.)
+  otherFees: decimal("otherFees", { precision: 12, scale: 2 }).default("0"),
+  // Total estimated cost (purchase + shipping + other fees)
+  totalEstimatedCost: decimal("totalEstimatedCost", { precision: 12, scale: 2 }).default("0"),
+  // Total actual cost (after IB verification)
+  totalActualCost: decimal("totalActualCost", { precision: 12, scale: 2 }).default("0"),
   // Batch status
   status: mysqlEnum("status", [
-    "in_progress",    // 进行中
+    "draft",          // 草稿（建立中）
+    "in_progress",    // 进行中（已确认采购）
     "closed",         // 已截止
-    "purchased",      // 已采购
-    "preparing",      // 备货中
+    "purchased",      // 已采购（CN确认）
+    "preparing",      // 备货中（供应商备货）
     "in_transit",     // 运输中
-    "partial_arrived", // 部分到货
-    "all_arrived",    // 全部到货
+    "partial_arrived", // 部分到货（IB部分验货）
+    "all_arrived",    // 全部到货（IB验货完成）
     "completed",      // 完成
-  ]).default("in_progress").notNull(),
+  ]).default("draft").notNull(),
+  // IB generated flag (auto-generated when CN confirmed)
+  ibGenerated: boolean("ibGenerated").default(false).notNull(),
   // Notes
   notes: text("notes"),
   // Timestamps
@@ -1756,7 +1769,7 @@ export type InsertImportBatch = typeof importBatches.$inferInsert;
 
 export const importBatchItems = mysqlTable("import_batch_items", {
   id: int("id").autoincrement().primaryKey(),
-  // Batch ID
+  // Batch ID (CN/IB shared)
   batchId: int("batchId").notNull(),
   // Product ID
   productId: int("productId").notNull(),
@@ -1765,16 +1778,29 @@ export const importBatchItems = mysqlTable("import_batch_items", {
   // Variant ID (if applicable)
   variantId: int("variantId"),
   variantName: varchar("variantName", { length: 255 }),
-  // Paid quantity (auto-calculated from paid orders)
+  // Customer demand quantity (auto-calculated from paid XTC orders)
   paidQuantity: int("paidQuantity").default(0).notNull(),
   // Final purchase quantity (admin can adjust, e.g. paid 100 + spare 5 = 105)
   finalPurchaseQuantity: int("finalPurchaseQuantity").default(0).notNull(),
-  // Arrival verification
+  // Arrival verification (IB fields)
   actualReceivedQty: int("actualReceivedQty"),
   healthyQty: int("healthyQty"),
   damagedQty: int("damagedQty").default(0),
   deadQty: int("deadQty").default(0),
   missingQty: int("missingQty").default(0),
+  wrongItemQty: int("wrongItemQty").default(0),
+  // Difference reason (for supplier tracking)
+  differenceReason: mysqlEnum("differenceReason", [
+    "none",              // 无差异
+    "supplier_short",    // 供应商少货
+    "over_supply",      // 多货
+    "damaged",          // 损坏
+    "dead",            // 死亡
+    "wrong_item",      // 错货
+    "not_arrived",     // 未到货
+    "other",           // 其他
+  ]).default("none"),
+  differenceNotes: text("differenceNotes"),
   // Item status
   itemStatus: mysqlEnum("itemStatus", [
     "pending",         // 待到货
@@ -1784,12 +1810,15 @@ export const importBatchItems = mysqlTable("import_batch_items", {
     "damaged",         // 损坏
     "dead",            // 死亡
     "missing",         // 遗漏
+    "wrong_item",      // 错货
   ]).default("pending"),
   // Unit purchase cost (from supplier)
   unitPurchaseCost: decimal("unitPurchaseCost", { precision: 10, scale: 2 }),
   // Allocated China shipping cost per unit (auto-calculated)
   allocatedShippingCost: decimal("allocatedShippingCost", { precision: 10, scale: 2 }),
-  // Total actual cost (unit + shipping)
+  // Allocated other fees per unit (auto-calculated)
+  allocatedOtherFees: decimal("allocatedOtherFees", { precision: 10, scale: 2 }),
+  // Total actual cost (unit + shipping + other fees)
   totalUnitCost: decimal("totalUnitCost", { precision: 10, scale: 2 }),
   // Spot sale enabled after arrival
   spotSaleEnabled: boolean("spotSaleEnabled").default(false).notNull(),

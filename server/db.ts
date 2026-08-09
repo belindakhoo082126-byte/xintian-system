@@ -12242,3 +12242,342 @@ export async function deleteCampaignButton(id: number) {
   broadcastChanges(["campaigns"]);
   return { success: true };
 }
+
+// ============================================================================
+// V2.0.97: CN/IB System - New functions for China Purchase Order & Arrival Inspection
+// ============================================================================
+
+// Generate CN number (CN00001, CN00002, ...)
+export async function generateCnNumber() {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const batches = await db.select().from(importBatches).orderBy(importBatches.id);
+  const nextNum = batches.length + 1;
+  return `CN${String(nextNum).padStart(5, '0')}`;
+}
+
+// Confirm CN (change status from draft to purchased, auto-generate IB items)
+export async function confirmCn(batchId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const batch = await getImportBatchById(batchId);
+  if (!batch) throw new Error('Batch not found');
+
+  // Update batch status to purchased
+  await db.update(importBatches).set({
+    status: 'purchased' as any,
+    ibGenerated: true,
+    actualPurchaseDate: new Date(),
+  } as any).where(eq(importBatches.id, batchId));
+
+  // Auto-calculate total estimated cost
+  const items = await getImportBatchItems(batchId);
+  let totalPurchaseCost = 0;
+  for (const item of items) {
+    const qty = item.finalPurchaseQuantity || item.paidQuantity || 0;
+    const unitCost = parseFloat(item.unitPurchaseCost?.toString() || '0');
+    totalPurchaseCost += unitCost * qty;
+  }
+  const shippingCost = parseFloat(batch.chinaShippingCost?.toString() || '0');
+  const otherFees = parseFloat((batch as any).otherFees?.toString() || '0');
+  const totalEstimated = totalPurchaseCost + shippingCost + otherFees;
+  await db.update(importBatches).set({
+    totalEstimatedCost: totalEstimated.toFixed(2) as any,
+  } as any).where(eq(importBatches.id, batchId));
+
+  return { success: true, totalEstimatedCost: totalEstimated.toFixed(2) };
+}
+
+// Complete IB verification (after all items verified, update stock and auto-match XTC orders)
+export async function completeIbVerification(batchId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const batch = await getImportBatchById(batchId);
+  if (!batch) throw new Error('Batch not found');
+
+  const items = await getImportBatchItems(batchId);
+
+  // Calculate total actual cost
+  let totalActualCost = 0;
+  for (const item of items) {
+    const receivedQty = (item.healthyQty || 0);
+    const unitCost = parseFloat(item.unitPurchaseCost?.toString() || '0');
+    const allocatedShipping = parseFloat(item.allocatedShippingCost?.toString() || '0');
+    const allocatedOther = parseFloat((item as any).allocatedOtherFees?.toString() || '0');
+    const totalUnitCost = unitCost + allocatedShipping + allocatedOther;
+    totalActualCost += totalUnitCost * receivedQty;
+
+    // Update item totalUnitCost
+    await db.update(importBatchItems).set({
+      totalUnitCost: totalUnitCost.toFixed(2) as any,
+    }).where(eq(importBatchItems.id, item.id));
+  }
+
+  // Update batch status and actual cost
+  const allArrived = items.every(i => i.itemStatus === 'all_arrived');
+  const anyArrived = items.some(i => i.itemStatus === 'all_arrived' || i.itemStatus === 'partial_arrived');
+  const newStatus = allArrived ? 'all_arrived' : (anyArrived ? 'partial_arrived' : 'in_transit');
+
+  await db.update(importBatches).set({
+    status: newStatus as any,
+    totalActualCost: totalActualCost.toFixed(2) as any,
+  } as any).where(eq(importBatches.id, batchId));
+
+  // Update product stock (On Hand) based on healthy items
+  for (const item of items) {
+    if (item.healthyQty && item.healthyQty > 0) {
+      // Find product variation and update stock
+      if (item.variantId) {
+        const variations = await db.select().from(productVariations).where(eq(productVariations.id, item.variantId));
+        if (variations.length > 0) {
+          const currentStock = parseInt(variations[0].stockQuantity?.toString() || '0');
+          await db.update(productVariations).set({
+            stockQuantity: (currentStock + item.healthyQty) as any,
+          }).where(eq(productVariations.id, item.variantId));
+        }
+      }
+    }
+  }
+
+  // Auto-match XTC orders
+  await autoMatchXtcOrders(batchId);
+
+  return { success: true, totalActualCost: totalActualCost.toFixed(2), newStatus };
+}
+
+// Auto-match XTC orders after IB verification
+export async function autoMatchXtcOrders(batchId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+
+  // Get all import orders linked to this batch
+  const batchOrders = await db.select().from(orders).where(
+    eq((orders as any).importBatchId, batchId as any)
+  );
+
+  // Get batch items once for matching
+  const batchItems = await getImportBatchItems(batchId);
+
+  const results: Array<{ orderId: number; orderNumber: string; status: string; matchedItems: number; totalItems: number }> = [];
+
+  for (const order of batchOrders) {
+    if (order.physicalStatus === 'cancelled' || order.physicalStatus === 'completed') continue;
+
+    // Get order items
+    const orderItemsList = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+
+    let allFulfilled = true;
+    let matchedCount = 0;
+
+    for (const oi of orderItemsList) {
+      // Check if this product variant has enough stock in the batch
+      const batchItem = batchItems.find(
+        (bi: any) => bi.productId === oi.productId && bi.variantId === oi.variationId
+      );
+      if (batchItem) {
+        const healthyQty = (batchItem as any).healthyQty || 0;
+        const orderQty = oi.quantity || 0;
+        if (healthyQty >= orderQty) {
+          matchedCount++;
+        } else {
+          allFulfilled = false;
+        }
+      } else {
+        allFulfilled = false;
+      }
+    }
+
+    // Update XTC import status
+    let newImportStatus: string;
+    if (allFulfilled && matchedCount === orderItemsList.length) {
+      newImportStatus = 'ready_to_ship';
+    } else {
+      newImportStatus = 'waiting_stock';
+    }
+
+    await db.update(orders).set({
+      importStatus: newImportStatus as any,
+    }).where(eq(orders.id, order.id));
+
+    results.push({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: newImportStatus,
+      matchedItems: matchedCount,
+      totalItems: orderItemsList.length,
+    });
+  }
+
+  return results;
+}
+
+// Allocate all costs (shipping + other fees) to batch items
+export async function allocateAllCosts(batchId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const batch = await getImportBatchById(batchId);
+  if (!batch) throw new Error('Batch not found');
+  const items = await getImportBatchItems(batchId);
+  if (items.length === 0) return { allocated: 0 };
+
+  const totalQty = items.reduce((sum, i) => sum + (i.finalPurchaseQuantity || i.paidQuantity || 0), 0);
+  if (totalQty === 0) return { allocated: 0 };
+
+  const totalShipping = parseFloat(batch.chinaShippingCost?.toString() || '0');
+  const totalOtherFees = parseFloat((batch as any).otherFees?.toString() || '0');
+  const perUnitShipping = totalShipping / totalQty;
+  const perUnitOther = totalOtherFees / totalQty;
+
+  for (const item of items) {
+    const qty = item.finalPurchaseQuantity || item.paidQuantity || 0;
+    const unitCost = parseFloat(item.unitPurchaseCost?.toString() || '0');
+    const totalUnitCost = (unitCost + perUnitShipping + perUnitOther).toFixed(2);
+    await db.update(importBatchItems).set({
+      allocatedShippingCost: perUnitShipping.toFixed(2) as any,
+      allocatedOtherFees: perUnitOther.toFixed(2) as any,
+      totalUnitCost: totalUnitCost as any,
+    } as any).where(eq(importBatchItems.id, item.id));
+  }
+
+  return { perUnitShipping, perUnitOther, totalQty, totalShipping, totalOtherFees };
+}
+
+// Get CN/IB batch detail with items and linked orders
+export async function getCnIbBatchDetail(batchId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const batch = await getImportBatchById(batchId);
+  if (!batch) return null;
+  const items = await getImportBatchItems(batchId);
+
+  // Get linked orders
+  const linkedOrders = await db.select().from(orders).where(
+    eq((orders as any).importBatchId, batchId as any)
+  );
+
+  return {
+    batch,
+    items,
+    linkedOrders: linkedOrders.map(o => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      customerName: o.facebookName || '-',
+      physicalStatus: o.physicalStatus,
+      importStatus: o.importStatus,
+      totalAmount: o.totalAmount,
+      paidAmount: o.paidAmount,
+    })),
+  };
+}
+
+// ============================================================================
+// V2.0.97: CN/IB Cost-Profit Analysis (CN/IB 成本利润分析)
+// ============================================================================
+
+export async function getCnIbCostProfit(batchId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const batch = await getImportBatchById(batchId);
+  if (!batch) return null;
+
+  const items = await getImportBatchItems(batchId);
+
+  // CN estimated cost: sum of (unitPurchaseCost * finalPurchaseQuantity) + chinaShippingCost + otherFees
+  let cnEstimatedCost = 0;
+  for (const item of items) {
+    const qty = item.finalPurchaseQuantity || item.paidQuantity || 0;
+    const unitCost = parseFloat(item.unitPurchaseCost?.toString() || '0');
+    cnEstimatedCost += unitCost * qty;
+  }
+  cnEstimatedCost += parseFloat(batch.chinaShippingCost?.toString() || '0');
+  cnEstimatedCost += parseFloat((batch as any).otherFees?.toString() || '0');
+
+  // IB actual cost: sum of (unitPurchaseCost * healthyQty) + allocatedShippingCost + allocatedOtherFees
+  let ibActualCost = 0;
+  let totalHealthyQty = 0;
+  let totalDamagedQty = 0;
+  let totalDeadQty = 0;
+  let totalMissingQty = 0;
+  let totalWrongItemQty = 0;
+  for (const item of items) {
+    const healthy = item.healthyQty || 0;
+    const unitCost = parseFloat(item.unitPurchaseCost?.toString() || '0');
+    const allocatedShipping = parseFloat(item.allocatedShippingCost?.toString() || '0');
+    const allocatedOther = parseFloat((item as any).allocatedOtherFees?.toString() || '0');
+    ibActualCost += unitCost * healthy + allocatedShipping + allocatedOther;
+    totalHealthyQty += healthy;
+    totalDamagedQty += item.damagedQty || 0;
+    totalDeadQty += item.deadQty || 0;
+    totalMissingQty += item.missingQty || 0;
+    totalWrongItemQty += (item as any).wrongItemQty || 0;
+  }
+
+  // Get linked XTC orders for revenue calculation
+  const linkedOrders = await db.select().from(orders).where(
+    eq((orders as any).importBatchId, batchId as any)
+  );
+
+  let totalRevenue = 0;
+  let totalPaidAmount = 0;
+  let matchedOrderCount = 0;
+  for (const o of linkedOrders) {
+    totalRevenue += parseFloat(o.totalAmount?.toString() || '0');
+    totalPaidAmount += parseFloat(o.paidAmount?.toString() || '0');
+    if (o.physicalStatus !== 'pending' && o.physicalStatus !== 'cancelled') {
+      matchedOrderCount++;
+    }
+  }
+
+  // Calculate profit
+  const grossProfit = totalRevenue - ibActualCost;
+  const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+
+  // Scrap loss (damaged + dead + missing)
+  let scrapLoss = 0;
+  for (const item of items) {
+    const unitCost = parseFloat(item.unitPurchaseCost?.toString() || '0');
+    scrapLoss += unitCost * ((item.damagedQty || 0) + (item.deadQty || 0) + (item.missingQty || 0));
+  }
+
+  return {
+    batchInfo: {
+      batchNumber: batch.batchNumber,
+      batchName: batch.batchName,
+      status: batch.status,
+      ibGenerated: (batch as any).ibGenerated || false,
+    },
+    cnEstimatedCost: cnEstimatedCost.toFixed(2),
+    ibActualCost: ibActualCost.toFixed(2),
+    totalRevenue: totalRevenue.toFixed(2),
+    totalPaidAmount: totalPaidAmount.toFixed(2),
+    grossProfit: grossProfit.toFixed(2),
+    grossMargin: grossMargin.toFixed(1),
+    matchedOrderCount,
+    totalOrders: linkedOrders.length,
+    scrapLoss: scrapLoss.toFixed(2),
+    quantitySummary: {
+      healthy: totalHealthyQty,
+      damaged: totalDamagedQty,
+      dead: totalDeadQty,
+      missing: totalMissingQty,
+      wrongItem: totalWrongItemQty,
+    },
+    items: items.map(item => ({
+      productName: item.productName,
+      paidQuantity: item.paidQuantity,
+      finalPurchaseQuantity: item.finalPurchaseQuantity,
+      healthyQty: item.healthyQty || 0,
+      damagedQty: item.damagedQty || 0,
+      deadQty: item.deadQty || 0,
+      missingQty: item.missingQty || 0,
+      wrongItemQty: (item as any).wrongItemQty || 0,
+      unitPurchaseCost: item.unitPurchaseCost?.toString() || '0',
+      allocatedShippingCost: item.allocatedShippingCost?.toString() || '0',
+      allocatedOtherFees: (item as any).allocatedOtherFees?.toString() || '0',
+      totalUnitCost: item.totalUnitCost?.toString() || '0',
+      itemStatus: item.itemStatus,
+      differenceReason: (item as any).differenceReason || 'none',
+    })),
+  };
+}

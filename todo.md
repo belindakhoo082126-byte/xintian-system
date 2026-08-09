@@ -2296,3 +2296,6 @@
 
 - [x] V2.0.96: Online Transfer选中后显示银行户口资料（Public Bank, 3825375502, ECOLAND NURSERY）+ 复制按钮
 - [x] V2.0.96: TypeScript检查 + 测试 + 保存checkpoint
+
+- [x] V2.0.97: 中国代购系统重构 - XTC状态流程修正、CN进货单、IB到货检查单、自动匹配XTC、库存联动、成本利润计算
+- [x] V2.0.97: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint

@@ -4711,7 +4711,7 @@ export const appRouter = router({
   importBatches: router({
     list: adminProcedure
       .input(z.object({
-        status: z.enum(['in_progress', 'closed', 'purchased', 'preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed']).optional(),
+        status: z.enum(['draft', 'in_progress', 'closed', 'purchased', 'preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed']).optional(),
         limit: z.number().optional(),
         offset: z.number().optional(),
       }).optional())
@@ -4738,8 +4738,11 @@ export const appRouter = router({
         preorderEndDate: z.coerce.date().optional(),
         shippingMethod: z.enum(['air', 'sea']).optional(),
         chinaShippingCost: z.string().optional(),
-        status: z.enum(['in_progress', 'closed', 'purchased', 'preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed']).optional(),
+        status: z.enum(['draft', 'in_progress', 'closed', 'purchased', 'preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed']).optional(),
         notes: z.string().optional(),
+        supplierOrderNumber: z.string().optional(),
+        chinaTrackingNumber: z.string().optional(),
+        otherFees: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         return await db.createImportBatch(input);
@@ -4757,8 +4760,11 @@ export const appRouter = router({
         actualPurchaseDate: z.coerce.date().optional(),
         shippingMethod: z.enum(['air', 'sea']).optional(),
         chinaShippingCost: z.string().optional(),
-        status: z.enum(['in_progress', 'closed', 'purchased', 'preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed']).optional(),
+        status: z.enum(['draft', 'in_progress', 'closed', 'purchased', 'preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed']).optional(),
         notes: z.string().optional(),
+        supplierOrderNumber: z.string().optional(),
+        chinaTrackingNumber: z.string().optional(),
+        otherFees: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
@@ -4795,11 +4801,14 @@ export const appRouter = router({
         damagedQty: z.number().optional(),
         deadQty: z.number().optional(),
         missingQty: z.number().optional(),
-        itemStatus: z.enum(['pending', 'all_arrived', 'partial_arrived', 'shortage', 'damaged', 'dead', 'missing']).optional(),
+        itemStatus: z.enum(['pending', 'all_arrived', 'partial_arrived', 'shortage', 'damaged', 'dead', 'missing', 'wrong_item']).optional(),
         unitPurchaseCost: z.string().optional(),
         spotSaleEnabled: z.boolean().optional(),
         spotSaleQty: z.number().optional(),
         notes: z.string().optional(),
+        wrongItemQty: z.number().optional(),
+        differenceReason: z.enum(['none', 'supplier_short', 'over_supply', 'damaged', 'dead', 'wrong_item', 'not_arrived', 'other']).optional(),
+        differenceNotes: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         return await db.upsertImportBatchItem(input);
@@ -4818,6 +4827,47 @@ export const appRouter = router({
       .input(z.object({ batchId: z.number() }))
       .mutation(async ({ input }) => {
         return await db.allocateShippingCost(input.batchId);
+      }),
+
+    // V2.0.97: CN/IB new procedures
+    // Generate CN number
+    generateCnNumber: adminProcedure.query(async () => {
+      return await db.generateCnNumber();
+    }),
+
+    // Confirm CN (draft -> purchased, auto-generate IB)
+    confirmCn: adminProcedure
+      .input(z.object({ batchId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.confirmCn(input.batchId);
+      }),
+
+    // Complete IB verification (update stock, auto-match XTC orders)
+    completeIb: adminProcedure
+      .input(z.object({ batchId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.completeIbVerification(input.batchId);
+      }),
+
+    // Allocate all costs (shipping + other fees)
+    allocateAllCosts: adminProcedure
+      .input(z.object({ batchId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await db.allocateAllCosts(input.batchId);
+      }),
+
+    // Get CN/IB batch detail with items and linked orders
+    getCnIbDetail: adminProcedure
+      .input(z.object({ batchId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCnIbBatchDetail(input.batchId);
+      }),
+
+    // Get CN/IB cost-profit analysis
+    costProfit: adminProcedure
+      .input(z.object({ batchId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCnIbCostProfit(input.batchId);
       }),
   }),
 
