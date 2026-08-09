@@ -563,6 +563,7 @@ export async function getMergeSuggestions(status?: string) {
 
 export async function getOrders(filters?: {
   physicalStatus?: string;
+  importStatus?: string;
   membershipStatus?: string;
   orderType?: string;
   search?: string;
@@ -581,6 +582,7 @@ export async function getOrders(filters?: {
   let query = db.select().from(orders);
   const conditions: any[] = [];
   if (filters?.physicalStatus) conditions.push(eq(orders.physicalStatus, filters.physicalStatus as any));
+  if (filters?.importStatus) conditions.push(eq((orders as any).importStatus, filters.importStatus as any));
   if (filters?.membershipStatus) conditions.push(eq(orders.membershipStatus, filters.membershipStatus as any));
   if (filters?.orderType) conditions.push(eq(orders.orderType, filters.orderType as any));
   if (filters?.orderNature) conditions.push(eq((orders as any).orderNature, filters.orderNature as any));
@@ -829,6 +831,7 @@ export async function createOrderWithSplit(data: {
     shippingFee: shippingFee.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
     physicalStatus: "pending",
+    importStatus: data.orderCategory === "import" ? "pending" : null,
     membershipStatus: hasMembership ? "pending" : undefined,
     shippingAddress: data.shippingAddress || null,
     shippingMethod: (data.shippingMethod as any) || null,
@@ -944,6 +947,25 @@ export async function updateOrderStatus(id: number, data: {
 if (data.physicalStatus === "packing") updateData.paymentConfirmedAt = new Date();
   if (data.physicalStatus === "shipped") updateData.shippedAt = new Date();
   if (data.physicalStatus === "completed") updateData.completedAt = new Date();
+
+  // For import orders, sync importStatus with physicalStatus changes
+  const existingOrder = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
+  if (existingOrder.length > 0 && existingOrder[0].orderCategory === 'import') {
+    const importStatusMap: Record<string, string> = {
+      'unpaid': 'pending',           // 挂单
+      'receipt_uploaded': 'receipt_uploaded', // 待审核付款凭证
+      'partial_payment': 'partial_payment', // 部分汇款
+      'packing': 'ready_to_ship',    // 待发货 (payment confirmed → ready to ship)
+      'partial_shipped': 'partial_shipped', // 部分发货
+      'shipped': 'shipped',          // 已发货
+      'completed': 'completed',      // 已完成
+      'cancelled': 'cancelled',      // 取消
+    };
+    const mappedImportStatus = data.physicalStatus ? importStatusMap[data.physicalStatus] : undefined;
+    if (mappedImportStatus) {
+      updateData.importStatus = mappedImportStatus;
+    }
+  }
 
   await db.update(orders).set(updateData).where(eq(orders.id, id));
 
@@ -1297,7 +1319,22 @@ export async function addOrderPayment(data: {
       specialOrderSource = "system";
       specialOrderStatus = "pending";
     }
-    await db.update(orders).set({
+    // For import orders, also update importStatus
+    let importStatusUpdate: string | null = null;
+    if (order[0].orderCategory === 'import') {
+      if (totalPaid >= totalAmount) {
+        // Fully paid → waiting_stock (待备货)
+        importStatusUpdate = 'waiting_stock';
+      } else if (totalPaid > 0) {
+        // Partial payment → partial_payment (部分汇款)
+        importStatusUpdate = 'partial_payment';
+      } else {
+        // Receipt uploaded but no payment recorded yet → receipt_uploaded (待审核付款凭证)
+        importStatusUpdate = 'receipt_uploaded';
+      }
+    }
+
+    const updateSet: any = {
       paidAmount: totalPaid.toFixed(2),
       physicalStatus: newStatus as any,
       paymentUploadedAt: new Date(),
@@ -1306,8 +1343,15 @@ export async function addOrderPayment(data: {
       specialOrderSource: specialOrderSource as any,
       specialOrderStatus: specialOrderStatus as any,
       specialOrderUpdatedAt: new Date(),
-    }).where(eq(orders.id, data.orderId));
+    };
+    if (importStatusUpdate) {
+      updateSet.importStatus = importStatusUpdate;
+    }
+    await db.update(orders).set(updateSet).where(eq(orders.id, data.orderId));
   }
+
+  // Set fullPaymentConfirmedAt if fully paid
+  await checkAndSetFullPaymentConfirmed(data.orderId);
 
   await logOrderOperation(data.orderId, "payment", `Payment recorded: RM${data.amount}`, null, data.operatorName);
   broadcastChanges(["orders", "dashboard"]);

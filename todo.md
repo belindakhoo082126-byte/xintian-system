@@ -2309,3 +2309,8 @@
 - [x] V2.0.98: 6) importBatches表新增costLocked字段
 - [x] V2.0.98: 7) stock_allocations表 - 记录库存分配和人工调整
 - [x] V2.0.98: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint
+
+- [x] V2.0.99: XTC订单Status系统统一 - 10个状态(挂单/待审核付款凭证/部分汇款/待备货/待发货/预约发货/部分发货/已发货/已完成/取消)
+- [x] V2.0.99: 后端 - createOrderWithSplit新增import订单默认pending, addOrderPayment处理importStatus, updateOrderStatus处理importStatus, autoMatchXtcOrders使用importStatus
+- [x] V2.0.99: 前端 - Orders.tsx新增IMPORT_STATUS定义和筛选, OrderCreatePage更新IMPORT_ORDER_STATUSES, OrderDetail新增IMPORT_STATUS_CONFIG_RAW, OrderEditPage新增importStatus下拉
+- [x] V2.0.99: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint

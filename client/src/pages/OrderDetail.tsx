@@ -34,6 +34,20 @@ const STATUS_CONFIG_RAW: Record<string, { zh: string; en: string; variant: any; 
   cancelled: { zh: "已取消", en: "Cancelled", variant: "destructive", color: "text-red-600" },
 };
 
+// XTC (中国代购) import order status config
+const IMPORT_STATUS_CONFIG_RAW: Record<string, { zh: string; en: string; variant: any; color: string }> = {
+  pending: { zh: "挂单", en: "Pending", variant: "outline", color: "text-yellow-600" },
+  receipt_uploaded: { zh: "待审核付款凭证", en: "Pending Payment Verification", variant: "secondary", color: "text-blue-600" },
+  partial_payment: { zh: "部分汇款", en: "Partial Payment", variant: "secondary", color: "text-amber-600" },
+  waiting_stock: { zh: "待备货", en: "Waiting Stock", variant: "secondary", color: "text-orange-600" },
+  ready_to_ship: { zh: "待发货", en: "Ready to Ship", variant: "default", color: "text-cyan-600" },
+  scheduled_ship: { zh: "预约发货", en: "Scheduled Ship", variant: "secondary", color: "text-indigo-600" },
+  partial_shipped: { zh: "部分发货", en: "Partial Shipped", variant: "secondary", color: "text-teal-600" },
+  shipped: { zh: "已发货", en: "Shipped", variant: "default", color: "text-green-600" },
+  completed: { zh: "已完成", en: "Completed", variant: "default", color: "text-green-700" },
+  cancelled: { zh: "取消", en: "Cancelled", variant: "destructive", color: "text-red-600" },
+};
+
 const SOURCE_LABELS_RAW: Record<string, { zh: string; en: string }> = {
   facebook_live: { zh: "Facebook 直播", en: "Facebook Live" },
   facebook_post: { zh: "Facebook 帖子", en: "Facebook Post" },
@@ -179,7 +193,10 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
     );
   }
 
-  const statusCfgRaw = STATUS_CONFIG_RAW[order?.physicalStatus || "pending"] || STATUS_CONFIG_RAW.pending;
+  const isImportOrder = order?.orderCategory === 'import';
+  const activeStatusConfig = isImportOrder ? IMPORT_STATUS_CONFIG_RAW : STATUS_CONFIG_RAW;
+  const activeStatusValue = isImportOrder ? (order?.importStatus || "pending") : (order?.physicalStatus || "pending");
+  const statusCfgRaw = activeStatusConfig[activeStatusValue] || activeStatusConfig.pending;
   const statusCfg = {
     label: translate(statusCfgRaw.zh, statusCfgRaw.en),
     variant: statusCfgRaw.variant,
@@ -234,19 +251,19 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
 
       {/* Action Buttons */}
       <div className="flex flex-wrap gap-2">
-        {(order?.physicalStatus === "receipt_uploaded" || order?.physicalStatus === "partial_payment") && (
+        {((isImportOrder ? order?.importStatus : order?.physicalStatus) === "receipt_uploaded" || (isImportOrder ? order?.importStatus : order?.physicalStatus) === "partial_payment") && (
           <Button onClick={handleConfirmPayment} disabled={confirmPaymentMutation.isPending} className="bg-primary">
             <CheckCircle className="h-4 w-4 mr-2" />
             {translate("确认汇款", "Confirm Payment")}
           </Button>
         )}
-        {(order?.physicalStatus === "receipt_uploaded" || order?.physicalStatus === "partial_payment") && (
+        {((isImportOrder ? order?.importStatus : order?.physicalStatus) === "receipt_uploaded" || (isImportOrder ? order?.importStatus : order?.physicalStatus) === "partial_payment") && (
           <Button variant="outline" onClick={() => setHoldOpen(true)}>
             <PauseCircle className="h-4 w-4 mr-2" />
             {translate("保留订单", "Hold Order")}
           </Button>
         )}
-        {order?.physicalStatus === "hold_order" && holdInfo?.isActive && (
+        {(isImportOrder ? order?.importStatus : order?.physicalStatus) === "hold_order" && holdInfo?.isActive && (
           <Button onClick={() => releaseHoldMutation.mutate({ orderId })} disabled={releaseHoldMutation.isPending}>
             <Package className="h-4 w-4 mr-2" />
             {translate("释放保留 → 待包货", "Release Hold → Packing")}

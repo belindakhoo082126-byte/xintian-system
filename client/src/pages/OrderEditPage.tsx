@@ -57,6 +57,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     orderSource: "manual",
     orderCategory: "local",
     physicalStatus: "pending",
+    importStatus: "pending",
     shippingMethod: "west_malaysia",
     shippingAddress: "",
     recipientName: "",
@@ -100,6 +101,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
         orderSource: o.orderSource || "manual",
         orderCategory: o.orderCategory || "local",
         physicalStatus: o.physicalStatus || "pending",
+        importStatus: o.importStatus || "pending",
         shippingMethod: o.shippingMethod || "west_malaysia",
         shippingAddress: o.shippingAddress || "",
         recipientName: o.recipientName || "",
@@ -462,21 +464,39 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
           </div>
           <div>
             <Label className="text-xs">{translate("订单状态", "Order Status")}</Label>
-            <Select value={formData.physicalStatus} onValueChange={(v) => setFormData({ ...formData, physicalStatus: v })}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pending">{translate("未汇款订单", "Unpaid")}</SelectItem>
-                <SelectItem value="receipt_uploaded">{translate("待审核付款凭证", "Receipt Uploaded")}</SelectItem>
-                <SelectItem value="partial_payment">{translate("部分汇款", "Partial Payment")}</SelectItem>
-                <SelectItem value="hold">{translate("保留订单", "Hold")}</SelectItem>
-                <SelectItem value="packing">{translate("待包货", "Packing")}</SelectItem>
-                <SelectItem value="partial_shipped">{translate("部分发货", "Partial Shipped")}</SelectItem>
-                <SelectItem value="shipped">{translate("已发货", "Shipped")}</SelectItem>
-                <SelectItem value="completed">{translate("已完成", "Completed")}</SelectItem>
-                <SelectItem value="cancelled">{translate("已取消", "Cancelled")}</SelectItem>
-                <SelectItem value="special">{translate("特别订单", "Special")}</SelectItem>
-              </SelectContent>
-            </Select>
+            {formData.orderCategory === "import" ? (
+              <Select value={formData.importStatus} onValueChange={(v) => setFormData({ ...formData, importStatus: v })}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">{translate("挂单", "Pending")}</SelectItem>
+                  <SelectItem value="receipt_uploaded">{translate("待审核付款凭证", "Receipt Uploaded")}</SelectItem>
+                  <SelectItem value="partial_payment">{translate("部分汇款", "Partial Payment")}</SelectItem>
+                  <SelectItem value="waiting_stock">{translate("待备货", "Waiting Stock")}</SelectItem>
+                  <SelectItem value="ready_to_ship">{translate("待发货", "Ready to Ship")}</SelectItem>
+                  <SelectItem value="scheduled_ship">{translate("预约发货", "Scheduled Ship")}</SelectItem>
+                  <SelectItem value="partial_shipped">{translate("部分发货", "Partial Shipped")}</SelectItem>
+                  <SelectItem value="shipped">{translate("已发货", "Shipped")}</SelectItem>
+                  <SelectItem value="completed">{translate("已完成", "Completed")}</SelectItem>
+                  <SelectItem value="cancelled">{translate("取消", "Cancelled")}</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <Select value={formData.physicalStatus} onValueChange={(v) => setFormData({ ...formData, physicalStatus: v })}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">{translate("未汇款订单", "Unpaid")}</SelectItem>
+                  <SelectItem value="receipt_uploaded">{translate("待审核付款凭证", "Receipt Uploaded")}</SelectItem>
+                  <SelectItem value="partial_payment">{translate("部分汇款", "Partial Payment")}</SelectItem>
+                  <SelectItem value="hold">{translate("保留订单", "Hold")}</SelectItem>
+                  <SelectItem value="packing">{translate("待包货", "Packing")}</SelectItem>
+                  <SelectItem value="partial_shipped">{translate("部分发货", "Partial Shipped")}</SelectItem>
+                  <SelectItem value="shipped">{translate("已发货", "Shipped")}</SelectItem>
+                  <SelectItem value="completed">{translate("已完成", "Completed")}</SelectItem>
+                  <SelectItem value="cancelled">{translate("已取消", "Cancelled")}</SelectItem>
+                  <SelectItem value="special">{translate("特别订单", "Special")}</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </CardContent>
       </Card>

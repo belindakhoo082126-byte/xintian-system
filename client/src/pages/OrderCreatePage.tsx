@@ -47,16 +47,18 @@ const LOCAL_ORDER_STATUSES = [
   { value: "hold_order", label: "保留订单", enLabel: "Hold Order" },
 ];
 
+// V2.0.99: XTC Import Order Statuses (final unified version)
 const IMPORT_ORDER_STATUSES = [
-  { value: "pending", label: "未汇款订单", enLabel: "Unpaid Order" },
+  { value: "pending", label: "挂单", enLabel: "Pending" },
   { value: "receipt_uploaded", label: "待审核付款凭证", enLabel: "Pending Payment Verification" },
   { value: "partial_payment", label: "部分汇款", enLabel: "Partial Payment" },
-  { value: "packing", label: "待包货", enLabel: "Pending Packing" },
+  { value: "waiting_stock", label: "待备货", enLabel: "Waiting Stock" },
+  { value: "ready_to_ship", label: "待发货", enLabel: "Ready to Ship" },
+  { value: "scheduled_ship", label: "预约发货", enLabel: "Scheduled Shipping" },
   { value: "partial_shipped", label: "部分发货", enLabel: "Partial Shipped" },
   { value: "shipped", label: "已发货", enLabel: "Shipped" },
   { value: "completed", label: "已完成", enLabel: "Completed" },
-  { value: "cancelled", label: "已取消", enLabel: "Cancelled" },
-  { value: "hold_order", label: "保留订单", enLabel: "Hold Order" },
+  { value: "cancelled", label: "取消", enLabel: "Cancelled" },
 ];
 
 interface ManualOrderItem {

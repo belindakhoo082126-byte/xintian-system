@@ -32,6 +32,20 @@ const PHYSICAL_STATUS = {
   special: { label: "特别订单", enLabel: "Special Order", variant: "secondary" },
 } as const;
 
+// V2.0.99: XTC Import order statuses (final unified version)
+const IMPORT_STATUS = {
+  pending: { label: "挂单", enLabel: "Pending", variant: "outline" },
+  receipt_uploaded: { label: "待审核付款凭证", enLabel: "Pending Payment Verification", variant: "secondary" },
+  partial_payment: { label: "部分汇款", enLabel: "Partial Payment", variant: "secondary" },
+  waiting_stock: { label: "待备货", enLabel: "Waiting Stock", variant: "secondary" },
+  ready_to_ship: { label: "待发货", enLabel: "Ready to Ship", variant: "default" },
+  scheduled_ship: { label: "预约发货", enLabel: "Scheduled Shipping", variant: "secondary" },
+  partial_shipped: { label: "部分发货", enLabel: "Partial Shipped", variant: "secondary" },
+  shipped: { label: "已发货", enLabel: "Shipped", variant: "default" },
+  completed: { label: "已完成", enLabel: "Completed", variant: "default" },
+  cancelled: { label: "取消", enLabel: "Cancelled", variant: "destructive" },
+} as const;
+
 const ORDER_NATURE = {
   retail: { label: "零售", enLabel: "Retail" },
   wholesale: { label: "批发", enLabel: "Wholesale" },
@@ -156,9 +170,11 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const { data: products } = trpc.products.list.useQuery({});
   const { data: systemSettings } = trpc.settings.get.useQuery();
 
+  const isImportCategory = orderCategory === "import";
   const { data: orders, isLoading } = trpc.orders.list.useQuery({
     search: search || undefined,
-    physicalStatus: statusFilter !== "all" ? statusFilter : undefined,
+    physicalStatus: !isImportCategory && statusFilter !== "all" ? statusFilter : undefined,
+    importStatus: isImportCategory && statusFilter !== "all" ? statusFilter : undefined,
     todayOnly: todayOnly || undefined,
     orderNature: natureFilter !== "all" ? natureFilter : undefined,
     orderCategory: orderCategory && orderCategory !== "all" ? orderCategory : undefined,
@@ -576,7 +592,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{translate("全部状态", "All Statuses")}</SelectItem>
-            {Object.entries(PHYSICAL_STATUS).map(([k, v]) => (
+            {Object.entries(isImportCategory ? IMPORT_STATUS : PHYSICAL_STATUS).map(([k, v]) => (
               <SelectItem key={k} value={k}>{translate(v.label, v.enLabel)}</SelectItem>
             ))}
           </SelectContent>
@@ -745,9 +761,15 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                   </TableCell>
                   <TableCell className="font-semibold">RM {o.totalAmount}</TableCell>
                   <TableCell>
-                    <Badge variant={PHYSICAL_STATUS[o.physicalStatus as keyof typeof PHYSICAL_STATUS]?.variant || "outline"}>
-                      {translate(PHYSICAL_STATUS[o.physicalStatus as keyof typeof PHYSICAL_STATUS]?.label || o.physicalStatus, PHYSICAL_STATUS[o.physicalStatus as keyof typeof PHYSICAL_STATUS]?.enLabel || o.physicalStatus)}
-                    </Badge>
+                    {(() => {
+                      const statusMap = o.orderCategory === 'import' ? IMPORT_STATUS : PHYSICAL_STATUS;
+                      const statusVal = o.orderCategory === 'import' ? o.importStatus : o.physicalStatus;
+                      return (
+                        <Badge variant={statusMap[statusVal as keyof typeof statusMap]?.variant || "outline"}>
+                          {translate(statusMap[statusVal as keyof typeof statusMap]?.label || statusVal, statusMap[statusVal as keyof typeof statusMap]?.enLabel || statusVal)}
+                        </Badge>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     {(o as any).notificationStatus === "sent" ? (
