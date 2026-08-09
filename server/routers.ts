@@ -1217,8 +1217,21 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const { id, ...data } = input;
         await db.updateOrderDetails(id, data);
-        const statusChanged = data.physicalStatus || data.importStatus;
-        const desc = statusChanged ? `Order details updated, status → ${data.physicalStatus || data.importStatus} by ${ctx.user?.name || "admin"}` : `Order details updated by ${ctx.user?.name || "admin"}`;
+        // Build a meaningful description based on what actually changed
+        const changes: string[] = [];
+        if (data.physicalStatus) changes.push(`status → ${data.physicalStatus}`);
+        if (data.importStatus) changes.push(`import status → ${data.importStatus}`);
+        if (data.discountAmount !== undefined) changes.push(`discount → RM${data.discountAmount || "0"}`);
+        if (data.discountReason !== undefined) changes.push(`discount reason → ${data.discountReason || "(none)"}`);
+        if (data.extraCharge !== undefined) changes.push(`extra charge → RM${data.extraCharge || "0"}`);
+        if (data.extraChargeDescription !== undefined) changes.push(`extra charge desc → ${data.extraChargeDescription || "(none)"}`);
+        if (data.shippingFee !== undefined) changes.push(`shipping fee → RM${data.shippingFee || "0"}`);
+        if (data.shippingAddress !== undefined) changes.push(`shipping address updated`);
+        if (data.shippingMethod !== undefined) changes.push(`shipping method → ${data.shippingMethod}`);
+        if (data.recipientName !== undefined) changes.push(`recipient name → ${data.recipientName || "(none)"}`);
+        if (data.recipientPhone !== undefined) changes.push(`recipient phone → ${data.recipientPhone || "(none)"}`);
+        if (data.totalAmount !== undefined) changes.push(`total → RM${data.totalAmount || "0"}`);
+        const desc = changes.length > 0 ? `Admin更新订单：${changes.join("， ")}` : `Order details updated by ${ctx.user?.name || "admin"}`;
         await db.logOrderOperation(id, "edit", desc, null, ctx.user?.name || "admin");
         return { success: true };
       }),

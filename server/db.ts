@@ -1051,8 +1051,7 @@ export async function updateOrderDetails(id: number, data: {
 
   if (Object.keys(updateData).length > 0) {
     await db.update(orders).set(updateData).where(eq(orders.id, id));
-    const desc = data.physicalStatus ? `Order details updated, status → ${data.physicalStatus}` : `Order details updated by admin`;
-    await logOrderOperation(id, "edit", desc, null, null);
+    // Logging is handled by the routers.ts procedure to avoid duplicate entries
   }
 
   broadcastChanges(["orders", "dashboard"]);

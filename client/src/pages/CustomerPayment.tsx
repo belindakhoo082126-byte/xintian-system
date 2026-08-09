@@ -28,9 +28,13 @@ const PAYMENT_INSTRUCTIONS: Record<string, { zh: string; en: string }> = {
     zh: "请使用任何支援 DuitNow QR 的银行或电子钱包扫描二维码完成付款。\n汇款完成后，请截图并上传付款凭证。",
     en: "Please use any DuitNow QR-supported bank or e-wallet to scan the QR code.\nAfter payment, please screenshot and upload the payment proof.",
   },
+  "Online Transfer": {
+    zh: "请使用网上银行或手机银行汇款至以下 Public Bank 户口。\n汇款完成后，请截图并上传付款凭证。",
+    en: "Please use online or mobile banking to transfer to the following Public Bank account.\nAfter payment, please screenshot and upload the payment proof.",
+  },
   "Public Bank Transfer": {
-    zh: "请汇款至以下 Public Bank 户口。\n汇款完成后，请截图并上传付款凭证。",
-    en: "Please transfer to the following Public Bank account.\nAfter payment, please screenshot and upload the payment proof.",
+    zh: "请使用网上银行或手机银行汇款至以下 Public Bank 户口。\n汇款完成后，请截图并上传付款凭证。",
+    en: "Please use online or mobile banking to transfer to the following Public Bank account.\nAfter payment, please screenshot and upload the payment proof.",
   },
 };
 
@@ -231,6 +235,42 @@ export default function CustomerPayment({ orderId, onBack }: { orderId: number; 
                 </Button>
               </div>
             </div>
+
+            {/* Online Transfer Bank Details — shown only for bank_transfer type */}
+            {selectedMethod.type === "bank_transfer" && (
+              <div className="p-4 border-2 border-primary/30 rounded-lg bg-green-50/50 dark:bg-green-950/20 space-y-3">
+                <div className="flex items-center gap-2 font-semibold">
+                  <University className="h-5 w-5" />
+                  <span>{translate("银行户口资料", "Bank Account Details")}</span>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between p-3 bg-white dark:bg-card rounded-lg border">
+                    <div>
+                      <p className="text-xs text-muted-foreground">{translate("银行", "Bank")}</p>
+                      <p className="font-semibold text-sm">Public Bank</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-white dark:bg-card rounded-lg border">
+                    <div>
+                      <p className="text-xs text-muted-foreground">{translate("户口号码", "Account Number")}</p>
+                      <p className="font-mono font-semibold text-sm">3825375502</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => copyToClipboard("3825375502", translate("户口号码", "Account Number"))}>
+                      <Copy className="h-3.5 w-3.5 mr-1" />{translate("复制", "Copy")}
+                    </Button>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-white dark:bg-card rounded-lg border">
+                    <div>
+                      <p className="text-xs text-muted-foreground">{translate("户口名字", "Account Name")}</p>
+                      <p className="font-semibold text-sm">ECOLAND NURSERY</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => copyToClipboard("ECOLAND NURSERY", translate("户口名字", "Account Name"))}>
+                      <Copy className="h-3.5 w-3.5 mr-1" />{translate("复制", "Copy")}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Method-specific Payment Instruction */}
             <div className="p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20">

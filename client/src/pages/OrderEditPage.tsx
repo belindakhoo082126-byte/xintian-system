@@ -141,7 +141,8 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
 
   const updateItemsMutation = trpc.orders.updateItems.useMutation({
     onSuccess: () => {
-      utils.orders.invalidate();
+      // Don't invalidate here - it would trigger getDetail refetch and reset formData
+      // before updateDetails runs, causing discount/extra charge values to be lost
       toast.success(translate("商品更新成功", "Items updated successfully"));
     },
     onError: (e) => toast.error(translate("商品更新失败: {message}", "Items update failed: {message}", { message: e.message })),

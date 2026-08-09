@@ -2345,3 +2345,9 @@
 - [x] getCustomerOrders新增orderCategory和importStatus返回字段
 - [x] Customers.tsx客户详情页分开显示本地订单和中国代购订单
 - [x] TypeScript编译零错误，270项测试全部通过
+
+## V2.1.03 - 折扣保存修复、操作记录修复、客户结账Online Transfer显示
+
+- [x] 修复折扣保存后变0（竞态条件：updateItems onSuccess invalidate导致formData被重置）
+- [x] 修复操作记录显示错误（移除db.ts重复日志，routers.ts根据实际修改内容记录）
+- [x] 客户结账页面Online Transfer显示银行户口资料（Public Bank/3825375502/ECOLAND NURSERY）+ 复制按钮
