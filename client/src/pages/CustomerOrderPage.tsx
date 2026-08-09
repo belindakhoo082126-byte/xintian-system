@@ -742,8 +742,10 @@ export default function CustomerOrderPage(props: any) {
 
                       {selectedPaymentMethod && (
                         <div className="space-y-3 rounded-lg border bg-background p-4">
-                          {/* V2.0.91: Unified payment image for all methods - no longer switching QR by method */}
-                          <div className="flex justify-center"><img src="/manus-storage/pasted_file_ywVQP7_image_59fb9825.png" alt="汇款资料" className="max-h-96 max-w-full rounded-lg border object-contain" /></div>
+                          {/* V2.1.05: QR image only for qr_code type (TNG/DuitNow); bank_transfer shows bank details only */}
+                          {selectedPaymentMethod.type === "qr_code" && (
+                            <div className="flex justify-center"><img src="/manus-storage/pasted_file_ywVQP7_image_59fb9825.png" alt="汇款资料" className="max-h-96 max-w-full rounded-lg border object-contain" /></div>
+                          )}
                           {selectedPaymentMethod.paymentInstruction && <p className="rounded-md bg-muted p-3 text-sm">{selectedPaymentMethod.paymentInstruction}</p>}
                           {/* V2.1.05: Online Transfer bank details — shown only for bank_transfer type */}
                           {selectedPaymentMethod.type === "bank_transfer" && (
