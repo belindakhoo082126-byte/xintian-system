@@ -72,6 +72,7 @@ export function OrderDocument({
   remarks,
   variant = "customer",
   logoDataUrl,
+  productImageOverrides,
   responsive = false,
   showProductImage = true,
 }: {
@@ -79,6 +80,8 @@ export function OrderDocument({
   remarks?: any[];
   variant?: "customer" | "admin";
   logoDataUrl?: string;
+  /** 预转换的商品图片 base64 映射，key 为原始 URL，value 为 dataURL */
+  productImageOverrides?: Record<string, string>;
   /** 仅供屏幕预览使用；导出 PNG 与打印仍维持固定 800px 版面。 */
   responsive?: boolean;
   /** 是否显示商品照片（Preview 和导出图片时为 true，打印时为 false） */
@@ -272,7 +275,7 @@ export function OrderDocument({
                   <td style={{ ...tdStyle, width: "60px" }}>
                     {item.productImage ? (
                       <img
-                        src={item.productImage}
+                        src={(productImageOverrides && productImageOverrides[item.productImage]) || item.productImage}
                         alt={item.productName}
                         style={{
                           width: "50px",

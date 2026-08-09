@@ -2395,3 +2395,10 @@
 - [x] OrderBrowsePage Preview对话框variant从admin改为customer（隐藏汇款凭证和admin-only字段）
 - [x] 系统自动备注（换盆/取消换盆）改为Activity Log记录
 - [x] TypeScript编译零错误，270项测试全部通过
+## V2.1.09 - 修复XTC订单导出图片失败（CORS问题）
+
+- [x] 根因分析：XTC订单商品图片使用外部URL（unsplash.com），html2canvas遇到CORS taint导致导出失败
+- [x] OrderDocument新增productImageOverrides prop，允许传入预转换的base64图片映射
+- [x] OrderBrowsePage handleExportImage：导出前预转换所有商品图片为base64 dataURL
+- [x] OrderBrowsePage handlePrint：打印前同样预转换商品图片
+- [x] TypeScript编译零错误，270项测试全部通过

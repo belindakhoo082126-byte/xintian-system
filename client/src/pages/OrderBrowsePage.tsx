@@ -127,6 +127,29 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
       } catch (e) {
         console.warn("Logo fetch failed, will try direct URL", e);
       }
+      // Pre-convert product images to base64 dataURLs to avoid CORS issues with html2canvas
+      // (XTC orders may use external URLs like unsplash.com which cause CORS taint)
+      const productImageOverrides: Record<string, string> = {};
+      const items = (o as any).items || [];
+      for (const item of items) {
+        if (item.productImage && !productImageOverrides[item.productImage]) {
+          try {
+            const imgResp = await fetch(item.productImage, { mode: "cors" });
+            if (imgResp.ok) {
+              const imgBlob = await imgResp.blob();
+              const dataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(imgBlob);
+              });
+              productImageOverrides[item.productImage] = dataUrl;
+            }
+          } catch (e) {
+            console.warn(`Product image fetch failed for ${item.productImage}`, e);
+          }
+        }
+      }
       // Create a standalone container outside the React tree
       const container = document.createElement("div");
       prepareOrderDocumentExportHost(container);
@@ -134,7 +157,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
       // Render OrderDocument into the container using React
       const root = createRoot(container);
       await new Promise<void>((resolve) => {
-        root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} showProductImage={true} />);
+        root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} productImageOverrides={productImageOverrides} showProductImage={true} />);
         setTimeout(resolve, 500);
       });
       // Wait for any images to load (including product images)
@@ -212,11 +235,33 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
     } catch (e) {
       console.warn("Logo fetch failed for print", e);
     }
+    // Pre-convert product images to base64 dataURLs to avoid CORS issues
+    const productImageOverrides: Record<string, string> = {};
+    const items = (o as any).items || [];
+    for (const item of items) {
+      if (item.productImage && !productImageOverrides[item.productImage]) {
+        try {
+          const imgResp = await fetch(item.productImage, { mode: "cors" });
+          if (imgResp.ok) {
+            const imgBlob = await imgResp.blob();
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(imgBlob);
+            });
+            productImageOverrides[item.productImage] = dataUrl;
+          }
+        } catch (e) {
+          console.warn(`Product image fetch failed for print: ${item.productImage}`, e);
+        }
+      }
+    }
     const container = document.createElement("div");
     prepareOrderDocumentExportHost(container);
     document.body.appendChild(container);
     const root = createRoot(container);
-    root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} showProductImage={false} />);
+    root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} productImageOverrides={productImageOverrides} showProductImage={false} />);
     setTimeout(() => {
       const targetEl = container.firstChild as HTMLElement;
       if (!targetEl) return;
