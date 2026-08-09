@@ -377,7 +377,8 @@ export function OrderDocument({
                 <th style={thStyle}>{translate("日期", "Date")}</th>
                 <th style={thRight}>{translate("金额", "Amount")}</th>
                 <th style={thStyle}>{translate("付款方式", "Method")}</th>
-                <th style={thStyle}>{translate("付款截图", "Receipt")}</th>
+                <th style={thStyle}>{translate("审核状态", "Status")}</th>
+                {isAdmin && <th style={thStyle}>{translate("付款截图", "Receipt")}</th>}
                 {isAdmin && <th style={thStyle}>{translate("备注", "Notes")}</th>}
               </tr>
             </thead>
@@ -388,12 +389,21 @@ export function OrderDocument({
                   <td style={{ ...tdRight, fontWeight: 500 }}>RM {parseFloat(p.amount).toFixed(2)}</td>
                   <td style={tdStyle}>{p.paymentMethodName || p.paymentMethod || "-"}</td>
                   <td style={tdStyle}>
-                    {p.receiptUrl ? (
-                      <span style={{ color: C.blue }}>[{translate("已上传", "Uploaded")}]</span>
+                    {p.verified ? (
+                      <span style={{ color: C.greenPaid, fontWeight: 500 }}>{translate("已确认", "Verified")}</span>
                     ) : (
-                      <span style={{ color: C.textMuted }}>-</span>
+                      <span style={{ color: C.orange }}>{translate("待审核", "Pending")}</span>
                     )}
                   </td>
+                  {isAdmin && (
+                    <td style={tdStyle}>
+                      {p.receiptUrl ? (
+                        <span style={{ color: C.blue }}>[{translate("已上传", "Uploaded")}]</span>
+                      ) : (
+                        <span style={{ color: C.textMuted }}>-</span>
+                      )}
+                    </td>
+                  )}
                   {isAdmin && <td style={{ ...tdStyle, color: C.textLight }}>{p.notes || p.purpose || "-"}</td>}
                 </tr>
               ))}

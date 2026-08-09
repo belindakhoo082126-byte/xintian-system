@@ -4549,6 +4549,7 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
       facebookKeyword: item.facebookKeyword || null,
       priceType: item.isSpecial ? "special" : "retail",
       discount: "0.00",
+      itemSource: "mall",
     });
 
     if (item.variationId) {
@@ -4593,13 +4594,8 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
     totalWeight: totalWeight.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
   }).where(eq(orders.id, orderId));
-  await db.insert(orderRemarks).values({
-    orderId,
-    type: "customer",
-    content: `客户商城加单：${items.map((item) => `${item.productName} ×${item.quantity}`).join("、")}`,
-    remarkCategory: "other",
-    createdBy: "客户结单页",
-  });
+  // V2.1.08: Removed auto-remark for mall add-on; itemSource on order_items already records it.
+  // Activity log below serves as the system operation record.
   // V2.0.90: Add order operation log for timeline tracking
   await logOrderOperation(orderId, "mall_addon", `商城加单：${items.map((item) => `${item.productName} ×${item.quantity}`).join("、")}`, JSON.stringify({
     items: items.map((item) => ({ name: item.productName, qty: item.quantity, price: item.unitPrice })),
@@ -6327,13 +6323,8 @@ export async function createOrderItemRepot(data: {
     .set({ stockQuantity: sql`stockQuantity - ${data.quantity}` })
     .where(eq(products.id, data.potProductId));
 
-  // Auto-create an internal remark so it shows on Dashboard
-  await db.insert(orderRemarks).values({
-    orderId: data.orderId,
-    type: "internal",
-    content: `换盆：${data.productName} → ${data.potProductName} x ${data.quantity}`,
-    createdBy: "system",
-  });
+  // V2.1.08: System actions go to Activity Log, not remarks
+  await logOrderOperation(data.orderId, "repotting_added", `换盆：${data.productName} → ${data.potProductName} x ${data.quantity}`, null, "system");
 }
 
 export async function deleteOrderItemRepot(id: number) {
@@ -6349,14 +6340,9 @@ export async function deleteOrderItemRepot(id: number) {
       .where(eq(products.id, repot[0].potProductId));
   }
 
-  // Auto-create an internal remark for the cancellation
+  // V2.1.08: System actions go to Activity Log, not remarks
   if (repot.length > 0) {
-    await db.insert(orderRemarks).values({
-      orderId: repot[0].orderId,
-      type: "internal",
-      content: `取消换盆：${repot[0].productName} → ${repot[0].potProductName} x ${repot[0].quantity}`,
-      createdBy: "system",
-    });
+    await logOrderOperation(repot[0].orderId, "repotting_cancelled", `取消换盆：${repot[0].productName} → ${repot[0].potProductName} x ${repot[0].quantity}`, null, "system");
   }
 
   await db.delete(orderItemRepots).where(eq(orderItemRepots.id, id));

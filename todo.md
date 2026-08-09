@@ -2385,3 +2385,13 @@
 - [x] 修复recipientForm：新增recipientAddress/recipientCity/recipientState/recipientPostcode/recipientCountry字段
 - [x] 选择已有客户时自动带入客户地址到收件人资料（address/city/state/postalCode/country）
 - [x] TypeScript编译零错误，270项测试全部通过
+
+## V2.1.08 - 统一订单单据系统（5种资料分离）
+
+- [x] addMallItemsToOrder新增itemSource="mall"到order_items insert
+- [x] addMallItemsToOrder移除自动备注写入，改为Activity Log记录
+- [x] OrderDocument付款记录新增审核状态列（已确认/待审核）
+- [x] OrderDocument付款截图列仅在admin variant显示（Preview/Export/Print使用customer variant隐藏）
+- [x] OrderBrowsePage Preview对话框variant从admin改为customer（隐藏汇款凭证和admin-only字段）
+- [x] 系统自动备注（换盆/取消换盆）改为Activity Log记录
+- [x] TypeScript编译零错误，270项测试全部通过

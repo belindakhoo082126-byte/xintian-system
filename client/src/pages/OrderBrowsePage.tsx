@@ -840,7 +840,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
             <OrderDocument
               order={o}
               remarks={remarks}
-              variant="admin"
+              variant="customer"
               logoDataUrl={previewLogoUrl}
               responsive
               showProductImage={true}
