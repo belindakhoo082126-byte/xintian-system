@@ -106,7 +106,7 @@ export default function Dashboard() {
     { title: lang === "zh" ? "今日订单" : "Today Orders", value: stats.row4.todayOrders, icon: ShoppingBag, color: "text-cyan-500", link: "/orders?today=1" },
     { title: lang === "zh" ? "部分发货" : "Partial Shipped", value: stats.row1.partialShipped, icon: Truck, color: "text-indigo-500", link: "/packing?tab=partial_shipped" },
     { title: lang === "zh" ? "保留订单" : "Hold Orders", value: stats.row2.holdOrders, icon: Ban, color: "text-yellow-500", link: "/orders?status=hold_order" },
-    { title: lang === "zh" ? "今日预约发货" : "Today Scheduled", value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "/packing?tab=scheduled" },
+    { title: lang === "zh" ? "今日预约发货" : "Today Scheduled", value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "/packing?tab=scheduled&date=today" },
     { title: lang === "zh" ? "未读 Messenger" : "Unread Messenger", value: 0, icon: MessageCircle, color: "text-pink-500", link: "/messenger" },
     { title: lang === "zh" ? "库存预警" : "Stock Alert", value: stats.row3.lowStock + stats.row3.outOfStock, icon: Warehouse, color: "text-red-500", link: "/products-v2?stock=low" },
   ];

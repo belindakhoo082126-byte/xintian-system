@@ -25,8 +25,11 @@ export default function Packing() {
   const [activeTab, setActiveTab] = useState<string>(urlTab || "packing");
 
   const isScheduledTab = activeTab === "scheduled";
-  const [dateFrom, setDateFrom] = useState<string>("");
-  const [dateTo, setDateTo] = useState<string>("");
+  // V2.1.12: Default to today's date when entering scheduled tab (supports date=today URL param)
+  const urlDate = new URLSearchParams(searchParams).get("date");
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [dateFrom, setDateFrom] = useState<string>(urlDate === "today" ? todayStr : "");
+  const [dateTo, setDateTo] = useState<string>(urlDate === "today" ? todayStr : "");
   const { data: orders, isLoading } = trpc.packing.list.useQuery({ status: activeTab as any }, { enabled: !isScheduledTab });
   const { data: scheduledOrders, isLoading: scheduledLoading } = trpc.scheduledShipping.list.useQuery(
     { dateFrom: dateFrom || undefined, dateTo: dateTo || undefined },

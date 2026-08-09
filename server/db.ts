@@ -6116,16 +6116,22 @@ export async function getDashboardV11Stats() {
     )) as any[];
   const totalMonthSales = (Number(localSalesMonth[0]?.total || 0)) + (Number(importSalesMonth[0]?.total || 0));
 
-  // V2.0.53: Row 5: Scheduled shipping today — from desired_delivery_date remarks + scheduledShippingDate
+  // V2.1.12: Row 5: Scheduled shipping today — unified query matching getScheduledShippingOrders
+  const scheduledValidStatuses = ['pending', 'packing', 'hold_order', 'receipt_uploaded', 'partial_payment', 'waiting_stock', 'ready_to_ship', 'scheduled_ship'];
   const scheduledTodayFromRemarks = await db.select({ count: sql`COUNT(DISTINCT ${orderRemarks.orderId})` }).from(orderRemarks)
     .leftJoin(orders, eq(orderRemarks.orderId, orders.id))
     .where(and(
       sql`${orderRemarks.remarkCategory} = 'desired_delivery_date'`,
       sql`DATE(${orderRemarks.desiredDeliveryDate}) = ${today}`,
-      sql`${orders.physicalStatus} IN ('pending', 'paid', 'packing', 'hold_order')`
+      sql`${orders.physicalStatus} IN (${sql.join(scheduledValidStatuses.map(s => sql`${s}`), sql`,`)})`,
+      sql`${orders.scheduledShippingDate} IS NULL`
     )) as any[];
   const scheduledTodayFromOrders = await db.select({ count: sql`COUNT(*)` }).from(orders)
-    .where(and(eq(orders.physicalStatus, 'packing'), eq(orders.scheduledShippingDate, today))) as any[];
+    .where(and(
+      sql`${orders.scheduledShippingDate} IS NOT NULL`,
+      sql`DATE(${orders.scheduledShippingDate}) = ${today}`,
+      sql`${orders.physicalStatus} IN (${sql.join(scheduledValidStatuses.map(s => sql`${s}`), sql`,`)})`
+    )) as any[];
   const scheduledTodayTotal = Number(scheduledTodayFromRemarks[0]?.count || 0) + Number(scheduledTodayFromOrders[0]?.count || 0);
 
     // Order alerts
@@ -6550,21 +6556,111 @@ export async function markFlowReminderSent(reviewId: number) {
 export async function getScheduledShippingOrders(filter?: { dateFrom?: Date; dateTo?: Date }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const conditions = [
-    eq(orders.physicalStatus, 'packing'),
-    sql`${orders.scheduledShippingDate} IS NOT NULL`,
-  ];
+  // V2.1.12: Unified query — includes both orders with scheduledShippingDate AND orders with desired_delivery_date remarks
+  // Also includes both local (XT) and import (XTC) orders
+  const validStatuses = ['pending', 'packing', 'hold_order', 'receipt_uploaded', 'partial_payment', 'waiting_stock', 'ready_to_ship', 'scheduled_ship'];
+  const dateConditions: any[] = [];
   if (filter?.dateFrom) {
     const from = new Date(filter.dateFrom); from.setHours(0, 0, 0, 0);
-    conditions.push(sql`${orders.scheduledShippingDate} >= ${from}`);
+    dateConditions.push(sql`${orders.scheduledShippingDate} >= ${from}`);
   }
   if (filter?.dateTo) {
     const to = new Date(filter.dateTo); to.setHours(23, 59, 59, 999);
-    conditions.push(sql`${orders.scheduledShippingDate} <= ${to}`);
+    dateConditions.push(sql`${orders.scheduledShippingDate} <= ${to}`);
   }
-  return await db.select().from(orders)
-    .where(and(...conditions))
-    .orderBy(asc(orders.scheduledShippingDate));
+  // Query 1: Orders with scheduledShippingDate set (physicalStatus in valid statuses)
+  const orderConditions = [
+    sql`${orders.scheduledShippingDate} IS NOT NULL`,
+    sql`${orders.physicalStatus} IN (${sql.join(validStatuses.map(s => sql`${s}`), sql`,`)})`,
+    ...dateConditions,
+  ];
+  const ordersWithDate = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    customerId: orders.customerId,
+    customerName: customers.name,
+    customerPhone: customers.phoneNumber,
+    shippingAddress: orders.shippingAddress,
+    shippingMethod: orders.shippingMethod,
+    totalAmount: orders.totalAmount,
+    paidAmount: orders.paidAmount,
+    totalWeight: orders.totalWeight,
+    createdAt: orders.createdAt,
+    paymentConfirmedAt: orders.paymentConfirmedAt,
+    scheduledShippingDate: orders.scheduledShippingDate,
+    physicalStatus: orders.physicalStatus,
+    orderCategory: (orders as any).orderCategory,
+    importStatus: (orders as any).importStatus,
+  }).from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id))
+    .where(and(...orderConditions))
+    .orderBy(asc(orders.scheduledShippingDate)) as any[];
+  // Query 2: Orders with desired_delivery_date remarks (no scheduledShippingDate set yet)
+  const remarkDateConditions: any[] = [
+    sql`${orderRemarks.remarkCategory} = 'desired_delivery_date'`,
+    sql`${orderRemarks.desiredDeliveryDate} IS NOT NULL`,
+    sql`${orders.scheduledShippingDate} IS NULL`, // avoid duplicates with ordersWithDate
+    sql`${orders.physicalStatus} IN (${sql.join(validStatuses.map(s => sql`${s}`), sql`,`)})`,
+  ];
+  if (filter?.dateFrom) {
+    const from = new Date(filter.dateFrom); from.setHours(0, 0, 0, 0);
+    remarkDateConditions.push(sql`DATE(${orderRemarks.desiredDeliveryDate}) >= ${from}`);
+  }
+  if (filter?.dateTo) {
+    const to = new Date(filter.dateTo); to.setHours(23, 59, 59, 999);
+    remarkDateConditions.push(sql`DATE(${orderRemarks.desiredDeliveryDate}) <= ${to}`);
+  }
+  const ordersWithRemarks = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    customerId: orders.customerId,
+    customerName: customers.name,
+    customerPhone: customers.phoneNumber,
+    shippingAddress: orders.shippingAddress,
+    shippingMethod: orders.shippingMethod,
+    totalAmount: orders.totalAmount,
+    paidAmount: orders.paidAmount,
+    totalWeight: orders.totalWeight,
+    createdAt: orders.createdAt,
+    paymentConfirmedAt: orders.paymentConfirmedAt,
+    scheduledShippingDate: orderRemarks.desiredDeliveryDate, // use remark date as scheduled date
+    physicalStatus: orders.physicalStatus,
+    orderCategory: (orders as any).orderCategory,
+    importStatus: (orders as any).importStatus,
+  }).from(orderRemarks)
+    .leftJoin(orders, eq(orderRemarks.orderId, orders.id))
+    .leftJoin(customers, eq(orders.customerId, customers.id))
+    .where(and(...remarkDateConditions))
+    .orderBy(asc(orderRemarks.desiredDeliveryDate)) as any[];
+  // Merge and deduplicate
+  const seen = new Set<number>();
+  const merged = [...ordersWithDate, ...ordersWithRemarks].filter(o => {
+    if (seen.has(o.id)) return false;
+    seen.add(o.id);
+    return true;
+  });
+  // Sort by scheduledShippingDate ascending
+  merged.sort((a, b) => {
+    const aDate = a.scheduledShippingDate ? new Date(a.scheduledShippingDate).getTime() : Infinity;
+    const bDate = b.scheduledShippingDate ? new Date(b.scheduledShippingDate).getTime() : Infinity;
+    return aDate - bDate;
+  });
+  // Enrich with item counts
+  const enriched = await Promise.all(merged.map(async (o) => {
+    const items = await db.select({
+      id: orderItems.id,
+      quantity: orderItems.quantity,
+      productName: orderItems.productName,
+    }).from(orderItems).where(eq(orderItems.orderId, o.id));
+    const totalQty = items.reduce((sum, i) => sum + i.quantity, 0);
+    const itemTypes = items.length;
+    let specialLabel = "";
+    if (o.shippingMethod === "lalamove") specialLabel = "LALAMOVE";
+    else if (o.shippingMethod === "east_malaysia_shopee") specialLabel = "东马 SHOPEE";
+    else if (o.shippingMethod === "east_malaysia_poslaju") specialLabel = "东马 POSLAJU";
+    return { ...o, totalQuantity: totalQty, itemTypes, specialLabel };
+  }));
+  return enriched;
 }
 
 // ============================================================================

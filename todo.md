@@ -2423,4 +2423,13 @@
 - [x] submitPaymentReceipt：允许partial_payment和receipt_uploaded状态再次上传
 - [x] Activity Log同步记录付款审核操作(审核通过/审核失败/Admin新增付款)
 - [x] TypeScript编译零错误，270项测试全部通过
-- [ ] 保存V2.1.11 checkpoint
+- [x] 保存V2.1.11 checkpoint
+
+## V2.1.12 - Dashboard与包货工作台预约发货数据一致性修复
+- [x] 调查根因：Dashboard统计desired_delivery_date备注+scheduledShippingDate，包货工作台只查scheduledShippingDate且仅packing状态
+- [x] 统一getScheduledShippingOrders查询：同时查询scheduledShippingDate和desired_delivery_date备注，支持XT和XTC
+- [x] 统一Dashboard scheduledToday统计逻辑与getScheduledShippingOrders一致
+- [x] 包货工作台预约发货Tab支持date=today URL参数，默认显示今日预约订单
+- [x] Dashboard卡片链接改为/packing?tab=scheduled&date=today，点击自动带今日筛选
+- [x] TypeScript编译零错误，270项测试全部通过
+- [ ] 保存V2.1.12 checkpoint
