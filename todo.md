@@ -2314,3 +2314,17 @@
 - [x] V2.0.99: 后端 - createOrderWithSplit新增import订单默认pending, addOrderPayment处理importStatus, updateOrderStatus处理importStatus, autoMatchXtcOrders使用importStatus
 - [x] V2.0.99: 前端 - Orders.tsx新增IMPORT_STATUS定义和筛选, OrderCreatePage更新IMPORT_ORDER_STATUSES, OrderDetail新增IMPORT_STATUS_CONFIG_RAW, OrderEditPage新增importStatus下拉
 - [x] V2.0.99: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint
+
+- [x] V2.1.00: XTC Status系统统一补全修复
+- [x] V2.1.00: 1) OrderEditPage hold_order值修复（"hold"→"hold_order"）
+- [x] V2.1.00: 2) OrderBrowsePage新增IMPORT_STATUS_CONFIG，import订单显示importStatus而非physicalStatus
+- [x] V2.1.00: 3) OrderDocument新增IMPORT_STATUS_LABELS，import订单打印/预览显示正确状态
+- [x] V2.1.00: 4) OrderDetail状态转换对话框支持import订单使用IMPORT_STATUS_CONFIG_RAW
+- [x] V2.1.00: 5) OrderDetail状态日志显示支持import订单importStatus
+- [x] V2.1.00: 6) transitionOrderStatus后端函数支持import订单更新importStatus
+- [x] V2.1.00: 7) getCustomerOrderTracking后端函数返回importStatus和orderCategory
+- [x] V2.1.00: 8) getOrderBySecureToken后端函数支持import订单customerStatus映射
+- [x] V2.1.00: 9) CustomerOrderTracking前端新增XTC状态映射（挂单/待审核付款凭证/待备货/待发货/预约发货/取消）
+- [x] V2.1.00: 10) CustomerOrderPage前端新增Partial Payment/Hold Order/Scheduled Ship状态
+- [x] V2.1.00: 11) 订单编号前缀CXT→XTC修复（db.ts + OrderCreatePage.tsx）
+- [x] V2.1.00: TypeScript检查通过 + 270项测试全部通过 + 保存checkpoint

@@ -18,10 +18,14 @@ import { Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink,
 import { toast } from "sonner";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
+  // Local order statuses
   "Pending Payment": { label: "未汇款订单", color: "bg-amber-100 text-amber-900", icon: Clock },
   "Payment Review": { label: "付款审核中", color: "bg-sky-100 text-sky-900", icon: Clock },
   "Payment Confirmed": { label: "已确认付款", color: "bg-emerald-100 text-emerald-900", icon: CheckCircle2 },
+  "Partial Payment": { label: "部分汇款", color: "bg-amber-100 text-amber-900", icon: Clock },
+  "Hold Order": { label: "保留订单", color: "bg-purple-100 text-purple-900", icon: Clock },
   "Preparing Goods": { label: "配货中", color: "bg-sky-100 text-sky-900", icon: Package },
+  "Scheduled Ship": { label: "预约发货", color: "bg-indigo-100 text-indigo-900", icon: Clock },
   "Partial Shipped": { label: "部分已发货", color: "bg-orange-100 text-orange-900", icon: Truck },
   "Shipped": { label: "已发货", color: "bg-emerald-100 text-emerald-900", icon: Truck },
   "Completed": { label: "已完成", color: "bg-muted text-muted-foreground", icon: CheckCircle2 },

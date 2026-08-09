@@ -22,6 +22,20 @@ const STATUS_LABELS: Record<string, { zh: string; en: string }> = {
   special: { zh: "特别订单", en: "Special Order" },
 };
 
+// V2.0.99: XTC Import order status labels (final unified version)
+const IMPORT_STATUS_LABELS: Record<string, { zh: string; en: string }> = {
+  pending: { zh: "挂单", en: "Pending" },
+  receipt_uploaded: { zh: "待审核付款凭证", en: "Pending Verification" },
+  partial_payment: { zh: "部分汇款", en: "Partial Payment" },
+  waiting_stock: { zh: "待备货", en: "Waiting Stock" },
+  ready_to_ship: { zh: "待发货", en: "Ready to Ship" },
+  scheduled_ship: { zh: "预约发货", en: "Scheduled Ship" },
+  partial_shipped: { zh: "部分发货", en: "Partial Shipped" },
+  shipped: { zh: "已发货", en: "Shipped" },
+  completed: { zh: "已完成", en: "Completed" },
+  cancelled: { zh: "取消", en: "Cancelled" },
+};
+
 // All colors in hex/rgb — NO oklch, NO CSS variables, NO Tailwind classes
 // This ensures html2canvas can parse every color without errors
 const C = {
@@ -76,7 +90,10 @@ export function OrderDocument({
   // Filter remarks for customer copy — hide internal remarks
   const visibleRemarks = isAdmin ? (remarks || []) : (remarks || []).filter((r: any) => r.type !== "internal" && r.type !== "live");
   const shippingCfg = SHIPPING_LABELS[o.shippingMethod] || { zh: o.shippingMethod, en: o.shippingMethod };
-  const statusCfg = STATUS_LABELS[o.physicalStatus] || { zh: o.physicalStatus, en: o.physicalStatus };
+  const isImportOrder = o.orderCategory === "import";
+  const statusCfg = isImportOrder
+    ? (IMPORT_STATUS_LABELS[o.importStatus] || { zh: o.importStatus, en: o.importStatus })
+    : (STATUS_LABELS[o.physicalStatus] || { zh: o.physicalStatus, en: o.physicalStatus });
 
   const physicalSubtotal = parseFloat(o.physicalSubtotal || "0");
   const membershipSubtotal = parseFloat(o.membershipSubtotal || "0");

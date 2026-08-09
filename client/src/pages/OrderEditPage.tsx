@@ -487,7 +487,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                   <SelectItem value="pending">{translate("未汇款订单", "Unpaid")}</SelectItem>
                   <SelectItem value="receipt_uploaded">{translate("待审核付款凭证", "Receipt Uploaded")}</SelectItem>
                   <SelectItem value="partial_payment">{translate("部分汇款", "Partial Payment")}</SelectItem>
-                  <SelectItem value="hold">{translate("保留订单", "Hold")}</SelectItem>
+                  <SelectItem value="hold_order">{translate("保留订单", "Hold Order")}</SelectItem>
                   <SelectItem value="packing">{translate("待包货", "Packing")}</SelectItem>
                   <SelectItem value="partial_shipped">{translate("部分发货", "Partial Shipped")}</SelectItem>
                   <SelectItem value="shipped">{translate("已发货", "Shipped")}</SelectItem>

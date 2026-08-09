@@ -37,6 +37,20 @@ const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = 
   special: { zh: "特别订单", en: "Special Order", variant: "secondary" },
 };
 
+// V2.0.99: XTC Import order status config (final unified version)
+const IMPORT_STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
+  pending: { zh: "挂单", en: "Pending", variant: "outline" },
+  receipt_uploaded: { zh: "待审核付款凭证", en: "Pending Verification", variant: "secondary" },
+  partial_payment: { zh: "部分汇款", en: "Partial Payment", variant: "secondary" },
+  waiting_stock: { zh: "待备货", en: "Waiting Stock", variant: "secondary" },
+  ready_to_ship: { zh: "待发货", en: "Ready to Ship", variant: "default" },
+  scheduled_ship: { zh: "预约发货", en: "Scheduled Ship", variant: "secondary" },
+  partial_shipped: { zh: "部分发货", en: "Partial Shipped", variant: "secondary" },
+  shipped: { zh: "已发货", en: "Shipped", variant: "default" },
+  completed: { zh: "已完成", en: "Completed", variant: "default" },
+  cancelled: { zh: "取消", en: "Cancelled", variant: "destructive" },
+};
+
 const NATURE_LABELS: Record<string, { zh: string; en: string }> = {
   retail: { zh: "零售", en: "Retail" },
   wholesale: { zh: "批发", en: "Wholesale" },
@@ -355,7 +369,10 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   }
 
   const o = order as any;
-  const statusCfg = STATUS_CONFIG[o.physicalStatus] || { zh: o.physicalStatus, en: o.physicalStatus, variant: "outline" };
+  const isImportOrder = o.orderCategory === "import";
+  const statusCfg = isImportOrder
+    ? (IMPORT_STATUS_CONFIG[o.importStatus] || { zh: o.importStatus, en: o.importStatus, variant: "outline" })
+    : (STATUS_CONFIG[o.physicalStatus] || { zh: o.physicalStatus, en: o.physicalStatus, variant: "outline" });
   const natureCfg = NATURE_LABELS[o.orderNature] || { zh: o.orderNature, en: o.orderNature };
   const sourceCfg = SOURCE_LABELS[o.orderSource] || { zh: o.orderSource, en: o.orderSource };
   const shippingCfg = SHIPPING_LABELS[o.shippingMethod] || { zh: o.shippingMethod, en: o.shippingMethod };

@@ -552,7 +552,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
 
   const isSubmitting = findCustomerMutation.isPending || createOrderMutation.isPending || addPaymentMutation.isPending;
   const orderTypeLabel = orderCategory === "import" ? translate("中国代购订单", "Import Order") : translate("本地订单", "Local Order");
-  const orderNumberPrefix = orderCategory === "import" ? "CXT" : "XT";
+  const orderNumberPrefix = orderCategory === "import" ? "XTC" : "XT";
   const statusOptions = orderCategory === "import" ? IMPORT_ORDER_STATUSES : LOCAL_ORDER_STATUSES;
 
   // ===== Preview Mode =====

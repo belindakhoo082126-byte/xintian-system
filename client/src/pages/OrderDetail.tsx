@@ -381,13 +381,12 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                     <TableRow key={log.id}>
                       <TableCell className="text-sm">{new Date(log.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</TableCell>
                       <TableCell>
-                        {log.fromStatus ? (
-                          <Badge variant="outline">{translate(STATUS_CONFIG_RAW[log.fromStatus]?.zh || log.fromStatus, STATUS_CONFIG_RAW[log.fromStatus]?.en || log.fromStatus)}</Badge>
-
+                                                {log.fromStatus ? (
+                          <Badge variant="outline">{translate((isImportOrder ? IMPORT_STATUS_CONFIG_RAW : STATUS_CONFIG_RAW)[log.fromStatus]?.zh || log.fromStatus, (isImportOrder ? IMPORT_STATUS_CONFIG_RAW : STATUS_CONFIG_RAW)[log.fromStatus]?.en || log.fromStatus)}</Badge>
                         ) : "-"}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="default">{translate(STATUS_CONFIG_RAW[log.toStatus]?.zh || log.toStatus, STATUS_CONFIG_RAW[log.toStatus]?.en || log.toStatus)}</Badge>
+                        <Badge variant="default">{translate((isImportOrder ? IMPORT_STATUS_CONFIG_RAW : STATUS_CONFIG_RAW)[log.toStatus]?.zh || log.toStatus, (isImportOrder ? IMPORT_STATUS_CONFIG_RAW : STATUS_CONFIG_RAW)[log.toStatus]?.en || log.toStatus)}</Badge>
                       </TableCell>
                       <TableCell className="text-sm">{log.changedBy || "-"}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{log.notes || "-"}</TableCell>
@@ -922,7 +921,7 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
               <Select value={targetStatus} onValueChange={setTargetStatus}>
                 <SelectTrigger><SelectValue placeholder={translate("选择状态", "Select Status")} /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(STATUS_CONFIG_RAW).map(([key, cfg]) => (
+                  {Object.entries(isImportOrder ? IMPORT_STATUS_CONFIG_RAW : STATUS_CONFIG_RAW).map(([key, cfg]) => (
                     <SelectItem key={key} value={key}>{translate(cfg.zh, cfg.en)}</SelectItem>
                   ))}
                 </SelectContent>

@@ -1,59 +1,55 @@
-# XTC Status System Analysis - V2.0.99
+# XTC Status 系统统一排查结果 (V2.0.99 验证)
 
-## Database Status (Already Correct)
-- `importStatus` enum: pending, receipt_uploaded, partial_payment, waiting_stock, ready_to_ship, scheduled_ship, partial_shipped, shipped, completed, cancelled
-- `physicalStatus` enum: pending, receipt_uploaded, partial_payment, hold_order, packing, shipped, partial_shipped, completed, cancelled, scheduled, special
-- No import orders exist in DB yet (all 21 orders are local)
-- No data migration needed
+## 已确认正确的位置
 
-## Problem Summary
-The system uses `physicalStatus` for ALL orders. For import (XTC) orders, it should use `importStatus` instead. The `importStatus` field exists in DB but is never read or written by the application code.
+1. **schema.ts importStatus enum** ✅ - 10个状态值正确
+2. **Orders.tsx IMPORT_STATUS** ✅ - 10个状态+颜色正确
+3. **OrderCreatePage.tsx IMPORT_ORDER_STATUSES** ✅ - 10个状态正确
+4. **OrderDetail.tsx IMPORT_STATUS_CONFIG_RAW** ✅ - 10个状态正确
+5. **OrderEditPage.tsx importStatus dropdown** ✅ - 10个状态正确
+6. **db.ts createOrderWithSplit** ✅ - import订单默认 importStatus="pending"
+7. **db.ts addOrderPayment** ✅ - importStatus自动转换(waiting_stock/partial_payment/receipt_uploaded)
+8. **db.ts updateOrderStatus** ✅ - importStatus mapping正确
+9. **db.ts autoMatchXtcOrders** ✅ - 齐货→ready_to_ship, 缺货→waiting_stock (但缺少scheduled_ship处理)
+10. **db.ts allocateStockByPriority** ✅ - 同上 (但缺少scheduled_ship处理)
 
-## Required Changes
+## 发现的问题
 
-### Backend (server/db.ts)
-1. `getOrders()` - When orderCategory=import, filter by importStatus instead of physicalStatus
-2. `getOrderById()` - Return importStatus for import orders
-3. `createOrderWithSplit()` - Set importStatus='pending' for import orders (currently only sets physicalStatus)
-4. `updateOrderStatus()` - Update importStatus for import orders
-5. `updateOrderDetails()` - Update importStatus for import orders
-6. `addOrderPayment()` - Set importStatus based on payment for import orders
-7. `autoMatchXtcOrders()` - Already uses importStatus (V2.0.97/98)
+### 问题1: OrderBrowsePage.tsx 不支持import订单的importStatus
+- 只使用 `STATUS_CONFIG[o.physicalStatus]` 显示状态
+- import订单应使用 `IMPORT_STATUS_CONFIG[o.importStatus]` 显示XTC状态
+- **需要修复**: 添加IMPORT_STATUS_CONFIG，import订单使用importStatus
 
-### Backend (server/routers.ts)
-1. `orders.list` - Pass importStatus filter for import orders
-2. `orders.updateStatus` - Update importStatus for import orders
-3. `orders.updateDetails` - Update importStatus for import orders
+### 问题2: OrderDocument.tsx 不支持import订单的importStatus
+- 只使用 `STATUS_LABELS[o.physicalStatus]` 显示状态
+- import订单应使用import status labels
+- **需要修复**: 添加import status labels，import订单使用importStatus
 
-### Frontend
-1. **Orders.tsx** - Add IMPORT_STATUS definition, use importStatus when orderCategory=import
-2. **OrderCreatePage.tsx** - Fix IMPORT_ORDER_STATUSES to use correct import values (挂单/待审核/部分汇款/待备货/待发货/预约发货/部分发货/已发货/已完成/取消)
-3. **OrderDetail.tsx** - Show import-specific statuses for import orders
-4. **OrderEditPage.tsx** - Show import-specific status dropdown for import orders
-5. **OrderBrowsePage.tsx** - Show importStatus for import orders
-6. **Dashboard.tsx** - Use importStatus for import order stats
+### 问题3: OrderDetail.tsx 状态转换对话框不区分import订单
+- 手动变更状态时只使用 `STATUS_CONFIG_RAW`（本地状态）
+- import订单应使用 `IMPORT_STATUS_CONFIG_RAW`
+- **需要修复**: 根据isImportOrder选择正确的status config
 
-## XTC Status Mapping (importStatus)
-| Value | Chinese Label | English Label |
-|-------|--------------|---------------|
-| pending | 挂单 | Pending |
-| receipt_uploaded | 待审核付款凭证 | Pending Verification |
-| partial_payment | 部分汇款 | Partial Payment |
-| waiting_stock | 待备货 | Waiting Stock |
-| ready_to_ship | 待发货 | Ready to Ship |
-| scheduled_ship | 预约发货 | Scheduled Shipping |
-| partial_shipped | 部分发货 | Partial Shipped |
-| shipped | 已发货 | Shipped |
-| completed | 已完成 | Completed |
-| cancelled | 取消 | Cancelled |
+### 问题4: transitionOrderStatus() 不处理import订单
+- 只更新 `physicalStatus`，不更新 `importStatus`
+- **需要修复**: 检查orderCategory，import订单同时更新importStatus
 
-## XTC Status Auto-Transition Rules
-1. New XTC order → pending (挂单)
-2. Upload receipt → receipt_uploaded (待审核付款凭证)
-3. Partial payment confirmed → partial_payment (部分汇款)
-4. Full payment confirmed → waiting_stock (待备货) + set fullPaymentConfirmedAt
-5. IB stock complete → ready_to_ship (待发货) or scheduled_ship (预约发货)
-6. Partial ship → partial_shipped (部分发货)
-7. Full ship → shipped (已发货)
-8. 7 days after ship → completed (已完成)
-9. Cancel → cancelled (取消)
+### 问题5: getCustomerOrderTracking() 不返回import订单信息
+- 不返回 `importStatus` 和 `orderCategory`
+- 客户追踪页面无法区分import订单
+- **需要修复**: 返回importStatus和orderCategory，添加import status映射
+
+### 问题6: 订单编号前缀使用"CXT"而非"XTC"
+- db.ts: `const prefix = data.orderCategory === "import" ? "CXT" : "XT"`
+- SystemSettings默认值是"XTC"，但代码硬编码"CXT"
+- OrderCreatePage.tsx也显示"CXT"
+- **需要修复**: 改为"XTC"
+
+### 问题7: autoMatchXtcOrders/allocateStockByPriority 不处理scheduled_ship
+- 齐货后直接设为ready_to_ship
+- 如果订单有预约发货日期，应设为scheduled_ship
+- **需要修复**: 检查scheduledShippingDate，有日期则设为scheduled_ship
+
+### 问题8: CustomerOrderPage/CustomerOrderTracking 不支持import订单
+- 只使用physicalStatus映射到本地状态标签
+- **需要修复**: 添加import status支持

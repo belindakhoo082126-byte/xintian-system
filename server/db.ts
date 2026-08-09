@@ -811,8 +811,8 @@ export async function createOrderWithSplit(data: {
   // V2.2: Total = 商品小计 - 促销优惠 - 人工折扣 + 额外收费 + 运费 - 使用Credit
   const totalAmount = preCreditTotal - autoCreditUsed;
   
-  // V2.0.43: Generate sequential order number with XT/CXT prefix (XT00001, CXT00001)
-  const prefix = data.orderCategory === "import" ? "CXT" : "XT";
+  // V2.0.99: Generate sequential order number with XT/XTC prefix (XT00001, XTC00001)
+  const prefix = data.orderCategory === "import" ? "XTC" : "XT";
   const orderNumber = await generateOrderNumber(prefix);
   const secureToken = generateSecureToken();
   const checkoutLink = `/order/${orderNumber}/${secureToken}`;
@@ -3742,6 +3742,7 @@ export async function transitionOrderStatus(orderId: number, toStatus: string, c
   if (!order[0]) throw new Error("Order not found");
 
   const fromStatus = order[0].physicalStatus;
+  const isImportOrder = order[0].orderCategory === 'import';
 
   // Update order status
   const updateData: any = { physicalStatus: toStatus as any };
@@ -3749,6 +3750,11 @@ export async function transitionOrderStatus(orderId: number, toStatus: string, c
   if (toStatus === "packing") updateData.paymentConfirmedAt = new Date() as any;
   if (toStatus === "shipped") updateData.shippedAt = new Date() as any;
   if (toStatus === "completed") updateData.completedAt = new Date() as any;
+
+  // V2.0.99: For import orders, also update importStatus
+  if (isImportOrder) {
+    updateData.importStatus = toStatus as any;
+  }
 
   await db.update(orders).set(updateData).where(eq(orders.id, orderId));
 
@@ -5312,6 +5318,8 @@ export async function getCustomerOrderTracking(orderNumber: string, contactNumbe
     id: orders.id,
     orderNumber: orders.orderNumber,
     physicalStatus: orders.physicalStatus,
+    importStatus: (orders as any).importStatus,
+    orderCategory: orders.orderCategory,
     totalAmount: orders.totalAmount,
     paidAmount: orders.paidAmount,
     shippingFee: orders.shippingFee,
@@ -5356,22 +5364,39 @@ export async function getCustomerOrderTracking(orderNumber: string, contactNumbe
     .where(eq(orderRemarks.orderId, order[0].id))
     .orderBy(desc(orderRemarks.createdAt));
   
-  // Map status to customer-friendly labels
-  const statusMap: Record<string, string> = {
+    // Map status to customer-friendly labels
+  const localStatusMap: Record<string, string> = {
     "pending": "未汇款",
     "receipt_uploaded": "付款审核中",
+    "partial_payment": "部分汇款",
     "hold_order": "保留订单",
     "packing": "待包货",
     "shipped": "已发货",
     "partial_shipped": "部分发货",
     "completed": "已完成",
     "cancelled": "已取消",
-    "scheduled": "预约发货",
   };
-  
+  // V2.0.99: XTC import order status map
+  const importStatusMap: Record<string, string> = {
+    "pending": "挂单",
+    "receipt_uploaded": "待审核付款凭证",
+    "partial_payment": "部分汇款",
+    "waiting_stock": "待备货",
+    "ready_to_ship": "待发货",
+    "scheduled_ship": "预约发货",
+    "partial_shipped": "部分发货",
+    "shipped": "已发货",
+    "completed": "已完成",
+    "cancelled": "取消",
+  };
+  const isImport = order[0].orderCategory === 'import';
+  const activeStatus = isImport ? (order[0].importStatus || 'pending') : (order[0].physicalStatus || 'pending');
+  const customerStatus = isImport
+    ? (importStatusMap[activeStatus] || activeStatus)
+    : (localStatusMap[activeStatus] || activeStatus);
   return {
     ...order[0],
-    customerStatus: statusMap[order[0].physicalStatus || ""] || order[0].physicalStatus || "unknown",
+    customerStatus,
     items: enrichedItems,
     packages: pkgs,
     remarks: remarks,
@@ -11414,6 +11439,8 @@ export async function getOrderBySecureToken(orderNumber: string, token: string) 
     id: orders.id,
     orderNumber: orders.orderNumber,
     physicalStatus: orders.physicalStatus,
+    importStatus: (orders as any).importStatus,
+    orderCategory: orders.orderCategory,
     totalAmount: orders.totalAmount,
     paidAmount: orders.paidAmount,
     shippingFee: orders.shippingFee,
@@ -11473,10 +11500,11 @@ export async function getOrderBySecureToken(orderNumber: string, token: string) 
   // Get packages
   const pkgs = await getOrderPackages(orderData.id);
 
-  // Map status to customer-friendly labels
-  const statusMap: Record<string, string> = {
+    // Map status to customer-friendly labels
+  const localStatusMap: Record<string, string> = {
     "pending": "Pending Payment",
     "receipt_uploaded": "Payment Review",
+    "partial_payment": "Partial Payment",
     "hold_order": "Hold Order",
     "packing": "Payment Confirmed",
     "shipped": "Shipped",
@@ -11484,15 +11512,31 @@ export async function getOrderBySecureToken(orderNumber: string, token: string) 
     "completed": "Completed",
     "cancelled": "Cancelled",
   };
-
+  // V2.0.99: XTC import order status map
+  const importStatusMap: Record<string, string> = {
+    "pending": "Pending Payment",
+    "receipt_uploaded": "Payment Review",
+    "partial_payment": "Partial Payment",
+    "waiting_stock": "Preparing Goods",
+    "ready_to_ship": "Preparing Goods",
+    "scheduled_ship": "Scheduled Ship",
+    "partial_shipped": "Partial Shipped",
+    "shipped": "Shipped",
+    "completed": "Completed",
+    "cancelled": "Cancelled",
+  };
+  const isImport = orderData.orderCategory === 'import';
+  const activeStatus = isImport ? (orderData.importStatus || 'pending') : (orderData.physicalStatus || 'pending');
+  const customerStatus = isImport
+    ? (importStatusMap[activeStatus] || activeStatus)
+    : (localStatusMap[activeStatus] || activeStatus);
   // V2.0.2: Compute amount due for customer-facing display
   const totalNum = parseFloat(orderData.totalAmount || "0");
   const paidNum = parseFloat(orderData.paidAmount || "0");
   const amountDue = Math.max(0, totalNum - paidNum).toFixed(2);
-
   return {
     ...orderData,
-    customerStatus: statusMap[orderData.physicalStatus || ""] || orderData.physicalStatus || "Unknown",
+    customerStatus,
     items: enrichedItems,
     packages: pkgs,
     amountDue,

@@ -10,21 +10,33 @@ import { Search, Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, Exter
 import { useI18n } from "@/contexts/I18nContext";
 
 const STATUS_CONFIG_MAP = {
+  // Local order statuses
   "未汇款": "pendingPayment",
   "付款审核中": "paymentReview",
-  "已确认付款": "paymentConfirmed",
-  "正在准备商品": "preparingGoods",
+  "部分汇款": "partialPayment",
+  "保留订单": "holdOrder",
+  "待包货": "preparingGoods",
   "部分发货": "partialShipped",
   "已发货": "shipped",
   "已完成": "completed",
   "已取消": "cancelled",
+  // V2.0.99: XTC Import order statuses
+  "挂单": "pendingPayment",
+  "待审核付款凭证": "paymentReview",
+  "待备货": "preparingGoods",
+  "待发货": "preparingGoods",
+  "预约发货": "scheduledShip",
+  "取消": "cancelled",
 };
 
 const STATUS_CONFIG = {
   "pendingPayment": { zh: "未汇款", en: "Unpaid", color: "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200", icon: Clock },
   "paymentReview": { zh: "付款审核中", en: "Payment Review", color: "bg-sky-100 text-sky-900 dark:bg-sky-900/30 dark:text-sky-200", icon: Clock },
   "paymentConfirmed": { zh: "已确认付款", en: "Payment Confirmed", color: "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200", icon: CheckCircle2 },
+  "partialPayment": { zh: "部分汇款", en: "Partial Payment", color: "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200", icon: Clock },
+  "holdOrder": { zh: "保留订单", en: "Hold Order", color: "bg-purple-100 text-purple-900 dark:bg-purple-900/30 dark:text-purple-200", icon: Clock },
   "preparingGoods": { zh: "正在准备商品", en: "Preparing Goods", color: "bg-sky-100 text-sky-900 dark:bg-sky-900/30 dark:text-sky-200", icon: Package },
+  "scheduledShip": { zh: "预约发货", en: "Scheduled Ship", color: "bg-indigo-100 text-indigo-900 dark:bg-indigo-900/30 dark:text-indigo-200", icon: Clock },
   "partialShipped": { zh: "部分发货", en: "Partial Shipped", color: "bg-orange-100 text-orange-900 dark:bg-orange-900/30 dark:text-orange-200", icon: Truck },
   "shipped": { zh: "已发货", en: "Shipped", color: "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200", icon: Truck },
   "completed": { zh: "已完成", en: "Completed", color: "bg-muted text-muted-foreground", icon: CheckCircle2 },
