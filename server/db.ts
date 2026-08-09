@@ -717,6 +717,42 @@ export async function generateOrderNumber(prefix: string): Promise<string> {
   return `${prefix}${String(nextNum).padStart(5, "0")}`;
 }
 
+// V2.1: Unified order category resolver — determines whether an order should be local (XT) or import (XTC)
+// Priority: 1) Product orderCategory  2) Existing order orderCategory  3) Live room liveType
+export async function resolveOrderCategory(opts: {
+  productIds?: number[];
+  existingOrderCategory?: string;
+  liveType?: string;
+}): Promise<"local" | "import"> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Priority 1: Check product orderCategory
+  if (opts.productIds && opts.productIds.length > 0) {
+    const productRows = await db
+      .select({ orderCategory: products.orderCategory })
+      .from(products)
+      .where(inArray(products.id, opts.productIds))
+      .limit(1);
+    if (productRows.length > 0 && productRows[0].orderCategory === "import") {
+      return "import";
+    }
+    if (productRows.length > 0 && productRows[0].orderCategory === "local") {
+      return "local";
+    }
+  }
+
+  // Priority 2: Existing order orderCategory
+  if (opts.existingOrderCategory === "import") return "import";
+  if (opts.existingOrderCategory === "local") return "local";
+
+  // Priority 3: Live room liveType
+  if (opts.liveType === "import_preorder") return "import";
+
+  // Default: local
+  return "local";
+}
+
 export async function createOrderWithSplit(data: {
   customerId: number;
   facebookName?: string;
@@ -771,6 +807,11 @@ export async function createOrderWithSplit(data: {
   const hasPhysical = data.items.some(i => i.productType === "physical" || i.productType === "gift");
   const hasMembership = data.items.some(i => i.productType === "membership");
   const orderType = hasPhysical && hasMembership ? "mixed" : hasMembership ? "membership" : "physical";
+  // V2.1.04: Use resolveOrderCategory for unified routing — product orderCategory takes priority
+  if (!data.orderCategory) {
+    const productIds = data.items.map(i => i.productId).filter(Boolean) as number[];
+    data.orderCategory = await resolveOrderCategory({ productIds });
+  }
 
   // Physical subtotal includes gift items (which have price=0)
   const physicalSubtotal = data.items
@@ -4296,7 +4337,12 @@ export async function mallCheckout(data: {
   }
 
   // Create new order
-  const orderNumber = await generateOrderNumber("XT");
+  // V2.1.04: Use resolveOrderCategory for unified routing
+  const mallProductIds = data.items.map(i => i.productId).filter(Boolean) as number[];
+  const resolvedCategory = await resolveOrderCategory({ productIds: mallProductIds });
+  const isImport = resolvedCategory === "import";
+  const orderPrefix = isImport ? "XTC" : "XT";
+  const orderNumber = await generateOrderNumber(orderPrefix);
   const secureToken = generateSecureToken();
   const checkoutLink = `/order/${orderNumber}/${secureToken}`;
   const orderResult = await db.insert(orders).values({
@@ -4305,6 +4351,8 @@ export async function mallCheckout(data: {
     checkoutLink,
     customerId: customer.id,
     orderType: "physical",
+    orderCategory: resolvedCategory,
+    importStatus: isImport ? "pending" : null,
     physicalSubtotal: subtotal.toFixed(2),
     membershipSubtotal: "0.00",
     shippingFee: shippingFee.toFixed(2),
@@ -4420,9 +4468,24 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
     extraCharge: orders.extraCharge,
     creditUsed: orders.creditUsed,
     shippingMethod: orders.shippingMethod,
+    orderCategory: orders.orderCategory,
   }).from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!target[0]) throw new Error("Order not found");
   if (target[0].physicalStatus !== "pending") throw new Error("Order is not available for add-on");
+  // V2.1.04: Cross-type validation — prevent adding import products to local order and vice versa
+  const productIds = items.map((i) => i.productId).filter((id) => id > 0);
+  if (productIds.length > 0) {
+    const productRows = await db.select({ orderCategory: products.orderCategory }).from(products).where(inArray(products.id, productIds));
+    const orderCat = target[0].orderCategory || "local";
+    for (const pr of productRows) {
+      if (pr.orderCategory === "import" && orderCat !== "import") {
+        throw new Error("此商品属于中国代购商品，不能加入本地订单，请加入/建立中国代购 XTC 订单。");
+      }
+      if (pr.orderCategory === "local" && orderCat === "import") {
+        throw new Error("此商品属于本地商品，不能加入中国代购订单，请加入/建立本地 XT 订单。");
+      }
+    }
+  }
 
   for (const item of items) {
     await db.insert(orderItems).values({
@@ -5663,9 +5726,13 @@ export async function createOrderFromLiveCapture(data: {
   
   // Check for existing open order from same customer in same live room (for order merging)
   // Same customer + same live room + same orderCategory + order not yet closed = merge into existing order
-  // V2.1.02: Only merge orders of the same category (local+local or import+import), never cross-merge
-  const isImportOrder = data.liveType === 'import_preorder';
-  const orderCategory = isImportOrder ? 'import' : 'local';
+  // V2.1.04: Use resolveOrderCategory for unified routing — product orderCategory takes priority
+  const productIds = data.matchedProducts.map(p => p.productId);
+  const orderCategory = await resolveOrderCategory({
+    productIds,
+    liveType: data.liveType,
+  });
+  const isImportOrder = orderCategory === 'import';
   let existingOrderId: number | null = null;
   if (data.liveVideoId || data.liveRoomId) {
     const existingOrders = await db.select().from(orders)
@@ -12497,18 +12564,22 @@ export async function autoMatchXtcOrders(batchId: number) {
       }
     }
 
-    // Update XTC import status
+        // Update XTC import status
     let newImportStatus: string;
     if (allFulfilled && matchedCount === orderItemsList.length) {
-      newImportStatus = 'ready_to_ship';
+      // Check if order has scheduled shipping date
+      const orderData = await db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+      if (orderData[0]?.scheduledShippingDate) {
+        newImportStatus = 'scheduled_ship';
+      } else {
+        newImportStatus = 'ready_to_ship';
+      }
     } else {
       newImportStatus = 'waiting_stock';
     }
-
     await db.update(orders).set({
       importStatus: newImportStatus as any,
     }).where(eq(orders.id, order.id));
-
     results.push({
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -12796,18 +12867,22 @@ export async function allocateStockByPriority(batchId: number) {
     }
   }
 
-  // Update XTC import status based on allocation results
+    // Update XTC import status based on allocation results
   for (const order of activeOrders) {
     const orderAllocations = allocations.filter(a => a.orderId === order.id);
     const allFulfilled = orderAllocations.length > 0 && orderAllocations.every(a => a.shortQty === 0);
-
     let newImportStatus: string;
     if (allFulfilled) {
-      newImportStatus = 'ready_to_ship';
+      // Check if order has scheduled shipping date
+      const orderData = await db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+      if (orderData[0]?.scheduledShippingDate) {
+        newImportStatus = 'scheduled_ship';
+      } else {
+        newImportStatus = 'ready_to_ship';
+      }
     } else {
       newImportStatus = 'waiting_stock';
     }
-
     await db.update(orders).set({
       importStatus: newImportStatus as any,
     }).where(eq(orders.id, order.id));

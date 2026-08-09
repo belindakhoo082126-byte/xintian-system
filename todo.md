@@ -2351,3 +2351,16 @@
 - [x] 修复折扣保存后变0（竞态条件：updateItems onSuccess invalidate导致formData被重置）
 - [x] 修复操作记录显示错误（移除db.ts重复日志，routers.ts根据实际修改内容记录）
 - [x] 客户结账页面Online Transfer显示银行户口资料（Public Bank/3825375502/ECOLAND NURSERY）+ 复制按钮
+
+## V2.1.04 - 商品orderCategory统一订单分流 + autoMatchXtcOrders scheduled_ship修复
+- [x] products表新增orderCategory字段（enum: local/import，默认local）
+- [x] schema.ts同步更新products表orderCategory字段定义
+- [x] 新增resolveOrderCategory统一路由函数（db.ts约710行）：优先读取商品orderCategory，其次检查直播liveType
+- [x] createOrderFromLiveCapture改用resolveOrderCategory替代硬编码liveType判断
+- [x] createOrderWithSplit改用resolveOrderCategory自动判断orderCategory
+- [x] mallCheckout改用resolveOrderCategory
+- [x] addMallItemsToOrder新增跨类型商品加入订单的阻止逻辑（抛出TRPCError）
+- [x] Products.tsx商品管理新增orderCategory选择器（本地/中国代购），对所有商品类型可用
+- [x] autoMatchXtcOrders第一处修复：齐货时检查scheduledShippingDate，有则设scheduled_ship，否则ready_to_ship
+- [x] autoMatchXtcOrders第二处修复：分配完成后同样检查scheduledShippingDate
+- [x] TypeScript编译零错误，270项测试全部通过

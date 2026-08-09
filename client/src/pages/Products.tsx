@@ -49,6 +49,7 @@ type FormState = {
   facebookFlowId: string;
   allowStandalonePurchase: boolean;
   allowMixedCheckout: boolean;
+  orderCategory: "local" | "import";
 };
 
 const EMPTY_FORM: FormState = {
@@ -58,6 +59,7 @@ const EMPTY_FORM: FormState = {
   isSpecialItem: false, allowFreeShipping: true, keywords: "", videoUrl: "",
   membershipIntro: "", telegramFlowLink: "", facebookFlowId: "",
   allowStandalonePurchase: true, allowMixedCheckout: true,
+  orderCategory: "local",
 };
 
 export default function Products() {
@@ -132,6 +134,7 @@ export default function Products() {
       facebookFlowId: product.facebookFlowId || "",
       allowStandalonePurchase: product.allowStandalonePurchase ?? true,
       allowMixedCheckout: product.allowMixedCheckout ?? true,
+      orderCategory: (product.orderCategory as "local" | "import") ?? "local",
     });
     setDialogOpen(true);
   }
@@ -392,7 +395,20 @@ export default function Products() {
                 </div>
               </div>
             )}
-
+            {/* Order Category - available for all product types */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>订单类型 / Order Category</Label>
+                <Select value={form.orderCategory} onValueChange={(v) => setForm({ ...form, orderCategory: v as "local" | "import" })}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="local">本地 Local</SelectItem>
+                    <SelectItem value="import">中国代购 China Import</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">决定商品加入 XT 本地订单还是 XTC 中国代购订单</p>
+              </div>
+            </div>
             {/* Gift-specific note */}
             {isGift && (
               <div className="p-4 border rounded-lg bg-orange-50/50 dark:bg-orange-950/20">

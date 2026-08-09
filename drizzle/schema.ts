@@ -178,6 +178,8 @@ export const products = mysqlTable("products", {
 
   // V2.0: Sales mode (销售模式)
   salesMode: mysqlEnum("salesMode", ["normal", "presale", "import_preorder"]).default("normal").notNull(),
+  // V2.1: Order category — determines whether product belongs to local (XT) or import (XTC) orders
+  orderCategory: mysqlEnum("orderCategory", ["local", "import"]).default("local").notNull(),
   // V2.0: Preorder wait days (预计等待时间, e.g. "30~45天")
   preorderWaitDays: varchar("preorderWaitDays", { length: 100 }),
   // V2.0: Allow mixed checkout with normal products (允许与普通商品一起Checkout)
