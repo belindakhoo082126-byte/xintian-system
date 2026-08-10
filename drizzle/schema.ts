@@ -1523,6 +1523,47 @@ export const specialOrderActions = mysqlTable("special_order_actions", {
 export type SpecialOrderAction = typeof specialOrderActions.$inferSelect;
 export type InsertSpecialOrderAction = typeof specialOrderActions.$inferInsert;
 
+// ============================================================================
+// V2.1.19: Order Special Statuses (订单特别状态 - 多状态支持)
+// ============================================================================
+
+export const orderSpecialStatuses = mysqlTable("order_special_statuses", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  type: mysqlEnum("type", [
+    "pending_shipping",      // 待补运费
+    "pending_refund",        // 待退款
+    "company_bear",         // 公司承担
+    "logistics_error",      // 物流异常
+    "incomplete_info",      // 资料异常
+    "notification_failed",  // 通知失败
+    "stock_exception",      // 库存异常
+    "overdue",              // 超时未处理
+    "over_payment",         // 多汇款
+    "amount_changed",       // 付款金额变更
+    "amount_anomaly",       // 金额异常
+    "other",                // 其他
+  ]).notNull(),
+  status: mysqlEnum("status", ["pending", "resolved", "cancelled", "false_positive"]).default("pending").notNull(),
+  reason: text("reason"),
+  amount: decimal("amount", { precision: 10, scale: 2 }).default("0"),
+  source: mysqlEnum("source", ["system", "manual"]).default("system").notNull(),
+  resolution: varchar("resolution", { length: 255 }),
+  resolutionMethod: mysqlEnum("resolutionMethod", [
+    "credit", "tng", "cash", "bank_transfer", "other",
+    "data_corrected", "company_bear", "false_positive"
+  ]),
+  resolutionRemark: text("resolutionRemark"),
+  createdBy: varchar("createdBy", { length: 255 }),
+  resolvedBy: varchar("resolvedBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  resolvedAt: timestamp("resolvedAt"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OrderSpecialStatus = typeof orderSpecialStatuses.$inferSelect;
+export type InsertOrderSpecialStatus = typeof orderSpecialStatuses.$inferInsert;
+
 
 // ============================================================================
 // V2.0: Live Rooms (直播房间)

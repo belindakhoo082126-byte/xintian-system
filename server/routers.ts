@@ -1381,6 +1381,51 @@ export const appRouter = router({
         });
       }),
 
+    // V2.1.19: Special Status Management
+    getSpecialStatuses: adminProcedure
+      .input(z.object({ orderId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getOrderSpecialStatuses(input.orderId);
+      }),
+
+    createSpecialStatus: adminProcedure
+      .input(z.object({
+        orderId: z.number(),
+        type: z.enum(['pending_shipping', 'pending_refund', 'company_bear', 'logistics_error', 'incomplete_info', 'notification_failed', 'stock_exception', 'overdue', 'over_payment', 'amount_changed', 'amount_anomaly', 'other']),
+        reason: z.string().optional(),
+        amount: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.createOrderSpecialStatus({
+          orderId: input.orderId,
+          type: input.type,
+          reason: input.reason,
+          amount: input.amount,
+          source: 'manual',
+          createdBy: ctx.user?.name || 'admin',
+        });
+      }),
+
+    resolveSpecialStatus: adminProcedure
+      .input(z.object({
+        specialStatusId: z.number(),
+        resolutionMethod: z.enum(['credit', 'tng', 'cash', 'bank_transfer', 'other', 'data_corrected', 'company_bear', 'false_positive']),
+        resolutionRemark: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.resolveOrderSpecialStatus({
+          specialStatusId: input.specialStatusId,
+          resolutionMethod: input.resolutionMethod,
+          resolutionRemark: input.resolutionRemark,
+          resolvedBy: ctx.user?.name || 'admin',
+        });
+      }),
+
+    migrateSpecialStatuses: adminProcedure
+      .mutation(async () => {
+        return await db.migrateSpecialOrdersToTable();
+      }),
+
     // V2.1: Cancel order with reason
     cancelOrder: adminProcedure
       .input(z.object({

@@ -55,6 +55,8 @@ import {
   ibDifferences, stockAllocations, costAdjustmentLogs,
   // V2.1.15 imports - Order Refunds
   orderRefunds,
+  // V2.1.19 imports - Order Special Statuses
+  orderSpecialStatuses,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -1518,23 +1520,28 @@ export async function recalculateOrderBalance(orderId: number) {
       } else if (order[0].physicalStatus === 'partial_payment' || order[0].physicalStatus === 'receipt_uploaded') {
         newStatus = 'packing' as any;
       }
-      // V2.1.18: Overpayment → special order only if there's pending (unprocessed) overpayment
+      // V2.1.18/V2.1.19: Overpayment → special order only if there's pending (unprocessed) overpayment
       const pendingOverpayment = grossOverpaid - resolvedOverpayment;
       if (pendingOverpayment > 0.01) {
         isSpecialOrder = true;
         specialOrderType = 'over_payment';
         specialOrderSource = 'system';
         specialOrderStatus = 'pending';
+        // V2.1.19: Sync to order_special_statuses table
+        await syncSpecialStatusToTable(orderId, 'over_payment', 'pending', `多汇款 RM${pendingOverpayment.toFixed(2)}`, pendingOverpayment.toFixed(2), 'system');
       } else if (isSpecialOrder && specialOrderType === 'over_payment' && pendingOverpayment <= 0.01) {
         // Overpayment fully processed → resolve special order
         isSpecialOrder = false;
         specialOrderType = null;
         specialOrderStatus = 'resolved';
+        // V2.1.19: Resolve in order_special_statuses table
+        await syncSpecialStatusToTable(orderId, 'over_payment', 'resolved', null, '0', 'system');
       } else if (isSpecialOrder && specialOrderType === 'partial_payment') {
         // Was partial payment special, now fully paid → resolve
         isSpecialOrder = false;
         specialOrderType = null;
         specialOrderStatus = 'resolved';
+        await syncSpecialStatusToTable(orderId, 'partial_payment', 'resolved', null, '0', 'system');
       }
     } else if (totalPaid > 0 && totalPaid < totalAmount) {
       // Partial payment - this is a normal order status, NOT a special order
@@ -1774,6 +1781,291 @@ export async function getOrderRefunds(orderId: number) {
   const db = await getDb();
   if (!db) return [];
   return await db.select().from(orderRefunds).where(eq(orderRefunds.orderId, orderId)).orderBy(desc(orderRefunds.createdAt));
+}
+
+// ============================================================================
+// V2.1.19: Order Special Statuses (多特别状态支持)
+// ============================================================================
+
+// Internal helper: sync special status to order_special_statuses table
+async function syncSpecialStatusToTable(
+  orderId: number,
+  type: string,
+  status: 'pending' | 'resolved',
+  reason: string | null,
+  amount: string,
+  source: 'system' | 'manual'
+) {
+  const db = await getDb();
+  if (!db) return;
+
+  if (status === 'pending') {
+    // Check if pending status of this type already exists
+    const existing = await db.select().from(orderSpecialStatuses)
+      .where(and(
+        eq(orderSpecialStatuses.orderId, orderId),
+        eq(orderSpecialStatuses.type, type as any),
+        eq(orderSpecialStatuses.status, 'pending')
+      )).limit(1);
+
+    if (existing.length > 0) {
+      // Update existing
+      await db.update(orderSpecialStatuses).set({
+        reason: reason || existing[0].reason,
+        amount: amount as any,
+        updatedAt: new Date(),
+      }).where(eq(orderSpecialStatuses.id, existing[0].id));
+    } else {
+      // Create new
+      await db.insert(orderSpecialStatuses).values({
+        orderId,
+        type: type as any,
+        status: 'pending',
+        reason: reason,
+        amount: amount as any,
+        source: source as any,
+      });
+    }
+  } else if (status === 'resolved') {
+    // Resolve all pending statuses of this type
+    const pending = await db.select().from(orderSpecialStatuses)
+      .where(and(
+        eq(orderSpecialStatuses.orderId, orderId),
+        eq(orderSpecialStatuses.type, type as any),
+        eq(orderSpecialStatuses.status, 'pending')
+      ));
+
+    for (const p of pending) {
+      await db.update(orderSpecialStatuses).set({
+        status: 'resolved',
+        resolutionMethod: 'data_corrected' as any,
+        resolvedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(orderSpecialStatuses.id, p.id));
+    }
+  }
+}
+
+// Create a special status for an order
+export async function createOrderSpecialStatus(data: {
+  orderId: number;
+  type: string;
+  reason?: string;
+  amount?: string;
+  source?: 'system' | 'manual';
+  createdBy?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Check if same type pending status already exists
+  const existing = await db.select().from(orderSpecialStatuses)
+    .where(and(
+      eq(orderSpecialStatuses.orderId, data.orderId),
+      eq(orderSpecialStatuses.type, data.type as any),
+      eq(orderSpecialStatuses.status, 'pending')
+    )).limit(1);
+
+  if (existing.length > 0) {
+    // Update existing instead of creating duplicate
+    await db.update(orderSpecialStatuses).set({
+      reason: data.reason || existing[0].reason,
+      amount: (data.amount || '0') as any,
+      updatedAt: new Date(),
+    }).where(eq(orderSpecialStatuses.id, existing[0].id));
+    return existing[0];
+  }
+
+  const [inserted] = await db.insert(orderSpecialStatuses).values({
+    orderId: data.orderId,
+    type: data.type as any,
+    status: 'pending',
+    reason: data.reason || null,
+    amount: (data.amount || '0') as any,
+    source: (data.source || 'system') as any,
+    createdBy: data.createdBy || null,
+  });
+
+  // Update order's isSpecialOrder flag
+  await db.update(orders).set({
+    isSpecialOrder: true,
+    specialOrderType: data.type as any,
+    specialOrderStatus: 'pending',
+    specialOrderSource: (data.source || 'system') as any,
+    specialOrderReason: data.reason || null,
+    specialOrderBy: data.createdBy || null,
+    specialOrderUpdatedAt: new Date(),
+  }).where(eq(orders.id, data.orderId));
+
+  await logOrderOperation(data.orderId, 'special_status', `建立特别状态：${data.type}${data.reason ? ' - ' + data.reason : ''}`, null, data.createdBy || null);
+  broadcastChanges(["orders", "dashboard"]);
+  return { id: inserted.insertId };
+}
+
+// Resolve a special status
+export async function resolveOrderSpecialStatus(data: {
+  specialStatusId: number;
+  resolutionMethod: 'credit' | 'tng' | 'cash' | 'bank_transfer' | 'other' | 'data_corrected' | 'company_bear' | 'false_positive';
+  resolutionRemark?: string;
+  resolvedBy: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const status = await db.select().from(orderSpecialStatuses)
+    .where(eq(orderSpecialStatuses.id, data.specialStatusId)).limit(1);
+  if (status.length === 0) throw new Error("Special status not found");
+
+  const specialStatus = status[0];
+  const resolutionLabel: Record<string, string> = {
+    credit: '转入Credit',
+    tng: 'TNG退款',
+    cash: 'Cash退款',
+    bank_transfer: '银行转账退款',
+    other: '其他',
+    data_corrected: '数据修正',
+    company_bear: '公司承担',
+    false_positive: '误判',
+  };
+
+  await db.update(orderSpecialStatuses).set({
+    status: 'resolved',
+    resolutionMethod: data.resolutionMethod as any,
+    resolutionRemark: data.resolutionRemark || null,
+    resolvedBy: data.resolvedBy,
+    resolvedAt: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(orderSpecialStatuses.id, data.specialStatusId));
+
+  // If over_payment and method is credit, add to customer's credit
+  if (specialStatus.type === 'over_payment' && data.resolutionMethod === 'credit') {
+    const order = await db.select().from(orders).where(eq(orders.id, specialStatus.orderId)).limit(1);
+    if (order.length > 0 && order[0].customerId) {
+      const amount = parseFloat(String(specialStatus.amount || '0'));
+      if (amount > 0) {
+        await refundCustomerCredit(order[0].customerId, amount, specialStatus.orderId, order[0].orderNumber || undefined);
+      }
+    }
+  }
+
+  await logOrderOperation(specialStatus.orderId, 'special_status', `特别状态已处理：${specialStatus.type}，方式：${resolutionLabel[data.resolutionMethod]}${data.resolutionRemark ? '，备注：' + data.resolutionRemark : ''}`, null, data.resolvedBy);
+
+  // Check if order has any remaining pending special statuses
+  const pendingStatuses = await db.select().from(orderSpecialStatuses)
+    .where(and(
+      eq(orderSpecialStatuses.orderId, specialStatus.orderId),
+      eq(orderSpecialStatuses.status, 'pending')
+    ));
+
+  if (pendingStatuses.length === 0) {
+    // No more pending special statuses → clear isSpecialOrder flag
+    await db.update(orders).set({
+      isSpecialOrder: false,
+      specialOrderType: null as any,
+      specialOrderStatus: 'resolved' as any,
+      specialOrderUpdatedAt: new Date(),
+    }).where(eq(orders.id, specialStatus.orderId));
+    await logOrderOperation(specialStatus.orderId, 'special_status', '所有特别状态已处理，特别标签解除', null, data.resolvedBy);
+  } else {
+    // Still has pending statuses → keep isSpecialOrder, update type to first pending
+    const firstPending = pendingStatuses[0];
+    await db.update(orders).set({
+      isSpecialOrder: true,
+      specialOrderType: firstPending.type as any,
+      specialOrderStatus: 'pending',
+      specialOrderReason: firstPending.reason as any,
+      specialOrderUpdatedAt: new Date(),
+    }).where(eq(orders.id, specialStatus.orderId));
+  }
+
+  broadcastChanges(["orders", "dashboard"]);
+  return { success: true };
+}
+
+// Get all special statuses for an order
+export async function getOrderSpecialStatuses(orderId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(orderSpecialStatuses)
+    .where(eq(orderSpecialStatuses.orderId, orderId))
+    .orderBy(desc(orderSpecialStatuses.createdAt));
+}
+
+// Get orders with pending special statuses (for Dashboard and filtering)
+export async function getOrdersWithSpecialStatuses(filters?: {
+  orderCategory?: 'local' | 'import';
+  type?: string;
+  status?: 'pending' | 'resolved' | 'cancelled' | 'false_positive';
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [];
+  if (filters?.type) conditions.push(eq(orderSpecialStatuses.type, filters.type as any));
+  if (filters?.status) conditions.push(eq(orderSpecialStatuses.status, filters.status as any));
+
+  const query = db.select({
+    special: orderSpecialStatuses,
+    orderNumber: orders.orderNumber,
+    customerId: orders.customerId,
+    orderCategory: orders.orderCategory,
+    physicalStatus: orders.physicalStatus,
+    importStatus: (orders as any).importStatus,
+    totalAmount: orders.totalAmount,
+    paidAmount: orders.paidAmount,
+  })
+    .from(orderSpecialStatuses)
+    .innerJoin(orders, eq(orderSpecialStatuses.orderId, orders.id));
+
+  if (conditions.length > 0) {
+    // @ts-ignore
+    query.where(and(...conditions));
+  }
+
+  if (filters?.orderCategory) {
+    // @ts-ignore
+    query.where(eq(orders.orderCategory, filters.orderCategory));
+  }
+
+  return await query.orderBy(desc(orderSpecialStatuses.createdAt));
+}
+
+// Migrate existing special order data to new table
+export async function migrateSpecialOrdersToTable() {
+  const db = await getDb();
+  if (!db) return { migrated: 0 };
+
+  // Find all orders with isSpecialOrder = true that don't have a corresponding entry in order_special_statuses
+  const specialOrders = await db.select().from(orders)
+    .where(eq(orders.isSpecialOrder, true));
+
+  let migrated = 0;
+  for (const order of specialOrders) {
+    const existingType = (order as any).specialOrderType;
+    if (!existingType) continue;
+
+    // Check if already migrated
+    const existing = await db.select().from(orderSpecialStatuses)
+      .where(and(
+        eq(orderSpecialStatuses.orderId, order.id),
+        eq(orderSpecialStatuses.type, existingType as any),
+      )).limit(1);
+
+    if (existing.length === 0) {
+      await db.insert(orderSpecialStatuses).values({
+        orderId: order.id,
+        type: existingType as any,
+        status: ((order as any).specialOrderStatus || 'pending') as any,
+        reason: (order as any).specialOrderReason || null,
+        amount: '0',
+        source: ((order as any).specialOrderSource || 'manual') as any,
+        createdBy: (order as any).specialOrderBy || null,
+      });
+      migrated++;
+    }
+  }
+
+  return { migrated };
 }
 
 // ============================================================================
@@ -8069,7 +8361,21 @@ export async function getSpecialOrderFollowUpStats() {
     totalPending: 0,
   };
   // V3.2: Read directly from orders.specialOrderType — single source of truth
-  const [rows] = await db.execute(sql`
+  // V2.1.19: Query from order_special_statuses table (new multi-status system)
+  const [ssRows] = await db.execute(sql`
+    SELECT 
+      type,
+      COUNT(*) as cnt
+    FROM order_special_statuses
+    WHERE status = 'pending'
+    GROUP BY type
+  `);
+  const typeCounts: Record<string, number> = {};
+  (ssRows as unknown as any[]).forEach((r: any) => {
+    typeCounts[r.type] = Number(r.cnt) || 0;
+  });
+  // Also count from orders table for backward compatibility (legacy single-status)
+  const [legacyRows] = await db.execute(sql`
     SELECT 
       specialOrderType,
       COUNT(*) as cnt
@@ -8079,9 +8385,10 @@ export async function getSpecialOrderFollowUpStats() {
       AND physicalStatus != 'cancelled'
     GROUP BY specialOrderType
   `);
-  const typeCounts: Record<string, number> = {};
-  (rows as unknown as any[]).forEach((r: any) => {
-    typeCounts[r.specialOrderType] = Number(r.cnt) || 0;
+  (legacyRows as unknown as any[]).forEach((r: any) => {
+    if (!typeCounts[r.specialOrderType]) {
+      typeCounts[r.specialOrderType] = Number(r.cnt) || 0;
+    }
   });
   const pendingShippingCount = typeCounts['pending_shipping'] || 0;
   const pendingRefundCount = typeCounts['pending_refund'] || 0;

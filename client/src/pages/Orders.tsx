@@ -14,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, RotateCcw, Bell, Upload, Loader2, Pencil } from "lucide-react";
+import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, AlertCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, RotateCcw, Bell, Upload, Loader2, Pencil } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSearch, useLocation } from "wouter";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
@@ -169,6 +169,12 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   // V2.1.18: Overpayment processing state
   const [overpaymentDialogOpen, setOverpaymentDialogOpen] = useState(false);
   const [overpaymentForm, setOverpaymentForm] = useState({ amount: "", method: "credit" as 'credit' | 'tng' | 'cash' | 'bank_transfer' | 'other', notes: "" });
+  // V2.1.19: Special status management state
+  const [specialStatusFilter, setSpecialStatusFilter] = useState<'pending' | 'resolved' | 'all' | null>(null);
+  const [resolveSpecialDialogOpen, setResolveSpecialDialogOpen] = useState(false);
+  const [resolveSpecialForm, setResolveSpecialForm] = useState({ specialStatusId: 0, resolutionMethod: "credit" as 'credit' | 'tng' | 'cash' | 'bank_transfer' | 'other' | 'data_corrected' | 'company_bear' | 'false_positive', resolutionRemark: "" });
+  const [addSpecialDialogOpen, setAddSpecialDialogOpen] = useState(false);
+  const [addSpecialForm, setAddSpecialForm] = useState({ type: "other" as string, reason: "", amount: "" });
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const receiptFileRef = useRef<HTMLInputElement>(null);
   const [remarkForm, setRemarkForm] = useState({ remarkCategory: "", content: "", desiredDeliveryDate: "", desiredDeliveryReason: "", repottingData: "" });
@@ -371,6 +377,37 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       setOverpaymentForm({ amount: "", method: "credit", notes: "" });
     },
     onError: (e) => toast.error(translate("处理失败: {message}", "Processing failed: {message}", { message: e.message })),
+  });
+
+  // V2.1.19: Special status mutations
+  const createSpecialStatusMutation = trpc.orders.createSpecialStatus.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      if (detailOrderId) refetchDetail();
+      toast.success(translate("特别状态已新增", "Special status added"));
+      setAddSpecialDialogOpen(false);
+      setAddSpecialForm({ type: "other", reason: "", amount: "" });
+    },
+    onError: (e) => toast.error(translate("新增失败: {message}", "Failed: {message}", { message: e.message })),
+  });
+
+  const resolveSpecialStatusMutation = trpc.orders.resolveSpecialStatus.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      if (detailOrderId) refetchDetail();
+      toast.success(translate("特别状态已处理", "Special status resolved"));
+      setResolveSpecialDialogOpen(false);
+      setResolveSpecialForm({ specialStatusId: 0, resolutionMethod: "credit", resolutionRemark: "" });
+    },
+    onError: (e) => toast.error(translate("处理失败: {message}", "Failed: {message}", { message: e.message })),
+  });
+
+  const migrateSpecialStatusesMutation = trpc.orders.migrateSpecialStatuses.useMutation({
+    onSuccess: (data: any) => {
+      utils.orders.invalidate();
+      toast.success(translate(`已迁移 ${data?.migrated || 0} 张订单`, `Migrated ${data?.migrated || 0} orders`));
+    },
+    onError: (e) => toast.error(translate("迁移失败: {message}", "Migration failed: {message}", { message: e.message })),
   });
 
   const cancelOrderMutation = trpc.orders.cancelOrder.useMutation({
@@ -714,6 +751,21 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
         >
           {translate("特别订单", "Special Orders")}
         </Button>
+        {specialFilter && (
+          <Select
+            value={specialStatusFilter || "pending"}
+            onValueChange={(v) => setSpecialStatusFilter(v as any)}
+          >
+            <SelectTrigger className="w-32 h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending">{translate("待处理", "Pending")}</SelectItem>
+              <SelectItem value="resolved">{translate("已处理", "Resolved")}</SelectItem>
+              <SelectItem value="all">{translate("全部", "All")}</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3">
@@ -1247,6 +1299,9 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                   }
                   return null;
                 })()}
+
+                {/* V2.1.19: Special status panel */}
+                <SpecialStatusPanel orderId={orderDetail.id} orderStatus={orderDetail.physicalStatus || ""} />
 
                 <div className="flex items-center justify-between">
                   <h3 className="font-medium">{translate("付款记录", "Payment Records")}</h3>
@@ -2302,6 +2357,212 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                 {translate("发送", "Send")}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// V2.1.19: Special Status Panel Component
+function SpecialStatusPanel({ orderId, orderStatus }: { orderId: number; orderStatus: string }) {
+  const { data: specialStatuses } = trpc.orders.getSpecialStatuses.useQuery({ orderId });
+  const { translate } = useI18n();
+  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
+  const [resolveForm, setResolveForm] = useState({ specialStatusId: 0, resolutionMethod: "credit" as 'credit' | 'tng' | 'cash' | 'bank_transfer' | 'other' | 'data_corrected' | 'company_bear' | 'false_positive', resolutionRemark: "" });
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addForm, setAddForm] = useState({ type: "other" as string, reason: "", amount: "" });
+  const utils = trpc.useUtils();
+
+  const createMutation = trpc.orders.createSpecialStatus.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      toast.success(translate("特别状态已新增", "Special status added"));
+      setAddDialogOpen(false);
+      setAddForm({ type: "other", reason: "", amount: "" });
+    },
+    onError: (e: any) => toast.error(translate("新增失败: {message}", "Failed: {message}", { message: e.message })),
+  });
+
+  const resolveMutation = trpc.orders.resolveSpecialStatus.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      toast.success(translate("特别状态已处理", "Special status resolved"));
+      setResolveDialogOpen(false);
+      setResolveForm({ specialStatusId: 0, resolutionMethod: "credit", resolutionRemark: "" });
+    },
+    onError: (e: any) => toast.error(translate("处理失败: {message}", "Failed: {message}", { message: e.message })),
+  });
+
+  const SPECIAL_TYPE_LABELS: Record<string, { cn: string; en: string; color: string }> = {
+    over_payment: { cn: "多汇款", en: "Overpayment", color: "bg-amber-100 text-amber-700" },
+    pending_shipping: { cn: "待补运费", en: "Pending Shipping Fee", color: "bg-blue-100 text-blue-700" },
+    pending_refund: { cn: "待退款", en: "Pending Refund", color: "bg-red-100 text-red-700" },
+    company_bear: { cn: "公司承担", en: "Company Bear", color: "bg-purple-100 text-purple-700" },
+    logistics_error: { cn: "物流异常", en: "Logistics Error", color: "bg-orange-100 text-orange-700" },
+    incomplete_info: { cn: "资料不完整", en: "Incomplete Info", color: "bg-yellow-100 text-yellow-700" },
+    notification_failed: { cn: "通知失败", en: "Notification Failed", color: "bg-pink-100 text-pink-700" },
+    stock_exception: { cn: "库存异常", en: "Stock Exception", color: "bg-indigo-100 text-indigo-700" },
+    overdue: { cn: "超时未处理", en: "Overdue", color: "bg-red-100 text-red-700" },
+    amount_changed: { cn: "金额修改", en: "Amount Changed", color: "bg-cyan-100 text-cyan-700" },
+    amount_anomaly: { cn: "金额异常", en: "Amount Anomaly", color: "bg-rose-100 text-rose-700" },
+    other: { cn: "其他", en: "Other", color: "bg-gray-100 text-gray-700" },
+  };
+
+  const RESOLUTION_METHOD_LABELS: Record<string, { cn: string; en: string }> = {
+    credit: { cn: "转入 Credit", en: "To Credit" },
+    tng: { cn: "TNG 退款", en: "TNG Refund" },
+    cash: { cn: "Cash 退款", en: "Cash Refund" },
+    bank_transfer: { cn: "银行转账退款", en: "Bank Transfer Refund" },
+    other: { cn: "其他", en: "Other" },
+    data_corrected: { cn: "资料已修正", en: "Data Corrected" },
+    company_bear: { cn: "公司承担", en: "Company Bear" },
+    false_positive: { cn: "误报", en: "False Positive" },
+  };
+
+  const pendingStatuses = (specialStatuses || []).filter((s: any) => s.status === 'pending');
+  const resolvedStatuses = (specialStatuses || []).filter((s: any) => s.status === 'resolved');
+
+  if (orderStatus === 'cancelled') return null;
+
+  return (
+    <div className="space-y-2">
+      {/* Pending special statuses */}
+      {pendingStatuses.length > 0 && (
+        <div className="p-3 border rounded-lg bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-red-600" />
+              <span className="text-sm font-medium">{translate("待处理特别状态", "Pending Special Statuses")} ({pendingStatuses.length})</span>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => setAddDialogOpen(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1" />{translate("新增", "Add")}
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {pendingStatuses.map((s: any) => {
+              const label = SPECIAL_TYPE_LABELS[s.type] || SPECIAL_TYPE_LABELS.other;
+              return (
+                <div key={s.id} className="flex items-center justify-between p-2 rounded bg-background/50">
+                  <div className="flex items-center gap-2">
+                    <Badge className={label.color}>{translate(label.cn, label.en)}</Badge>
+                    {s.amount && parseFloat(s.amount) > 0 && (
+                      <span className="text-sm font-medium">RM {parseFloat(s.amount).toFixed(2)}</span>
+                    )}
+                    {s.reason && (
+                      <span className="text-sm text-muted-foreground truncate max-w-xs">{s.reason}</span>
+                    )}
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => {
+                    setResolveForm({ specialStatusId: s.id, resolutionMethod: s.type === 'over_payment' ? 'credit' : 'data_corrected', resolutionRemark: "" });
+                    setResolveDialogOpen(true);
+                  }}>
+                    {translate("处理", "Resolve")}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Resolved special statuses (history) */}
+      {resolvedStatuses.length > 0 && (
+        <details className="p-3 border rounded-lg bg-muted/30">
+          <summary className="text-sm font-medium cursor-pointer flex items-center gap-2">
+            <CheckCircle className="h-4 w-4 text-green-600" />
+            {translate("已处理特别状态", "Resolved Special Statuses")} ({resolvedStatuses.length})
+          </summary>
+          <div className="mt-2 space-y-2">
+            {resolvedStatuses.map((s: any) => {
+              const label = SPECIAL_TYPE_LABELS[s.type] || SPECIAL_TYPE_LABELS.other;
+              const resolution = RESOLUTION_METHOD_LABELS[s.resolutionMethod] || { cn: s.resolutionMethod, en: s.resolutionMethod };
+              return (
+                <div key={s.id} className="flex items-center justify-between p-2 rounded bg-background/50">
+                  <div className="flex items-center gap-2">
+                    <Badge className={label.color}>{translate(label.cn, label.en)}</Badge>
+                    {s.amount && parseFloat(s.amount) > 0 && (
+                      <span className="text-sm">RM {parseFloat(s.amount).toFixed(2)}</span>
+                    )}
+                    <Badge variant="outline" className="text-xs">{translate(resolution.cn, resolution.en)}</Badge>
+                    {s.resolutionRemark && (
+                      <span className="text-sm text-muted-foreground truncate max-w-xs">{s.resolutionRemark}</span>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {s.resolvedAt ? new Date(s.resolvedAt).toLocaleDateString() : ''}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
+
+      {/* Add special status dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("新增特别状态", "Add Special Status")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>{translate("类型", "Type")}</Label>
+              <Select value={addForm.type} onValueChange={(v) => setAddForm({ ...addForm, type: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(SPECIAL_TYPE_LABELS).map(([key, val]) => (
+                    <SelectItem key={key} value={key}>{translate(val.cn, val.en)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{translate("金额 (可选)", "Amount (optional)")}</Label>
+              <Input type="number" step="0.01" value={addForm.amount} onChange={(e) => setAddForm({ ...addForm, amount: e.target.value })} />
+            </div>
+            <div>
+              <Label>{translate("原因", "Reason")}</Label>
+              <Textarea value={addForm.reason} onChange={(e) => setAddForm({ ...addForm, reason: e.target.value })} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={() => createMutation.mutate({ orderId, type: addForm.type as any, reason: addForm.reason || undefined, amount: addForm.amount || undefined })} disabled={createMutation.isPending}>
+              {translate("确认", "Confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Resolve special status dialog */}
+      <Dialog open={resolveDialogOpen} onOpenChange={setResolveDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("处理特别状态", "Resolve Special Status")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>{translate("处理方式", "Resolution Method")}</Label>
+              <Select value={resolveForm.resolutionMethod} onValueChange={(v) => setResolveForm({ ...resolveForm, resolutionMethod: v as any })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(RESOLUTION_METHOD_LABELS).map(([key, val]) => (
+                    <SelectItem key={key} value={key}>{translate(val.cn, val.en)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{translate("备注", "Remark")}</Label>
+              <Textarea value={resolveForm.resolutionRemark} onChange={(e) => setResolveForm({ ...resolveForm, resolutionRemark: e.target.value })} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResolveDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={() => resolveMutation.mutate(resolveForm)} disabled={resolveMutation.isPending}>
+              {translate("确认", "Confirm")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

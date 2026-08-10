@@ -2498,3 +2498,15 @@
 - [x] Orders.tsx 多汇款处理对话框：金额/方式/备注，Credit自动加客户余额
 - [x] Dashboard 只统计 pending overpayment > 0 的订单（通过 specialOrderStatus = pending）
 - [x] TypeScript 编译零错误，270 项测试全部通过
+
+## V2.1.19 - 特别状态系统重构
+- [x] 数据库新增 order_special_statuses 表（支持多特别状态/订单，pending/resolved 状态追踪）
+- [x] schema.ts 新增 orderSpecialStatuses 表定义
+- [x] 后端新增 createSpecialStatus/resolveSpecialStatus/getSpecialStatuses CRUD 函数
+- [x] 后端 syncSpecialStatusToTable 辅助函数（recalculateOrderBalance 自动同步）
+- [x] recalculateOrderBalance 更新：over_payment 特别状态使用 pendingOverpayment 判断
+- [x] tRPC procedures: createSpecialStatus/resolveSpecialStatus/getSpecialStatuses
+- [x] Orders.tsx 特别订单筛选下拉框（待处理/已处理/全部）
+- [x] Orders.tsx SpecialStatusPanel 组件（待处理列表+已处理历史+新增+处理对话框）
+- [x] Dashboard getDashboardFollowUp 同时查询 order_special_statuses 表和 orders 表
+- [x] TypeScript 编译零错误，270 项测试全部通过
