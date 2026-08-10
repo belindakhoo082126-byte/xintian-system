@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Crown, Check, X, Send, Copy, Phone, Ban, Search, Eye } from "lucide-react";
+import { Crown, Check, X, Send, Phone, Ban, Search, Eye } from "lucide-react";
 
 const MEMBERSHIP_STATUS_MAP = {
   pending: { zh: "未汇款", en: "Unpaid", variant: "outline" },
@@ -116,15 +116,6 @@ export default function Membership() {
     setDetailReview(review);
     setReviewNotes("");
     setDetailOpen(true);
-  }
-
-  function copyTelegramLink(review: any) {
-    // Get the flow template's button link if available
-    const link = detailReview?.flowTemplateId
-      ? `https://t.me/xintian_bot?start=review_${review.id}`
-      : `https://t.me/xintian_bot?start=review_${review.id}`;
-    navigator.clipboard.writeText(link);
-    toast.success(translate("Telegram 链接已复制", "Telegram link copied"));
   }
 
   function contactCustomer(review: any) {
@@ -353,15 +344,6 @@ export default function Membership() {
                     {translate("重新发送 Flow", "Resend Flow")}
                   </Button>
                 )}
-
-                {/* Copy Telegram link */}
-                <Button
-                  variant="outline"
-                  onClick={() => copyTelegramLink(detailReview)}
-                >
-                  <Copy className="h-4 w-4 mr-2" />
-                  {translate("复制 Telegram 链接", "Copy Telegram Link")}
-                </Button>
 
                 {/* Contact customer */}
                 <Button variant="outline" onClick={() => contactCustomer(detailReview)}>

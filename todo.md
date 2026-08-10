@@ -2549,3 +2549,14 @@
 - [x] 新增markDraftOrderInvalid/markOrderChangeRequestInvalid函数+tRPC procedure
 - [x] DraftOrders.tsx和OrderChangeRequests.tsx新增标记失效按钮+对话框
 - [x] TypeScript编译零错误，270测试全部通过
+
+## V2.1.24 - 会员Messenger Flow简化
+- [x] 移除Flow按钮/按钮链接/多步骤功能，只发送固定文案+教学图片
+- [x] Flow后台编辑界面简化：只保留Flow名称/描述/消息内容/教学图片URL/启用停用
+- [x] approveFee固定查找「会员付款成功 Flow」，找不到时不fallback到其他Flow，返回错误提示
+- [x] resendFlow同样不fallback，找不到时提示错误
+- [x] sendTelegramJoinFlow改为只发送文案+图片，不发送按钮
+- [x] 移除messenger.ts中硬编码的Telegram链接（postback handler）
+- [x] 移除Membership.tsx中硬编码的Telegram链接和copyTelegramLink按钮
+- [x] Flows.tsx简化编辑界面：移除按钮名称/按钮链接/未点击提醒/人工跟进/多步骤配置
+- [x] TypeScript编译零错误，测试通过

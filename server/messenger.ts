@@ -587,11 +587,8 @@ async function handlePostback(psid: string, postback: any): Promise<void> {
   } else if (payload === "MEMBER_INFO") {
     await sendTextMessage(
       psid,
-      "心田会员可享受专属福利和优先服务。点击以下链接加入我们的 Telegram 会员群："
+      "心田会员可享受专属福利和优先服务。如有兴趣加入会员，请联系我们了解更多详情。"
     );
-    await sendButtonMessage(psid, "加入心田会员", [
-      { title: "Telegram 入群", url: "https://t.me/xintian" },
-    ]);
   }
 }
 
@@ -1144,18 +1141,25 @@ export async function sendTelegramJoinFlow(
   psid: string,
   telegramLink: string,
   welcomeText: string,
-  buttonText: string
+  buttonText: string,
+  imageUrl?: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
-    // Step 1: Send welcome text
+    // Step 1: Send welcome text (contains Telegram link in the text itself)
     await sendTextMessage(psid, welcomeText);
 
-    // Step 2: Send button with Telegram link
-    const response = await sendButtonMessage(psid, "请点击以下按钮加入心田会员群", [
-      { title: buttonText, url: telegramLink },
-    ]);
+    // Step 2: Send image if provided (membership tutorial image)
+    let imageResponse: any = null;
+    if (imageUrl) {
+      try {
+        imageResponse = await sendMediaMessage(psid, "image", imageUrl);
+      } catch (imgError: any) {
+        console.warn("[Messenger] Failed to send membership image:", imgError?.message);
+        // Don't fail the whole flow if image fails
+      }
+    }
 
-    return { success: true, messageId: response?.message_id };
+    return { success: true, messageId: imageResponse?.message_id };
   } catch (error: any) {
     console.error("[Messenger] Telegram join flow failed:", error?.response?.data || error?.message);
     return {

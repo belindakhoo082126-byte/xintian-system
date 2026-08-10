@@ -1873,20 +1873,26 @@ export const appRouter = router({
 
         // Step 3: Attempt to send Flow via Messenger
         try {
-          // Get the flow template
-          const templateId = review.flowTemplateId;
-          let template = templateId ? await db.getFlowTemplateById(templateId) : null;
+          // Get the flow template - prefer review's assigned template, otherwise find by name
+          let template = review.flowTemplateId ? await db.getFlowTemplateById(review.flowTemplateId) : null;
 
-          // Fall back to first active template
+          // If no template assigned, find the membership success flow by name (NOT fallback to first active)
           if (!template) {
-            const templates = await db.getFlowTemplates(true);
-            template = templates[0] || null;
+            const allTemplates = await db.getFlowTemplates(true);
+            template = allTemplates.find(t => 
+              t.name.includes("会员") && t.name.includes("付款成功") ||
+              t.name.includes("会员") && t.name.includes("Flow")
+            ) || null;
+          }
+
+          // Also verify the template is active
+          if (template && !template.isActive) {
+            template = null;
           }
 
           if (template) {
             const messageContent = template.messageContent;
-            const buttonName = template.buttonName || "进入心田会员系统";
-            const buttonLink = template.buttonLink || "";
+            const imageUrl = template.imageUrl || "";
 
             // Get the order to find customer's Messenger PSID
             const order = await db.getOrderById(review.orderId);
@@ -1896,12 +1902,13 @@ export const appRouter = router({
             let flowResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: "No PSID available" };
 
             if (psid) {
-              // Send via real Messenger API
+              // Send via real Messenger API - text + image only, no button
               flowResult = await sendTelegramJoinFlow(
                 psid,
-                buttonLink || "",
+                "", // No button link - link is in the message text
                 messageContent,
-                buttonName
+                "", // No button name
+                imageUrl // Pass image URL for sending
               );
             } else {
               console.warn("[Membership] No Messenger PSID found for customer, cannot send Flow automatically");
@@ -1935,8 +1942,6 @@ export const appRouter = router({
                 flowSent: true,
                 message: "会员费已确认，Messenger Flow 已自动发送",
                 messageContent,
-                buttonName,
-                buttonLink,
               };
             } else {
               await db.updateFlowStatus(input.reviewId, {
@@ -1955,10 +1960,10 @@ export const appRouter = router({
               };
             }
           } else {
-            // No template configured
+            // No membership flow template found or it's disabled
             await db.updateFlowStatus(input.reviewId, {
               flowStatus: "failed",
-              flowErrorMessage: "No active flow template configured",
+              flowErrorMessage: "会员付款成功Flow尚未设置/未启用",
             });
 
             await db.updateOrderStatus(review.orderId, {
@@ -1968,7 +1973,7 @@ export const appRouter = router({
             return {
               success: true,
               flowSent: false,
-              message: "会员费已确认，但未配置 Flow 模板，请手动发送",
+              message: "会员费已确认，但会员付款成功Flow尚未设置/未启用，请在Flow管理中创建并启用名为「会员付款成功Flow」的模板",
             };
           }
         } catch (error: any) {
@@ -2018,11 +2023,15 @@ export const appRouter = router({
 
         let template = review.flowTemplateId ? await db.getFlowTemplateById(review.flowTemplateId) : null;
         if (!template) {
-          const templates = await db.getFlowTemplates(true);
-          template = templates[0] || null;
+          const allTemplates = await db.getFlowTemplates(true);
+          template = allTemplates.find(t => 
+            t.name.includes("会员") && t.name.includes("付款成功") ||
+            t.name.includes("会员") && t.name.includes("Flow")
+          ) || null;
         }
+        if (template && !template.isActive) template = null;
 
-        if (!template) throw new Error("No active flow template configured");
+        if (!template) throw new Error("会员付款成功Flow尚未设置/未启用，请在Flow管理中创建并启用");
 
         // Get customer PSID
         const order = await db.getOrderById(review.orderId);
@@ -2034,9 +2043,10 @@ export const appRouter = router({
         if (psid) {
           flowResult = await sendTelegramJoinFlow(
             psid,
-            template.buttonLink || "",
+            "",
             template.messageContent,
-            template.buttonName || "进入心田会员系统"
+            "",
+            template.imageUrl || ""
           );
         }
 

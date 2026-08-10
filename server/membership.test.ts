@@ -335,7 +335,7 @@ describe("membership router - fee review flow", () => {
     expect(result.flowSent).toBe(false);
     expect(dbMock.updateFlowStatus).toHaveBeenCalledWith(1, expect.objectContaining({
       flowStatus: "failed",
-      flowErrorMessage: expect.stringContaining("No active flow template"),
+      flowErrorMessage: expect.stringContaining("会员付款成功Flow"),
     }));
   });
 
