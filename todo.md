@@ -2605,3 +2605,11 @@
 ## V2.1.26 补充2 - 包货工作台订单不显示Bug修复
 - [x] 修复getPackingOrders中snake_case列名bug：orders.order_category→orders.orderCategory，orders.import_status→orders.importStatus（TiDB列名大小写敏感）
 - [x] TypeScript编译零错误，270测试全部通过
+
+## V2.1.26 补充3 - 东马Poslaju运费+免邮标签+打印客户资料
+- [x] 东马Poslaju运费保存变0修复（createOrderWithSplit/addToSecureOrder/addMallItemsToOrder）
+- [x] 包货工作台免邮标签只对西马显示，东马不显示免邮
+- [x] A5打印格式添加客户资料（FB名字、收件人、电话、地址）
+- [x] getPackingDetail添加recipientName/recipientPhone/addressLine1/addressLine2/postcode/recipientCity/recipientState字段
+- [x] getPackingSlipData添加客户资料字段返回
+- [x] TypeScript零错误，270测试全部通过

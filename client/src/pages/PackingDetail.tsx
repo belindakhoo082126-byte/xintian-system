@@ -560,8 +560,8 @@ export default function PackingDetail() {
             <CardTitle className="text-base flex items-center gap-2">
               <Package className="h-4 w-4 text-blue-500" />
               {translate("实际重量与运费", "Actual Weight & Shipping")}
-              {/* V2.1.26: Show 免邮 badge */}
-              {detail && Number((detail as any).physicalSubtotal || 0) >= 150 && (
+              {/* V2.1.26: Show 免邮 badge — only for west_malaysia, east_malaysia has no free shipping */}
+              {detail && detail.shippingMethod === "west_malaysia" && Number((detail as any).physicalSubtotal || 0) >= 150 && (
                 <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-300">{translate("免邮", "Free Shipping")}</Badge>
               )}
             </CardTitle>
@@ -585,7 +585,7 @@ export default function PackingDetail() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">{translate("免邮状态", "Free Shipping")}: </span>
-                  <span className="font-medium">{Number((detail as any).physicalSubtotal || 0) >= 150 ? translate("是（满RM150免邮10kg内）", "Yes (Free for 10kg if RM150+)") : translate("否（未满RM150）", "No (Under RM150)")}</span>
+                  <span className="font-medium">{detail.shippingMethod === "west_malaysia" ? (Number((detail as any).physicalSubtotal || 0) >= 150 ? translate("是（满RM150免邮10kg内）", "Yes (Free for 10kg if RM150+)") : translate("否（未满RM150）", "No (Under RM150)")) : translate("不适用", "N/A")}</span>
                 </div>
               </div>
             )}
@@ -971,8 +971,26 @@ export default function PackingDetail() {
         </div>
 
         {/* V2.1.26: Large order number */}
-        <div style={{ textAlign: "center", fontSize: "28px", fontWeight: "bold", marginBottom: "8px" }}>
+        <div style={{ textAlign: "center", fontSize: "28px", fontWeight: "bold", marginBottom: "4px" }}>
           {data.orderNumber}
+        </div>
+
+        {/* V2.1.26: Customer info */}
+        <div style={{ marginBottom: "4px", fontSize: "12px", lineHeight: "1.4" }}>
+          {data.facebookName && (
+            <div><strong>FB:</strong> {data.facebookName}</div>
+          )}
+          <div><strong>{translate("收件人:", "Recipient:")}</strong> {data.recipientName || data.customerName}</div>
+          <div><strong>{translate("电话:", "Phone:")}</strong> {data.recipientPhone || data.customerPhone}</div>
+          <div><strong>{translate("地址:", "Address:")}</strong> {
+            [
+              data.addressLine1,
+              data.addressLine2,
+              data.postcode || data.recipientPostcode,
+              data.recipientCity,
+              data.recipientState
+            ].filter(Boolean).join(", ")
+          }</div>
         </div>
 
         <div style={{ borderTop: "2px solid #000", margin: "4px 0" }} />

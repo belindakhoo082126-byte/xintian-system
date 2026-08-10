@@ -921,6 +921,15 @@ export async function createOrderWithSplit(data: {
       .reduce((sum, i) => sum + 0.5 * i.quantity, 0);
     const shipResult = calculateWestMalaysiaShipping(totalWeight, settledAmount);
     shippingFee = shipResult.shippingFee;
+  } else if (hasPhysical && data.shippingMethod === "east_malaysia_poslaju") {
+    // V2.0.80: 东马 PosLaju 预收 RM50（2kg 内），打包后 API 计算实际运费
+    shippingFee = 50;
+  } else if (hasPhysical && data.shippingMethod === "east_malaysia_shopee") {
+    // V2.0.84: 东马 Shopee 运费固定 RM0
+    shippingFee = 0;
+  } else if (hasPhysical && data.shippingMethod === "lalamove") {
+    // V2.0.84: Lalamove — 满 RM150 公司承担，未满收 RM15
+    shippingFee = settledAmount >= 150 ? 0 : 15;
   }
 
   // V2.0.78: Auto-deduct credit from customer balance (no manual input)
@@ -1341,8 +1350,15 @@ export async function updateOrderItems(orderId: number, items: Array<{
   let shippingFee = 0;
   if (target[0].shippingMethod === "west_malaysia") {
     shippingFee = calculateWestMalaysiaShipping(totalWeight, eligibleSubtotal).shippingFee;
-  } else if (target[0].shippingMethod === "east_malaysia_shopee" || target[0].shippingMethod === "east_malaysia_poslaju") {
-    shippingFee = 15;
+  } else if (target[0].shippingMethod === "east_malaysia_poslaju") {
+    // V2.0.80: 东马 PosLaju 预收 RM50
+    shippingFee = 50;
+  } else if (target[0].shippingMethod === "east_malaysia_shopee") {
+    // V2.0.84: 东马 Shopee 运费固定 RM0
+    shippingFee = 0;
+  } else if (target[0].shippingMethod === "lalamove") {
+    // V2.0.84: Lalamove
+    shippingFee = eligibleSubtotal >= 150 ? 0 : 15;
   }
 
   const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
@@ -5231,8 +5247,15 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
   let shippingFee = 0;
   if (target[0].shippingMethod === "west_malaysia") {
     shippingFee = calculateWestMalaysiaShipping(totalWeight, eligibleSubtotal).shippingFee;
-  } else if (target[0].shippingMethod === "east_malaysia_shopee" || target[0].shippingMethod === "east_malaysia_poslaju") {
-    shippingFee = 15;
+  } else if (target[0].shippingMethod === "east_malaysia_poslaju") {
+    // V2.0.80: 东马 PosLaju 预收 RM50
+    shippingFee = 50;
+  } else if (target[0].shippingMethod === "east_malaysia_shopee") {
+    // V2.0.84: 东马 Shopee 运费固定 RM0
+    shippingFee = 0;
+  } else if (target[0].shippingMethod === "lalamove") {
+    // V2.0.84: Lalamove
+    shippingFee = eligibleSubtotal >= 150 ? 0 : 15;
   }
 
   const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
@@ -5795,6 +5818,16 @@ export async function getPackingDetail(orderId: number) {
     customerId: orders.customerId,
     customerName: customers.name,
     customerPhone: customers.phoneNumber,
+    facebookName: orders.facebookName,
+    recipientName: orders.recipientName,
+    recipientPhone: orders.recipientPhone,
+    addressLine1: orders.addressLine1,
+    addressLine2: orders.addressLine2,
+    postcode: orders.postcode,
+    recipientCity: orders.recipientCity,
+    recipientState: orders.recipientState,
+    recipientPostcode: orders.recipientPostcode,
+    recipientCountry: orders.recipientCountry,
     shippingAddress: orders.shippingAddress,
     shippingMethod: orders.shippingMethod,
     deliveryRemark: orders.shippingAddress,
@@ -5918,7 +5951,17 @@ export async function getPackingSlipData(orderId: number) {
     orderNumber: detail.orderNumber,
     customerName: detail.customerName,
     customerPhone: detail.customerPhone,
+    facebookName: (detail as any).facebookName,
+    recipientName: (detail as any).recipientName,
+    recipientPhone: (detail as any).recipientPhone,
+    addressLine1: (detail as any).addressLine1,
+    addressLine2: (detail as any).addressLine2,
+    postcode: (detail as any).postcode,
+    recipientCity: (detail as any).recipientCity,
+    recipientState: (detail as any).recipientState,
+    recipientPostcode: (detail as any).recipientPostcode,
     shippingAddress: detail.shippingAddress,
+    shippingMethod: detail.shippingMethod,
     paymentConfirmedAt: detail.paymentConfirmedAt,
     items: detail.items,
     giftItems,
