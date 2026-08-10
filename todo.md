@@ -2538,3 +2538,14 @@
 ## V2.1.22 - 2个Bug修复
 - [x] Bug1: 地址自动填写格式错误 — 新增parseLegacyAddress解析函数(shared/parseAddress.ts)，当客户只有旧单行address字段时自动拆分为addressLine1/addressLine2/city/state/postcode；OrderCreatePage和OrderEditPage的handleCustomerSelect集成此解析逻辑
 - [x] Bug2: 订单操作旁复制结账链接功能 — getOrders新增checkoutLink字段返回，确保Orders.tsx列表中复制结单通知按钮正常显示（含固定追单文字+订单号+链接）
+
+## V2.1.23 - 草稿订单/订单变更请求最终逻辑
+- [x] 取消「已过期」机制：移除expired状态，新增「已失效」状态（原订单已发货/完成/取消时标记）
+- [x] 筛选改为：全部/待审批/已批准/已拒绝/已失效
+- [x] 新订单审批：approveDraftOrder判断orderCategory（本地=待汇款，中国代购=挂单），不可重复生成
+- [x] 订单变更请求审批：approveOrderChangeRequest不重置原订单状态，调用recalculateOrderBalance重算付款状态
+- [x] Dashboard同步：修复DraftOrderCount/ChangeRequestCount使用真实count，点击跳转带筛选参数
+- [x] 前端页面读取URL query自动设置筛选
+- [x] 新增markDraftOrderInvalid/markOrderChangeRequestInvalid函数+tRPC procedure
+- [x] DraftOrders.tsx和OrderChangeRequests.tsx新增标记失效按钮+对话框
+- [x] TypeScript编译零错误，270测试全部通过

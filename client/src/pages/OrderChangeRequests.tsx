@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "wouter";
+import { useState, useMemo } from "react";
+import { Link, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,21 +8,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Check, X, Eye, FileEdit } from "lucide-react";
+import { Check, X, Eye, FileEdit, Ban } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_LABELS: Record<string, string> = {
   waiting_approval: "待审批",
   approved: "已批准",
   rejected: "已拒绝",
-  expired: "已过期",
+  invalid: "已失效",
 };
 
 const STATUS_COLORS: Record<string, string> = {
   waiting_approval: "bg-amber-100 text-amber-800",
   approved: "bg-green-100 text-green-800",
   rejected: "bg-red-100 text-red-800",
-  expired: "bg-gray-100 text-gray-500",
+  invalid: "bg-gray-100 text-gray-500",
 };
 
 const REQUEST_TYPE_LABELS: Record<string, string> = {
@@ -36,9 +36,18 @@ const REQUEST_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function OrderChangeRequests() {
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  // V2.1.23: Read ?status= from URL for Dashboard auto-filter
+  const search = useSearch();
+  const urlStatus = useMemo(() => {
+    const params = new URLSearchParams(search);
+    return params.get("status") || "all";
+  }, [search]);
+
+  const [statusFilter, setStatusFilter] = useState<string>(urlStatus);
   const [rejectDialog, setRejectDialog] = useState<{ id: number } | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [invalidDialog, setInvalidDialog] = useState<{ id: number } | null>(null);
+  const [invalidReason, setInvalidReason] = useState("");
   const [detailDialog, setDetailDialog] = useState<any>(null);
 
   const { data: requests, isLoading, refetch } = trpc.orderChangeRequests.list.useQuery({
@@ -65,6 +74,16 @@ export default function OrderChangeRequests() {
     onError: (e) => toast.error(`拒绝失败：${e.message}`),
   });
 
+  const markInvalidMutation = trpc.orderChangeRequests.markInvalid.useMutation({
+    onSuccess: () => {
+      toast.success("变更请求已标记为失效");
+      setInvalidDialog(null);
+      setInvalidReason("");
+      refetch();
+    },
+    onError: (e) => toast.error(`标记失效失败：${e.message}`),
+  });
+
   return (
     <div className="container py-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -83,7 +102,7 @@ export default function OrderChangeRequests() {
             <SelectItem value="waiting_approval">待审批</SelectItem>
             <SelectItem value="approved">已批准</SelectItem>
             <SelectItem value="rejected">已拒绝</SelectItem>
-            <SelectItem value="expired">已过期</SelectItem>
+            <SelectItem value="invalid">已失效</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -151,6 +170,13 @@ export default function OrderChangeRequests() {
                         >
                           <X className="h-4 w-4 mr-1" /> 拒绝
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setInvalidDialog({ id: req.id })}
+                        >
+                          <Ban className="h-4 w-4 mr-1" /> 标记失效
+                        </Button>
                       </>
                     )}
                     {req.status === "approved" && (
@@ -193,6 +219,34 @@ export default function OrderChangeRequests() {
               disabled={rejectMutation.isPending}
             >
               确认拒绝
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mark Invalid Dialog */}
+      <Dialog open={!!invalidDialog} onOpenChange={(open) => !open && setInvalidDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>标记变更请求为失效</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">当原订单已发货/完成/取消，无法再执行变更时可标记为失效。失效后预留库存将自动释放。</p>
+            <Textarea
+              placeholder="失效原因（可选）"
+              value={invalidReason}
+              onChange={(e) => setInvalidReason(e.target.value)}
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInvalidDialog(null)}>取消</Button>
+            <Button
+              variant="destructive"
+              onClick={() => invalidDialog && markInvalidMutation.mutate({ id: invalidDialog.id, reason: invalidReason })}
+              disabled={markInvalidMutation.isPending}
+            >
+              确认标记失效
             </Button>
           </DialogFooter>
         </DialogContent>

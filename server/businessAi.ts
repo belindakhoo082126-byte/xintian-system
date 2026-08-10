@@ -1,4 +1,4 @@
-import { getDb } from "./db";
+import { getDb, resolveOrderCategory, recalculateOrderBalance, generateOrderNumber, generateSecureToken } from "./db";
 import { draftOrders, orderChangeRequests, reservationRecords, products, orders, orderItems, aiLogs, aiHandoverRequests } from "../drizzle/schema";
 import { eq, sql, and, desc } from "drizzle-orm";
 import { SideEffectPolicy } from "./aiTestRunner";
@@ -315,6 +315,9 @@ export async function createDraftOrder(params: {
 
 /**
  * Approve a draft order — creates official order and converts inventory.
+ * V2.1.23: Uses resolveOrderCategory to determine local (XT) vs import (XTC).
+ * Local orders start as "pending" (待汇款), import orders start as "pending" (挂单).
+ * Prevents duplicate generation: only waiting_approval drafts can be approved.
  */
 export async function approveDraftOrder(draftId: number, approvedBy: string): Promise<{ orderId: number; orderNumber: string }> {
   const database = await getDb();
@@ -322,15 +325,30 @@ export async function approveDraftOrder(draftId: number, approvedBy: string): Pr
 
   const [draft] = await database.select().from(draftOrders).where(eq(draftOrders.id, draftId)).limit(1);
   if (!draft) throw new Error("Draft order not found");
-  if (draft.status !== "waiting_approval") throw new Error(`Draft order status is ${draft.status}, not waiting_approval`);
+  if (draft.status !== "waiting_approval") throw new Error(`草稿订单状态为 ${draft.status}，无法重复批准`);
 
-  // Generate official order number
-  const orderCount = await database.select({ count: sql<number>`count(*)` }).from(orders);
-  const orderNumber = `XT${String(10000 + (orderCount[0]?.count || 0) + 1).padStart(5, "0")}`;
+  // V2.1.23: Resolve orderCategory from product IDs
+  const draftItems = draft.items as DraftOrderItem[];
+  const productIds = draftItems.map(i => i.productId).filter(Boolean) as number[];
+  const orderCategory = await resolveOrderCategory({ productIds });
+
+  // V2.1.23: Generate proper order number with XT/XTC prefix
+  const prefix = orderCategory === "import" ? "XTC" : "XT";
+  const orderNumber = await generateOrderNumber(prefix);
+  const secureToken = generateSecureToken();
+  const checkoutLink = `/order/${orderNumber}/${secureToken}`;
+
+  // V2.1.23: Set initial status based on orderCategory
+  // Local: physicalStatus = pending (待汇款)
+  // Import: physicalStatus = pending, importStatus = pending (挂单)
+  const physicalStatus = "pending";
+  const importStatus = orderCategory === "import" ? "pending" : null;
 
   // Create official order
   const [orderResult] = await database.insert(orders).values({
     orderNumber,
+    secureToken,
+    checkoutLink,
     customerId: draft.customerId || 0,
     facebookName: draft.customerName,
     messengerId: draft.messengerId,
@@ -338,14 +356,15 @@ export async function approveDraftOrder(draftId: number, approvedBy: string): Pr
     orderSource: "messenger",
     totalAmount: draft.totalAmount,
     paidAmount: "0",
-    physicalStatus: "pending",
+    physicalStatus,
+    importStatus,
     isSpecialOrder: false,
+    orderCategory: orderCategory as any,
   });
 
   const orderId = (orderResult as any).insertId;
 
   // Create order items from draft items
-  const draftItems = draft.items as DraftOrderItem[];
   for (const item of draftItems) {
     await database.insert(orderItems).values({
       orderId,
@@ -539,12 +558,19 @@ export async function approveOrderChangeRequest(requestId: number, approvedBy: s
       break;
   }
 
-  // Recalculate order total
+  // V2.1.23: Recalculate order total from items, then call recalculateOrderBalance
+  // to automatically update payment status (e.g. partial_payment if paid < new total)
+  // WITHOUT resetting the original business status unnecessarily.
   const items = await database.select().from(orderItems).where(eq(orderItems.orderId, request.orderId));
   const newTotal = items.reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
   await database.update(orders)
     .set({ totalAmount: newTotal.toFixed(2) })
     .where(eq(orders.id, request.orderId));
+
+  // V2.1.23: Recalculate balance — this will update physicalStatus/importStatus
+  // based on paidAmount vs totalAmount, but won't reset to pending if already
+  // in hold_order, partial_payment, etc. (lockedStatuses protect shipped/completed/cancelled)
+  await recalculateOrderBalance(request.orderId);
 
   // Update request status
   await database.update(orderChangeRequests)
@@ -565,6 +591,48 @@ export async function rejectOrderChangeRequest(requestId: number, rejectedBy: st
   // Update request status
   await database.update(orderChangeRequests)
     .set({ status: "rejected", rejectedBy, rejectedAt: new Date(), rejectReason: reason || null })
+    .where(eq(orderChangeRequests.id, requestId));
+}
+
+/**
+ * V2.1.23: Mark a draft order as invalid — when the bound original order
+ * has already been shipped/completed/cancelled and can no longer be modified.
+ * This is NOT time-based expiry; it's a business-rule invalidation.
+ */
+export async function markDraftOrderInvalid(draftId: number, markedBy: string, reason?: string): Promise<void> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+
+  const [draft] = await database.select().from(draftOrders).where(eq(draftOrders.id, draftId)).limit(1);
+  if (!draft) throw new Error("Draft order not found");
+  if (draft.status !== "waiting_approval") throw new Error(`草稿订单状态为 ${draft.status}，无法标记为失效`);
+
+  // Release reserved inventory
+  await releaseInventory(draftId, "draft_order");
+
+  await database.update(draftOrders)
+    .set({ status: "invalid", rejectedBy: markedBy, rejectedAt: new Date(), rejectReason: reason || "原订单状态不允许修改" })
+    .where(eq(draftOrders.id, draftId));
+}
+
+/**
+ * V2.1.23: Mark an order change request as invalid — when the bound original order
+ * has already been shipped/completed/cancelled and can no longer be modified.
+ * This is NOT time-based expiry; it's a business-rule invalidation.
+ */
+export async function markOrderChangeRequestInvalid(requestId: number, markedBy: string, reason?: string): Promise<void> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+
+  const [request] = await database.select().from(orderChangeRequests).where(eq(orderChangeRequests.id, requestId)).limit(1);
+  if (!request) throw new Error("Change request not found");
+  if (request.status !== "waiting_approval") throw new Error(`变更请求状态为 ${request.status}，无法标记为失效`);
+
+  // Release reserved inventory
+  await releaseInventory(requestId, "change_request");
+
+  await database.update(orderChangeRequests)
+    .set({ status: "invalid", rejectedBy: markedBy, rejectedAt: new Date(), rejectReason: reason || "原订单状态不允许修改" })
     .where(eq(orderChangeRequests.id, requestId));
 }
 

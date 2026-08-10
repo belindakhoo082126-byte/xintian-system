@@ -16,9 +16,11 @@ import {
   createDraftOrder,
   approveDraftOrder,
   rejectDraftOrder,
+  markDraftOrderInvalid,
   createOrderChangeRequest,
   approveOrderChangeRequest,
   rejectOrderChangeRequest,
+  markOrderChangeRequestInvalid,
   generateHandoverSummary,
   queryOrderShipping,
   reserveInventory,
@@ -6225,7 +6227,7 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
   // ==========================================================================
   draftOrders: router({
     list: adminProcedure.input(z.object({
-      status: z.enum(["waiting_approval", "approved", "rejected", "expired", "all"]).default("all"),
+      status: z.enum(["waiting_approval", "approved", "rejected", "invalid", "all"]).default("all"),
       limit: z.number().default(50),
       offset: z.number().default(0),
     })).query(async ({ input }) => {
@@ -6263,6 +6265,15 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         throw new TRPCError({ code: "BAD_REQUEST", message: e.message });
       }
     }),
+
+    markInvalid: adminProcedure.input(z.object({ id: z.number(), reason: z.string().optional() })).mutation(async ({ input, ctx }) => {
+      try {
+        await markDraftOrderInvalid(input.id, ctx.user?.name || ctx.user?.openId || "admin", input.reason);
+        return { success: true };
+      } catch (e: any) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: e.message });
+      }
+    }),
   }),
 
   // ==========================================================================
@@ -6270,7 +6281,7 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
   // ==========================================================================
   orderChangeRequests: router({
     list: adminProcedure.input(z.object({
-      status: z.enum(["waiting_approval", "approved", "rejected", "expired", "all"]).default("all"),
+      status: z.enum(["waiting_approval", "approved", "rejected", "invalid", "all"]).default("all"),
       limit: z.number().default(50),
       offset: z.number().default(0),
     })).query(async ({ input }) => {
@@ -6303,6 +6314,15 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
     reject: adminProcedure.input(z.object({ id: z.number(), reason: z.string().optional() })).mutation(async ({ input, ctx }) => {
       try {
         await rejectOrderChangeRequest(input.id, ctx.user?.name || ctx.user?.openId || "admin", input.reason);
+        return { success: true };
+      } catch (e: any) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: e.message });
+      }
+    }),
+
+    markInvalid: adminProcedure.input(z.object({ id: z.number(), reason: z.string().optional() })).mutation(async ({ input, ctx }) => {
+      try {
+        await markOrderChangeRequestInvalid(input.id, ctx.user?.name || ctx.user?.openId || "admin", input.reason);
         return { success: true };
       } catch (e: any) {
         throw new TRPCError({ code: "BAD_REQUEST", message: e.message });

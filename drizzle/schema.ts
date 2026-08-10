@@ -2690,8 +2690,8 @@ export const draftOrders = mysqlTable("draft_orders", {
   // Items snapshot (JSON array of { productId, productName, quantity, price, variantId? })
   items: json("items").notNull(),
   totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }).default("0").notNull(),
-  // Status: waiting_approval / approved / rejected / expired
-  status: mysqlEnum("status", ["waiting_approval", "approved", "rejected", "expired"]).default("waiting_approval").notNull(),
+  // Status: waiting_approval / approved / rejected / invalid
+  status: mysqlEnum("status", ["waiting_approval", "approved", "rejected", "expired", "invalid"]).default("waiting_approval").notNull(),
   // Approval tracking
   approvedBy: varchar("approvedBy", { length: 255 }),
   approvedAt: timestamp("approvedAt"),
@@ -2730,8 +2730,8 @@ export const orderChangeRequests = mysqlTable("order_change_requests", {
   aiLogId: int("aiLogId"),
   detectedIntent: varchar("detectedIntent", { length: 100 }),
   originalMessage: text("originalMessage"),
-  // Status: waiting_approval / approved / rejected / expired
-  status: mysqlEnum("status", ["waiting_approval", "approved", "rejected", "expired"]).default("waiting_approval").notNull(),
+  // Status: waiting_approval / approved / rejected / invalid
+  status: mysqlEnum("status", ["waiting_approval", "approved", "rejected", "expired", "invalid"]).default("waiting_approval").notNull(),
   // Approval tracking
   approvedBy: varchar("approvedBy", { length: 255 }),
   approvedAt: timestamp("approvedAt"),
