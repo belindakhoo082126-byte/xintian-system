@@ -1491,7 +1491,13 @@ export async function recalculateOrderBalance(orderId: number) {
 
   // Calculate balance: paid - total = positive means overpaid, negative means still owe
   const balance = totalPaid - totalAmount;
-  const overpaidAmount = balance > 0.01 ? balance - totalRefunded : 0;
+  // V2.1.18: overpaidAmount is the gross overpayment (paid - total), not reduced by refunds.
+  // resolvedOverpaymentAmount tracks how much has been processed (Credit/TNG/Cash).
+  // The "pending" overpayment = overpaidAmount - resolvedOverpaymentAmount.
+  const grossOverpaid = balance > 0.01 ? balance : 0;
+  const resolvedOverpayment = parseFloat(String((order[0] as any).resolvedOverpaymentAmount || "0"));
+  // overpaidAmount stored = gross overpaid (does NOT subtract refunds, since refunds are tracked separately)
+  const overpaidAmount = grossOverpaid;
 
   // Determine order status
   let newStatus = order[0].physicalStatus;
@@ -1512,19 +1518,20 @@ export async function recalculateOrderBalance(orderId: number) {
       } else if (order[0].physicalStatus === 'partial_payment' || order[0].physicalStatus === 'receipt_uploaded') {
         newStatus = 'packing' as any;
       }
-      // Overpayment → special order
-      if (balance > 0.01 && overpaidAmount > 0.01) {
+      // V2.1.18: Overpayment → special order only if there's pending (unprocessed) overpayment
+      const pendingOverpayment = grossOverpaid - resolvedOverpayment;
+      if (pendingOverpayment > 0.01) {
         isSpecialOrder = true;
         specialOrderType = 'over_payment';
         specialOrderSource = 'system';
         specialOrderStatus = 'pending';
-      } else if (isSpecialOrder && specialOrderType === 'partial_payment') {
-        // Was partial payment special, now fully paid → resolve
+      } else if (isSpecialOrder && specialOrderType === 'over_payment' && pendingOverpayment <= 0.01) {
+        // Overpayment fully processed → resolve special order
         isSpecialOrder = false;
         specialOrderType = null;
         specialOrderStatus = 'resolved';
-      } else if (isSpecialOrder && specialOrderType === 'over_payment' && overpaidAmount <= 0.01) {
-        // Overpayment fully refunded → resolve special order
+      } else if (isSpecialOrder && specialOrderType === 'partial_payment') {
+        // Was partial payment special, now fully paid → resolve
         isSpecialOrder = false;
         specialOrderType = null;
         specialOrderStatus = 'resolved';
@@ -1675,6 +1682,88 @@ export async function addOrderRefund(data: {
   // Recalculate order balance (will check if overpaidAmount is now 0)
   await recalculateOrderBalance(data.orderId);
   return { success: true };
+}
+
+// ============================================================================
+// V2.1.18: Process Overpayment (Credit / TNG / Cash)
+// ============================================================================
+
+export async function processOverpayment(data: {
+  orderId: number;
+  amount: string;
+  method: 'credit' | 'tng' | 'cash' | 'bank_transfer' | 'other';
+  notes?: string;
+  operatorName: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
+  if (order.length === 0) throw new Error("Order not found");
+
+  const overpaidAmount = parseFloat(String(order[0].overpaidAmount || "0"));
+  const resolvedAmount = parseFloat(String((order[0] as any).resolvedOverpaymentAmount || "0"));
+  const pendingOverpayment = overpaidAmount - resolvedAmount;
+  const processAmount = parseFloat(data.amount);
+
+  if (processAmount <= 0) throw new Error("Invalid amount");
+  if (processAmount > pendingOverpayment + 0.01) {
+    throw new Error(`Amount exceeds pending overpayment: RM${pendingOverpayment.toFixed(2)}`);
+  }
+
+  // Update resolvedOverpaymentAmount
+  const newResolvedAmount = resolvedAmount + processAmount;
+  await db.update(orders).set({
+    resolvedOverpaymentAmount: newResolvedAmount.toFixed(2),
+  }).where(eq(orders.id, data.orderId));
+
+  // Record as a refund entry with method mapping
+  const methodLabel: Record<string, string> = {
+    credit: 'Refund to Credit',
+    tng: 'TNG',
+    cash: 'Cash',
+    bank_transfer: 'Bank Transfer',
+    other: 'Other',
+  };
+  const refundMethod = methodLabel[data.method] || data.method;
+
+  await db.insert(orderRefunds).values({
+    orderId: data.orderId,
+    amount: data.amount,
+    refundMethod,
+    receiptUrl: null,
+    notes: data.notes || `多汇款处理：${refundMethod} RM${data.amount}`,
+    operatorName: data.operatorName,
+    refundDate: new Date(),
+  });
+
+  // Log activity
+  await logOrderOperation(data.orderId, 'payment', `多汇款处理：RM${data.amount}，方式：${refundMethod}${data.notes ? '，备注：' + data.notes : ''}`, null, data.operatorName);
+
+  // If Credit, add to customer's credit balance
+  if (data.method === 'credit' && order[0].customerId) {
+    await refundCustomerCredit(order[0].customerId, processAmount, data.orderId, order[0].orderNumber || undefined);
+    await logOrderOperation(data.orderId, 'payment', `多汇款转Credit RM${data.amount}，已加入客户Credit`, null, data.operatorName);
+  }
+
+  // Check if overpayment is fully resolved
+  const newPending = overpaidAmount - newResolvedAmount;
+  if (newPending <= 0.01) {
+    // Resolve the special order status
+    await db.update(orders).set({
+      isSpecialOrder: false,
+      specialOrderType: null as any,
+      specialOrderStatus: 'resolved' as any,
+      specialOrderUpdatedAt: new Date(),
+    }).where(eq(orders.id, data.orderId));
+    await logOrderOperation(data.orderId, 'payment', `多汇款已完全处理，特别状态解除`, null, data.operatorName);
+  }
+
+  // Also recalculate balance to sync refundedAmount
+  await recalculateOrderBalance(data.orderId);
+
+  broadcastChanges(["orders", "dashboard"]);
+  return { success: true, resolvedAmount: newResolvedAmount.toFixed(2), pendingOverpayment: Math.max(0, newPending).toFixed(2) };
 }
 
 // ============================================================================

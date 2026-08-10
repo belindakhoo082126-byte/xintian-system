@@ -2486,3 +2486,15 @@
 - [x] 前端OrderEditPage：搜索结果显示地址摘要+Credit余额
 - [x] TypeScript编译零错误，270项测试全部通过
 - [x] 保存checkpoint
+
+## V2.1.18 - 多汇款处理流程
+- [x] 数据库 orders 表新增 resolvedOverpaymentAmount 字段
+- [x] schema.ts 同步更新 resolvedOverpaymentAmount 字段定义
+- [x] 后端 processOverpayment 函数（db.ts）：支持 Credit/TNG/Cash/Bank Transfer/Other 五种处理方式
+- [x] processOverpayment tRPC procedure（routers.ts）
+- [x] recalculateOrderBalance 更新：overpaidAmount 改为 gross overpaid，pendingOverpayment = grossOverpaid - resolvedOverpayment
+- [x] 多汇款特别状态判断改为基于 pendingOverpayment > 0（而非 overpaidAmount）
+- [x] Orders.tsx 多汇款处理区域：显示多付/已处理/待处理金额 + 处理按钮
+- [x] Orders.tsx 多汇款处理对话框：金额/方式/备注，Credit自动加客户余额
+- [x] Dashboard 只统计 pending overpayment > 0 的订单（通过 specialOrderStatus = pending）
+- [x] TypeScript 编译零错误，270 项测试全部通过

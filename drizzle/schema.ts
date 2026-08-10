@@ -505,6 +505,8 @@ export const orders = mysqlTable("orders", {
   // V2.1.15: Overpayment and refund tracking
   overpaidAmount: decimal("overpaidAmount", { precision: 10, scale: 2 }).default("0"),
   refundedAmount: decimal("refundedAmount", { precision: 10, scale: 2 }).default("0"),
+  // V2.1.18: Resolved overpayment tracking (Credit/TNG/Cash processed amount)
+  resolvedOverpaymentAmount: decimal("resolvedOverpaymentAmount", { precision: 10, scale: 2 }).default("0"),
   physicalStatus: mysqlEnum("physicalStatus", [
     "pending",           // 挂单 - waiting for payment
     "receipt_uploaded",  // 确认汇款 - customer uploaded payment proof

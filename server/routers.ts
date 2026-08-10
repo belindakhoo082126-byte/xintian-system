@@ -1363,6 +1363,24 @@ export const appRouter = router({
         return await db.getOrderRefunds(input.orderId);
       }),
 
+    // V2.1.18: Process overpayment (Credit / TNG / Cash)
+    processOverpayment: adminProcedure
+      .input(z.object({
+        orderId: z.number(),
+        amount: z.string(),
+        method: z.enum(['credit', 'tng', 'cash', 'bank_transfer', 'other']),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.processOverpayment({
+          orderId: input.orderId,
+          amount: input.amount,
+          method: input.method,
+          notes: input.notes,
+          operatorName: ctx.user?.name || "admin",
+        });
+      }),
+
     // V2.1: Cancel order with reason
     cancelOrder: adminProcedure
       .input(z.object({

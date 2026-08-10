@@ -166,6 +166,9 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const [editPaymentDialogOpen, setEditPaymentDialogOpen] = useState(false);
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [refundForm, setRefundForm] = useState({ amount: "", refundMethod: "bank_transfer", receiptUrl: "", notes: "" });
+  // V2.1.18: Overpayment processing state
+  const [overpaymentDialogOpen, setOverpaymentDialogOpen] = useState(false);
+  const [overpaymentForm, setOverpaymentForm] = useState({ amount: "", method: "credit" as 'credit' | 'tng' | 'cash' | 'bank_transfer' | 'other', notes: "" });
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const receiptFileRef = useRef<HTMLInputElement>(null);
   const [remarkForm, setRemarkForm] = useState({ remarkCategory: "", content: "", desiredDeliveryDate: "", desiredDeliveryReason: "", repottingData: "" });
@@ -356,6 +359,18 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       setRefundForm({ amount: "", refundMethod: "bank_transfer", receiptUrl: "", notes: "" });
     },
     onError: (e) => toast.error(translate("退款失败: {message}", "Refund failed: {message}", { message: e.message })),
+  });
+
+  // V2.1.18: Process overpayment mutation
+  const processOverpaymentMutation = trpc.orders.processOverpayment.useMutation({
+    onSuccess: (data) => {
+      utils.orders.invalidate();
+      if (detailOrderId) refetchDetail();
+      toast.success(translate("多汇款已处理", "Overpayment processed"));
+      setOverpaymentDialogOpen(false);
+      setOverpaymentForm({ amount: "", method: "credit", notes: "" });
+    },
+    onError: (e) => toast.error(translate("处理失败: {message}", "Processing failed: {message}", { message: e.message })),
   });
 
   const cancelOrderMutation = trpc.orders.cancelOrder.useMutation({
@@ -1200,6 +1215,39 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                   </Card>
                 </div>
 
+                {/* V2.1.18: Overpayment processing section */}
+                {(() => {
+                  const overpaid = parseFloat(String(orderDetail.overpaidAmount || "0"));
+                  const resolved = parseFloat(String((orderDetail as any).resolvedOverpaymentAmount || "0"));
+                  const pending = Math.max(0, overpaid - resolved);
+                  if (overpaid > 0.01) {
+                    return (
+                      <div className="p-4 border rounded-lg bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Badge className="bg-amber-100 text-amber-700">{translate("多汇款", "Overpayment")}</Badge>
+                              <span className="text-sm font-medium">{translate("客户多付", "Customer overpaid")}: RM {overpaid.toFixed(2)}</span>
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {translate("已处理", "Processed")}: RM {resolved.toFixed(2)} | {translate("待处理", "Pending")}: <span className={pending > 0.01 ? "text-red-600 font-semibold" : "text-green-600 font-semibold"}>RM {pending.toFixed(2)}</span>
+                            </div>
+                          </div>
+                          {pending > 0.01 && orderDetail.physicalStatus !== "cancelled" && (
+                            <Button size="sm" className="bg-amber-600 hover:bg-amber-700" onClick={() => {
+                              setOverpaymentForm({ amount: pending.toFixed(2), method: "credit", notes: "" });
+                              setOverpaymentDialogOpen(true);
+                            }}>
+                              {translate("处理多汇款", "Process Overpayment")}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
                 <div className="flex items-center justify-between">
                   <h3 className="font-medium">{translate("付款记录", "Payment Records")}</h3>
                   <div className="flex gap-2">
@@ -1896,6 +1944,80 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               });
             }} disabled={addRefundMutation.isPending}>
               {translate("确认退款", "Confirm Refund")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* V2.1.18: Overpayment processing dialog */}
+      <Dialog open={overpaymentDialogOpen} onOpenChange={setOverpaymentDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("处理多汇款", "Process Overpayment")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg text-sm">
+              {translate("客户多付", "Customer overpaid")}: <span className="font-bold">RM {(() => {
+                const overpaid = parseFloat(String(orderDetail?.overpaidAmount || "0"));
+                const resolved = parseFloat(String((orderDetail as any)?.resolvedOverpaymentAmount || "0"));
+                return Math.max(0, overpaid - resolved).toFixed(2);
+              })()}</span>
+            </div>
+            <div>
+              <Label>{translate("处理金额", "Process Amount")}</Label>
+              <Input
+                type="number"
+                value={overpaymentForm.amount}
+                onChange={(e) => setOverpaymentForm({ ...overpaymentForm, amount: e.target.value })}
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <Label>{translate("处理方式", "Method")}</Label>
+              <Select value={overpaymentForm.method} onValueChange={(v) => setOverpaymentForm({ ...overpaymentForm, method: v as any })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="credit">{translate("转入客户 Credit", "Transfer to Customer Credit")}</SelectItem>
+                  <SelectItem value="tng">{translate("TNG 退款", "TNG Refund")}</SelectItem>
+                  <SelectItem value="cash">{translate("Cash 退款", "Cash Refund")}</SelectItem>
+                  <SelectItem value="bank_transfer">{translate("银行转账退款", "Bank Transfer Refund")}</SelectItem>
+                  <SelectItem value="other">{translate("其他", "Other")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{translate("备注", "Notes")}</Label>
+              <Textarea
+                value={overpaymentForm.notes}
+                onChange={(e) => setOverpaymentForm({ ...overpaymentForm, notes: e.target.value })}
+                placeholder={translate("可选备注", "Optional notes")}
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOverpaymentDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button
+              disabled={processOverpaymentMutation.isPending}
+              onClick={() => {
+                if (!overpaymentForm.amount || parseFloat(overpaymentForm.amount) <= 0) {
+                  toast.error(translate("请输入有效金额", "Please enter a valid amount"));
+                  return;
+                }
+                processOverpaymentMutation.mutate({
+                  orderId: orderDetail!.id,
+                  amount: overpaymentForm.amount,
+                  method: overpaymentForm.method,
+                  notes: overpaymentForm.notes,
+                });
+              }}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              {processOverpaymentMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 mr-1 animate-spin" />{translate("处理中...", "Processing...")}</>
+              ) : (
+                translate("确认处理", "Confirm")
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
