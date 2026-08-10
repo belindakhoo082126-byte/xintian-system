@@ -70,6 +70,10 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     shippingAddress: "",
     recipientName: "",
     recipientPhone: "",
+    recipientCity: "",
+    recipientState: "",
+    recipientPostcode: "",
+    recipientCountry: "",
     discountAmount: "0",
     discountReason: "",
     extraCharge: "0",
@@ -114,6 +118,10 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
         shippingAddress: o.shippingAddress || "",
         recipientName: o.recipientName || "",
         recipientPhone: o.recipientPhone || "",
+        recipientCity: o.recipientCity || "",
+        recipientState: o.recipientState || "",
+        recipientPostcode: o.recipientPostcode || "",
+        recipientCountry: o.recipientCountry || "",
         discountAmount: o.discountAmount || "0",
         discountReason: o.discountReason || "",
         extraCharge: o.extraCharge || "0",
@@ -554,12 +562,16 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                   const addressSummary = addrParts.length > 0 ? addrParts.join(", ") : null;
                   return (
                     <button key={c.id} onClick={() => {
-                      // V2.1.17: Auto-fill recipient from customer profile
+                      // V2.1.20: Auto-fill recipient from customer profile (including structured address)
                       setFormData((prev: any) => ({
                         ...prev,
                         recipientName: c.name || c.displayName || prev.recipientName,
                         recipientPhone: c.phoneNumber || prev.recipientPhone,
                         shippingAddress: c.address || prev.shippingAddress,
+                        recipientCity: c.city || prev.recipientCity,
+                        recipientState: c.state || prev.recipientState,
+                        recipientPostcode: c.postalCode || prev.recipientPostcode,
+                        recipientCountry: c.country || prev.recipientCountry,
                       }));
                       setCustomerSearchQuery("");
                     }} className="w-full text-left p-2 rounded hover:bg-muted text-sm">
@@ -609,6 +621,25 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               onChange={(e) => setFormData({ ...formData, shippingAddress: e.target.value })}
               rows={2}
             />
+          </div>
+          {/* V2.1.20: Structured address fields */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs">{translate("城市", "City")}</Label>
+              <Input value={formData.recipientCity || ""} onChange={(e) => setFormData({ ...formData, recipientCity: e.target.value })} className="h-9" />
+            </div>
+            <div>
+              <Label className="text-xs">{translate("州属", "State")}</Label>
+              <Input value={formData.recipientState || ""} onChange={(e) => setFormData({ ...formData, recipientState: e.target.value })} className="h-9" />
+            </div>
+            <div>
+              <Label className="text-xs">{translate("邮编", "Postcode")}</Label>
+              <Input value={formData.recipientPostcode || ""} onChange={(e) => setFormData({ ...formData, recipientPostcode: e.target.value })} className="h-9" />
+            </div>
+            <div>
+              <Label className="text-xs">{translate("国家", "Country")}</Label>
+              <Input value={formData.recipientCountry || ""} onChange={(e) => setFormData({ ...formData, recipientCountry: e.target.value })} className="h-9" />
+            </div>
           </div>
         </CardContent>
       </Card>

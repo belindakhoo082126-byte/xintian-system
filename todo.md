@@ -2510,3 +2510,16 @@
 - [x] Orders.tsx SpecialStatusPanel 组件（待处理列表+已处理历史+新增+处理对话框）
 - [x] Dashboard getDashboardFollowUp 同时查询 order_special_statuses 表和 orders 表
 - [x] TypeScript 编译零错误，270 项测试全部通过
+
+## V2.1.20 - 客户地址同步完善
+- [x] createOrderWithSplit地址同步修复：不再拼接addressLine1+addressLine2，直接保存addressLine1
+- [x] updateOrderDetails新增结构化地址字段（recipientCity/recipientState/recipientPostcode/recipientCountry）
+- [x] routers.ts updateDetails procedure新增结构化地址字段
+- [x] OrderEditPage formData新增结构化地址字段，useEffect加载时读取
+- [x] OrderEditPage客户搜索选择后自动带入完整结构化地址
+- [x] OrderEditPage UI新增城市/州属/邮编/国家输入框
+- [x] findOrCreateCustomer新增结构化地址字段支持
+- [x] routers.ts findOrCreate procedure新增结构化地址字段
+- [x] Customers.tsx客户详情地址显示改为完整结构化地址（address+city+state+postcode+country）
+- [x] Customers.tsx新建客户对话框新增城市/州属/邮编/国家输入框
+- [x] TypeScript编译零错误，270测试通过

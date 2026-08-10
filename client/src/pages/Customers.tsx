@@ -523,9 +523,11 @@ export default function Customers() {
                     <p className="text-muted-foreground">{translate("Email", "Email")}</p>
                     <p className="font-medium">{detailCustomer.email || "-"}</p>
                   </div>
-                  <div>
+                  <div className="col-span-2">
                     <p className="text-muted-foreground">{translate("地址", "Address")}</p>
-                    <p className="font-medium">{detailCustomer.address || "-"}</p>
+                    <p className="font-medium">
+                      {[detailCustomer.address, detailCustomer.city, detailCustomer.state, detailCustomer.postalCode, detailCustomer.country].filter(Boolean).join(", ") || "-"}
+                    </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">{translate("订单总数", "Total Orders")}</p>
@@ -1179,9 +1181,25 @@ export default function Customers() {
               <Label>{translate("Email", "Email")}</Label>
               <Input value={newCustomer.email} onChange={e => setNewCustomer({ ...newCustomer, email: e.target.value })} />
             </div>
-            <div>
+            <div className="col-span-2">
               <Label>{translate("地址", "Address")}</Label>
               <Input value={newCustomer.address} onChange={e => setNewCustomer({ ...newCustomer, address: e.target.value })} />
+            </div>
+            <div>
+              <Label>{translate("城市", "City")}</Label>
+              <Input value={newCustomer.city || ""} onChange={e => setNewCustomer({ ...newCustomer, city: e.target.value })} />
+            </div>
+            <div>
+              <Label>{translate("州属", "State")}</Label>
+              <Input value={newCustomer.state || ""} onChange={e => setNewCustomer({ ...newCustomer, state: e.target.value })} />
+            </div>
+            <div>
+              <Label>{translate("邮编", "Postcode")}</Label>
+              <Input value={newCustomer.postalCode || ""} onChange={e => setNewCustomer({ ...newCustomer, postalCode: e.target.value })} />
+            </div>
+            <div>
+              <Label>{translate("国家", "Country")}</Label>
+              <Input value={newCustomer.country || "Malaysia"} onChange={e => setNewCustomer({ ...newCustomer, country: e.target.value })} />
             </div>
           </div>
           <DialogFooter>

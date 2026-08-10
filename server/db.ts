@@ -281,6 +281,10 @@ export async function findOrCreateCustomer(data: {
   phoneNumber?: string;
   email?: string;
   address?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
   shopLinkIdentifier?: string;
 }) {
   const db = await getDb();
@@ -326,6 +330,10 @@ export async function findOrCreateCustomer(data: {
     phoneNumber: data.phoneNumber || null,
     email: data.email || null,
     address: data.address || null,
+    city: data.city || null,
+    state: data.state || null,
+    postalCode: data.postalCode || null,
+    country: data.country || null,
     shopLinkIdentifier: data.shopLinkIdentifier || null,
   });
   const inserted = await db.select().from(customers)
@@ -1016,10 +1024,8 @@ export async function createOrderWithSplit(data: {
   const hasOrderAddress = data.shippingAddress || data.addressLine1 || data.city;
 
   if (!hasCustomerAddress && hasOrderAddress) {
-    // V2.1.17: Auto-sync address to customer profile — prefer structured fields, fallback to shippingAddress
-    const syncAddress = data.addressLine1 || data.addressLine2
-      ? [data.addressLine1, data.addressLine2].filter(Boolean).join(', ')
-      : data.shippingAddress || null;
+    // V2.1.20: Auto-sync address to customer profile — save addressLine1 directly (no concatenation)
+    const syncAddress = data.addressLine1 || data.shippingAddress || null;
     await db.update(customers).set({
       address: syncAddress,
       city: data.city || null,
@@ -1123,6 +1129,10 @@ export async function updateOrderDetails(id: number, data: {
   orderCategory?: string;
   recipientName?: string;
   recipientPhone?: string;
+  recipientCity?: string;
+  recipientState?: string;
+  recipientPostcode?: string;
+  recipientCountry?: string;
   discountAmount?: string;
   discountReason?: string;
   extraCharge?: string;
@@ -1146,6 +1156,11 @@ export async function updateOrderDetails(id: number, data: {
   if (data.orderCategory !== undefined) updateData.orderCategory = data.orderCategory;
   if (data.recipientName !== undefined) updateData.recipientName = data.recipientName;
   if (data.recipientPhone !== undefined) updateData.recipientPhone = data.recipientPhone;
+  // V2.1.20: Save structured recipient address fields
+  if (data.recipientCity !== undefined) updateData.recipientCity = data.recipientCity;
+  if (data.recipientState !== undefined) updateData.recipientState = data.recipientState;
+  if (data.recipientPostcode !== undefined) updateData.recipientPostcode = data.recipientPostcode;
+  if (data.recipientCountry !== undefined) updateData.recipientCountry = data.recipientCountry;
   if (data.discountAmount !== undefined) updateData.discountAmount = data.discountAmount;
   if (data.discountReason !== undefined) updateData.discountReason = data.discountReason;
   if (data.extraCharge !== undefined) updateData.extraCharge = data.extraCharge;

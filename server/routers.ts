@@ -1202,6 +1202,10 @@ export const appRouter = router({
         orderCategory: z.string().optional(),
         recipientName: z.string().optional(),
         recipientPhone: z.string().optional(),
+        recipientCity: z.string().optional(),
+        recipientState: z.string().optional(),
+        recipientPostcode: z.string().optional(),
+        recipientCountry: z.string().optional(),
         discountAmount: z.string().optional(),
         discountReason: z.string().optional(),
         extraCharge: z.string().optional(),
@@ -2275,6 +2279,10 @@ export const appRouter = router({
         phoneNumber: z.string().optional(),
         email: z.string().optional(),
         address: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        postalCode: z.string().optional(),
+        country: z.string().optional(),
         shopLinkIdentifier: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
