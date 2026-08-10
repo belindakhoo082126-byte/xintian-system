@@ -2132,6 +2132,7 @@ export async function cancelOrderWithReason(id: number, reason: string, operator
 export async function getMembershipReviews(filters?: {
   status?: string;
   flowStatus?: string;
+  membershipStatus?: string;
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -2139,6 +2140,15 @@ export async function getMembershipReviews(filters?: {
   const conditions: any[] = [];
   if (filters?.status) conditions.push(eq(membershipFeeReviews.reviewStatus, filters.status as any));
   if (filters?.flowStatus) conditions.push(eq(membershipFeeReviews.flowStatus, filters.flowStatus as any));
+  // V2.1.26: Filter by membershipStatus on the orders table
+  if (filters?.membershipStatus) {
+    const reviewOrderIds = await db.select({ orderId: orders.id })
+      .from(orders)
+      .where(eq(orders.membershipStatus, filters.membershipStatus as any));
+    const orderIds = reviewOrderIds.map((r: any) => r.orderId);
+    if (orderIds.length === 0) return [];
+    conditions.push(inArray(membershipFeeReviews.orderId, orderIds));
+  }
   if (conditions.length > 0) {
     query = query.where(and(...conditions)) as any;
   }

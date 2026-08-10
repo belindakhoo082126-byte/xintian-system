@@ -2595,3 +2595,9 @@
 - [x] getPackingDetail添加orderCategory/importStatus/physicalSubtotal/shippingFee/customerPaidShipping字段
 - [x] getPackingSlipData添加physicalSubtotal/isFreeShipping到summary
 - [x] TypeScript编译零错误，270测试全部通过
+
+## V2.1.26 补充 - 会员订单管理筛选修复
+- [x] Membership.tsx筛选选项从旧审核状态（全部/待审核/已通过/已拒绝）改为会员订单状态（全部/待汇款/已汇款/待人工发送/已完成/已拒绝）
+- [x] routers.ts listReviews procedure新增membershipStatus参数
+- [x] db.ts getMembershipReviews新增membershipStatus筛选（通过orders表join查询）
+- [x] TypeScript编译零错误，270测试全部通过

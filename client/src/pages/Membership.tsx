@@ -45,8 +45,9 @@ export default function Membership() {
   const [reviewNotes, setReviewNotes] = useState("");
   const utils = trpc.useUtils();
 
+  // V2.1.26: Filter by membershipStatus (order-level) instead of review status
   const { data: reviews, isLoading } = trpc.membership.listReviews.useQuery({
-    status: statusTab !== "all" ? statusTab : undefined,
+    membershipStatus: statusTab !== "all" ? statusTab : undefined,
   });
 
   const { data: orders } = trpc.orders.list.useQuery({
@@ -177,12 +178,14 @@ export default function Membership() {
         </div>
       </div>
 
-      {/* Status tabs - based on review status (internal task status) */}
+      {/* V2.1.26: Status tabs - based on membership order status (6 statuses) */}
       <Tabs value={statusTab} onValueChange={setStatusTab}>
         <TabsList>
           <TabsTrigger value="all">{translate("全部", "All")}</TabsTrigger>
-          <TabsTrigger value="pending">{translate("待审核", "Pending Review")}</TabsTrigger>
-          <TabsTrigger value="approved">{translate("已通过", "Approved")}</TabsTrigger>
+          <TabsTrigger value="pending">{translate("待汇款", "Pending Payment")}</TabsTrigger>
+          <TabsTrigger value="fee_confirmed">{translate("已汇款", "Payment Confirmed")}</TabsTrigger>
+          <TabsTrigger value="manual_follow_up">{translate("待人工发送", "Manual Follow Up")}</TabsTrigger>
+          <TabsTrigger value="completed">{translate("已完成", "Completed")}</TabsTrigger>
           <TabsTrigger value="rejected">{translate("已拒绝", "Rejected")}</TabsTrigger>
         </TabsList>
       </Tabs>

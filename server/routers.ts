@@ -1819,6 +1819,7 @@ export const appRouter = router({
       .input(z.object({
         status: z.string().optional(),
         flowStatus: z.string().optional(),
+        membershipStatus: z.string().optional(),
       }).optional())
       .query(async ({ input }) => {
         return await db.getMembershipReviews(input || {});
