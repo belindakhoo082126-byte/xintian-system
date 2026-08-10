@@ -225,21 +225,43 @@ export async function getCustomers(search?: string) {
   if (!db) return [];
   let query = db.select().from(customers);
   if (search) {
-    query = query.where(
-      or(
-        like(customers.name, `%${search}%`),
-        like(customers.facebookName, `%${search}%`),
-        like(customers.phoneNumber, `%${search}%`),
-        like(customers.email, `%${search}%`),
-        like(customers.facebookId, `%${search}%`),
-        like(customers.messengerId, `%${search}%`),
-        like(customers.customerId, `%${search}%`),
-        like(customers.displayName, `%${search}%`),
-        like(customers.whatsappPhone, `%${search}%`)
-      )
-    ) as any;
+    // V2.1.17: Phone normalize — strip spaces, dashes, brackets, and convert +60 to 0
+    const normalizedSearch = normalizePhone(search);
+    const conditions = [
+      like(customers.name, `%${search}%`),
+      like(customers.facebookName, `%${search}%`),
+      like(customers.phoneNumber, `%${search}%`),
+      like(customers.email, `%${search}%`),
+      like(customers.facebookId, `%${search}%`),
+      like(customers.messengerId, `%${search}%`),
+      like(customers.customerId, `%${search}%`),
+      like(customers.displayName, `%${search}%`),
+      like(customers.whatsappPhone, `%${search}%`),
+    ];
+    // Also search with normalized phone if it differs from original
+    if (normalizedSearch !== search) {
+      conditions.push(like(customers.phoneNumber, `%${normalizedSearch}%`));
+      conditions.push(like(customers.whatsappPhone, `%${normalizedSearch}%`));
+    }
+    query = query.where(or(...conditions)) as any;
   }
   return await query.orderBy(desc(customers.createdAt));
+}
+
+/**
+ * V2.1.17: Normalize Malaysian phone number for search.
+ * Strips spaces, dashes, brackets, and converts +60 prefix to 0.
+ * Examples: "+60 12-345 6789" → "0123456789", "6012-3456789" → "0123456789"
+ */
+export function normalizePhone(phone: string): string {
+  let normalized = phone.replace(/[\s\-()\[\]]/g, '');
+  // Convert +60 or 60 prefix to 0 (Malaysian format)
+  if (normalized.startsWith('+60')) {
+    normalized = '0' + normalized.slice(3);
+  } else if (normalized.startsWith('60') && normalized.length >= 10) {
+    normalized = '0' + normalized.slice(2);
+  }
+  return normalized;
 }
 
 export async function getCustomerById(id: number) {
@@ -992,9 +1014,12 @@ export async function createOrderWithSplit(data: {
   const hasOrderAddress = data.shippingAddress || data.addressLine1 || data.city;
 
   if (!hasCustomerAddress && hasOrderAddress) {
-    // First order: auto-sync address to customer profile
+    // V2.1.17: Auto-sync address to customer profile — prefer structured fields, fallback to shippingAddress
+    const syncAddress = data.addressLine1 || data.addressLine2
+      ? [data.addressLine1, data.addressLine2].filter(Boolean).join(', ')
+      : data.shippingAddress || null;
     await db.update(customers).set({
-      address: data.shippingAddress || [data.addressLine1, data.addressLine2].filter(Boolean).join(', ') || null,
+      address: syncAddress,
       city: data.city || null,
       state: data.state || null,
       postalCode: data.postcode || null,

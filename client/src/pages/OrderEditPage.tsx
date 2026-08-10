@@ -14,8 +14,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   ArrowLeft, Save, FileText, User, Truck, DollarSign, Package, X,
-  CreditCard, Plus, Upload, Loader2, Trash2, MessageSquare, Sprout,
+  CreditCard, Plus, Upload, Loader2, Trash2, MessageSquare, Sprout, Search,
 } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -50,6 +51,13 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   const { data: order, isLoading } = trpc.orders.getDetail.useQuery({ id: orderId });
   const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
   const { data: paymentMethods } = trpc.paymentMethods.list.useQuery();
+
+  // V2.1.17: Customer search for address auto-fill
+  const [customerSearchQuery, setCustomerSearchQuery] = useState("");
+  const { data: customerSearchResults } = trpc.customers.list.useQuery(
+    { search: customerSearchQuery },
+    { enabled: customerSearchQuery.length > 0 }
+  );
 
   // Editable form state
   const [formData, setFormData] = useState<any>({
@@ -528,6 +536,51 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* V2.1.17: Customer search for address auto-fill */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder={translate("搜索客户带入地址（姓名/电话/FB名）...", "Search customer to auto-fill address (name/phone/FB)...")}
+              value={customerSearchQuery}
+              onChange={(e) => setCustomerSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          {customerSearchResults && customerSearchResults.length > 0 && customerSearchQuery && (
+            <ScrollArea className="h-[120px] border rounded-lg">
+              <div className="p-2 space-y-1">
+                {customerSearchResults.slice(0, 10).map((c: any) => {
+                  const addrParts = [c.address, c.city, c.state, c.postalCode].filter(Boolean);
+                  const addressSummary = addrParts.length > 0 ? addrParts.join(", ") : null;
+                  return (
+                    <button key={c.id} onClick={() => {
+                      // V2.1.17: Auto-fill recipient from customer profile
+                      setFormData((prev: any) => ({
+                        ...prev,
+                        recipientName: c.name || c.displayName || prev.recipientName,
+                        recipientPhone: c.phoneNumber || prev.recipientPhone,
+                        shippingAddress: c.address || prev.shippingAddress,
+                      }));
+                      setCustomerSearchQuery("");
+                    }} className="w-full text-left p-2 rounded hover:bg-muted text-sm">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="font-medium">{c.name || c.facebookName || c.displayName || "Unknown"}</span>
+                          <span className="text-muted-foreground ml-2">{c.phoneNumber || c.customerId || ""}</span>
+                        </div>
+                        {c.creditBalance && parseFloat(c.creditBalance) > 0 && (
+                          <Badge variant="secondary" className="text-xs">Credit: RM {parseFloat(c.creditBalance).toFixed(2)}</Badge>
+                        )}
+                      </div>
+                      {addressSummary && (
+                        <div className="text-xs text-muted-foreground mt-0.5 truncate">{addressSummary}</div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <div>
               <Label className="text-xs">{translate("收件人姓名", "Recipient Name")}</Label>

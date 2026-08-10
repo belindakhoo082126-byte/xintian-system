@@ -235,6 +235,13 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         extraChargeDescription: extraChargeDescription || undefined,
         recipientName: recipientForm.recipientName || undefined,
         recipientPhone: recipientForm.recipientPhone || undefined,
+        // V2.1.17: Pass structured address fields for customer profile auto-sync
+        addressLine1: recipientForm.addressLine1 || undefined,
+        addressLine2: recipientForm.addressLine2 || undefined,
+        city: recipientForm.city || undefined,
+        state: recipientForm.state || undefined,
+        postcode: recipientForm.postcode || undefined,
+        country: recipientForm.country || undefined,
         repottingData: createRemarkCategory === "repotting" && repottingEntries.length > 0 ? JSON.stringify(repottingEntries) : undefined,
       });
     },
@@ -330,12 +337,18 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     if (c.customerType === "wholesale") setOrderNature("wholesale");
     else if (c.customerType === "agent") setOrderNature("agent");
     else setOrderNature("retail");
-    // Auto-fill recipient if buyer is recipient
+    // V2.1.17: Auto-fill recipient from customer profile (including full address)
     if (buyerIsRecipient) {
       setRecipientForm(prev => ({
         ...prev,
-        recipientName: c.name || "",
+        recipientName: c.name || c.displayName || "",
         recipientPhone: c.phoneNumber || "",
+        addressLine1: c.address || "",
+        addressLine2: "",
+        city: c.city || "",
+        state: c.state || "",
+        postcode: c.postalCode || "",
+        country: c.country || "Malaysia",
       }));
     }
     setCustomerSearchQuery("");
@@ -488,6 +501,13 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         extraChargeDescription: extraChargeDescription || undefined,
         recipientName: recipientForm.recipientName || undefined,
         recipientPhone: recipientForm.recipientPhone || undefined,
+        // V2.1.17: Pass structured address fields for customer profile auto-sync
+        addressLine1: recipientForm.addressLine1 || undefined,
+        addressLine2: recipientForm.addressLine2 || undefined,
+        city: recipientForm.city || undefined,
+        state: recipientForm.state || undefined,
+        postcode: recipientForm.postcode || undefined,
+        country: recipientForm.country || undefined,
         remark: remark || (createRemarkCategory === "desired_delivery_date" && createRemarkDeliveryDate ? createRemarkDeliveryDate : undefined),
         remarkCategory: createRemarkCategory || undefined,
         remarkDeliveryDate: createRemarkDeliveryDate || undefined,
@@ -738,17 +758,27 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
           {customerSearchResults && customerSearchResults.length > 0 && customerSearchQuery && (
             <ScrollArea className="h-[150px] border rounded-lg">
               <div className="p-2 space-y-1">
-                {customerSearchResults.slice(0, 15).map((c: any) => (
-                  <button key={c.id} onClick={() => handleCustomerSelect(c)} className="w-full text-left p-2 rounded hover:bg-muted text-sm flex items-center justify-between">
-                    <div>
-                      <span className="font-medium">{c.name || c.facebookName || c.displayName || "Unknown"}</span>
-                      <span className="text-muted-foreground ml-2">{c.phoneNumber || c.customerId || ""}</span>
+                {customerSearchResults.slice(0, 15).map((c: any) => {
+                  // V2.1.17: Build address summary from customer profile
+                  const addrParts = [c.address, c.city, c.state, c.postalCode].filter(Boolean);
+                  const addressSummary = addrParts.length > 0 ? addrParts.join(", ") : null;
+                  return (
+                  <button key={c.id} onClick={() => handleCustomerSelect(c)} className="w-full text-left p-2 rounded hover:bg-muted text-sm">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-medium">{c.name || c.facebookName || c.displayName || "Unknown"}</span>
+                        <span className="text-muted-foreground ml-2">{c.phoneNumber || c.customerId || ""}</span>
+                      </div>
+                      {c.creditBalance && parseFloat(c.creditBalance) > 0 && (
+                        <Badge variant="secondary" className="text-xs">Credit: RM {parseFloat(c.creditBalance).toFixed(2)}</Badge>
+                      )}
                     </div>
-                    {c.creditBalance && parseFloat(c.creditBalance) > 0 && (
-                      <Badge variant="secondary" className="text-xs">Credit: RM {parseFloat(c.creditBalance).toFixed(2)}</Badge>
+                    {addressSummary && (
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">{addressSummary}</div>
                     )}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </ScrollArea>
           )}

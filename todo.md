@@ -2473,4 +2473,16 @@
 - [x] Dashboard特别订单显示订单类型标签(本地/中国代购)
 - [x] 后端：getDashboardFollowUp新增orderCategory返回字段
 - [x] TypeScript编译零错误，270项测试全部通过
-- [ ] 保存checkpoint
+- [x] 保存checkpoint
+
+## V2.1.17 - 客户搜索与地址自动带入修复
+- [x] 后端：getCustomers新增电话normalize搜索（去除空格/破折号/括号，+60前缀转0）
+- [x] 后端：新增normalizePhone函数（马来西亚格式标准化）
+- [x] 后端：createOrderWithSplit地址回存优化（优先使用结构化地址字段）
+- [x] 前端OrderCreatePage：选择客户后自动带入完整收件人地址（address/city/state/postcode/country）
+- [x] 前端OrderCreatePage：搜索结果显示地址摘要+Credit余额
+- [x] 前端OrderCreatePage：建立订单传递结构化地址字段（addressLine1/city/state/postcode/country）
+- [x] 前端OrderEditPage：新增客户搜索功能，选择客户后自动带入收件人姓名/电话/地址
+- [x] 前端OrderEditPage：搜索结果显示地址摘要+Credit余额
+- [x] TypeScript编译零错误，270项测试全部通过
+- [x] 保存checkpoint
