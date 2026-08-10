@@ -5689,6 +5689,35 @@ export function calculateWestMalaysiaShipping(totalWeight: number, orderTotal: n
 export async function getPackingOrders(status: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // V2.1.26: Support both local orders (physicalStatus) and import orders (importStatus)
+  // Local orders: orderCategory='local' (or null) with physicalStatus matching
+  // Import orders: orderCategory='import' with importStatus matching
+  const statusConditions = [];
+  // Local orders by physicalStatus
+  statusConditions.push(
+    and(
+      eq(orders.physicalStatus, status as any),
+      sql`(orders.order_category IS NULL OR orders.order_category = 'local')`
+    )
+  );
+  // Import orders by importStatus (map packing→ready_to_ship, shipped→shipped, etc.)
+  const importStatusMap: Record<string, string[]> = {
+    packing: ["ready_to_ship"],
+    shipped: ["shipped"],
+    partial_shipped: ["partial_shipped"],
+    completed: ["completed"],
+  };
+  const importStatuses = importStatusMap[status] || [status];
+  if (importStatuses.length > 0) {
+    statusConditions.push(
+      and(
+        eq(orders.orderCategory, "import" as any),
+        sql`orders.import_status IN (${sql.raw(importStatuses.map(s => `'${s}'`).join(","))})`
+      )
+    );
+  }
+
   const result = await db.select({
     id: orders.id,
     orderNumber: orders.orderNumber,
@@ -5702,9 +5731,17 @@ export async function getPackingOrders(status: string) {
     totalWeight: orders.totalWeight,
     createdAt: orders.createdAt,
     paymentConfirmedAt: orders.paymentConfirmedAt,
+    // V2.1.26: Add shipping fee fields
+    shippingFee: orders.shippingFee,
+    customerPaidShipping: orders.customerPaidShipping,
+    physicalSubtotal: orders.physicalSubtotal,
+    orderCategory: orders.orderCategory,
+    importStatus: orders.importStatus,
+    physicalStatus: orders.physicalStatus,
+    scheduledShippingDate: orders.scheduledShippingDate,
   }).from(orders)
     .leftJoin(customers, eq(orders.customerId, customers.id))
-    .where(eq(orders.physicalStatus, status as any))
+    .where(or(...statusConditions))
     .orderBy(desc(orders.paymentConfirmedAt), desc(orders.createdAt));
   
   // Get item count and types for each order
@@ -5724,7 +5761,14 @@ export async function getPackingOrders(status: string) {
     else if (o.shippingMethod === "east_malaysia_shopee") specialLabel = "东马 SHOPEE";
     else if (o.shippingMethod === "east_malaysia_poslaju") specialLabel = "东马 POSLAJU";
     
-    return { ...o, totalQuantity: totalQty, itemTypes, specialLabel };
+    // V2.1.26: Determine effective status (import orders use importStatus)
+    const effectiveStatus = o.orderCategory === "import" ? o.importStatus : o.physicalStatus;
+    
+    // V2.1.26: Calculate isFreeShipping
+    const physicalSubtotalNum = parseFloat(o.physicalSubtotal || "0");
+    const isFreeShipping = physicalSubtotalNum >= 150;
+    
+    return { ...o, totalQuantity: totalQty, itemTypes, specialLabel, effectiveStatus, isFreeShipping };
   }));
   
   return enriched;
@@ -5750,6 +5794,10 @@ export async function getPackingDetail(orderId: number) {
     discountAmount: orders.discountAmount,
     totalWeight: orders.totalWeight,
     physicalStatus: orders.physicalStatus,
+    // V2.1.26: Add orderCategory, importStatus, physicalSubtotal
+    orderCategory: orders.orderCategory,
+    importStatus: orders.importStatus,
+    physicalSubtotal: orders.physicalSubtotal,
     createdAt: orders.createdAt,
     paymentConfirmedAt: orders.paymentConfirmedAt,
     estimatedWeight: orders.estimatedWeight,
@@ -5846,6 +5894,16 @@ export async function getPackingSlipData(orderId: number) {
   // V3.0: Fetch all order remarks for A5 slip (unified: repotting, desired_delivery_date, other)
   const allRemarks = await getOrderRemarks(orderId);
 
+  // V2.1.26: Add physicalSubtotal and isFreeShipping
+  const physicalSubtotal = parseFloat((detail as any).physicalSubtotal || "0");
+  const isFreeShipping = physicalSubtotal >= 150;
+  // V2.1.26: Determine shipping method label (including 西马)
+  let shippingMethodLabel = "";
+  if (detail.shippingMethod === "lalamove") shippingMethodLabel = "LALAMOVE";
+  else if (detail.shippingMethod === "east_malaysia_shopee") shippingMethodLabel = "东马 SHOPEE";
+  else if (detail.shippingMethod === "east_malaysia_poslaju") shippingMethodLabel = "东马 POSLAJU";
+  else shippingMethodLabel = "西马";
+
   return {
     orderNumber: detail.orderNumber,
     customerName: detail.customerName,
@@ -5865,8 +5923,11 @@ export async function getPackingSlipData(orderId: number) {
       paidAmount: paidAmount.toFixed(2),
       balance: balance.toFixed(2),
       totalAmount: totalAmount.toFixed(2),
+      physicalSubtotal: physicalSubtotal.toFixed(2),
+      isFreeShipping,
     },
     specialLabel,
+    shippingMethodLabel,
   };
 }
 
@@ -7741,7 +7802,8 @@ export function processActualWeight(
   actualShippingFee = shippingFee;
 
   const difference = actualShippingFee - customerPaidShipping;
-  const needsSpecialOrder = Math.abs(difference) > 0.01 && actualWeightKg > 10;
+  // V2.1.26: Remove actualWeightKg > 10 condition - any difference should trigger special order
+  const needsSpecialOrder = Math.abs(difference) > 0.01;
 
   let specialOrderType: "pending_shipping" | "pending_refund" | null = null;
   if (needsSpecialOrder) {

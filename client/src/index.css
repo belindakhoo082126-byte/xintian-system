@@ -233,9 +233,22 @@
 }
 
 /* V2.0.44: Print styles for order browse */
+/* V2.1.26: print-only class - only visible when printing */
+.print-only {
+  display: none;
+}
+
 @media print {
   .no-print {
     display: none !important;
+  }
+  /* V2.1.26: print-hide class - hidden when printing */
+  .print-hide {
+    display: none !important;
+  }
+  /* V2.1.26: print-only class - only visible when printing */
+  .print-only {
+    display: block !important;
   }
   body {
     background: white !important;

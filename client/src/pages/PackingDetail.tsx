@@ -104,6 +104,9 @@ export default function PackingDetail() {
       toast.success(translate("异常已记录", "Exception recorded"));
       setExceptionDialogOpen(false);
       setExceptionDesc("");
+      // V2.1.26: Fix - invalidate packing detail so exception shows up
+      utils.packing.detail.invalidate({ orderId });
+      utils.orderException.list.invalidate({ orderId });
     },
     onError: (err) => toast.error(translate("创建异常失败: ", "Failed to create exception: ") + err.message),
   });
@@ -293,12 +296,13 @@ export default function PackingDetail() {
             <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" />{translate("返回", "Back")}</Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">{d.orderNumber}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold">{d.orderNumber}</h1>
+              {/* V2.1.26: Move A5 print button next to order number */}
+              <Button variant="outline" size="sm" onClick={handlePrint}><Printer className="h-4 w-4 mr-1" />{translate("A5打印", "A5 Print")}</Button>
+            </div>
             {specialLabel && <Badge variant="destructive" className="mt-1">{specialLabel}</Badge>}
           </div>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handlePrint}><Printer className="h-4 w-4 mr-1" />{translate("A5 包货单", "A5 Packing Slip")}</Button>
         </div>
       </div>
 
@@ -556,6 +560,10 @@ export default function PackingDetail() {
             <CardTitle className="text-base flex items-center gap-2">
               <Package className="h-4 w-4 text-blue-500" />
               {translate("实际重量与运费", "Actual Weight & Shipping")}
+              {/* V2.1.26: Show 免邮 badge */}
+              {detail && Number((detail as any).physicalSubtotal || 0) >= 150 && (
+                <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-300">{translate("免邮", "Free Shipping")}</Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -569,6 +577,15 @@ export default function PackingDetail() {
                 <div>
                   <span className="text-muted-foreground">{translate("客户已付运费", "Customer Paid Shipping")}: </span>
                   <span className="font-medium">RM {Number(detail.customerPaidShipping || detail.shippingFee || 0).toFixed(2)}</span>
+                </div>
+                {/* V2.1.26: Show 商品金额 and 免邮 status */}
+                <div>
+                  <span className="text-muted-foreground">{translate("商品金额", "Subtotal")}: </span>
+                  <span className="font-medium">RM {Number((detail as any).physicalSubtotal || 0).toFixed(2)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">{translate("免邮状态", "Free Shipping")}: </span>
+                  <span className="font-medium">{Number((detail as any).physicalSubtotal || 0) >= 150 ? translate("是（满RM150免邮10kg内）", "Yes (Free for 10kg if RM150+)") : translate("否（未满RM150）", "No (Under RM150)")}</span>
                 </div>
               </div>
             )}
@@ -942,55 +959,69 @@ export default function PackingDetail() {
     );
   }
 
-  // A5 Packing Slip Component (print only)
+  // V2.1.26: Simplified A5 Packing Slip - no images, large order number, large quantity, keywords, unit price, shipping method
   function A5PackingSlip({ data, translate, lang }: { data: any; translate: (zh: string, en: string, params?: Record<string, string | number>) => string; lang: "zh" | "en" }) {
+    const allItems = [...(data.items || []), ...(data.giftItems || [])];
+    const useGrid = allItems.length > 2;
     return (
-      <div className="a5-slip" style={{ width: "148mm", padding: "10mm", fontFamily: "sans-serif", fontSize: "12px", color: "#000" }}>
-        {/* Header - Special Label */}
-        {data.specialLabel && (
-          <div style={{ textAlign: "center", fontSize: "28px", fontWeight: "bold", marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
-            {data.specialLabel}
-          </div>
-        )}
-
-        {/* Customer Info */}
-        <div style={{ marginBottom: "8px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>{translate("订单编号:", "Order No:")} <strong>{data.orderNumber}</strong></span>
-          </div>
-          <div>{translate("客户姓名:", "Customer Name:")} <strong>{data.customerName}</strong></div>
-          <div>{translate("电话号码:", "Phone No:")} <strong>{data.customerPhone}</strong></div>
-          {data.paymentConfirmedAt && (
-            <div>{translate("汇款日期:", "Payment Date:")} {new Date(data.paymentConfirmedAt).toLocaleDateString()}</div>
-          )}
-          <div>{translate("地址:", "Address:")} {data.shippingAddress}</div>
+      <div className="a5-slip" style={{ width: "148mm", padding: "8mm", fontFamily: "sans-serif", fontSize: "12px", color: "#000" }}>
+        {/* V2.1.26: Large shipping method label at top */}
+        <div style={{ textAlign: "center", fontSize: "36px", fontWeight: "bold", marginBottom: "4px", border: "3px solid #000", padding: "6px" }}>
+          {data.shippingMethodLabel || data.specialLabel || "西马"}
         </div>
 
-        <div style={{ borderTop: "1px solid #000", margin: "4px 0" }} />
+        {/* V2.1.26: Large order number */}
+        <div style={{ textAlign: "center", fontSize: "28px", fontWeight: "bold", marginBottom: "8px" }}>
+          {data.orderNumber}
+        </div>
 
-        {/* Items */}
+        <div style={{ borderTop: "2px solid #000", margin: "4px 0" }} />
+
+        {/* V2.1.26: Items - large quantity, keywords, unit price, subtotal */}
         <div style={{ marginBottom: "8px" }}>
-          {data.items.map((item: any, i: number) => (
-            <div key={i} style={{ marginBottom: "6px", paddingBottom: "4px", borderBottom: "1px dashed #ccc" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <span style={{ fontSize: "16px" }}>☐</span>
-                <span><strong>{item.productName}</strong></span>
-                {item.variationName && <span style={{ fontSize: "11px" }}>({item.variationName})</span>}
-              </div>
-              <div style={{ marginLeft: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "11px" }}>{ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || ""}</span>
-                <span style={{
-                  fontSize: "24px",
-                  fontWeight: "bold",
-                  border: item.quantity > 1 ? "3px solid #000" : "none",
-                  padding: item.quantity > 1 ? "2px 8px" : "0",
-                  borderRadius: "4px",
-                }}>
-                  【 ×{item.quantity} 】
-                </span>
-              </div>
+          {useGrid ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+              {data.items.map((item: any, i: number) => (
+                <div key={i} style={{ border: "1px solid #000", padding: "4px", borderRadius: "4px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px", marginBottom: "2px" }}>
+                    <span style={{ fontSize: "16px" }}>☐</span>
+                    <span style={{ fontWeight: "bold", fontSize: "13px" }}>{item.productName}</span>
+                  </div>
+                  {item.keyword && <div style={{ fontSize: "11px", color: "#555", marginLeft: "20px" }}>{item.keyword}</div>}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "2px" }}>
+                    <span style={{ fontSize: "11px" }}>RM{Number(item.unitPrice || 0).toFixed(0)} × {item.quantity}</span>
+                    <span style={{ fontSize: "28px", fontWeight: "bold", border: "3px solid #000", padding: "2px 8px", borderRadius: "4px" }}>
+                      {item.quantity}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: "11px", textAlign: "right" }}>小计: RM{Number(item.subtotal || 0).toFixed(2)}</div>
+                </div>
+              ))}
             </div>
-          ))}
+          ) : (
+            data.items.map((item: any, i: number) => (
+              <div key={i} style={{ marginBottom: "6px", paddingBottom: "4px", borderBottom: "1px dashed #ccc" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  <span style={{ fontSize: "16px" }}>☐</span>
+                  <span style={{ fontWeight: "bold", fontSize: "14px" }}>{item.productName}</span>
+                  {item.variationName && <span style={{ fontSize: "11px" }}>({item.variationName})</span>}
+                </div>
+                {item.keyword && <div style={{ fontSize: "11px", color: "#555", marginLeft: "20px" }}>{translate("关键词:", "Keyword:")} {item.keyword}</div>}
+                <div style={{ marginLeft: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: "12px" }}>{translate("单价:", "Unit Price:")} RM{Number(item.unitPrice || 0).toFixed(2)} × {item.quantity} = RM{Number(item.subtotal || 0).toFixed(2)}</span>
+                  <span style={{
+                    fontSize: "32px",
+                    fontWeight: "bold",
+                    border: item.quantity > 1 ? "3px solid #000" : "none",
+                    padding: item.quantity > 1 ? "2px 10px" : "0",
+                    borderRadius: "4px",
+                  }}>
+                    {item.quantity}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
 
           {/* Gift Items */}
           {data.giftItems && data.giftItems.length > 0 && (
@@ -1003,8 +1034,8 @@ export default function PackingDetail() {
                     <span><strong>{translate("赠品", "Gift")}</strong> {gift.productName}</span>
                   </div>
                   <div style={{ marginLeft: "20px", display: "flex", justifyContent: "flex-end" }}>
-                    <span style={{ fontSize: "20px", fontWeight: "bold", border: "2px solid #000", padding: "1px 6px", borderRadius: "3px" }}>
-                      【 ×{gift.quantity} 】
+                    <span style={{ fontSize: "24px", fontWeight: "bold", border: "2px solid #000", padding: "1px 8px", borderRadius: "3px" }}>
+                      {gift.quantity}
                     </span>
                   </div>
                 </div>
@@ -1013,7 +1044,19 @@ export default function PackingDetail() {
           )}
         </div>
 
-        {/* V3.0: Order Remarks on A5 Slip — repotting, desired_delivery_date, other */}
+        {/* V2.1.26: Order total - large display */}
+        <div style={{ borderTop: "2px solid #000", margin: "4px 0" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "16px", fontWeight: "bold", marginBottom: "4px" }}>
+          <span>{translate("订单总数:", "Order Total:")}</span>
+          <span>RM {data.summary.totalAmount}</span>
+        </div>
+        {data.summary.isFreeShipping && (
+          <div style={{ textAlign: "center", fontSize: "14px", fontWeight: "bold", color: "green", marginBottom: "4px" }}>
+            {translate("免邮", "Free Shipping")}
+          </div>
+        )}
+
+        {/* Order Remarks */}
         {data.remarks && data.remarks.length > 0 && (
           <div style={{ marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
             {data.remarks.map((r: any, i: number) => (
@@ -1043,43 +1086,6 @@ export default function PackingDetail() {
             ))}
           </div>
         )}
-
-        <div style={{ borderTop: "1px solid #000", margin: "4px 0" }} />
-
-        {/* Summary */}
-        <div style={{ fontSize: "11px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>{translate("商品种类:", "Item Types:")} {data.summary.itemTypes}</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>{translate("普通商品:", "Regular Items:")}</span><span>RM {data.summary.regularTotal}</span>
-          </div>
-          {parseFloat(data.summary.discountTotal) > 0 && (
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{translate("特价商品:", "Discounted Items:")} <span style={{ fontSize: "10px" }}>({translate("共", "Total")} {data.summary.discountCount}{translate("件", " items")})</span></span>
-              <span>RM {data.summary.discountTotal}</span>
-            </div>
-          )}
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>{translate("运费:", "Shipping Fee:")}</span><span>RM {data.summary.shippingFee}</span>
-          </div>
-          {parseFloat(data.summary.discountAmount) > 0 && (
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{translate("折扣:", "Discount:")}</span><span>-RM {data.summary.discountAmount}</span>
-            </div>
-          )}
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>{translate("已付:", "Paid:")}</span><span>RM {data.summary.paidAmount}</span>
-          </div>
-          {parseFloat(data.summary.balance) > 0 && (
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{translate("尚欠:", "Balance Due:")}</span><span style={{ fontWeight: "bold" }}>RM {data.summary.balance}</span>
-            </div>
-          )}
-          <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #000", marginTop: "2px", paddingTop: "2px" }}>
-            <span><strong>{translate("订单总额:", "Total Order:")}</strong></span><span><strong>RM {data.summary.totalAmount}</strong></span>
-          </div>
-        </div>
       </div>
     );
   }

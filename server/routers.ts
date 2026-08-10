@@ -3663,6 +3663,7 @@ export const appRouter = router({
   // ===========================================================================
   packing: router({
     // Get orders by packing status
+    // V2.1.26: Support both local and import order statuses
     list: shippingProcedure.input(z.object({
       status: z.enum(["packing", "shipped", "partial_shipped", "completed"]),
     })).query(async ({ input }) => {

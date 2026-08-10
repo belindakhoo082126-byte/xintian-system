@@ -2580,3 +2580,18 @@
 - [x] db.ts getDashboardV11Stats新增membershipManualFollowUp统计
 - [x] membership.test.ts更新断言：approveFee→fee_confirmed+completed, rejectFee→rejected, resendFlow→completed, missing template→manual_follow_up
 - [x] TypeScript编译零错误，270测试全部通过
+
+## V2.1.26 - 包货工作台11项修复
+- [x] Issue 1: getPackingOrders返回运费信息（shippingFee/customerPaidShipping/physicalSubtotal/orderCategory/importStatus）
+- [x] Issue 3: 包货工作台显示"免邮"标签（physicalSubtotal >= RM150时显示绿色badge）
+- [x] Issue 4: 西马运费计算修正（processActualWeight移除actualWeightKg > 10条件，任何运费差异都触发特别订单）
+- [x] Issue 5: 异常处理保存后自动刷新（createExceptionMutation onSuccess添加invalidate）
+- [x] Issue 6: A5打印按钮移到订单号旁边（不再与语言翻译重叠）
+- [x] Issue 7: 包货列表每个订单旁添加打印按钮（Printer icon）
+- [x] Issue 8: 包货列表添加批量打印复选框（全选/单选+批量打印按钮）
+- [x] Issue 9: 简化打印格式（无图片、大订单号、大数量、商品关键词、单价/小计、大字体配送方式标签）
+- [x] Issue 11: 本地订单和中国代购订单同步到包货工作台（getPackingOrders用OR条件查两种订单类型）
+- [x] index.css添加.print-hide和.print-only CSS类定义
+- [x] getPackingDetail添加orderCategory/importStatus/physicalSubtotal/shippingFee/customerPaidShipping字段
+- [x] getPackingSlipData添加physicalSubtotal/isFreeShipping到summary
+- [x] TypeScript编译零错误，270测试全部通过

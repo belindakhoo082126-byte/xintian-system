@@ -1,15 +1,17 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Package, Truck, CheckCircle2, Clock, MapPin, Phone, User, ArrowLeft, Printer, Ship, Calendar, Filter } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/contexts/I18nContext";
+import { toast } from "sonner";
 
 // V2.1.13: Status color mapping for scheduled shipping orders (8 statuses)
 const SCHEDULED_STATUS_CONFIG: Record<string, { label: { zh: string; en: string }; color: string; bgColor: string; borderColor: string }> = {
@@ -49,32 +51,196 @@ export default function Packing() {
   const [activeTab, setActiveTab] = useState<string>(urlTab || "packing");
 
   const isScheduledTab = activeTab === "scheduled";
-  // V2.1.12: Default to today's date when entering scheduled tab (supports date=today URL param)
   const urlDate = new URLSearchParams(searchParams).get("date");
   const todayStr = new Date().toISOString().split("T")[0];
   const [dateFrom, setDateFrom] = useState<string>(urlDate === "today" ? todayStr : "");
   const [dateTo, setDateTo] = useState<string>(urlDate === "today" ? todayStr : "");
-  // V2.1.13: Status filter for scheduled tab
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const utils = trpc.useUtils();
   const { data: orders, isLoading } = trpc.packing.list.useQuery({ status: activeTab as any }, { enabled: !isScheduledTab });
   const { data: scheduledOrders, isLoading: scheduledLoading } = trpc.scheduledShipping.list.useQuery(
     { dateFrom: dateFrom || undefined, dateTo: dateTo || undefined },
     { enabled: isScheduledTab }
   );
   const rawOrderList = isScheduledTab ? ((scheduledOrders as any[]) || []) : ((orders as any[]) || []);
-  // V2.1.13: Apply status filter on scheduled tab
   const orderList = isScheduledTab && statusFilter !== "all"
     ? rawOrderList.filter((o: any) => (o.physicalStatus || o.importStatus) === statusFilter)
     : rawOrderList;
   const isLoadingCombined = isLoading || scheduledLoading;
 
+  // V2.1.26: Batch print state
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());
+  const [isBatchPrinting, setIsBatchPrinting] = useState(false);
+  const printFrameRef = useRef<HTMLIFrameElement>(null);
+
+  const toggleOrderSelection = (orderId: number) => {
+    setSelectedOrderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedOrderIds.size === orderList.length) {
+      setSelectedOrderIds(new Set());
+    } else {
+      setSelectedOrderIds(new Set(orderList.map((o: any) => o.id)));
+    }
+  };
+
+  // V2.1.26: Single order print - use utils client to fetch slip data
+  const handleSinglePrint = async (orderId: number) => {
+    try {
+      const slipData = await utils.packing.slipData.fetch({ orderId });
+      if (slipData) {
+        printSlipData([slipData as any]);
+      } else {
+        toast.error(translate("获取打印数据失败", "Failed to fetch print data"));
+      }
+    } catch (err) {
+      toast.error(translate("获取打印数据失败", "Failed to fetch print data"));
+    }
+  };
+
+  // V2.1.26: Batch print - fetch all selected orders' slip data
+  const handleBatchPrint = async () => {
+    if (selectedOrderIds.size === 0) {
+      toast.error(translate("请选择要打印的订单", "Please select orders to print"));
+      return;
+    }
+    setIsBatchPrinting(true);
+    try {
+      const ids = Array.from(selectedOrderIds);
+      const results = await Promise.all(
+        ids.map((id) => utils.packing.slipData.fetch({ orderId: id }))
+      );
+      printSlipData(results.filter(Boolean) as any[]);
+      setSelectedOrderIds(new Set());
+    } catch (err) {
+      toast.error(translate("批量打印失败", "Batch print failed"));
+    } finally {
+      setIsBatchPrinting(false);
+    }
+  };
+
+  // V2.1.26: Render slip data into HTML and print via hidden iframe
+  const printSlipData = (slipDataList: any[]) => {
+    const html = slipDataList.map((data) => {
+      const allItems = [...(data.items || []), ...(data.giftItems || [])];
+      const useGrid = allItems.length > 2;
+      const shippingLabel = data.shippingMethodLabel || data.specialLabel || "西马";
+      const itemsHtml = useGrid
+        ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            ${data.items.map((item: any) => `
+              <div style="border:1px solid #000;padding:4px;border-radius:4px">
+                <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
+                  <span style="font-size:16px">☐</span>
+                  <span style="font-weight:bold;font-size:13px">${item.productName}</span>
+                </div>
+                ${item.keyword ? `<div style="font-size:11px;color:#555;margin-left:20px">${item.keyword}</div>` : ""}
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px">
+                  <span style="font-size:11px">RM${Number(item.unitPrice || 0).toFixed(0)} × ${item.quantity}</span>
+                  <span style="font-size:28px;font-weight:bold;border:3px solid #000;padding:2px 8px;border-radius:4px">${item.quantity}</span>
+                </div>
+                <div style="font-size:11px;text-align:right">小计: RM${Number(item.subtotal || 0).toFixed(2)}</div>
+              </div>
+            `).join("")}
+          </div>`
+        : data.items.map((item: any) => `
+            <div style="margin-bottom:6px;padding-bottom:4px;border-bottom:1px dashed #ccc">
+              <div style="display:flex;align-items:center;gap:4px">
+                <span style="font-size:16px">☐</span>
+                <span style="font-weight:bold;font-size:14px">${item.productName}</span>
+                ${item.variationName ? `<span style="font-size:11px">(${item.variationName})</span>` : ""}
+              </div>
+              ${item.keyword ? `<div style="font-size:11px;color:#555;margin-left:20px">关键词: ${item.keyword}</div>` : ""}
+              <div style="margin-left:20px;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:12px">单价: RM${Number(item.unitPrice || 0).toFixed(2)} × ${item.quantity} = RM${Number(item.subtotal || 0).toFixed(2)}</span>
+                <span style="font-size:32px;font-weight:bold;${item.quantity > 1 ? "border:3px solid #000;padding:2px 10px;border-radius:4px" : ""}">${item.quantity}</span>
+              </div>
+            </div>
+          `).join("");
+
+      const giftHtml = data.giftItems && data.giftItems.length > 0
+        ? `<div style="border-top:1px solid #000;margin:4px 0"></div>
+            ${data.giftItems.map((gift: any) => `
+              <div style="margin-bottom:4px">
+                <div style="display:flex;align-items:center;gap:4px">
+                  <span style="font-size:16px">☐</span>
+                  <span><strong>赠品</strong> ${gift.productName}</span>
+                </div>
+                <div style="margin-left:20px;display:flex;justify-content:flex-end">
+                  <span style="font-size:24px;font-weight:bold;border:2px solid #000;padding:1px 8px;border-radius:3px">${gift.quantity}</span>
+                </div>
+              </div>
+            `).join("")}`
+        : "";
+
+      const remarksHtml = data.remarks && data.remarks.length > 0
+        ? `<div style="margin-bottom:8px;border:2px solid #000;padding:4px">
+            ${data.remarks.map((r: any) => {
+              if (r.remarkCategory === "repotting") return `<div style="margin-bottom:4px"><div style="font-weight:bold;font-size:12px">📌 换盆</div><div style="font-size:11px;margin-left:8px">${r.content || ""}</div></div>`;
+              if (r.remarkCategory === "desired_delivery_date") return `<div style="margin-bottom:4px"><div style="font-weight:bold;font-size:12px">📌 希望收货日期</div><div style="font-size:11px;margin-left:8px">${r.desiredDeliveryDate ? new Date(r.desiredDeliveryDate).toLocaleDateString() : ""}${r.desiredDeliveryReason ? " — " + r.desiredDeliveryReason : ""}</div></div>`;
+              if (r.remarkCategory === "other") return `<div style="margin-bottom:4px"><div style="font-weight:bold;font-size:12px">📌 其他备注</div><div style="font-size:11px;margin-left:8px">${r.content || ""}</div></div>`;
+              return "";
+            }).join("")}
+          </div>`
+        : "";
+
+      return `
+        <div style="page-break-after:always;width:148mm;padding:8mm;font-family:sans-serif;font-size:12px;color:#000">
+          <div style="text-align:center;font-size:36px;font-weight:bold;margin-bottom:4px;border:3px solid #000;padding:6px">${shippingLabel}</div>
+          <div style="text-align:center;font-size:28px;font-weight:bold;margin-bottom:8px">${data.orderNumber}</div>
+          <div style="border-top:2px solid #000;margin:4px 0"></div>
+          <div style="margin-bottom:8px">${itemsHtml}${giftHtml}</div>
+          <div style="border-top:2px solid #000;margin:4px 0"></div>
+          <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;margin-bottom:4px">
+            <span>订单总数:</span><span>RM ${data.summary.totalAmount}</span>
+          </div>
+          ${data.summary.isFreeShipping ? `<div style="text-align:center;font-size:14px;font-weight:bold;color:green;margin-bottom:4px">免邮</div>` : ""}
+          ${remarksHtml}
+        </div>
+      `;
+    }).join("");
+
+    const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>A5 Packing Slip</title>
+      <style>@media print{body{margin:0;padding:0}}</style>
+      </head><body>${html}</body></html>`;
+
+    const iframe = printFrameRef.current;
+    if (iframe) {
+      const doc = iframe.contentWindow?.document;
+      if (doc) {
+        doc.open();
+        doc.write(fullHtml);
+        doc.close();
+        iframe.contentWindow?.focus();
+        setTimeout(() => {
+          iframe.contentWindow?.print();
+        }, 500);
+      }
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Hidden iframe for printing */}
+      <iframe ref={printFrameRef} style={{ position: "absolute", width: "0", height: "0", border: "none", left: "-9999px" }} />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{translate("包货工作台", "Packing")}</h1>
           <p className="text-sm text-muted-foreground mt-1">{translate("包货与发货管理", "Packing and Shipping Management")}</p>
         </div>
+        {/* V2.1.26: Batch print button */}
+        {selectedOrderIds.size > 0 && !isScheduledTab && (
+          <Button variant="default" size="sm" onClick={handleBatchPrint} disabled={isBatchPrinting}>
+            <Printer className="h-4 w-4 mr-1" />
+            {translate("批量打印 ({count})", "Batch Print ({count})", { count: selectedOrderIds.size })}
+          </Button>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -130,31 +296,67 @@ export default function Packing() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-3">
-              {orderList.map((order: any) => (
-                <Link key={order.id} href={`/packing/${order.id}`}>
-                  <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <div className="space-y-3">
+              {/* V2.1.26: Select all checkbox row */}
+              {!isScheduledTab && orderList.length > 0 && (
+                <div className="flex items-center gap-2 py-1">
+                  <Checkbox
+                    id="select-all"
+                    checked={selectedOrderIds.size === orderList.length}
+                    onCheckedChange={toggleSelectAll}
+                  />
+                  <label htmlFor="select-all" className="text-sm font-medium cursor-pointer">
+                    {translate("全选 ({selected}/{total})", "Select All ({selected}/{total})", { selected: selectedOrderIds.size, total: orderList.length })}
+                  </label>
+                </div>
+              )}
+              <div className="grid gap-3">
+                {orderList.map((order: any) => (
+                  <Card key={order.id} className="hover:shadow-md transition-shadow">
                     <CardContent className="py-4">
                       <div className="flex items-center justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="font-semibold text-sm">{order.orderNumber}</span>
-                            {order.specialLabel && (
-                              <Badge variant="destructive" className="text-xs">{order.specialLabel}</Badge>
-                            )}
-                            {isScheduledTab && (order.physicalStatus || order.importStatus) && getStatusBadge(order.physicalStatus || order.importStatus, lang)}
-                            {isScheduledTab && order.scheduledShippingDate && (
-                              <Badge variant="outline" className="text-xs text-purple-600 border-purple-300">
-                                <Calendar className="h-3 w-3 mr-1" />
-                                {new Date(order.scheduledShippingDate).toLocaleDateString()}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1"><User className="h-3 w-3" />{order.customerName}</span>
-                            <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{order.customerPhone}</span>
-                            <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{(order.shippingAddress || "").substring(0, 40)}...</span>
-                          </div>
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          {/* V2.1.26: Per-order checkbox for batch print */}
+                          {!isScheduledTab && (
+                            <Checkbox
+                              checked={selectedOrderIds.has(order.id)}
+                              onCheckedChange={() => toggleOrderSelection(order.id)}
+                              className="mt-1"
+                            />
+                          )}
+                          <Link href={`/packing/${order.id}`} className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="font-semibold text-sm">{order.orderNumber}</span>
+                              {order.specialLabel && (
+                                <Badge variant="destructive" className="text-xs">{order.specialLabel}</Badge>
+                              )}
+                              {/* V2.1.26: Show 免邮 badge */}
+                              {order.isFreeShipping && (
+                                <Badge variant="secondary" className="text-xs bg-green-100 text-green-700 border-green-300">{translate("免邮", "Free Shipping")}</Badge>
+                              )}
+                              {/* V2.1.26: Show order category badge for import orders */}
+                              {order.orderCategory === "import" && (
+                                <Badge variant="outline" className="text-xs text-purple-600 border-purple-300">{translate("中国代购", "Import")}</Badge>
+                              )}
+                              {isScheduledTab && (order.physicalStatus || order.importStatus) && getStatusBadge(order.physicalStatus || order.importStatus, lang)}
+                              {isScheduledTab && order.scheduledShippingDate && (
+                                <Badge variant="outline" className="text-xs text-purple-600 border-purple-300">
+                                  <Calendar className="h-3 w-3 mr-1" />
+                                  {new Date(order.scheduledShippingDate).toLocaleDateString()}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1"><User className="h-3 w-3" />{order.customerName}</span>
+                              <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{order.customerPhone}</span>
+                              <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{(order.shippingAddress || "").substring(0, 40)}...</span>
+                              {/* V2.1.26: Show customer paid shipping */}
+                              <span className="flex items-center gap-1">
+                                <Truck className="h-3 w-3" />
+                                {translate("客户付运费", "Paid Shipping")}: RM {Number(order.customerPaidShipping || order.shippingFee || 0).toFixed(2)}
+                              </span>
+                            </div>
+                          </Link>
                         </div>
                         <div className="flex items-center gap-4 text-right">
                           <div>
@@ -165,13 +367,28 @@ export default function Packing() {
                             <div className="text-xs text-muted-foreground">{translate("总数量", "Total Quantity")}</div>
                             <div className="font-semibold text-lg">{order.totalQuantity}</div>
                           </div>
-                          <Button size="sm" variant="outline">{translate("包货", "Pack")}</Button>
+                          {/* V2.1.26: Per-order print button */}
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleSinglePrint(order.id);
+                            }}
+                            title={translate("打印", "Print")}
+                          >
+                            <Printer className="h-4 w-4" />
+                          </Button>
+                          <Link href={`/packing/${order.id}`}>
+                            <Button size="sm" variant="outline">{translate("包货", "Pack")}</Button>
+                          </Link>
                         </div>
                       </div>
                     </CardContent>
                   </Card>
-                </Link>
-              ))}
+                ))}
+              </div>
             </div>
           )}
         </TabsContent>
