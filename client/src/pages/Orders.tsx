@@ -91,11 +91,13 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const urlToday = new URLSearchParams(searchParams).get("today");
   const urlNature = new URLSearchParams(searchParams).get("nature");
   const urlChannel = new URLSearchParams(searchParams).get("channel");
+  const urlSpecial = new URLSearchParams(searchParams).get("special");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(urlStatus || "all");
   const [todayOnly, setTodayOnly] = useState(urlToday === "1");
   const [natureFilter, setNatureFilter] = useState(urlNature || "all");
   const [channelFilter, setChannelFilter] = useState(urlChannel || "all");
+  const [specialFilter, setSpecialFilter] = useState(urlSpecial === "1");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [remarkFilter, setRemarkFilter] = useState("all");
   const [notificationFilter, setNotificationFilter] = useState("all");
@@ -107,7 +109,9 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       const newToday = params.get('today');
       const newNature = params.get('nature');
       const newChannel = params.get('channel');
+      const newSpecial = params.get('special');
       if (newStatus !== null) setStatusFilter(newStatus);
+      if (newSpecial !== null) setSpecialFilter(newSpecial === '1');
       if (newToday !== null) setTodayOnly(newToday === '1');
       if (newNature !== null) setNatureFilter(newNature);
       if (newChannel !== null) setChannelFilter(newChannel);
@@ -192,6 +196,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     salesChannel: channelFilter !== "all" ? channelFilter : undefined,
     hasRemark: remarkFilter !== "all" ? (remarkFilter === "with" ? true : false) : undefined,
     notificationStatus: notificationFilter !== "all" ? notificationFilter : undefined,
+    isSpecialOrder: specialFilter || undefined,
   } as any);
 
   // Get order detail with items, payments, and logs
@@ -686,6 +691,14 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             <SelectItem value="failed">{translate("发送失败", "Failed")}</SelectItem>
           </SelectContent>
         </Select>
+        <Button
+          variant={specialFilter ? "default" : "outline"}
+          size="sm"
+          onClick={() => setSpecialFilter(!specialFilter)}
+          className="h-9"
+        >
+          {translate("特别订单", "Special Orders")}
+        </Button>
       </div>
 
       <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3">
@@ -811,9 +824,16 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                       const statusMap = o.orderCategory === 'import' ? IMPORT_STATUS : PHYSICAL_STATUS;
                       const statusVal = o.orderCategory === 'import' ? o.importStatus : o.physicalStatus;
                       return (
-                        <Badge variant={statusMap[statusVal as keyof typeof statusMap]?.variant || "outline"}>
-                          {translate(statusMap[statusVal as keyof typeof statusMap]?.label || statusVal, statusMap[statusVal as keyof typeof statusMap]?.enLabel || statusVal)}
-                        </Badge>
+                        <>
+                          <Badge variant={statusMap[statusVal as keyof typeof statusMap]?.variant || "outline"}>
+                            {translate(statusMap[statusVal as keyof typeof statusMap]?.label || statusVal, statusMap[statusVal as keyof typeof statusMap]?.enLabel || statusVal)}
+                          </Badge>
+                          {(o as any).isSpecialOrder && (
+                            <Badge variant="destructive" className="ml-1 text-xs">
+                              {translate("特别", "Special")}
+                            </Badge>
+                          )}
+                        </>
                       );
                     })()}
                   </TableCell>

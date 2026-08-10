@@ -297,6 +297,12 @@ export default function Dashboard() {
                         <Badge className={item.specialTypeColor === "orange" ? "bg-orange-100 text-orange-700" : item.specialTypeColor === "red" ? "bg-red-100 text-red-700" : item.specialTypeColor === "yellow" ? "bg-yellow-100 text-yellow-700" : item.specialTypeColor === "blue" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-700"} variant="secondary">
                           {item.specialTypeLabel}
                         </Badge>
+                        {item.orderCategory === 'import' && (
+                          <Badge className="bg-purple-100 text-purple-700" variant="secondary">中国代购</Badge>
+                        )}
+                        {item.orderCategory !== 'import' && (
+                          <Badge className="bg-green-100 text-green-700" variant="secondary">本地</Badge>
+                        )}
                         <span className={`text-xs ${item.isOverdue ? "font-bold text-red-600" : "text-muted-foreground"}`}>
                           {item.isOverdue ? (lang === "zh" ? `超时 ${item.waitHours}h` : `Overdue ${item.waitHours}h`) : `${item.waitHours}h`}
                         </span>

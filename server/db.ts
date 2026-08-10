@@ -609,6 +609,7 @@ export async function getOrders(filters?: {
     isSpecialOrder: (orders as any).isSpecialOrder,
     specialOrderStatus: (orders as any).specialOrderStatus,
     specialOrderType: (orders as any).specialOrderType,
+    specialOrderReason: (orders as any).specialOrderReason,
     notificationStatus: orders.notificationStatus,
     notificationSentAt: orders.notificationSentAt,
     recipientName: orders.recipientName,
@@ -1504,12 +1505,14 @@ export async function recalculateOrderBalance(orderId: number) {
         specialOrderStatus = 'resolved';
       }
     } else if (totalPaid > 0 && totalPaid < totalAmount) {
-      // Partial payment
+      // Partial payment - this is a normal order status, NOT a special order
       newStatus = 'partial_payment' as any;
-      isSpecialOrder = true;
-      specialOrderType = 'partial_payment';
-      specialOrderSource = 'system';
-      specialOrderStatus = 'pending';
+      // Do NOT set isSpecialOrder for partial_payment - it's a normal status
+      if (isSpecialOrder && specialOrderType === 'partial_payment') {
+        isSpecialOrder = false;
+        specialOrderType = null;
+        specialOrderStatus = 'resolved';
+      }
     } else if (totalPaid === 0) {
       // No approved payments
       if (order[0].physicalStatus === 'partial_payment' || order[0].physicalStatus === 'receipt_uploaded') {
@@ -1523,11 +1526,17 @@ export async function recalculateOrderBalance(orderId: number) {
     }
   }
 
-  // For import orders, also update importStatus
+  // For import orders, also update importStatus - but don't overwrite shipped/completed/cancelled
   let importStatusUpdate: string | null = null;
-  if (order[0].orderCategory === 'import') {
+  const importLockedStatuses = ['shipped', 'completed', 'cancelled', 'partial_shipped'];
+  if (order[0].orderCategory === 'import' && !importLockedStatuses.includes(order[0].importStatus || '')) {
     if (totalPaid >= totalAmount && totalAmount > 0) {
-      importStatusUpdate = 'waiting_stock';
+      // Keep current importStatus if already past waiting_stock (e.g. ready_to_ship, scheduled_ship)
+      const currentImportStatus = order[0].importStatus || '';
+      const pastWaitingStock = ['ready_to_ship', 'scheduled_ship'];
+      if (!pastWaitingStock.includes(currentImportStatus)) {
+        importStatusUpdate = 'waiting_stock';
+      }
     } else if (totalPaid > 0) {
       importStatusUpdate = 'partial_payment';
     } else {
@@ -1627,6 +1636,16 @@ export async function addOrderRefund(data: {
 
   // Log activity
   await logOrderOperation(data.orderId, 'payment', `退款 RM${data.amount}，方式：${data.refundMethod}`, null, data.operatorName);
+
+  // If Refund to Credit, actually add credit to customer account
+  if (data.refundMethod === 'Refund to Credit') {
+    const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
+    if (order.length > 0 && order[0].customerId) {
+      const refundAmount = parseFloat(data.amount);
+      await refundCustomerCredit(order[0].customerId, refundAmount, data.orderId, order[0].orderNumber || undefined);
+      await logOrderOperation(data.orderId, 'payment', `退款转Credit RM${data.amount}，已加入客户Credit`, null, data.operatorName);
+    }
+  }
 
   // Recalculate order balance (will check if overpaidAmount is now 0)
   await recalculateOrderBalance(data.orderId);
@@ -7996,6 +8015,8 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
       o.customerPaidShipping,
       o.actualShippingFee,
       o.physicalStatus,
+      o.orderCategory,
+      o.importStatus,
       o.createdAt,
       o.shippingAddress,
       c.id as customer_id,
@@ -8124,6 +8145,8 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
       lastHandler: item.last_handler || '',
       subOrders,
       physicalStatus: item.physicalStatus,
+      orderCategory: item.orderCategory || 'local',
+      importStatus: item.importStatus || null,
     });
   }
 

@@ -1064,6 +1064,7 @@ export const appRouter = router({
         isSpecialOrder: z.boolean().optional(),
         specialOrderStatus: z.string().optional(),
         specialOrderType: z.string().optional(),
+        importStatus: z.string().optional(),
         salesChannel: z.string().optional(),
         hasRemark: z.boolean().optional(),
         notificationStatus: z.string().optional(),

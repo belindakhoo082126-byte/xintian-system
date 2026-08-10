@@ -2461,4 +2461,16 @@
 - [x] 前端CustomerOrderPage：尚欠/多汇款正确显示
 - [x] OrderDocument：付款记录显示审核状态+退款记录表
 - [x] TypeScript编译零错误，270项测试全部通过
+- [x] 保存checkpoint
+
+## V2.1.16 - 付款记录编辑/退款处理/特别订单同步完整修正
+- [x] 调查现有V2.1.15实现状态：recalculateOrderBalance、editPayment、addRefund、specialStatus
+- [x] 后端：recalculateOrderBalance修复（移除partial_payment特别状态、import不覆盖已发货状态）
+- [x] 后端：addOrderRefund支持Refund to Credit（实际加客户Credit）
+- [x] 后端：editPayment后调用recalculateOrderBalance重新判断特别状态
+- [x] 前端Orders.tsx：special=1 URL参数支持+特别订单筛选切换+特别状态Badge+specialOrderReason显示
+- [x] 后端：getOrders新增specialOrderReason返回字段
+- [x] Dashboard特别订单显示订单类型标签(本地/中国代购)
+- [x] 后端：getDashboardFollowUp新增orderCategory返回字段
+- [x] TypeScript编译零错误，270项测试全部通过
 - [ ] 保存checkpoint
