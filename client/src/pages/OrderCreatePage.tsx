@@ -343,11 +343,11 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         ...prev,
         recipientName: c.name || c.displayName || "",
         recipientPhone: c.phoneNumber || "",
-        addressLine1: c.address || "",
-        addressLine2: "",
+        addressLine1: c.addressLine1 || c.address || "",
+        addressLine2: c.addressLine2 || "",
         city: c.city || "",
         state: c.state || "",
-        postcode: c.postalCode || "",
+        postcode: c.postcode || c.postalCode || "",
         country: c.country || "Malaysia",
       }));
     }

@@ -658,7 +658,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
             <ScrollArea className="h-[120px] border rounded-lg">
               <div className="p-2 space-y-1">
                 {customerSearchResults.slice(0, 10).map((c: any) => {
-                  const addrParts = [c.address, c.city, c.state, c.postalCode].filter(Boolean);
+                  const addrParts = [c.addressLine1 || c.address, c.addressLine2, c.city, c.state, c.postcode || c.postalCode].filter(Boolean);
                   const addressSummary = addrParts.length > 0 ? addrParts.join(", ") : null;
                   return (
                     <button key={c.id} onClick={() => {
@@ -667,10 +667,10 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                         ...prev,
                         recipientName: c.name || c.displayName || prev.recipientName,
                         recipientPhone: c.phoneNumber || prev.recipientPhone,
-                        shippingAddress: c.address || prev.shippingAddress,
+                        shippingAddress: c.addressLine1 || c.address || prev.shippingAddress,
                         recipientCity: c.city || prev.recipientCity,
                         recipientState: c.state || prev.recipientState,
-                        recipientPostcode: c.postalCode || prev.recipientPostcode,
+                        recipientPostcode: c.postcode || c.postalCode || prev.recipientPostcode,
                         recipientCountry: c.country || prev.recipientCountry,
                       }));
                       setCustomerSearchQuery("");

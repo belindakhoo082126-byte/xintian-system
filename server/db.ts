@@ -661,6 +661,7 @@ export async function getOrders(filters?: {
     createdAt: orders.createdAt,
     customerName: customers.name,
     customerPhone: customers.phoneNumber,
+    checkoutLink: orders.checkoutLink,
   }).from(orders)
     .leftJoin(customers, eq(orders.customerId, customers.id)) as any;
   const conditions: any[] = [];
