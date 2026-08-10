@@ -1311,6 +1311,57 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    // V2.1.15: Edit payment record
+    editPayment: adminProcedure
+      .input(z.object({
+        paymentId: z.number(),
+        amount: z.string().optional(),
+        paymentMethod: z.string().optional(),
+        receiptUrl: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.editOrderPayment({
+          paymentId: input.paymentId,
+          amount: input.amount,
+          paymentMethod: input.paymentMethod,
+          receiptUrl: input.receiptUrl,
+          notes: input.notes,
+          operatorName: ctx.user?.name || "admin",
+        });
+        return { success: true };
+      }),
+
+    // V2.1.15: Add refund
+    addRefund: adminProcedure
+      .input(z.object({
+        orderId: z.number(),
+        amount: z.string(),
+        refundMethod: z.string(),
+        receiptUrl: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.addOrderRefund({
+          orderId: input.orderId,
+          amount: input.amount,
+          refundMethod: input.refundMethod,
+          receiptUrl: input.receiptUrl,
+          notes: input.notes,
+          operatorName: ctx.user?.name || "admin",
+        });
+        return { success: true };
+      }),
+
+    // V2.1.15: Get order refunds
+    getRefunds: adminProcedure
+      .input(z.object({
+        orderId: z.number(),
+      }))
+      .query(async ({ input }) => {
+        return await db.getOrderRefunds(input.orderId);
+      }),
+
     // V2.1: Cancel order with reason
     cancelOrder: adminProcedure
       .input(z.object({

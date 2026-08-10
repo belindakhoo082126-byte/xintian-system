@@ -14,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, Bell, Upload, Loader2 } from "lucide-react";
+import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, RotateCcw, Bell, Upload, Loader2, Pencil } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSearch, useLocation } from "wouter";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
@@ -156,6 +156,12 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectPaymentId, setRejectPaymentId] = useState<number | null>(null);
+  // V2.1.15: Edit payment and refund state
+  const [editPaymentId, setEditPaymentId] = useState<number | null>(null);
+  const [editPaymentForm, setEditPaymentForm] = useState({ amount: "", paymentMethod: "", receiptUrl: "", notes: "" });
+  const [editPaymentDialogOpen, setEditPaymentDialogOpen] = useState(false);
+  const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+  const [refundForm, setRefundForm] = useState({ amount: "", refundMethod: "bank_transfer", receiptUrl: "", notes: "" });
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const receiptFileRef = useRef<HTMLInputElement>(null);
   const [remarkForm, setRemarkForm] = useState({ remarkCategory: "", content: "", desiredDeliveryDate: "", desiredDeliveryReason: "", repottingData: "" });
@@ -321,6 +327,30 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       setRejectReason("");
     },
     onError: (e) => toast.error(translate("审核失败: {message}", "Review failed: {message}", { message: e.message })),
+  });
+
+  // V2.1.15: Edit payment mutation
+  const editPaymentMutation = trpc.orders.editPayment.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      if (detailOrderId) refetchDetail();
+      toast.success(translate("付款记录已更新", "Payment record updated"));
+      setEditPaymentDialogOpen(false);
+      setEditPaymentId(null);
+    },
+    onError: (e) => toast.error(translate("更新失败: {message}", "Update failed: {message}", { message: e.message })),
+  });
+
+  // V2.1.15: Add refund mutation
+  const addRefundMutation = trpc.orders.addRefund.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      if (detailOrderId) refetchDetail();
+      toast.success(translate("退款已记录", "Refund recorded"));
+      setRefundDialogOpen(false);
+      setRefundForm({ amount: "", refundMethod: "bank_transfer", receiptUrl: "", notes: "" });
+    },
+    onError: (e) => toast.error(translate("退款失败: {message}", "Refund failed: {message}", { message: e.message })),
   });
 
   const cancelOrderMutation = trpc.orders.cancelOrder.useMutation({
@@ -1152,11 +1182,21 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
 
                 <div className="flex items-center justify-between">
                   <h3 className="font-medium">{translate("付款记录", "Payment Records")}</h3>
-                  {orderDetail.physicalStatus !== "cancelled" && orderDetail.physicalStatus !== "completed" && (
-                    <Button size="sm" variant="outline" onClick={() => setPaymentDialogOpen(true)}>
-                      <DollarSign className="h-4 w-4 mr-1" />{translate("添加付款", "Add Payment")}
-                    </Button>
-                  )}
+                  <div className="flex gap-2">
+                    {orderDetail.physicalStatus !== "cancelled" && orderDetail.physicalStatus !== "completed" && (
+                      <>
+                        <Button size="sm" variant="outline" onClick={() => setPaymentDialogOpen(true)}>
+                          <DollarSign className="h-4 w-4 mr-1" />{translate("添加付款", "Add Payment")}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setRefundForm({ amount: "", refundMethod: "bank_transfer", receiptUrl: "", notes: "" });
+                          setRefundDialogOpen(true);
+                        }}>
+                          <RotateCcw className="h-4 w-4 mr-1" />{translate("退款", "Refund")}
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {orderDetail.payments?.length > 0 ? (
@@ -1236,12 +1276,33 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                                 </Button>
                               </div>
                             )}
-                            {p.reviewStatus === 'approved' && p.receiptUrl && (
-                              <a href={p.receiptUrl} target="_blank" rel="noreferrer">
-                                <Button size="sm" variant="ghost" className="h-7 px-2">
-                                  <Eye className="h-3 w-3" />
+                            {p.reviewStatus === 'approved' && (
+                              <div className="flex gap-1">
+                                {p.receiptUrl && (
+                                  <a href={p.receiptUrl} target="_blank" rel="noreferrer">
+                                    <Button size="sm" variant="ghost" className="h-7 px-2">
+                                      <Eye className="h-3 w-3" />
+                                    </Button>
+                                  </a>
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2"
+                                  onClick={() => {
+                                    setEditPaymentId(p.id);
+                                    setEditPaymentForm({
+                                      amount: String(p.amount),
+                                      paymentMethod: p.paymentMethod || "",
+                                      receiptUrl: p.receiptUrl || "",
+                                      notes: p.notes || "",
+                                    });
+                                    setEditPaymentDialogOpen(true);
+                                  }}
+                                >
+                                  <Pencil className="h-3 w-3" />
                                 </Button>
-                              </a>
+                              </div>
                             )}
                           </TableCell>
                         </TableRow>
@@ -1720,6 +1781,101 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
             <Button onClick={handleAddPayment} disabled={addPaymentMutation.isPending}>
               {translate("确认添加", "Confirm Add")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* V2.1.15: Edit Payment Dialog */}
+      <Dialog open={editPaymentDialogOpen} onOpenChange={setEditPaymentDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("编辑付款记录", "Edit Payment Record")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("付款金额 (RM)", "Payment Amount (RM)")}</Label>
+              <Input type="number" step="0.01" value={editPaymentForm.amount}
+                onChange={(e) => setEditPaymentForm({ ...editPaymentForm, amount: e.target.value })}
+                placeholder="0.00" />
+            </div>
+            <div>
+              <Label>{translate("付款方式", "Payment Method")}</Label>
+              <Input value={editPaymentForm.paymentMethod}
+                onChange={(e) => setEditPaymentForm({ ...editPaymentForm, paymentMethod: e.target.value })} />
+            </div>
+            <div>
+              <Label>{translate("备注", "Notes")}</Label>
+              <Textarea value={editPaymentForm.notes}
+                onChange={(e) => setEditPaymentForm({ ...editPaymentForm, notes: e.target.value })}
+                rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPaymentDialogOpen(false)}>{translate("返回", "Back")}</Button>
+            <Button onClick={() => {
+              if (!editPaymentId) return;
+              editPaymentMutation.mutate({
+                paymentId: editPaymentId,
+                amount: editPaymentForm.amount,
+                paymentMethod: editPaymentForm.paymentMethod,
+                notes: editPaymentForm.notes,
+              });
+            }} disabled={editPaymentMutation.isPending}>
+              {translate("保存", "Save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* V2.1.15: Refund Dialog */}
+      <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("记录退款", "Record Refund")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("退款金额 (RM)", "Refund Amount (RM)")}</Label>
+              <Input type="number" step="0.01" value={refundForm.amount}
+                onChange={(e) => setRefundForm({ ...refundForm, amount: e.target.value })}
+                placeholder="0.00" />
+            </div>
+            <div>
+              <Label>{translate("退款方式", "Refund Method")}</Label>
+              <Select value={refundForm.refundMethod} onValueChange={(v) => setRefundForm({ ...refundForm, refundMethod: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bank_transfer">{translate("银行转账", "Bank Transfer")}</SelectItem>
+                  <SelectItem value="duitnow">{translate("DuitNow", "DuitNow")}</SelectItem>
+                  <SelectItem value="cash">{translate("现金", "Cash")}</SelectItem>
+                  <SelectItem value="credit">{translate("Credit", "Credit")}</SelectItem>
+                  <SelectItem value="other">{translate("其他", "Other")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{translate("备注", "Notes")}</Label>
+              <Textarea value={refundForm.notes}
+                onChange={(e) => setRefundForm({ ...refundForm, notes: e.target.value })}
+                rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRefundDialogOpen(false)}>{translate("返回", "Back")}</Button>
+            <Button onClick={() => {
+              if (!refundForm.amount || parseFloat(refundForm.amount) <= 0) {
+                toast.error(translate("请输入有效退款金额", "Please enter a valid refund amount"));
+                return;
+              }
+              addRefundMutation.mutate({
+                orderId: detailOrderId!,
+                amount: refundForm.amount,
+                refundMethod: refundForm.refundMethod,
+                notes: refundForm.notes,
+              });
+            }} disabled={addRefundMutation.isPending}>
+              {translate("确认退款", "Confirm Refund")}
             </Button>
           </DialogFooter>
         </DialogContent>

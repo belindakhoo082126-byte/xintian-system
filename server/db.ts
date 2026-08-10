@@ -53,6 +53,8 @@ import {
   customerCreditLedger,
   // V2.0.98 imports - CN/IB enhancements
   ibDifferences, stockAllocations, costAdjustmentLogs,
+  // V2.1.15 imports - Order Refunds
+  orderRefunds,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -1385,82 +1387,14 @@ export async function addOrderPayment(data: {
     reviewStatus,
   });
 
-  // Log activity
+    // Log activity
   if (paymentSource === 'customer_upload') {
     await logOrderOperation(data.orderId, 'payment', `客户上传付款凭证 RM${data.amount}`, null, 'customer');
   } else {
     await logOrderOperation(data.orderId, 'payment', `Admin新增付款 RM${data.amount}，状态：已确认`, null, data.operatorName);
   }
-
-  // Update order paidAmount — only count approved payments
-  const allPayments = await db.select().from(orderPayments).where(eq(orderPayments.orderId, data.orderId));
-  const approvedPayments = allPayments.filter((p: any) => p.reviewStatus === 'approved');
-  const totalPaid = approvedPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
-  const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
-  if (order.length > 0) {
-    const totalAmount = parseFloat(String(order[0].totalAmount));
-    let newStatus = order[0].physicalStatus;
-    let specialOrderType: string | null = null;
-    let isSpecialOrder = order[0].isSpecialOrder;
-    let specialOrderSource = (order[0] as any).specialOrderSource || "manual";
-    let specialOrderStatus = (order[0] as any).specialOrderStatus || "pending";
-    if (totalPaid >= totalAmount) {
-      newStatus = "receipt_uploaded";
-      // Check for over-payment (paid more than order total)
-      if (totalPaid > totalAmount + 0.01) {
-        specialOrderType = "over_payment";
-        isSpecialOrder = true;
-        specialOrderSource = "system";
-        specialOrderStatus = "pending";
-      } else if (isSpecialOrder && specialOrderType === "partial_payment") {
-        // Was partial payment, now fully paid — resolve special order
-        isSpecialOrder = false;
-        specialOrderType = null;
-        specialOrderStatus = "resolved";
-      }
-    } else if (totalPaid > 0) {
-      newStatus = "partial_payment";
-      // Auto-set special order for partial payment
-      specialOrderType = "partial_payment";
-      isSpecialOrder = true;
-      specialOrderSource = "system";
-      specialOrderStatus = "pending";
-    }
-    // For import orders, also update importStatus
-    let importStatusUpdate: string | null = null;
-    if (order[0].orderCategory === 'import') {
-      if (totalPaid >= totalAmount) {
-        // Fully paid → waiting_stock (待备货)
-        importStatusUpdate = 'waiting_stock';
-      } else if (totalPaid > 0) {
-        // Partial payment → partial_payment (部分汇款)
-        importStatusUpdate = 'partial_payment';
-      } else {
-        // Receipt uploaded but no payment recorded yet → receipt_uploaded (待审核付款凭证)
-        importStatusUpdate = 'receipt_uploaded';
-      }
-    }
-
-    const updateSet: any = {
-      paidAmount: totalPaid.toFixed(2),
-      physicalStatus: newStatus as any,
-      paymentUploadedAt: new Date(),
-      isSpecialOrder,
-      specialOrderType: specialOrderType as any,
-      specialOrderSource: specialOrderSource as any,
-      specialOrderStatus: specialOrderStatus as any,
-      specialOrderUpdatedAt: new Date(),
-    };
-    if (importStatusUpdate) {
-      updateSet.importStatus = importStatusUpdate;
-    }
-    await db.update(orders).set(updateSet).where(eq(orders.id, data.orderId));
-  }
-
-  // Set fullPaymentConfirmedAt if fully paid
-  await checkAndSetFullPaymentConfirmed(data.orderId);
-
-  broadcastChanges(["orders", "dashboard"]);
+  // V2.1.15: Use unified recalculateOrderBalance
+  await recalculateOrderBalance(data.orderId);
 }
 
 // ============================================================================
@@ -1501,79 +1435,212 @@ export async function reviewPayment(data: {
     await logOrderOperation(orderId, 'payment', `付款审核失败 RM${amount}${data.rejectReason ? '，原因：' + data.rejectReason : ''}`, null, data.reviewerName);
   }
 
-  // Recalculate paidAmount — only count approved payments
+  // V2.1.15: Use unified recalculateOrderBalance
+  await recalculateOrderBalance(orderId);
+}
+
+// ============================================================================
+// V2.1.15: Unified recalculateOrderBalance function
+// Called after: addOrderPayment, reviewPayment, addMallItemsToOrder, editPayment, addRefund
+// Recalculates: paidAmount, overpaidAmount, refundedAmount, order status, special order
+// ============================================================================
+
+export async function recalculateOrderBalance(orderId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (order.length === 0) return null;
+
+  const totalAmount = parseFloat(String(order[0].totalAmount || "0"));
+
+  // Get all approved payments
   const allPayments = await db.select().from(orderPayments).where(eq(orderPayments.orderId, orderId));
   const approvedPayments = allPayments.filter((p: any) => p.reviewStatus === 'approved');
   const totalPaid = approvedPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
 
-  const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-  if (order.length > 0) {
-    const totalAmount = parseFloat(String(order[0].totalAmount));
-    let newStatus = order[0].physicalStatus;
-    let specialOrderType: string | null = null;
-    let isSpecialOrder = order[0].isSpecialOrder;
-    let specialOrderSource = (order[0] as any).specialOrderSource || "manual";
-    let specialOrderStatus = (order[0] as any).specialOrderStatus || "pending";
+  // Get all refunds
+  const allRefunds = await db.select().from(orderRefunds).where(eq(orderRefunds.orderId, orderId));
+  const totalRefunded = allRefunds.reduce((sum, r) => sum + parseFloat(String(r.amount)), 0);
 
-    if (totalPaid >= totalAmount) {
-      newStatus = "receipt_uploaded";
-      if (totalPaid > totalAmount + 0.01) {
-        specialOrderType = "over_payment";
+  // Calculate balance: paid - total = positive means overpaid, negative means still owe
+  const balance = totalPaid - totalAmount;
+  const overpaidAmount = balance > 0.01 ? balance - totalRefunded : 0;
+
+  // Determine order status
+  let newStatus = order[0].physicalStatus;
+  let isSpecialOrder = order[0].isSpecialOrder;
+  let specialOrderType: string | null = (order[0] as any).specialOrderType || null;
+  let specialOrderSource: string = (order[0] as any).specialOrderSource || "manual";
+  let specialOrderStatus: string = (order[0] as any).specialOrderStatus || "pending";
+
+  // Don't change status for shipped/completed/cancelled orders
+  const lockedStatuses = ['shipped', 'completed', 'cancelled', 'partial_shipped'];
+  if (!lockedStatuses.includes(order[0].physicalStatus || '')) {
+    if (totalPaid >= totalAmount && totalAmount > 0) {
+      // Fully paid or overpaid
+      if (order[0].physicalStatus === 'hold_order') {
+        newStatus = 'hold_order' as any;
+      } else if (order[0].physicalStatus === 'pending') {
+        newStatus = 'packing' as any;
+      } else if (order[0].physicalStatus === 'partial_payment' || order[0].physicalStatus === 'receipt_uploaded') {
+        newStatus = 'packing' as any;
+      }
+      // Overpayment → special order
+      if (balance > 0.01 && overpaidAmount > 0.01) {
         isSpecialOrder = true;
-        specialOrderSource = "system";
-        specialOrderStatus = "pending";
-      } else if (isSpecialOrder && specialOrderType === "partial_payment") {
+        specialOrderType = 'over_payment';
+        specialOrderSource = 'system';
+        specialOrderStatus = 'pending';
+      } else if (isSpecialOrder && specialOrderType === 'partial_payment') {
+        // Was partial payment special, now fully paid → resolve
         isSpecialOrder = false;
         specialOrderType = null;
-        specialOrderStatus = "resolved";
+        specialOrderStatus = 'resolved';
+      } else if (isSpecialOrder && specialOrderType === 'over_payment' && overpaidAmount <= 0.01) {
+        // Overpayment fully refunded → resolve special order
+        isSpecialOrder = false;
+        specialOrderType = null;
+        specialOrderStatus = 'resolved';
       }
-    } else if (totalPaid > 0) {
-      newStatus = "partial_payment";
-      specialOrderType = "partial_payment";
+    } else if (totalPaid > 0 && totalPaid < totalAmount) {
+      // Partial payment
+      newStatus = 'partial_payment' as any;
       isSpecialOrder = true;
-      specialOrderSource = "system";
-      specialOrderStatus = "pending";
-    } else {
-      // No approved payments — reset to pending
-      newStatus = "pending";
-      if (isSpecialOrder && specialOrderType === "partial_payment") {
+      specialOrderType = 'partial_payment';
+      specialOrderSource = 'system';
+      specialOrderStatus = 'pending';
+    } else if (totalPaid === 0) {
+      // No approved payments
+      if (order[0].physicalStatus === 'partial_payment' || order[0].physicalStatus === 'receipt_uploaded') {
+        newStatus = 'pending' as any;
+      }
+      if (isSpecialOrder && specialOrderType === 'partial_payment') {
         isSpecialOrder = false;
         specialOrderType = null;
-        specialOrderStatus = "resolved";
+        specialOrderStatus = 'resolved';
       }
     }
+  }
 
-    // For import orders, also update importStatus
-    let importStatusUpdate: string | null = null;
-    if (order[0].orderCategory === 'import') {
-      if (totalPaid >= totalAmount) {
-        importStatusUpdate = 'waiting_stock';
-      } else if (totalPaid > 0) {
-        importStatusUpdate = 'partial_payment';
-      } else {
-        importStatusUpdate = 'pending';
-      }
+  // For import orders, also update importStatus
+  let importStatusUpdate: string | null = null;
+  if (order[0].orderCategory === 'import') {
+    if (totalPaid >= totalAmount && totalAmount > 0) {
+      importStatusUpdate = 'waiting_stock';
+    } else if (totalPaid > 0) {
+      importStatusUpdate = 'partial_payment';
+    } else {
+      importStatusUpdate = 'pending';
     }
+  }
 
-    const updateSet: any = {
-      paidAmount: totalPaid.toFixed(2),
-      physicalStatus: newStatus as any,
-      isSpecialOrder,
-      specialOrderType: specialOrderType as any,
-      specialOrderSource: specialOrderSource as any,
-      specialOrderStatus: specialOrderStatus as any,
-      specialOrderUpdatedAt: new Date(),
-    };
-    if (importStatusUpdate) {
-      updateSet.importStatus = importStatusUpdate;
-    }
-    await db.update(orders).set(updateSet).where(eq(orders.id, orderId));
+  const updateSet: any = {
+    paidAmount: totalPaid.toFixed(2),
+    overpaidAmount: overpaidAmount.toFixed(2),
+    refundedAmount: totalRefunded.toFixed(2),
+    physicalStatus: newStatus as any,
+    isSpecialOrder,
+    specialOrderType: specialOrderType as any,
+    specialOrderSource: specialOrderSource as any,
+    specialOrderStatus: specialOrderStatus as any,
+    specialOrderUpdatedAt: new Date(),
+  };
+  if (importStatusUpdate) {
+    updateSet.importStatus = importStatusUpdate;
+  }
+  await db.update(orders).set(updateSet).where(eq(orders.id, orderId));
 
-    // Set fullPaymentConfirmedAt if fully paid
+  // Set fullPaymentConfirmedAt if fully paid
+  if (totalPaid >= totalAmount && totalAmount > 0) {
     await checkAndSetFullPaymentConfirmed(orderId);
   }
 
   broadcastChanges(["orders", "dashboard"]);
+  return { totalPaid, totalAmount, balance, overpaidAmount, totalRefunded, newStatus };
+}
+
+// ============================================================================
+// V2.1.15: Edit Payment Record
+// ============================================================================
+
+export async function editOrderPayment(data: {
+  paymentId: number;
+  amount?: string;
+  paymentMethod?: string;
+  receiptUrl?: string;
+  notes?: string;
+  operatorName: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const payment = await db.select().from(orderPayments).where(eq(orderPayments.id, data.paymentId)).limit(1);
+  if (payment.length === 0) throw new Error("Payment record not found");
+
+  const updateSet: any = {};
+  if (data.amount !== undefined) updateSet.amount = data.amount;
+  if (data.paymentMethod !== undefined) updateSet.paymentMethod = data.paymentMethod;
+  if (data.receiptUrl !== undefined) updateSet.receiptUrl = data.receiptUrl;
+  if (data.notes !== undefined) updateSet.notes = data.notes;
+
+  await db.update(orderPayments).set(updateSet).where(eq(orderPayments.id, data.paymentId));
+
+  // Log activity
+  const orderId = payment[0].orderId;
+  const changes: string[] = [];
+  if (data.amount !== undefined && data.amount !== String(payment[0].amount)) changes.push(`金额: ${payment[0].amount}→${data.amount}`);
+  if (data.paymentMethod !== undefined && data.paymentMethod !== (payment[0].paymentMethod || '')) changes.push(`付款方式: ${payment[0].paymentMethod || '无'}→${data.paymentMethod}`);
+  if (changes.length > 0) {
+    await logOrderOperation(orderId, 'payment', `编辑付款记录：${changes.join('，')}`, null, data.operatorName);
+  }
+
+  // Recalculate order balance
+  await recalculateOrderBalance(orderId);
+  return { success: true };
+}
+
+// ============================================================================
+// V2.1.15: Add Refund
+// ============================================================================
+
+export async function addOrderRefund(data: {
+  orderId: number;
+  amount: string;
+  refundMethod: string;
+  receiptUrl?: string;
+  notes?: string;
+  operatorName: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.insert(orderRefunds).values({
+    orderId: data.orderId,
+    amount: data.amount,
+    refundMethod: data.refundMethod,
+    receiptUrl: data.receiptUrl || null,
+    notes: data.notes || null,
+    operatorName: data.operatorName,
+    refundDate: new Date(),
+  });
+
+  // Log activity
+  await logOrderOperation(data.orderId, 'payment', `退款 RM${data.amount}，方式：${data.refundMethod}`, null, data.operatorName);
+
+  // Recalculate order balance (will check if overpaidAmount is now 0)
+  await recalculateOrderBalance(data.orderId);
+  return { success: true };
+}
+
+// ============================================================================
+// V2.1.15: Get Order Refunds
+// ============================================================================
+
+export async function getOrderRefunds(orderId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(orderRefunds).where(eq(orderRefunds.orderId, orderId)).orderBy(desc(orderRefunds.createdAt));
 }
 
 // ============================================================================

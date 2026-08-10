@@ -417,6 +417,41 @@ export function OrderDocument({
         </div>
       )}
 
+      {/* ===== Refund Records ===== */}
+      {o.refunds && o.refunds.length > 0 && (
+        <div style={{ marginBottom: "20px" }}>
+          <div style={sectionTitle}>{translate("退款记录", "Refund Records")}</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+            <thead>
+              <tr>
+                <th style={thStyle}>{translate("日期", "Date")}</th>
+                <th style={thRight}>{translate("金额", "Amount")}</th>
+                <th style={thStyle}>{translate("退款方式", "Method")}</th>
+                <th style={thStyle}>{translate("状态", "Status")}</th>
+                {isAdmin && <th style={thStyle}>{translate("备注", "Notes")}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {o.refunds.map((r: any, idx: number) => (
+                <tr key={idx}>
+                  <td style={tdStyle}>{fmtDate(r.refundDate || r.createdAt)}</td>
+                  <td style={{ ...tdRight, fontWeight: 500, color: C.orange }}>RM {parseFloat(r.amount).toFixed(2)}</td>
+                  <td style={tdStyle}>{r.refundMethod || "-"}</td>
+                  <td style={tdStyle}>
+                    {r.refundStatus === 'completed' ? (
+                      <span style={{ color: C.greenPaid, fontWeight: 500 }}>{translate("已退款", "Refunded")}</span>
+                    ) : (
+                      <span style={{ color: C.orange }}>{translate("处理中", "Processing")}</span>
+                    )}
+                  </td>
+                  {isAdmin && <td style={{ ...tdStyle, color: C.textLight }}>{r.notes || "-"}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* ===== Remarks ===== */}
       {visibleRemarks && visibleRemarks.length > 0 && (
         <div style={{ marginBottom: "20px" }}>

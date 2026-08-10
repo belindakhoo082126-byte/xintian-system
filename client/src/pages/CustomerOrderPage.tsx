@@ -485,14 +485,32 @@ export default function CustomerOrderPage(props: any) {
                   </div>
                 )}
 
-                {/* 应付款 */}
+                {/* 已退款 */}
+                {parseFloat(o.refundedAmount || "0") > 0 && (
+                  <div className="flex justify-between text-orange-600">
+                    <span>已退款</span>
+                    <span>RM {o.refundedAmount}</span>
+                  </div>
+                )}
+
+                {/* 应付款 / 多汇款 */}
                 <Separator className="my-2" />
-                <div className="flex justify-between font-bold text-lg">
-                  <span>应付款</span>
-                  <span className={parseFloat(o.amountDue || "0") > 0 ? "text-red-600" : "text-emerald-600"}>
-                    RM {o.amountDue || "0.00"}
-                  </span>
-                </div>
+                {parseFloat(o.amountDue || "0") > 0 ? (
+                  <div className="flex justify-between font-bold text-lg">
+                    <span>尚欠</span>
+                    <span className="text-red-600">RM {o.amountDue || "0.00"}</span>
+                  </div>
+                ) : parseFloat(o.overpaidAmount || "0") > 0 ? (
+                  <div className="flex justify-between font-bold text-lg">
+                    <span>多汇款</span>
+                    <span className="text-orange-600">RM {o.overpaidAmount || "0.00"}</span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between font-bold text-lg">
+                    <span>应付款</span>
+                    <span className="text-emerald-600">RM 0.00</span>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

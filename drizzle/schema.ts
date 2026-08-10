@@ -502,6 +502,9 @@ export const orders = mysqlTable("orders", {
   shippingFee: decimal("shippingFee", { precision: 10, scale: 2 }).default("0"),
   totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }).notNull(),
   paidAmount: decimal("paidAmount", { precision: 10, scale: 2 }).default("0"),
+  // V2.1.15: Overpayment and refund tracking
+  overpaidAmount: decimal("overpaidAmount", { precision: 10, scale: 2 }).default("0"),
+  refundedAmount: decimal("refundedAmount", { precision: 10, scale: 2 }).default("0"),
   physicalStatus: mysqlEnum("physicalStatus", [
     "pending",           // 挂单 - waiting for payment
     "receipt_uploaded",  // 确认汇款 - customer uploaded payment proof
@@ -2098,6 +2101,25 @@ export const orderPayments = mysqlTable("order_payments", {
 
 export type OrderPayment = typeof orderPayments.$inferSelect;
 export type InsertOrderPayment = typeof orderPayments.$inferInsert;
+
+// ============================================================================
+// Order Refunds (订单退款记录)
+// ============================================================================
+
+export const orderRefunds = mysqlTable("order_refunds", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  refundMethod: varchar("refundMethod", { length: 100 }).notNull(),
+  refundDate: timestamp("refundDate"),
+  receiptUrl: varchar("receiptUrl", { length: 500 }),
+  notes: text("notes"),
+  operatorName: varchar("operatorName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OrderRefund = typeof orderRefunds.$inferSelect;
+export type InsertOrderRefund = typeof orderRefunds.$inferInsert;
 
 // ============================================================================
 // Order Operation Logs (订单操作日志 - 完整操作记录)

@@ -2450,4 +2450,15 @@
 - [x] CustomerOrderPage canEditAddress扩展支持Hold Order和Partial Payment（openOrderStatuses包含中文标签）
 - [x] CustomerOrderPage STATUS_CONFIG更新为服务器返回的中文标签
 - [x] TypeScript编译零错误，270项测试全部通过
+- [x] 保存checkpoint
+
+## V2.1.15 - 付款/余额/退款/特别订单完整修正
+- [x] 数据库Schema：order_refunds表，orders表新增overpaidAmount/refundedAmount字段
+- [x] 后端recalculateOrderBalance统一函数：addOrderPayment/reviewPayment后自动调用
+- [x] 后端addRefund/editPayment函数和tRPC procedure
+- [x] 后端多汇款自动触发特别订单（specialOrder+OVERPAYMENT_REFUND_PENDING）
+- [x] 前端Orders.tsx：付款记录Edit按钮+退款对话框+退款记录显示
+- [x] 前端CustomerOrderPage：尚欠/多汇款正确显示
+- [x] OrderDocument：付款记录显示审核状态+退款记录表
+- [x] TypeScript编译零错误，270项测试全部通过
 - [ ] 保存checkpoint
