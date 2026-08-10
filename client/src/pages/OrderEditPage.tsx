@@ -3,6 +3,7 @@ import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
+import { parseLegacyAddress } from "@shared/parseAddress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -662,17 +663,40 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                   const addressSummary = addrParts.length > 0 ? addrParts.join(", ") : null;
                   return (
                     <button key={c.id} onClick={() => {
-                      // V2.1.20: Auto-fill recipient from customer profile (including structured address)
-                      setFormData((prev: any) => ({
-                        ...prev,
-                        recipientName: c.name || c.displayName || prev.recipientName,
-                        recipientPhone: c.phoneNumber || prev.recipientPhone,
-                        shippingAddress: c.addressLine1 || c.address || prev.shippingAddress,
-                        recipientCity: c.city || prev.recipientCity,
-                        recipientState: c.state || prev.recipientState,
-                        recipientPostcode: c.postcode || c.postalCode || prev.recipientPostcode,
-                        recipientCountry: c.country || prev.recipientCountry,
-                      }));
+                      // V2.1.22: Auto-fill recipient from customer profile
+                      // If customer has structured fields, use them directly.
+                      // If only legacy `address` field exists, parse it into structured fields.
+                      const hasStructured = c.addressLine1 || c.city || c.state || c.postcode || c.postalCode;
+                      if (hasStructured) {
+                        setFormData((prev: any) => ({
+                          ...prev,
+                          recipientName: c.name || c.displayName || prev.recipientName,
+                          recipientPhone: c.phoneNumber || prev.recipientPhone,
+                          shippingAddress: c.addressLine1 || prev.shippingAddress,
+                          recipientCity: c.city || prev.recipientCity,
+                          recipientState: c.state || prev.recipientState,
+                          recipientPostcode: c.postcode || c.postalCode || prev.recipientPostcode,
+                          recipientCountry: c.country || prev.recipientCountry,
+                        }));
+                      } else if (c.address) {
+                        const parsed = parseLegacyAddress(c.address);
+                        setFormData((prev: any) => ({
+                          ...prev,
+                          recipientName: c.name || c.displayName || prev.recipientName,
+                          recipientPhone: c.phoneNumber || prev.recipientPhone,
+                          shippingAddress: parsed.addressLine1 || c.address,
+                          recipientCity: parsed.city || prev.recipientCity,
+                          recipientState: parsed.state || prev.recipientState,
+                          recipientPostcode: parsed.postcode || prev.recipientPostcode,
+                          recipientCountry: parsed.country || prev.recipientCountry,
+                        }));
+                      } else {
+                        setFormData((prev: any) => ({
+                          ...prev,
+                          recipientName: c.name || c.displayName || prev.recipientName,
+                          recipientPhone: c.phoneNumber || prev.recipientPhone,
+                        }));
+                      }
                       setCustomerSearchQuery("");
                     }} className="w-full text-left p-2 rounded hover:bg-muted text-sm">
                       <div className="flex items-center justify-between">

@@ -2536,5 +2536,5 @@
 - [x] Bug9: 客户结账页面备注自定义文本无法保存（remarkCategory enum新增customer_other+invalidation修复）
 
 ## V2.1.22 - 2个Bug修复
-- [x] Bug1: 地址自动填写格式错误 — OrderCreatePage handleCustomerSelect优先使用结构化字段(addressLine1/addressLine2/postcode)，fallback到旧字段(address/postalCode)；OrderEditPage客户搜索选择同样修复
+- [x] Bug1: 地址自动填写格式错误 — 新增parseLegacyAddress解析函数(shared/parseAddress.ts)，当客户只有旧单行address字段时自动拆分为addressLine1/addressLine2/city/state/postcode；OrderCreatePage和OrderEditPage的handleCustomerSelect集成此解析逻辑
 - [x] Bug2: 订单操作旁复制结账链接功能 — getOrders新增checkoutLink字段返回，确保Orders.tsx列表中复制结单通知按钮正常显示（含固定追单文字+订单号+链接）

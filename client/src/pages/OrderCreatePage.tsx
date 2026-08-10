@@ -18,6 +18,7 @@ import {
   User, Package, DollarSign, Truck, FileText, Sparkles, CreditCard, Maximize2,
   Sprout, Upload, Loader2,
 } from "lucide-react";
+import { parseLegacyAddress } from "@shared/parseAddress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -337,19 +338,44 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     if (c.customerType === "wholesale") setOrderNature("wholesale");
     else if (c.customerType === "agent") setOrderNature("agent");
     else setOrderNature("retail");
-    // V2.1.17: Auto-fill recipient from customer profile (including full address)
+    // V2.1.22: Auto-fill recipient from customer profile (including full structured address)
+    // If customer has structured fields (addressLine1, city, state, postcode), use them directly.
+    // If only legacy `address` field exists, parse it into structured fields.
     if (buyerIsRecipient) {
-      setRecipientForm(prev => ({
-        ...prev,
-        recipientName: c.name || c.displayName || "",
-        recipientPhone: c.phoneNumber || "",
-        addressLine1: c.addressLine1 || c.address || "",
-        addressLine2: c.addressLine2 || "",
-        city: c.city || "",
-        state: c.state || "",
-        postcode: c.postcode || c.postalCode || "",
-        country: c.country || "Malaysia",
-      }));
+      const hasStructured = c.addressLine1 || c.city || c.state || c.postcode || c.postalCode;
+      if (hasStructured) {
+        setRecipientForm(prev => ({
+          ...prev,
+          recipientName: c.name || c.displayName || "",
+          recipientPhone: c.phoneNumber || "",
+          addressLine1: c.addressLine1 || "",
+          addressLine2: c.addressLine2 || "",
+          city: c.city || "",
+          state: c.state || "",
+          postcode: c.postcode || c.postalCode || "",
+          country: c.country || "Malaysia",
+        }));
+      } else if (c.address) {
+        // V2.1.22: Parse legacy single-line address into structured fields
+        const parsed = parseLegacyAddress(c.address);
+        setRecipientForm(prev => ({
+          ...prev,
+          recipientName: c.name || c.displayName || "",
+          recipientPhone: c.phoneNumber || "",
+          addressLine1: parsed.addressLine1 || c.address,
+          addressLine2: parsed.addressLine2 || "",
+          city: parsed.city || "",
+          state: parsed.state || "",
+          postcode: parsed.postcode || "",
+          country: parsed.country || "Malaysia",
+        }));
+      } else {
+        setRecipientForm(prev => ({
+          ...prev,
+          recipientName: c.name || c.displayName || "",
+          recipientPhone: c.phoneNumber || "",
+        }));
+      }
     }
     setCustomerSearchQuery("");
   }
