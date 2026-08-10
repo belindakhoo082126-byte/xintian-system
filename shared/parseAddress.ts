@@ -7,8 +7,8 @@
  *   "11.Lorong Kebudayaan Desa Lawan Kuda, Gopeng, Perak, 31600, Malaysia"
  *   → { addressLine1: "11.Lorong Kebudayaan Desa Lawan Kuda", addressLine2: "", city: "Gopeng", state: "Perak", postcode: "31600", country: "Malaysia" }
  *
- *   "30 Jalan Pelangi lndah Taman Pelangi Indah, Mantin, Negeri Sembilan, 71700, Malaysia"
- *   → { addressLine1: "30 Jalan Pelangi lndah Taman Pelangi Indah", addressLine2: "", city: "Mantin", state: "Negeri Sembilan", postcode: "71700", country: "Malaysia" }
+ *   "851 Jalan Menglembu Utara 1, 851 Jalan Menglembu Utara 1 Menglembu Ipoh, Perak, 31450, Malaysia"
+ *   → { addressLine1: "851 Jalan Menglembu Utara 1, 851 Jalan Menglembu Utara 1 Menglembu", addressLine2: "", city: "Ipoh", state: "Perak", postcode: "31450", country: "Malaysia" }
  */
 export function parseLegacyAddress(rawAddress: string): {
   addressLine1: string;
@@ -84,51 +84,101 @@ export function parseLegacyAddress(rawAddress: string): {
     result.state = foundState;
   }
 
-  // Step 4: Extract city — the last meaningful segment after removing postcode, state, country
-  // At this point, address contains street + city, separated by commas
+  // Step 4: Extract city using known Malaysian cities list
+  // Common Malaysian cities, towns, and areas
+  const malaysianCities = [
+    // Major cities
+    "Ipoh", "Johor Bahru", "Kuala Lumpur", "Georgetown", "Kuching", "Kota Kinabalu",
+    "Shah Alam", "Petaling Jaya", "Subang Jaya", "Klang", "Cheras", "Ampang",
+    "Kajang", "Serdang", "Puchong", "Damansara", "Seremban", "Malacca",
+    "Alor Setar", "Kota Bharu", "Kuala Terengganu", "Kuantan", "Kangar",
+    "Miri", "Sibu", "Sandakan", "Tawau", "Labuan",
+    // Selangor areas
+    "Shah Alam", "Petaling Jaya", "Subang Jaya", "Klang", "Cheras", "Ampang",
+    "Kajang", "Serdang", "Puchong", "Damansara", "Gombak", "Hulu Langat",
+    "Sepang", "Kuala Selangor", "Sabak Bernam", "Kuala Langat",
+    // Penang areas
+    "Butterworth", "Bukit Mertajam", "Bayan Lepas", "Gelugor", "Balik Pulau",
+    // Perak areas
+    "Menglembu", "Gopeng", "Tapah", "Kampar", "Teluk Intan", "Lumut", "Sitiawan",
+    "Taiping", "Kuala Kangsar", "Parit Buntar", "Sungai Siput",
+    // Johor areas
+    "Muar", "Batu Pahat", "Kluang", "Segamat", "Kulai", "Pasir Gudang",
+    "Iskandar Puteri", "Skudai", "Pontian", "Kota Tinggi", "Mersing",
+    // Negeri Sembilan areas
+    "Mantin", "Port Dickson", "Nilai", "Bahau", "Kuala Pilah", "Jempol",
+    // Sabah areas
+    "Tawau", "Lahad Datu", "Keningau", "Sandakan", "Kudat", "Putatan",
+    // Sarawak areas
+    "Miri", "Sibu", "Bintulu", "Limbang", "Sarikei", "Kapit",
+    // Kedah areas
+    "Sungai Petani", "Kulim", "Baling", "Yan", "Sik", "Padang Terap",
+    // Pahang areas
+    "Bentong", "Raub", "Temerloh", "Pekan", "Rompin", "Jerantut", "Cameron Highlands",
+    // Kelantan areas
+    "Pasir Mas", "Kota Bharu", "Tumpat", "Pasir Puteh", "Bachok", "Tanah Merah",
+    // Terengganu areas
+    "Kemaman", "Dungun", "Marang", "Besut", "Setiu", "Hulu Terengganu",
+    // Melaka areas
+    "Alor Gajah", "Jasin", "Masjid Tanah", "Merlimau",
+    // Others
+    "Putrajaya", "Cyberjaya", "Bandar Baru Bangi", "Bangi",
+  ];
+
+  // Try to find a known city in the remaining address text
+  for (const city of malaysianCities) {
+    const cityRegex = new RegExp(`\\b${city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    if (cityRegex.test(address)) {
+      result.city = city;
+      address = address.replace(cityRegex, "").replace(/[,，]/g, " ").replace(/\s+/g, " ").trim();
+      break;
+    }
+  }
+
+  // Step 5: Split remaining address into addressLine1 and addressLine2
   const segments = address.split(/[,，]/).map(s => s.trim()).filter(Boolean);
 
   if (segments.length === 0) {
-    // Nothing left after extracting postcode/state/country
     return result;
   }
 
   if (segments.length === 1) {
-    // Only one segment left — could be just street or just city
-    // If we already have postcode and state, this is likely the street address
-    if (result.postcode && result.state) {
-      result.addressLine1 = segments[0];
-    } else if (result.postcode && !result.state) {
-      // Could be city or street — if it looks like a city name (short, no numbers), treat as city
-      if (!/\d/.test(segments[0]) && segments[0].length < 30) {
-        result.city = segments[0];
-      } else {
-        result.addressLine1 = segments[0];
-      }
-    } else {
-      result.addressLine1 = segments[0];
-    }
-    return result;
-  }
-
-  // Multiple segments: last segment is usually city, rest is street address
-  // But only if we don't already have a city
-  const lastSeg = segments[segments.length - 1];
-  const restSegs = segments.slice(0, -1);
-
-  // If last segment looks like a city (no numbers, relatively short)
-  if (!/\d/.test(lastSeg) && lastSeg.length < 40) {
-    result.city = lastSeg;
-    result.addressLine1 = restSegs.join(", ");
+    result.addressLine1 = segments[0];
   } else {
-    // Last segment has numbers or is long — treat all as address
-    result.addressLine1 = segments.join(", ");
+    // Multiple segments: first segment is addressLine1, rest joined as addressLine2
+    result.addressLine1 = segments[0];
+    result.addressLine2 = segments.slice(1).join(", ");
   }
 
-  // If we still don't have a city but have postcode, try to find city
-  // by looking at what was between postcode and state in original
+  // Step 6: If we still don't have a city, try to extract from the original address
+  // Look at the segment just before the state in the original address
+  if (!result.city && result.state) {
+    const originalSegments = rawAddress.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+    const stateIdx = originalSegments.findIndex(s =>
+      s.toLowerCase().includes(result.state.toLowerCase())
+    );
+    if (stateIdx > 0) {
+      const citySegment = originalSegments[stateIdx - 1];
+      // The city is typically the last word(s) in this segment
+      // Try to extract alphabetic-only words from the end
+      const words = citySegment.split(/\s+/);
+      const cityWords: string[] = [];
+      for (let i = words.length - 1; i >= 0; i--) {
+        if (/^[A-Za-z]+$/.test(words[i]) && words[i].length > 2) {
+          cityWords.unshift(words[i]);
+        } else {
+          break;
+        }
+      }
+      if (cityWords.length > 0) {
+        result.city = cityWords.join(" ");
+      }
+    }
+  }
+
+  // Step 7: If we still don't have a city but have postcode, try to find city
+  // by looking at what was between postcode and state in original address
   if (!result.city && result.postcode) {
-    // Try to find text between postcode and state in original address
     const originalPostcodeIdx = rawAddress.indexOf(result.postcode);
     if (originalPostcodeIdx >= 0) {
       const afterPostcode = rawAddress.substring(originalPostcodeIdx + result.postcode.length);
@@ -142,6 +192,12 @@ export function parseLegacyAddress(rawAddress: string): {
         }
       }
     }
+  }
+
+  // Step 8: Clean up addressLine1 — remove trailing commas/spaces
+  result.addressLine1 = result.addressLine1.replace(/[,，\s]+$/, "").trim();
+  if (result.addressLine2) {
+    result.addressLine2 = result.addressLine2.replace(/[,，\s]+$/, "").trim();
   }
 
   return result;
