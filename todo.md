@@ -2432,4 +2432,10 @@
 - [x] 包货工作台预约发货Tab支持date=today URL参数，默认显示今日预约订单
 - [x] Dashboard卡片链接改为/packing?tab=scheduled&date=today，点击自动带今日筛选
 - [x] TypeScript编译零错误，270项测试全部通过
-- [ ] 保存V2.1.12 checkpoint
+- [x] 保存V2.1.12 checkpoint
+
+## V2.1.13 - 包货工作台预约发货状态标签和筛选
+- [x] 预约发货列表为8种状态添加不同颜色视觉标签
+- [x] 预约发货列表增加状态筛选下拉框
+- [x] TypeScript编译零错误，270项测试全部通过
+- [x] 保存checkpoint

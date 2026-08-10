@@ -8,7 +8,31 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Package, Truck, CheckCircle2, Clock, MapPin, Phone, User, ArrowLeft, Printer, Ship, Calendar, Filter } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/contexts/I18nContext";
+
+// V2.1.13: Status color mapping for scheduled shipping orders (8 statuses)
+const SCHEDULED_STATUS_CONFIG: Record<string, { label: { zh: string; en: string }; color: string; bgColor: string; borderColor: string }> = {
+  pending: { label: { zh: "未汇款", en: "Unpaid" }, color: "text-red-600", bgColor: "bg-red-50", borderColor: "border-red-200" },
+  packing: { label: { zh: "待包货", en: "Packing" }, color: "text-blue-600", bgColor: "bg-blue-50", borderColor: "border-blue-200" },
+  hold_order: { label: { zh: "保留订单", en: "Hold" }, color: "text-yellow-600", bgColor: "bg-yellow-50", borderColor: "border-yellow-200" },
+  receipt_uploaded: { label: { zh: "待审核付款凭证", en: "Receipt Uploaded" }, color: "text-orange-600", bgColor: "bg-orange-50", borderColor: "border-orange-200" },
+  partial_payment: { label: { zh: "部分汇款", en: "Partial Payment" }, color: "text-amber-600", bgColor: "bg-amber-50", borderColor: "border-amber-200" },
+  waiting_stock: { label: { zh: "待备货", en: "Waiting Stock" }, color: "text-purple-600", bgColor: "bg-purple-50", borderColor: "border-purple-200" },
+  ready_to_ship: { label: { zh: "待发货", en: "Ready to Ship" }, color: "text-indigo-600", bgColor: "bg-indigo-50", borderColor: "border-indigo-200" },
+  scheduled_ship: { label: { zh: "预约发货", en: "Scheduled Ship" }, color: "text-cyan-600", bgColor: "bg-cyan-50", borderColor: "border-cyan-200" },
+};
+
+function getStatusBadge(status: string, lang: string) {
+  const config = SCHEDULED_STATUS_CONFIG[status];
+  if (!config) return null;
+  const label = lang === "zh" ? config.label.zh : config.label.en;
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${config.color} ${config.bgColor} border ${config.borderColor}`}>
+      {label}
+    </span>
+  );
+}
 
 const STATUS_TABS = [
   { key: "packing", label: { zh: "待包货", en: "Packing" }, icon: Clock, color: "text-blue-600" },
@@ -30,12 +54,18 @@ export default function Packing() {
   const todayStr = new Date().toISOString().split("T")[0];
   const [dateFrom, setDateFrom] = useState<string>(urlDate === "today" ? todayStr : "");
   const [dateTo, setDateTo] = useState<string>(urlDate === "today" ? todayStr : "");
+  // V2.1.13: Status filter for scheduled tab
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const { data: orders, isLoading } = trpc.packing.list.useQuery({ status: activeTab as any }, { enabled: !isScheduledTab });
   const { data: scheduledOrders, isLoading: scheduledLoading } = trpc.scheduledShipping.list.useQuery(
     { dateFrom: dateFrom || undefined, dateTo: dateTo || undefined },
     { enabled: isScheduledTab }
   );
-  const orderList = isScheduledTab ? ((scheduledOrders as any[]) || []) : ((orders as any[]) || []);
+  const rawOrderList = isScheduledTab ? ((scheduledOrders as any[]) || []) : ((orders as any[]) || []);
+  // V2.1.13: Apply status filter on scheduled tab
+  const orderList = isScheduledTab && statusFilter !== "all"
+    ? rawOrderList.filter((o: any) => (o.physicalStatus || o.importStatus) === statusFilter)
+    : rawOrderList;
   const isLoadingCombined = isLoading || scheduledLoading;
 
   return (
@@ -72,8 +102,20 @@ export default function Packing() {
                   <Label className="text-xs">{translate("结束日期", "End Date")}</Label>
                   <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-40" />
                 </div>
-                {(dateFrom || dateTo) && (
-                  <Button variant="outline" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); }}>{translate("清除筛选", "Clear Filters")}</Button>
+                <div>
+                  <Label className="text-xs">{translate("状态筛选", "Status Filter")}</Label>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-40"><SelectValue placeholder={translate("全部状态", "All Status")} /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{translate("全部状态", "All Status")}</SelectItem>
+                      {Object.entries(SCHEDULED_STATUS_CONFIG).map(([key, cfg]) => (
+                        <SelectItem key={key} value={key}>{lang === "zh" ? cfg.label.zh : cfg.label.en}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(dateFrom || dateTo || statusFilter !== "all") && (
+                  <Button variant="outline" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setStatusFilter("all"); }}>{translate("清除筛选", "Clear Filters")}</Button>
                 )}
                 <div className="ml-auto text-sm text-muted-foreground">{translate("共 {count} 单", "Total {count} orders", { count: orderList.length })}</div>
               </div>
@@ -100,6 +142,7 @@ export default function Packing() {
                             {order.specialLabel && (
                               <Badge variant="destructive" className="text-xs">{order.specialLabel}</Badge>
                             )}
+                            {isScheduledTab && (order.physicalStatus || order.importStatus) && getStatusBadge(order.physicalStatus || order.importStatus, lang)}
                             {isScheduledTab && order.scheduledShippingDate && (
                               <Badge variant="outline" className="text-xs text-purple-600 border-purple-300">
                                 <Calendar className="h-3 w-3 mr-1" />
