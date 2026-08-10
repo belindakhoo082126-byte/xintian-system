@@ -4003,7 +4003,7 @@ export async function findMergeableHoldOrder(customerId: number) {
     WHERE o.customerId = ${customerId} 
     AND h.isActive = 1 
     AND h.allowAutoMerge = 1
-    AND o.physicalStatus = 'hold_order'
+    AND o.physicalStatus IN ('hold_order', 'partial_payment')
     ORDER BY h.holdCreatedAt DESC
     LIMIT 1
   `));
@@ -4023,7 +4023,7 @@ export async function getMergeableHoldOrderById(customerId: number, orderId: num
       AND o.customerId = ${customerId}
       AND h.isActive = 1
       AND h.allowAutoMerge = 1
-      AND o.physicalStatus = 'hold_order'
+      AND o.physicalStatus IN ('hold_order', 'partial_payment')
     LIMIT 1
   `));
 
@@ -4642,9 +4642,13 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
     creditUsed: orders.creditUsed,
     shippingMethod: orders.shippingMethod,
     orderCategory: orders.orderCategory,
+    paidAmount: orders.paidAmount,
   }).from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!target[0]) throw new Error("Order not found");
-  if (target[0].physicalStatus !== "pending") throw new Error("Order is not available for add-on");
+  // V2.1.14: Allow add-on for pending, hold_order, and partial_payment (all open/mergeable statuses)
+  const mergeableStatuses = ["pending", "hold_order", "partial_payment"];
+  const currentPhysicalStatus = target[0].physicalStatus || "pending";
+  if (!mergeableStatuses.includes(currentPhysicalStatus)) throw new Error("当前订单状态不允许加单");
   // V2.1.04: Cross-type validation — prevent adding import products to local order and vice versa
   const productIds = items.map((i) => i.productId).filter((id) => id > 0);
   if (productIds.length > 0) {
@@ -4714,11 +4718,22 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
   }
 
   const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
+
+  // V2.1.14: Auto-recalculate order status after adding items
+  const currentPaidAmount = parseFloat(target[0].paidAmount || "0");
+  let newPhysicalStatus = currentPhysicalStatus;
+  if (currentPaidAmount > 0 && currentPaidAmount < totalAmount) {
+    newPhysicalStatus = "partial_payment";
+  } else if (currentPaidAmount >= totalAmount && totalAmount > 0) {
+    if (newPhysicalStatus === "pending") newPhysicalStatus = "packing";
+  }
+
   await db.update(orders).set({
     physicalSubtotal: physicalSubtotal.toFixed(2),
     shippingFee: shippingFee.toFixed(2),
     totalWeight: totalWeight.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
+    physicalStatus: newPhysicalStatus,
   }).where(eq(orders.id, orderId));
   // V2.1.08: Removed auto-remark for mall add-on; itemSource on order_items already records it.
   // Activity log below serves as the system operation record.

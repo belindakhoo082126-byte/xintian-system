@@ -3361,8 +3361,10 @@ export const appRouter = router({
     })).mutation(async ({ input }) => {
       const order = await db.getOrderBySecureToken(input.orderNumber, input.token);
       if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "订单不存在或链接无效" });
-      if (order.physicalStatus !== "pending") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "只有未付款订单可以继续加单" });
+      // V2.1.14: Allow add-on for pending, hold_order, and partial_payment
+      const mergeableStatuses = ["pending", "hold_order", "partial_payment"];
+      if (!mergeableStatuses.includes(order.physicalStatus || "pending")) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "当前订单状态不允许加单" });
       }
 
       const checkedItems = await Promise.all(input.items.map(async (item) => {

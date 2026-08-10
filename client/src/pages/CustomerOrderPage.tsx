@@ -18,18 +18,28 @@ import { Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink,
 import { toast } from "sonner";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
-  // Local order statuses
+  // Local order statuses (mapped from server Chinese labels)
+  "未汇款": { label: "未汇款订单", color: "bg-amber-100 text-amber-900", icon: Clock },
+  "付款审核中": { label: "付款审核中", color: "bg-sky-100 text-sky-900", icon: Clock },
+  "部分汇款": { label: "部分汇款", color: "bg-amber-100 text-amber-900", icon: Clock },
+  "保留订单": { label: "保留订单", color: "bg-purple-100 text-purple-900", icon: Clock },
+  "待包货": { label: "待包货", color: "bg-sky-100 text-sky-900", icon: Package },
+  "预约发货": { label: "预约发货", color: "bg-indigo-100 text-indigo-900", icon: Clock },
+  "部分发货": { label: "部分发货", color: "bg-orange-100 text-orange-900", icon: Truck },
+  "已发货": { label: "已发货", color: "bg-emerald-100 text-emerald-900", icon: Truck },
+  "已完成": { label: "已完成", color: "bg-muted text-muted-foreground", icon: CheckCircle2 },
+  "已取消": { label: "已取消", color: "bg-red-100 text-red-900", icon: AlertCircle },
+  // XTC import order statuses
+  "挂单": { label: "挂单", color: "bg-amber-100 text-amber-900", icon: Clock },
+  "待审核付款凭证": { label: "待审核付款凭证", color: "bg-sky-100 text-sky-900", icon: Clock },
+  "待备货": { label: "待备货", color: "bg-purple-100 text-purple-900", icon: Package },
+  "待发货": { label: "待发货", color: "bg-indigo-100 text-indigo-900", icon: Package },
+  "取消": { label: "取消", color: "bg-red-100 text-red-900", icon: AlertCircle },
+  // Fallback for old English keys
   "Pending Payment": { label: "未汇款订单", color: "bg-amber-100 text-amber-900", icon: Clock },
   "Payment Review": { label: "付款审核中", color: "bg-sky-100 text-sky-900", icon: Clock },
-  "Payment Confirmed": { label: "已确认付款", color: "bg-emerald-100 text-emerald-900", icon: CheckCircle2 },
   "Partial Payment": { label: "部分汇款", color: "bg-amber-100 text-amber-900", icon: Clock },
   "Hold Order": { label: "保留订单", color: "bg-purple-100 text-purple-900", icon: Clock },
-  "Preparing Goods": { label: "配货中", color: "bg-sky-100 text-sky-900", icon: Package },
-  "Scheduled Ship": { label: "预约发货", color: "bg-indigo-100 text-indigo-900", icon: Clock },
-  "Partial Shipped": { label: "部分已发货", color: "bg-orange-100 text-orange-900", icon: Truck },
-  "Shipped": { label: "已发货", color: "bg-emerald-100 text-emerald-900", icon: Truck },
-  "Completed": { label: "已完成", color: "bg-muted text-muted-foreground", icon: CheckCircle2 },
-  "Cancelled": { label: "已取消", color: "bg-red-100 text-red-900", icon: AlertCircle },
 };
 
 const SHIPPING_METHODS = [
@@ -107,7 +117,9 @@ export default function CustomerOrderPage(props: any) {
   const o = order as any;
   const statusInfo = o ? STATUS_CONFIG[o.customerStatus] || STATUS_CONFIG["Pending Payment"] : null;
   const hasAddress = !!(o?.shippingAddress);
-  const canEditAddress = o?.customerStatus === "Pending Payment";
+  // V2.1.14: Allow mall add-on and address editing for open order statuses (Chinese labels from server)
+  const openOrderStatuses = ["未汇款", "保留订单", "部分汇款", "挂单", "Pending Payment", "Hold Order", "Partial Payment"];
+  const canEditAddress = openOrderStatuses.includes(o?.customerStatus);
   const canPay = canEditAddress && hasAddress && parseFloat(o?.amountDue || "0") > 0;
 
   // V2.0.68: Filter payment methods based on shipping method

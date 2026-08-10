@@ -2439,3 +2439,15 @@
 - [x] 预约发货列表增加状态筛选下拉框
 - [x] TypeScript编译零错误，270项测试全部通过
 - [x] 保存checkpoint
+
+## V2.1.14 - 保留订单/部分汇款加单逻辑修复
+- [x] addMallItemsToOrder支持hold_order和partial_payment状态（mergeableStatuses扩展）
+- [x] addToSecureOrder tRPC procedure支持hold_order和partial_payment状态
+- [x] findMergeableHoldOrder/getMergeableHoldOrderById支持partial_payment状态
+- [x] createOrderFromLiveCapture合并逻辑支持partial_payment状态（physicalStatus NOT IN closed/cancelled/completed已包含）
+- [x] 加单后自动重新计算订单状态（addMallItemsToOrder新增recalcOrderStatus逻辑：paid>0且<total→partial_payment）
+- [x] CustomerOrderPage部分汇款/保留订单显示商城加单入口和购物车
+- [x] CustomerOrderPage canEditAddress扩展支持Hold Order和Partial Payment（openOrderStatuses包含中文标签）
+- [x] CustomerOrderPage STATUS_CONFIG更新为服务器返回的中文标签
+- [x] TypeScript编译零错误，270项测试全部通过
+- [ ] 保存checkpoint
