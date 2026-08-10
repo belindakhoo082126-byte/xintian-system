@@ -2358,10 +2358,10 @@ export async function getDashboardStats() {
     .from(membershipFeeReviews)
     .where(eq(membershipFeeReviews.flowStatus, "sent"));
 
-  // Needs follow-up
+  // Needs follow-up - count orders with membershipStatus = manual_follow_up
   const needsFollowUp = await db.select({ count: sql<number>`count(*)` })
-    .from(membershipFeeReviews)
-    .where(eq(membershipFeeReviews.needsManualFollowUp, true));
+    .from(orders)
+    .where(eq(orders.membershipStatus, "manual_follow_up"));
 
   // Membership revenue this month
   const revenueResult = await db.select({
@@ -6718,6 +6718,9 @@ export async function getDashboardV11Stats() {
         return total > 0 ? Math.round((Number(notifSentCount[0]?.count || 0) / total) * 100) : 0;
       })(),
     },
+    // V2.1.25: Membership manual follow-up count (待人工发送)
+    membershipManualFollowUp: Number((await db.select({ count: sql`COUNT(*)` }).from(orders)
+      .where(eq(orders.membershipStatus, 'manual_follow_up')) as any[])[0]?.count || 0),
   };
 }
 

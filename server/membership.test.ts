@@ -297,7 +297,9 @@ describe("membership router - fee review flow", () => {
     expect(result.success).toBe(true);
     expect(result.flowSent).toBe(true);
     expect(dbMock.approveMembershipFee).toHaveBeenCalledWith(1, 1, undefined);
+    // V2.1.25: approveFee first sets fee_confirmed, then after flow success sets completed
     expect(dbMock.updateOrderStatus).toHaveBeenCalledWith(10, { membershipStatus: "fee_confirmed" });
+    expect(dbMock.updateOrderStatus).toHaveBeenCalledWith(10, { membershipStatus: "completed" });
     expect(dbMock.updateFlowStatus).toHaveBeenCalledWith(1, expect.objectContaining({ flowStatus: "sent" }));
   });
 
@@ -337,9 +339,11 @@ describe("membership router - fee review flow", () => {
       flowStatus: "failed",
       flowErrorMessage: expect.stringContaining("会员付款成功Flow"),
     }));
+    // V2.1.25: missing template → manual_follow_up (not flow_failed)
+    expect(dbMock.updateOrderStatus).toHaveBeenCalledWith(10, { membershipStatus: "manual_follow_up" });
   });
 
-  it("rejectFee resets order to pending", async () => {
+  it("rejectFee sets order to rejected", async () => {
     const mockReview = {
       id: 1,
       orderId: 10,
@@ -370,7 +374,8 @@ describe("membership router - fee review flow", () => {
 
     expect(result.success).toBe(true);
     expect(dbMock.rejectMembershipFee).toHaveBeenCalled();
-    expect(dbMock.updateOrderStatus).toHaveBeenCalledWith(10, { membershipStatus: "pending" });
+    // V2.1.25: rejectFee sets status to rejected (not pending)
+    expect(dbMock.updateOrderStatus).toHaveBeenCalledWith(10, { membershipStatus: "rejected" });
   });
 
   it("resendFlow sends flow again", async () => {
@@ -415,7 +420,8 @@ describe("membership router - fee review flow", () => {
 
     expect(result.success).toBe(true);
     expect(dbMock.updateFlowStatus).toHaveBeenCalledWith(1, expect.objectContaining({ flowStatus: "sent" }));
-    expect(dbMock.updateOrderStatus).toHaveBeenCalledWith(10, { membershipStatus: "flow_sent" });
+    // V2.1.25: resendFlow success → completed (not flow_sent)
+    expect(dbMock.updateOrderStatus).toHaveBeenCalledWith(10, { membershipStatus: "completed" });
   });
 
   it("cancelMembershipOrder sets cancelled status", async () => {

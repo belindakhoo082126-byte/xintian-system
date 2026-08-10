@@ -525,9 +525,12 @@ export const orders = mysqlTable("orders", {
     "special",           // 特别订单 - special order
   ]).default("pending"),
   membershipStatus: mysqlEnum("membershipStatus", [
-    "pending", "receipt_uploaded", "pending_review",
-    "fee_confirmed", "flow_sent", "flow_failed",
-    "manual_follow_up", "completed", "cancelled"
+    "pending",           // 待汇款
+    "fee_confirmed",     // 已汇款
+    "manual_follow_up",  // 待人工发送
+    "completed",         // 已完成
+    "rejected",          // 已拒绝
+    "cancelled"          // 已取消
   ]).default("pending"),
   shippingAddress: text("shippingAddress"),
   shippingMethod: mysqlEnum("shippingMethod", [

@@ -1846,9 +1846,10 @@ export const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         await db.createMembershipReview(input);
-        // Also update order membership status to receipt_uploaded
+        // Order stays pending (待汇款) - review is an internal task, not a business status
+        // If order was rejected, set back to pending so customer can re-upload
         await db.updateOrderStatus(input.orderId, {
-          membershipStatus: "receipt_uploaded",
+          membershipStatus: "pending",
           receiptUrl: input.receiptFileUrl,
         });
         return { success: true };
@@ -1932,9 +1933,9 @@ export const appRouter = router({
                 flowSentAt: new Date(),
               });
 
-              // Update order status to flow_sent
+              // Flow sent successfully → completed (已完成)
               await db.updateOrderStatus(review.orderId, {
-                membershipStatus: "flow_sent",
+                membershipStatus: "completed",
               });
 
               return {
@@ -1949,8 +1950,9 @@ export const appRouter = router({
                 flowErrorMessage: flowResult.error || "Messenger API send failed",
               });
 
+              // Flow failed → manual_follow_up (待人工发送)
               await db.updateOrderStatus(review.orderId, {
-                membershipStatus: "flow_failed",
+                membershipStatus: "manual_follow_up",
               });
 
               return {
@@ -1966,8 +1968,9 @@ export const appRouter = router({
               flowErrorMessage: "会员付款成功Flow尚未设置/未启用",
             });
 
+            // No flow configured → manual_follow_up (待人工发送)
             await db.updateOrderStatus(review.orderId, {
-              membershipStatus: "flow_failed",
+              membershipStatus: "manual_follow_up",
             });
 
             return {
@@ -1982,8 +1985,9 @@ export const appRouter = router({
             flowErrorMessage: error.message,
           });
 
+          // Error → manual_follow_up (待人工发送)
           await db.updateOrderStatus(review.orderId, {
-            membershipStatus: "flow_failed",
+            membershipStatus: "manual_follow_up",
           });
 
           return {
@@ -2005,9 +2009,9 @@ export const appRouter = router({
 
         await db.rejectMembershipFee(input.reviewId, ctx.user.id, input.notes);
 
-        // Reset order membership status back to pending
+        // Set order membership status to rejected (已拒绝) - customer can re-upload
         await db.updateOrderStatus(review.orderId, {
-          membershipStatus: "pending",
+          membershipStatus: "rejected",
         });
 
         return { success: true };
@@ -2067,8 +2071,9 @@ export const appRouter = router({
             flowErrorMessage: undefined,
           });
 
+          // Resend success → completed (已完成)
           await db.updateOrderStatus(review.orderId, {
-            membershipStatus: "flow_sent",
+            membershipStatus: "completed",
           });
 
           return {
@@ -2082,6 +2087,11 @@ export const appRouter = router({
             flowErrorMessage: flowResult.error,
           });
 
+          // Resend failed → stay manual_follow_up (待人工发送)
+          await db.updateOrderStatus(review.orderId, {
+            membershipStatus: "manual_follow_up",
+          });
+
           return {
             success: false,
             message: `Flow 重发失败: ${flowResult.error}`,
@@ -2089,17 +2099,16 @@ export const appRouter = router({
         }
       }),
 
-    markLinkClicked: adminProcedure
+    markMembershipCompleted: adminProcedure
       .input(z.object({ reviewId: z.number() }))
       .mutation(async ({ input }) => {
-        await db.markTelegramLinkClicked(input.reviewId);
-        // Also update order to completed
         const review = await db.getMembershipReviewById(input.reviewId);
-        if (review) {
-          await db.updateOrderStatus(review.orderId, {
-            membershipStatus: "completed",
-          });
-        }
+        if (!review) throw new Error("Review not found");
+
+        // Admin manually marks as completed (after manual sending)
+        await db.updateOrderStatus(review.orderId, {
+          membershipStatus: "completed",
+        });
         return { success: true };
       }),
 

@@ -2560,3 +2560,23 @@
 - [x] 移除Membership.tsx中硬编码的Telegram链接和copyTelegramLink按钮
 - [x] Flows.tsx简化编辑界面：移除按钮名称/按钮链接/未点击提醒/人工跟进/多步骤配置
 - [x] TypeScript编译零错误，测试通过
+## V2.1.25 - 会员订单状态重构（5个主要状态替代原有9个状态）
+- [x] 数据库orders表membershipStatus enum添加rejected状态（SQL直接执行）
+- [x] 数据库orders表membershipStatus enum添加cancelled状态（SQL直接执行）
+- [x] 数据库迁移旧状态到新状态：receipt_uploaded→pending, pending_review→pending, flow_sent→completed, flow_failed→manual_follow_up
+- [x] schema.ts的membershipStatus enum更新为新6个状态：pending/fee_confirmed/manual_follow_up/completed/rejected/cancelled
+- [x] routers.ts approveFee修改：审核通过→fee_confirmed→发Flow→成功completed/失败manual_follow_up
+- [x] routers.ts rejectFee修改：拒绝→rejected（不是cancelled，订单不结束）
+- [x] routers.ts resendFlow修改：重发成功→completed，失败保持manual_follow_up
+- [x] routers.ts createReview修改：客户上传凭证→创建review记录，订单保持pending（不再设receipt_uploaded）
+- [x] routers.ts 新增markMembershipCompleted procedure（Admin手动标记已完成）
+- [x] routers.ts 移除markLinkClicked procedure（不再需要）
+- [x] Membership.tsx STATUS_MAP更新为6个状态：待汇款/已汇款/待人工发送/已完成/已拒绝/已取消
+- [x] Membership.tsx 筛选选项更新（移除旧状态）
+- [x] Membership.tsx 添加复制会员通知按钮（仅manual_follow_up状态，内容来自Flow文案）
+- [x] Membership.tsx 添加标记已完成按钮（仅manual_follow_up状态）
+- [x] Dashboard新增会员待人工发送统计卡片，点击跳转到会员订单管理
+- [x] db.ts getDashboardStats needsFollowUp改为查询orders.membershipStatus='manual_follow_up'
+- [x] db.ts getDashboardV11Stats新增membershipManualFollowUp统计
+- [x] membership.test.ts更新断言：approveFee→fee_confirmed+completed, rejectFee→rejected, resendFlow→completed, missing template→manual_follow_up
+- [x] TypeScript编译零错误，270测试全部通过

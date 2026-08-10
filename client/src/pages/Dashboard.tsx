@@ -8,6 +8,7 @@ import {
   ShoppingBag, CheckCircle, XCircle, Ban,
   Bot, ArrowRight, AlertTriangle,
   Plane, Eye, Home, FileText, MessageCircle, Send,
+  Crown,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useI18n } from "@/contexts/I18nContext";
@@ -109,6 +110,8 @@ export default function Dashboard() {
     { title: lang === "zh" ? "今日预约发货" : "Today Scheduled", value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "/packing?tab=scheduled&date=today" },
     { title: lang === "zh" ? "未读 Messenger" : "Unread Messenger", value: 0, icon: MessageCircle, color: "text-pink-500", link: "/messenger" },
     { title: lang === "zh" ? "库存预警" : "Stock Alert", value: stats.row3.lowStock + stats.row3.outOfStock, icon: Warehouse, color: "text-red-500", link: "/products-v2?stock=low" },
+    // V2.1.25: Membership manual follow-up (待人工发送)
+    { title: lang === "zh" ? "会员待人工发送" : "Membership Manual Follow Up", value: (stats as any).membershipManualFollowUp || 0, icon: Crown, color: "text-amber-500", link: "/membership" },
   ];
 
 
