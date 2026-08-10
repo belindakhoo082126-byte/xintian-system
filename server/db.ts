@@ -5708,7 +5708,7 @@ export async function getPackingOrders(status: string) {
   statusConditions.push(
     and(
       eq(orders.physicalStatus, status as any),
-      sql`(orders.order_category IS NULL OR orders.order_category = 'local')`
+      sql`(orders.orderCategory IS NULL OR orders.orderCategory = 'local')`
     )
   );
   // Import orders by importStatus (map packing→ready_to_ship, shipped→shipped, etc.)
@@ -5723,7 +5723,7 @@ export async function getPackingOrders(status: string) {
     statusConditions.push(
       and(
         eq(orders.orderCategory, "import" as any),
-        sql`orders.import_status IN (${sql.raw(importStatuses.map(s => `'${s}'`).join(","))})`
+        sql`orders.importStatus IN (${sql.raw(importStatuses.map(s => `'${s}'`).join(","))})`
       )
     );
   }

@@ -2601,3 +2601,7 @@
 - [x] routers.ts listReviews procedure新增membershipStatus参数
 - [x] db.ts getMembershipReviews新增membershipStatus筛选（通过orders表join查询）
 - [x] TypeScript编译零错误，270测试全部通过
+
+## V2.1.26 补充2 - 包货工作台订单不显示Bug修复
+- [x] 修复getPackingOrders中snake_case列名bug：orders.order_category→orders.orderCategory，orders.import_status→orders.importStatus（TiDB列名大小写敏感）
+- [x] TypeScript编译零错误，270测试全部通过
