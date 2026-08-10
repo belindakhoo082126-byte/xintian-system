@@ -94,6 +94,17 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const receiptFileRef = useRef<HTMLInputElement>(null);
 
+  // Edit payment state
+  const [editPaymentId, setEditPaymentId] = useState<number | null>(null);
+  const [editPaymentDialogOpen, setEditPaymentDialogOpen] = useState(false);
+  const [editPaymentForm, setEditPaymentForm] = useState({ amount: "", paymentMethod: "", receiptUrl: "", notes: "" });
+  const [editUploadingReceipt, setEditUploadingReceipt] = useState(false);
+  const editReceiptFileRef = useRef<HTMLInputElement>(null);
+
+  // Overpayment processing state
+  const [overpaymentDialogOpen, setOverpaymentDialogOpen] = useState(false);
+  const [overpaymentForm, setOverpaymentForm] = useState({ method: "credit", amount: "", notes: "" });
+
   // Remark state
   const [remarkDialogOpen, setRemarkDialogOpen] = useState(false);
   const [remarkForm, setRemarkForm] = useState({
@@ -179,6 +190,26 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     onError: (e: any) => toast.error(translate("添加付款失败: {message}", "Payment failed: {message}", { message: e.message })),
   });
 
+  const editPaymentMutation = trpc.orders.editPayment.useMutation({
+    onSuccess: () => {
+      utils.orders.getDetail.invalidate({ id: orderId });
+      toast.success(translate("付款记录已更新", "Payment record updated"));
+      setEditPaymentDialogOpen(false);
+      setEditPaymentId(null);
+    },
+    onError: (e: any) => toast.error(translate("编辑付款失败: {message}", "Edit payment failed: {message}", { message: e.message })),
+  });
+
+  const processOverpaymentMutation = trpc.orders.processOverpayment.useMutation({
+    onSuccess: () => {
+      utils.orders.getDetail.invalidate({ id: orderId });
+      toast.success(translate("多汇款已处理", "Overpayment processed"));
+      setOverpaymentDialogOpen(false);
+      setOverpaymentForm({ method: "credit", amount: "", notes: "" });
+    },
+    onError: (e: any) => toast.error(translate("处理失败: {message}", "Processing failed: {message}", { message: e.message })),
+  });
+
   const createRemarkMutation = trpc.orderRemarks.create.useMutation({
     onSuccess: () => {
       utils.orderRemarks.list.invalidate({ orderId });
@@ -247,6 +278,75 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
       paymentMethod: paymentForm.paymentMethodName || undefined,
       receiptUrl: paymentForm.receiptUrl || undefined,
       notes: paymentForm.notes || undefined,
+    });
+  }
+
+  async function handleEditUploadReceipt(file: File) {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(translate("文件大小不能超过 10MB", "File size cannot exceed 10MB"));
+      return;
+    }
+    setEditUploadingReceipt(true);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: base64, filename: file.name, contentType: file.type }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Upload failed");
+      }
+      const data = await res.json();
+      setEditPaymentForm(prev => ({ ...prev, receiptUrl: data.url }));
+      toast.success(translate("单据已上传", "Receipt uploaded"));
+    } catch (e: any) {
+      toast.error(translate("上传失败: {message}", "Upload failed: {message}", { message: e.message }));
+    } finally {
+      setEditUploadingReceipt(false);
+    }
+  }
+
+  function handleEditPayment() {
+    if (!editPaymentId) return;
+    if (!editPaymentForm.amount || parseFloat(editPaymentForm.amount) <= 0) {
+      toast.error(translate("请输入有效金额", "Please enter a valid amount"));
+      return;
+    }
+    editPaymentMutation.mutate({
+      paymentId: editPaymentId,
+      amount: editPaymentForm.amount,
+      paymentMethod: editPaymentForm.paymentMethod || undefined,
+      receiptUrl: editPaymentForm.receiptUrl || undefined,
+      notes: editPaymentForm.notes || undefined,
+    });
+  }
+
+  function handleProcessOverpayment() {
+    const orderData = order as any;
+    const overpaid = parseFloat(orderData?.overpaidAmount || "0");
+    const resolved = parseFloat(orderData?.resolvedOverpaymentAmount || "0");
+    const pending = overpaid - resolved;
+    if (!overpaymentForm.amount || parseFloat(overpaymentForm.amount) <= 0) {
+      toast.error(translate("请输入有效金额", "Please enter a valid amount"));
+      return;
+    }
+    if (parseFloat(overpaymentForm.amount) > pending) {
+      toast.error(translate("处理金额不能超过待处理多汇款", "Amount cannot exceed pending overpayment"));
+      return;
+    }
+    processOverpaymentMutation.mutate({
+      orderId,
+      method: overpaymentForm.method as "credit" | "tng" | "cash" | "bank_transfer" | "other",
+      amount: overpaymentForm.amount,
+      notes: overpaymentForm.notes || undefined,
     });
   }
 
@@ -819,7 +919,9 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                   <TableHead className="p-3 text-right">{translate("金额", "Amount")}</TableHead>
                   <TableHead className="p-3">{translate("付款方式", "Method")}</TableHead>
                   <TableHead className="p-3">{translate("付款凭证", "Receipt")}</TableHead>
+                  <TableHead className="p-3">{translate("审核状态", "Review")}</TableHead>
                   <TableHead className="p-3">{translate("备注", "Notes")}</TableHead>
+                  <TableHead className="p-3 text-center">{translate("操作", "Action")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -829,12 +931,32 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                     <TableCell className="p-3 text-right font-medium">RM {parseFloat(p.amount).toFixed(2)}</TableCell>
                     <TableCell className="p-3">{p.paymentMethod || p.paymentMethodName || "-"}</TableCell>
                     <TableCell className="p-3">{p.receiptUrl ? <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{translate("查看", "View")}</a> : "-"}</TableCell>
+                    <TableCell className="p-3">
+                      {p.reviewStatus === "approved" ? <Badge className="bg-green-100 text-green-700">{translate("已确认", "Approved")}</Badge>
+                      : p.reviewStatus === "pending" ? <Badge className="bg-yellow-100 text-yellow-700">{translate("待审核", "Pending")}</Badge>
+                      : p.reviewStatus === "rejected" ? <Badge className="bg-red-100 text-red-700">{translate("审核失败", "Rejected")}</Badge>
+                      : <Badge className="bg-gray-100 text-gray-600">-</Badge>}
+                    </TableCell>
                     <TableCell className="p-3 text-muted-foreground">{p.notes || "-"}</TableCell>
+                    <TableCell className="p-3 text-center">
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        setEditPaymentId(p.id);
+                        setEditPaymentForm({
+                          amount: String(p.amount),
+                          paymentMethod: p.paymentMethod || p.paymentMethodName || "",
+                          receiptUrl: p.receiptUrl || "",
+                          notes: p.notes || "",
+                        });
+                        setEditPaymentDialogOpen(true);
+                      }}>
+                        <DollarSign className="h-3 w-3 mr-1" />{translate("编辑", "Edit")}
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
                 {(!((order as any)?.payments || []).length) && (
                   <TableRow>
-                    <TableCell colSpan={5} className="p-6 text-center text-muted-foreground">{translate("无付款记录", "No payment records")}</TableCell>
+                    <TableCell colSpan={7} className="p-6 text-center text-muted-foreground">{translate("无付款记录", "No payment records")}</TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -842,6 +964,145 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
           </div>
         </CardContent>
       </Card>
+
+      {/* Overpayment Processing Section */}
+      {(() => {
+        const orderData = order as any;
+        const overpaid = parseFloat(orderData?.overpaidAmount || "0");
+        const resolved = parseFloat(orderData?.resolvedOverpaymentAmount || "0");
+        const pending = overpaid - resolved;
+        if (overpaid > 0) {
+          return (
+            <Card className="border-orange-300 bg-orange-50/50">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2 text-orange-700">
+                  <DollarSign className="h-4 w-4" />
+                  {translate("多汇款处理", "Overpayment Processing")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">{translate("客户多付", "Customer Overpaid")}</span>
+                    <p className="text-lg font-bold text-orange-600">RM {overpaid.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{translate("已处理", "Resolved")}</span>
+                    <p className="text-lg font-bold text-green-600">RM {resolved.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{translate("待处理", "Pending")}</span>
+                    <p className="text-lg font-bold text-red-600">RM {pending.toFixed(2)}</p>
+                  </div>
+                </div>
+                {pending > 0 && (
+                  <Button variant="default" size="sm" onClick={() => {
+                    setOverpaymentForm({ method: "credit", amount: String(pending), notes: "" });
+                    setOverpaymentDialogOpen(true);
+                  }}>
+                    <DollarSign className="h-3 w-3 mr-1" />{translate("处理多汇款", "Process Overpayment")}
+                  </Button>
+                )}
+                {pending <= 0 && (
+                  <Badge className="bg-green-100 text-green-700">{translate("多汇款已全部处理", "Overpayment fully resolved")}</Badge>
+                )}
+              </CardContent>
+            </Card>
+          );
+        }
+        return null;
+      })()}
+
+      {/* Edit Payment Dialog */}
+      <Dialog open={editPaymentDialogOpen} onOpenChange={setEditPaymentDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{translate("编辑付款记录", "Edit Payment Record")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("金额", "Amount")}</Label>
+              <Input type="number" step="0.01" value={editPaymentForm.amount} onChange={e => setEditPaymentForm(prev => ({ ...prev, amount: e.target.value }))} />
+            </div>
+            <div>
+              <Label>{translate("付款方式", "Payment Method")}</Label>
+              <Select value={editPaymentForm.paymentMethod} onValueChange={v => setEditPaymentForm(prev => ({ ...prev, paymentMethod: v }))}>
+                <SelectTrigger><SelectValue placeholder={translate("选择付款方式", "Select payment method")} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="duitnow_qr">DuitNow QR</SelectItem>
+                  <SelectItem value="tng_ewallet">Touch 'n Go eWallet</SelectItem>
+                  <SelectItem value="bank_transfer">Online Transfer</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{translate("上传付款单据", "Upload Receipt")}</Label>
+              <input ref={editReceiptFileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleEditUploadReceipt(f); e.target.value = ""; }} />
+              {editPaymentForm.receiptUrl ? (
+                <div className="flex items-center gap-2">
+                  <a href={editPaymentForm.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline truncate flex-1">{translate("查看单据", "View Receipt")}</a>
+                  <Button variant="ghost" size="sm" onClick={() => setEditPaymentForm(prev => ({ ...prev, receiptUrl: "" }))}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => editReceiptFileRef.current?.click()} disabled={editUploadingReceipt} className="w-full">
+                  {editUploadingReceipt ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />{translate("上传中...", "Uploading...")}</> : <><Upload className="h-3 w-3 mr-1" />{translate("选择文件", "Choose File")}</>}
+                </Button>
+              )}
+            </div>
+            <div>
+              <Label>{translate("备注", "Notes")}</Label>
+              <Textarea value={editPaymentForm.notes} onChange={e => setEditPaymentForm(prev => ({ ...prev, notes: e.target.value }))} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPaymentDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={handleEditPayment} disabled={editPaymentMutation.isPending}>
+              {editPaymentMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+              {translate("保存", "Save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Overpayment Processing Dialog */}
+      <Dialog open={overpaymentDialogOpen} onOpenChange={setOverpaymentDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{translate("处理多汇款", "Process Overpayment")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("退款方式", "Refund Method")}</Label>
+              <Select value={overpaymentForm.method} onValueChange={v => setOverpaymentForm(prev => ({ ...prev, method: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="credit">{translate("转入客户 Credit", "Refund to Customer Credit")}</SelectItem>
+                  <SelectItem value="tng">{translate("TNG 退款", "TNG Refund")}</SelectItem>
+                  <SelectItem value="cash">{translate("Cash 退款", "Cash Refund")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{translate("退款金额", "Refund Amount")}</Label>
+              <Input type="number" step="0.01" value={overpaymentForm.amount} onChange={e => setOverpaymentForm(prev => ({ ...prev, amount: e.target.value }))} />
+            </div>
+            <div>
+              <Label>{translate("备注", "Notes")}</Label>
+              <Textarea value={overpaymentForm.notes} onChange={e => setOverpaymentForm(prev => ({ ...prev, notes: e.target.value }))} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOverpaymentDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={handleProcessOverpayment} disabled={processOverpaymentMutation.isPending}>
+              {processOverpaymentMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+              {translate("确认处理", "Confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Section 7: Remarks */}
       <Card>

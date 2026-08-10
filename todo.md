@@ -2523,3 +2523,14 @@
 - [x] Customers.tsx客户详情地址显示改为完整结构化地址（address+city+state+postcode+country）
 - [x] Customers.tsx新建客户对话框新增城市/州属/邮编/国家输入框
 - [x] TypeScript编译零错误，270测试通过
+
+## V2.1.21 - 订单管理Bug修复（9项）
+- [x] Bug1: OrderEditPage区域6付款记录添加Edit按钮（修改金额/汇款方式/上传单据/备注）
+- [x] Bug2: 额外汇款订单自动记录特别订单状态+待发货状态（recalculateOrderBalance已处理）
+- [x] Bug3: Dashboard多汇款同步显示（已确认无需修改）
+- [x] Bug4: 区域6汇款记录提供处理退款方式选项（Credit/TNG/Cash）
+- [x] Bug5: 退款处理完成后订单不再显示特别状态，Dashboard同步更新
+- [x] Bug6: 本地订单状态筛选移除特别订单选项
+- [x] Bug7: 每个订单操作旁保留复制链接按钮（已确认存在）
+- [x] Bug8: 客户地址结构化字段（addressLine1/addressLine2/postcode新增到orders+customers表+schema.ts）
+- [x] Bug9: 客户结账页面备注自定义文本无法保存（remarkCategory enum新增customer_other+invalidation修复）

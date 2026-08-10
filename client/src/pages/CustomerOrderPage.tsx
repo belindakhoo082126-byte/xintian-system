@@ -91,6 +91,10 @@ export default function CustomerOrderPage(props: any) {
   const submitRemarkMutation = trpc.publicOrder.updateRemark.useMutation({
     onSuccess: () => {
       toast.success("备注已保存");
+      setCustomerRemark("");
+      setRepotService(false);
+      setRepottingEntries([]);
+      utils.publicOrder.getByToken.invalidate({ orderNumber, token });
     },
     onError: (e: any) => toast.error("保存失败: " + e.message),
   });

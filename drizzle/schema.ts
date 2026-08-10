@@ -440,9 +440,13 @@ export const customers = mysqlTable("customers", {
   phoneNumber: varchar("phoneNumber", { length: 20 }),
   email: varchar("email", { length: 255 }),
   address: text("address"),
+  // V2.1.21: Structured address fields for customer profile
+  addressLine1: varchar("addressLine1", { length: 500 }),
+  addressLine2: varchar("addressLine2", { length: 500 }),
   city: varchar("city", { length: 100 }),
   state: varchar("state", { length: 100 }),
   postalCode: varchar("postalCode", { length: 20 }),
+  postcode: varchar("postcode", { length: 20 }),
   country: varchar("country", { length: 100 }),
   shopLinkIdentifier: varchar("shopLinkIdentifier", { length: 255 }),
   totalOrders: int("totalOrders").default(0),
@@ -630,6 +634,10 @@ export const orders = mysqlTable("orders", {
   // V2.0.85: Recipient info (stored on order for display)
   recipientName: varchar("recipientName", { length: 255 }),
   recipientPhone: varchar("recipientPhone", { length: 50 }),
+  // V2.1.21: Structured address fields (matching customer table)
+  addressLine1: varchar("addressLine1", { length: 500 }),
+  addressLine2: varchar("addressLine2", { length: 500 }),
+  postcode: varchar("postcode", { length: 20 }),
   recipientCity: varchar("recipientCity", { length: 100 }),
   recipientState: varchar("recipientState", { length: 100 }),
   recipientPostcode: varchar("recipientPostcode", { length: 20 }),
@@ -1314,7 +1322,9 @@ export const orderRemarks = mysqlTable("order_remarks", {
   remarkCategory: mysqlEnum("remarkCategory", [
     "repotting",              // 换盆
     "desired_delivery_date",  // 希望收货日期
+    "select_tree",            // 选树
     "other",                  // 其他
+    "customer_other",         // 客户自定义备注
   ]),
   content: text("content").notNull(),
   // V3.0: Scheduled shipping date (legacy field, kept for backward compat)

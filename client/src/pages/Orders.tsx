@@ -29,7 +29,6 @@ const PHYSICAL_STATUS = {
   shipped: { label: "已发货", enLabel: "Shipped", variant: "default" },
   completed: { label: "已完成", enLabel: "Completed", variant: "default" },
   cancelled: { label: "已取消", enLabel: "Cancelled", variant: "destructive" },
-  special: { label: "特别订单", enLabel: "Special Order", variant: "secondary" },
 } as const;
 
 // V2.0.99: XTC Import order statuses (final unified version)
