@@ -21,6 +21,21 @@ const REMARK_CATEGORY_LABELS: Record<string, { zh: string; en: string; color: st
   other: { zh: "其他", en: "Other", color: "bg-gray-100 text-gray-700" },
 };
 
+export const SPECIAL_STATUS_LABELS: Record<string, { zh: string; en: string }> = {
+  pending_shipping: { zh: "待补运费", en: "Pending Shipping Fee" },
+  pending_refund: { zh: "待退款", en: "Pending Refund" },
+  company_bear: { zh: "公司承担", en: "Company Covered" },
+  logistics_error: { zh: "物流异常", en: "Logistics Error" },
+  incomplete_info: { zh: "资料异常", en: "Incomplete Information" },
+  notification_failed: { zh: "通知失败", en: "Notification Failed" },
+  stock_exception: { zh: "库存异常", en: "Stock Exception" },
+  overdue: { zh: "超时未处理", en: "Overdue" },
+  partial_payment: { zh: "部分汇款", en: "Partial Payment" },
+  over_payment: { zh: "多汇款", en: "Over Payment" },
+  amount_changed: { zh: "金额异常", en: "Amount Changed" },
+  other: { zh: "其他", en: "Other" },
+};
+
 export default function Dashboard() {
   const { t, lang } = useI18n();
   const { data: stats, isLoading } = trpc.dashboardV11.stats.useQuery();
@@ -298,13 +313,13 @@ export default function Dashboard() {
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <Badge className={item.specialTypeColor === "orange" ? "bg-orange-100 text-orange-700" : item.specialTypeColor === "red" ? "bg-red-100 text-red-700" : item.specialTypeColor === "yellow" ? "bg-yellow-100 text-yellow-700" : item.specialTypeColor === "blue" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-700"} variant="secondary">
-                          {item.specialTypeLabel}
+                          {SPECIAL_STATUS_LABELS[item.specialType]?.[lang] ?? item.specialTypeLabel}
                         </Badge>
                         {item.orderCategory === 'import' && (
-                          <Badge className="bg-purple-100 text-purple-700" variant="secondary">中国代购</Badge>
+                          <Badge className="bg-purple-100 text-purple-700" variant="secondary">{lang === "zh" ? "中国代购" : "Import Pre-order"}</Badge>
                         )}
                         {item.orderCategory !== 'import' && (
-                          <Badge className="bg-green-100 text-green-700" variant="secondary">本地</Badge>
+                          <Badge className="bg-green-100 text-green-700" variant="secondary">{lang === "zh" ? "本地" : "Local"}</Badge>
                         )}
                         <span className={`text-xs ${item.isOverdue ? "font-bold text-red-600" : "text-muted-foreground"}`}>
                           {item.isOverdue ? (lang === "zh" ? `超时 ${item.waitHours}h` : `Overdue ${item.waitHours}h`) : `${item.waitHours}h`}
