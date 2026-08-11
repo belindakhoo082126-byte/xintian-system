@@ -169,6 +169,21 @@ describe("商城主题完整视觉系统", () => {
     expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
   });
 
+  it("情人节使用暖白纸感、玫瑰酒红、尘雾粉、鼠尾草绿与香槟金，并有专属连续花语庭园背景", () => {
+    const valentineTheme = getMallTheme("valentine");
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+    expect(valentineTheme.visual.description.zh).toContain("连续花语庭园水彩");
+    expect(valentineTheme.visual.description.zh).toContain("玫瑰花枝");
+    expect(valentineTheme.colors).toMatchObject({ primary: "#8f3040", secondary: "#aab69a", button: "#c66f7d", background: "#fff8f3" });
+    expect(valentineTheme.visual.motifs).toContain("♥");
+    expect(artwork).toContain("VALENTINE_CONTINUOUS_BACKGROUND_URL");
+    expect(artwork).toContain("xintian-valentine-continuous-floral-love-garden_21d3202a.png");
+    expect(artwork).toContain('theme.key === "valentine"');
+    expect(artwork).toContain("fixed inset-0 z-0");
+    expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
+  });
+
   it("商城设置及客户商城主流程均使用统一的主题视觉配置，且不在页首展示主题公仔", () => {
     const root = path.resolve(__dirname, "..");
     const settingsPage = fs.readFileSync(path.join(root, "client/src/pages/MallSettings.tsx"), "utf8");

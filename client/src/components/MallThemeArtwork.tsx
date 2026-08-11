@@ -12,6 +12,7 @@ const CNY_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-cny-continuous-pro
 const HARI_RAYA_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-hari-raya-continuous-emerald-moonlight-garden_da1892d4.png";
 const MERDEKA_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-malaysia-day-continuous-tropical-garden_c5b9f763.png";
 const MID_AUTUMN_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-midautumn-continuous-osmanthus-moonlight-garden_52e83413.png";
+const VALENTINE_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-valentine-continuous-floral-love-garden_21d3202a.png";
 
 function themeSurfaceStyle(theme: MallTheme): CSSProperties {
   return {
@@ -187,6 +188,21 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
         <div
           className="absolute inset-0"
           style={{ background: "linear-gradient(180deg, rgba(255,252,245,0.10) 0%, rgba(248,244,232,0.02) 44%, rgba(238,231,211,0.17) 100%)" }}
+        />
+      </div>
+    );
+  }
+
+  if (theme.key === "valentine") {
+    return (
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          style={{ backgroundImage: `url(${VALENTINE_CONTINUOUS_BACKGROUND_URL})` }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{ background: "linear-gradient(180deg, rgba(255,251,247,0.10) 0%, rgba(255,247,242,0.02) 44%, rgba(248,232,225,0.16) 100%)" }}
         />
       </div>
     );
