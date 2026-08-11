@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import type { MallTheme, ResolvedMallTheme } from "@/lib/mallTheme";
 
 type ThemeArtworkProps = { theme: MallTheme | ResolvedMallTheme; active?: boolean };
+const NATURAL_BOTANICAL_FRAME_URL = "/manus-storage/xintian-natural-watercolor-botanical-frame_45f83b37.png";
 
 function themeSurfaceStyle(theme: MallTheme): CSSProperties {
   return {
@@ -32,15 +33,31 @@ export function MallThemePreview({ theme, active = false }: ThemeArtworkProps) {
 }
 
 export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
+  if (theme.key === "xintian_nature") {
+    return (
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div
+          className="absolute inset-x-0 top-0 h-[34rem] bg-top bg-no-repeat opacity-75 sm:h-[42rem]"
+          style={{ backgroundImage: `url(${NATURAL_BOTANICAL_FRAME_URL})`, backgroundSize: "min(1500px, 118vw) auto" }}
+        />
+        <div
+          className="absolute inset-x-0 bottom-0 h-72 rotate-180 bg-top bg-no-repeat opacity-55 sm:h-96"
+          style={{ backgroundImage: `url(${NATURAL_BOTANICAL_FRAME_URL})`, backgroundSize: "min(1500px, 118vw) auto" }}
+        />
+        <div className="absolute -left-24 top-[32rem] h-72 w-80 rounded-[48%_52%_44%_56%/58%_44%_56%_42%] opacity-35" style={{ background: "#b8c3ad" }} />
+        <div className="absolute -right-28 top-[46rem] h-64 w-72 rounded-[56%_44%_52%_48%/44%_56%_42%_58%] opacity-25" style={{ background: "#d8c4a5" }} />
+      </div>
+    );
+  }
+
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
       <div className="absolute -left-10 top-40 flex h-28 w-28 items-center justify-center rounded-full border border-white/70 text-4xl opacity-55" style={{ background: `${theme.secondary}42`, color: theme.primary, boxShadow: `0 16px 38px ${theme.primary}12` }}>{theme.visual.motifs[0]}</div>
       <div className="absolute right-4 top-28 flex items-center gap-1.5 rounded-full border border-white/80 px-3 py-2 text-xl opacity-70 shadow-sm backdrop-blur-sm" style={{ background: `${theme.background}c9`, color: theme.primary, boxShadow: `0 10px 28px ${theme.primary}12` }}>
-        <span className="text-2xl">{theme.visual.mascot.glyph}</span>
-        {theme.visual.motifs.slice(0, 2).map((motif, index) => <span key={`${motif}-${index}`}>{motif}</span>)}
+        {theme.visual.motifs.slice(0, 3).map((motif, index) => <span key={`${motif}-${index}`}>{motif}</span>)}
       </div>
       <div className="absolute -right-8 top-[34rem] flex h-32 w-32 items-center justify-center rounded-full border border-white/70 text-5xl opacity-40" style={{ background: `${theme.secondary}4d`, color: theme.primary }}>{theme.visual.motifs[1]}</div>
-      <div className="absolute bottom-44 left-[8%] flex items-center gap-2 text-4xl opacity-30" style={{ color: theme.primary }}><span>{theme.visual.motifs[2]}</span><span className="text-5xl">{theme.visual.mascot.glyph}</span></div>
+      <div className="absolute bottom-44 left-[8%] flex items-center gap-2 text-4xl opacity-30" style={{ color: theme.primary }}><span>{theme.visual.motifs[2]}</span><span>{theme.visual.motifs[0]}</span></div>
     </div>
   );
 }
