@@ -23,7 +23,7 @@ export function MallThemePreview({ theme, active = false }: ThemeArtworkProps) {
         {theme.visual.mascot.glyph}
       </div>
       <div className="absolute bottom-3 left-20 right-3">
-        <p className="text-sm font-bold" style={{ color: theme.colors.font }}>{theme.visual.mascot.name.zh}</p>
+        <p className="text-sm font-bold" style={{ color: theme.colors.font }}>主题插画预览</p>
         <p className="mt-0.5 line-clamp-2 text-[11px] leading-4" style={{ color: `${theme.colors.font}b3` }}>{theme.visual.description.zh}</p>
       </div>
       {active && <span className="absolute left-3 top-3 rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: theme.colors.primary }}>当前使用</span>}
@@ -31,21 +31,16 @@ export function MallThemePreview({ theme, active = false }: ThemeArtworkProps) {
   );
 }
 
-export function MallThemeMascot({ theme, compact = false }: ThemeArtworkProps & { compact?: boolean }) {
-  return (
-    <div className={`mall-theme-mascot inline-flex items-center rounded-full border border-white/80 bg-white/65 shadow-sm backdrop-blur-sm ${compact ? "gap-1 px-1.5 py-1" : "gap-2 px-2.5 py-1.5"}`} style={{ boxShadow: `0 5px 16px ${theme.colors.primary}20` }}>
-      <span className={compact ? "text-base leading-none" : "text-2xl leading-none"} aria-hidden="true">{theme.visual.mascot.glyph}</span>
-      {!compact && <span className="text-xs font-semibold" style={{ color: theme.colors.font }}>{theme.visual.mascot.name.zh}</span>}
-    </div>
-  );
-}
-
 export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-      <div className="absolute -left-10 top-36 flex h-28 w-28 items-center justify-center rounded-full border border-white/70 text-4xl opacity-55" style={{ background: `${theme.secondary}42`, color: theme.primary, boxShadow: `0 16px 38px ${theme.primary}12` }}>{theme.visual.motifs[0]}</div>
+      <div className="absolute -left-10 top-40 flex h-28 w-28 items-center justify-center rounded-full border border-white/70 text-4xl opacity-55" style={{ background: `${theme.secondary}42`, color: theme.primary, boxShadow: `0 16px 38px ${theme.primary}12` }}>{theme.visual.motifs[0]}</div>
+      <div className="absolute right-4 top-28 flex items-center gap-1.5 rounded-full border border-white/80 px-3 py-2 text-xl opacity-70 shadow-sm backdrop-blur-sm" style={{ background: `${theme.background}c9`, color: theme.primary, boxShadow: `0 10px 28px ${theme.primary}12` }}>
+        <span className="text-2xl">{theme.visual.mascot.glyph}</span>
+        {theme.visual.motifs.slice(0, 2).map((motif, index) => <span key={`${motif}-${index}`}>{motif}</span>)}
+      </div>
       <div className="absolute -right-8 top-[34rem] flex h-32 w-32 items-center justify-center rounded-full border border-white/70 text-5xl opacity-40" style={{ background: `${theme.secondary}4d`, color: theme.primary }}>{theme.visual.motifs[1]}</div>
-      <div className="absolute bottom-44 left-[8%] text-4xl opacity-25" style={{ color: theme.primary }}>{theme.visual.motifs[2]}</div>
+      <div className="absolute bottom-44 left-[8%] flex items-center gap-2 text-4xl opacity-30" style={{ color: theme.primary }}><span>{theme.visual.motifs[2]}</span><span className="text-5xl">{theme.visual.mascot.glyph}</span></div>
     </div>
   );
 }

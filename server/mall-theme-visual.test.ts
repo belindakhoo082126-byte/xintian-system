@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 describe("商城主题完整视觉系统", () => {
-  it("为每个主题定义了背景图案、边缘装饰、图标元素和代表性公仔", () => {
+  it("为每个主题定义了背景图案、边缘装饰与符合节日或田园风格的图标元素", () => {
     expect(MALL_THEMES).toHaveLength(12);
     for (const theme of MALL_THEMES) {
       expect(theme.visual.pattern.length).toBeGreaterThan(20);
@@ -21,7 +21,7 @@ describe("商城主题完整视觉系统", () => {
     expect(customTheme.visual.mascot.name.zh).toBe("星芽");
   });
 
-  it("商城设置及客户商城主流程均使用统一的主题视觉配置", () => {
+  it("商城设置及客户商城主流程均使用统一的主题视觉配置，且不在页首展示主题公仔", () => {
     const root = path.resolve(__dirname, "..");
     const settingsPage = fs.readFileSync(path.join(root, "client/src/pages/MallSettings.tsx"), "utf8");
     const mallHome = fs.readFileSync(path.join(root, "client/src/pages/mall/MallHome.tsx"), "utf8");
@@ -31,7 +31,15 @@ describe("商城主题完整视觉系统", () => {
     expect(settingsPage).toContain("MALL_THEMES");
     expect(mallHome).toContain("MallThemeDecorations");
     expect(mallHome).toContain("getMallTheme");
+    expect(mallHome).not.toContain("MallThemeMascot");
+    expect(mallHome).not.toContain("主题小花园");
+    expect(mallHome).toContain("商城公告");
+    expect(mallHome).toContain("购物条款与政策");
+    expect(mallHome).toContain("serviceTerms");
+    expect(mallHome).not.toContain("仅剩{b.bundleStock}组");
     expect(productDetail).toContain("MallThemeDecorations");
-    expect(checkout).toContain("MallThemeMascot");
+    expect(productDetail).not.toContain("MallThemeMascot");
+    expect(checkout).toContain("MallThemeDecorations");
+    expect(checkout).not.toContain("MallThemeMascot");
   });
 });

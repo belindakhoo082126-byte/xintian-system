@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { ShoppingCart, Minus, Plus, ChevronLeft, Package, Truck, Shield, Sun, Droplets, Sparkles, Scissors, Plane } from "lucide-react";
 import { useI18n } from "@/contexts/I18nContext";
 import { getMallTheme } from "@/lib/mallTheme";
-import { MallThemeDecorations, MallThemeMascot } from "@/components/MallThemeArtwork";
+import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 
 export default function MallProductDetail() {
   const [location] = useLocation();
@@ -106,7 +106,6 @@ export default function MallProductDetail() {
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
           <Link href="/mall"><Button variant="ghost" size="icon"><ChevronLeft className="h-5 w-5" /></Button></Link>
           <Link href="/mall" className="flex items-center gap-2">
-            <MallThemeMascot theme={theme} compact />
             <span className="font-bold text-lg" style={{ color: theme.primary }}>{settings?.shopName || t("心田", "Xintian")}</span>
           </Link>
           <Link href="/mall/checkout" className="ml-auto relative">

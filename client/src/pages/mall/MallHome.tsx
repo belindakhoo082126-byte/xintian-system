@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search, ShoppingCart, MessageCircle, MapPin, Package, Boxes, Facebook, Navigation, X, Star, TrendingDown, Sparkles } from "lucide-react";
+import { Search, ShoppingCart, MessageCircle, MapPin, Package, Boxes, Facebook, Navigation, X, Star, TrendingDown, Sparkles, Megaphone } from "lucide-react";
 import { MallLangToggle } from "@/components/MallLangToggle";
 import { getMallTheme } from "@/lib/mallTheme";
-import { MallThemeDecorations, MallThemeMascot } from "@/components/MallThemeArtwork";
+import { MallThemeDecorations } from "@/components/MallThemeArtwork";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function MallHome() {
   const [search, setSearch] = useState("");
@@ -44,6 +45,12 @@ export default function MallHome() {
   const cartCount = cart.reduce((sum: number, i: any) => sum + i.quantity, 0);
   const [addOnOrder, setAddOnOrder] = useState<any>(null);
   const [showAddOnBanner, setShowAddOnBanner] = useState(false);
+  const [isPoliciesOpen, setIsPoliciesOpen] = useState(false);
+  const policySections = [
+    { title: "配送说明", content: settings?.shippingPolicy },
+    { title: "退款条例", content: settings?.refundPolicy },
+    { title: "服务条款", content: settings?.serviceTerms },
+  ].filter((section) => Boolean(section.content?.trim()));
   useEffect(() => {
     try {
       const saved = localStorage.getItem("xintian_mall_add_on_order");
@@ -82,7 +89,6 @@ export default function MallHome() {
         .mall-theme-card { border: 1px solid ${theme.secondary}9c; box-shadow: 0 10px 28px ${theme.primary}14; }
         .mall-theme-edge { position: relative; }
         .mall-theme-edge::before { content: ""; position: absolute; z-index: 2; left: 0; right: 0; top: 0; height: 4px; background: ${theme.visual.edge}; }
-        @media (prefers-reduced-motion: no-preference) { .mall-theme-mascot { animation: mall-theme-float 4s ease-in-out infinite; } @keyframes mall-theme-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } } }
       `}</style>
       <MallThemeDecorations theme={theme} />
       <div className="relative z-10">
@@ -97,7 +103,6 @@ export default function MallHome() {
               <img src={import.meta.env.VITE_APP_LOGO || ""} alt={settings?.shopName || "心田"} className="h-10 w-10 rounded-lg object-contain" />
             )}
             <span className="font-bold text-lg mall-theme-primary">{settings?.shopName || "心田 Xintian"}</span>
-            <MallThemeMascot theme={theme} compact />
           </Link>
           <div className="flex-1 max-w-md mx-auto">
             <div className="relative">
@@ -151,30 +156,26 @@ export default function MallHome() {
         )}
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 pt-4">
-        <div className="mall-theme-edge flex items-center justify-between gap-3 overflow-hidden rounded-2xl border px-4 py-3 backdrop-blur-sm" style={{ backgroundColor: `${theme.background}d9`, borderColor: `${theme.secondary}b0`, boxShadow: `0 10px 24px ${theme.primary}10` }}>
-          <div className="flex min-w-0 items-center gap-3">
-            <MallThemeMascot theme={theme} />
-            <div className="min-w-0">
-              <p className="text-sm font-bold" style={{ color: theme.font }}>{theme.visual.mascot.name.zh}的主题小花园</p>
-              <p className="truncate text-xs" style={{ color: `${theme.font}b0` }}>{theme.visual.description.zh}</p>
-            </div>
-          </div>
-          <div className="hidden shrink-0 items-center gap-1 text-xl sm:flex" style={{ color: theme.primary }} aria-hidden="true">
-            {theme.visual.motifs.map((motif, index) => <span key={`${motif}-${index}`}>{motif}</span>)}
-          </div>
-        </div>
-      </div>
-
       {/* Notices */}
       {notices && notices.length > 0 && (
-        <div className="border-b" style={{ backgroundColor: "#fff3cd", borderColor: "#ffeaa7" }}>
-          <div className="max-w-6xl mx-auto px-4 py-2 flex gap-4 overflow-x-auto text-sm" style={{ color: "#856404" }}>
-            {notices.map((n: any) => (
-              <span key={n.id} className="whitespace-nowrap">📢 {n.announcement}</span>
-            ))}
+        <section className="relative z-10 border-y" style={{ backgroundColor: `${theme.secondary}1c`, borderColor: `${theme.secondary}74` }} aria-label="商城公告">
+          <div className="max-w-6xl mx-auto px-4 py-3">
+            <div className="flex items-start gap-3 rounded-2xl border bg-white/80 px-3 py-3 shadow-sm backdrop-blur-sm sm:px-4" style={{ borderColor: `${theme.secondary}92`, boxShadow: `0 8px 22px ${theme.primary}0d` }}>
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white" style={{ background: theme.visual.edge }}><Megaphone className="h-4 w-4" /></div>
+              <div className="min-w-0 flex-1">
+                <p className="mb-1 text-xs font-bold tracking-[0.16em]" style={{ color: theme.primary }}>商城公告</p>
+                <div className="flex flex-wrap gap-2">
+                  {notices.map((n: any, index: number) => (
+                    <span key={n.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm leading-5" style={{ backgroundColor: `${theme.background}cc`, borderColor: `${theme.secondary}8a`, color: theme.font }}>
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: theme.primary }}>{index + 1}</span>
+                      <span className="break-words">{n.announcement}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
       )}
 
       {/* Banners */}
@@ -232,7 +233,6 @@ export default function MallHome() {
                         <span className="text-xs text-muted-foreground line-through">RM {b.originalTotalPrice}</span>
                       )}
                     </div>
-                    {b.bundleStock <= 5 && b.bundleStock > 0 && <Badge variant="secondary" className="mt-1">仅剩{b.bundleStock}组</Badge>}
                     {b.items && b.items.length > 0 && (
                       <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                         包含: {b.items.map((i: any) => i.productName).join('、')}
@@ -394,9 +394,27 @@ export default function MallHome() {
           <p className="mb-2">{settings?.companyName || "ECOLAND NURSERY"}</p>
           {settings?.address && <p className="mb-1">{settings.address}</p>}
           {settings?.phone && <p className="mb-1">📞 {settings.phone}</p>}
+          {policySections.length > 0 && (
+            <button type="button" onClick={() => setIsPoliciesOpen(true)} className="mt-3 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-white/80" style={{ borderColor: `${theme.secondary}b0`, color: theme.primary }}>
+              购物条款与政策
+            </button>
+          )}
           <p>© {new Date().getFullYear()} {settings?.shopName || "心田 Xintian"}. All rights reserved.</p>
         </div>
       </footer>
+      <Dialog open={isPoliciesOpen} onOpenChange={setIsPoliciesOpen}>
+        <DialogContent className="max-h-[80vh] max-w-lg overflow-y-auto rounded-2xl border-white/80 bg-white/95" style={{ borderColor: `${theme.secondary}b8`, boxShadow: `0 18px 48px ${theme.primary}22` }}>
+          <DialogHeader><DialogTitle style={{ color: theme.font }}>购物条款与政策</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            {policySections.map((section) => (
+              <section key={section.title} className="rounded-xl border p-4" style={{ backgroundColor: `${theme.background}b8`, borderColor: `${theme.secondary}85` }}>
+                <h3 className="mb-2 text-sm font-bold" style={{ color: theme.primary }}>{section.title}</h3>
+                <p className="whitespace-pre-wrap text-sm leading-6" style={{ color: theme.font }}>{section.content}</p>
+              </section>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
       </div>
     </div>
   );

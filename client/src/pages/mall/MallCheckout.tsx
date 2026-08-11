@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { ChevronLeft, ClipboardPaste, Truck, Package, Merge, Plane } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getMallTheme } from "@/lib/mallTheme";
-import { MallThemeDecorations, MallThemeMascot } from "@/components/MallThemeArtwork";
+import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 
 export default function MallCheckout() {
   const [cart, setCart] = useState<any[]>([]);
@@ -253,7 +253,6 @@ export default function MallCheckout() {
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-4">
           <Link href="/mall"><Button variant="ghost" size="icon"><ChevronLeft className="h-5 w-5" /></Button></Link>
           <h1 className="font-semibold text-lg">结算</h1>
-          <div className="ml-auto"><MallThemeMascot theme={theme} compact /></div>
         </div>
       </header>
 
