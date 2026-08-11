@@ -3,6 +3,7 @@ import type { MallTheme, ResolvedMallTheme } from "@/lib/mallTheme";
 
 type ThemeArtworkProps = { theme: MallTheme | ResolvedMallTheme; active?: boolean };
 const NATURAL_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-natural-continuous-watercolor-landscape_03bbc155.png";
+const LAVENDER_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-lavender-continuous-moonlit-meadow_65b21502.png";
 
 function themeSurfaceStyle(theme: MallTheme): CSSProperties {
   return {
@@ -43,6 +44,21 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
         <div
           className="absolute inset-0"
           style={{ background: "linear-gradient(180deg, rgba(248,243,233,0.12) 0%, rgba(248,243,233,0.02) 42%, rgba(248,243,233,0.16) 100%)" }}
+        />
+      </div>
+    );
+  }
+
+  if (theme.key === "lavender_purple") {
+    return (
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          style={{ backgroundImage: `url(${LAVENDER_CONTINUOUS_BACKGROUND_URL})` }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{ background: "linear-gradient(180deg, rgba(253,250,255,0.1) 0%, rgba(250,247,255,0.02) 44%, rgba(244,237,255,0.16) 100%)" }}
         />
       </div>
     );

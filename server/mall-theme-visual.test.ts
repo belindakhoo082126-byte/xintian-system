@@ -36,6 +36,19 @@ describe("商城主题完整视觉系统", () => {
     expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
   });
 
+  it("薰衣草紫使用暖白、柔和花田紫与月光色，并有专属连续月夜花田背景", () => {
+    const lavenderTheme = getMallTheme("lavender_purple");
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+    expect(lavenderTheme.visual.description.zh).toContain("薰衣草");
+    expect(lavenderTheme.visual.motifs).toContain("☾");
+    expect(lavenderTheme.colors).toMatchObject({ primary: "#5a4689", secondary: "#c8b7de", button: "#b86f99" });
+    expect(artwork).toContain("LAVENDER_CONTINUOUS_BACKGROUND_URL");
+    expect(artwork).toContain("xintian-lavender-continuous-moonlit-meadow_65b21502.png");
+    expect(artwork).toContain('theme.key === "lavender_purple"');
+    expect(artwork).toContain("fixed inset-0 z-0");
+  });
+
   it("商城设置及客户商城主流程均使用统一的主题视觉配置，且不在页首展示主题公仔", () => {
     const root = path.resolve(__dirname, "..");
     const settingsPage = fs.readFileSync(path.join(root, "client/src/pages/MallSettings.tsx"), "utf8");
