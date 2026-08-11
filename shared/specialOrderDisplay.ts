@@ -31,6 +31,20 @@ export const SPECIAL_ORDER_REASON_LABELS: Record<string, SpecialOrderDisplayLabe
   other: DEFAULT_REASON,
 };
 
+/**
+ * 用户在订单管理和包货工作台可直接筛选的特别订单原因。
+ * 保留数据库中的其他原因类型在「全部原因」中可见，避免把旧订单隐藏。
+ */
+export const SPECIAL_ORDER_FILTER_OPTIONS = [
+  { value: "pending_shipping", zh: "待补运费", en: "Pending Shipping Fee" },
+  { value: "pending_refund", zh: "待退款", en: "Pending Refund" },
+  { value: "logistics_error", zh: "物流异常", en: "Logistics Error" },
+  { value: "incomplete_info", zh: "客户资料不完整", en: "Incomplete Customer Information" },
+  { value: "notification_failed", zh: "自动通知失败", en: "Automatic Notification Failed" },
+  { value: "over_payment", zh: "多汇款", en: "Overpayment" },
+  { value: "amount_changed", zh: "金额异常", en: "Amount Exception" },
+] as const;
+
 export function getSpecialOrderReasonLabel(type?: string | null): SpecialOrderDisplayLabel {
   return (type && SPECIAL_ORDER_REASON_LABELS[type]) || DEFAULT_REASON;
 }

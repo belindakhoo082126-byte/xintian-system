@@ -18,7 +18,7 @@ import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileTe
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSearch, useLocation } from "wouter";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
-import { getSpecialOrderHandlingLabel, getSpecialOrderReasonLabel } from "@shared/specialOrderDisplay";
+import { getSpecialOrderHandlingLabel, getSpecialOrderReasonLabel, SPECIAL_ORDER_FILTER_OPTIONS } from "@shared/specialOrderDisplay";
 
 const PHYSICAL_STATUS = {
   pending: { label: "未汇款订单", enLabel: "Unpaid Order", variant: "outline" },
@@ -92,12 +92,14 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const urlNature = new URLSearchParams(searchParams).get("nature");
   const urlChannel = new URLSearchParams(searchParams).get("channel");
   const urlSpecial = new URLSearchParams(searchParams).get("special");
+  const urlSpecialType = new URLSearchParams(searchParams).get("type");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(urlStatus || "all");
   const [todayOnly, setTodayOnly] = useState(urlToday === "1");
   const [natureFilter, setNatureFilter] = useState(urlNature || "all");
   const [channelFilter, setChannelFilter] = useState(urlChannel || "all");
-  const [specialFilter, setSpecialFilter] = useState(urlSpecial === "1");
+  const [specialFilter, setSpecialFilter] = useState(urlSpecial === "1" || Boolean(urlSpecialType));
+  const [specialTypeFilter, setSpecialTypeFilter] = useState(urlSpecialType || "all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [remarkFilter, setRemarkFilter] = useState("all");
   const [notificationFilter, setNotificationFilter] = useState("all");
@@ -110,8 +112,10 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       const newNature = params.get('nature');
       const newChannel = params.get('channel');
       const newSpecial = params.get('special');
+      const newSpecialType = params.get('type');
       if (newStatus !== null) setStatusFilter(newStatus);
-      if (newSpecial !== null) setSpecialFilter(newSpecial === '1');
+      setSpecialFilter(newSpecial === '1' || Boolean(newSpecialType));
+      setSpecialTypeFilter(newSpecialType || 'all');
       if (newToday !== null) setTodayOnly(newToday === '1');
       if (newNature !== null) setNatureFilter(newNature);
       if (newChannel !== null) setChannelFilter(newChannel);
@@ -207,6 +211,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     notificationStatus: notificationFilter !== "all" ? notificationFilter : undefined,
     isSpecialOrder: specialFilter || undefined,
     specialOrderStatus: specialFilter && specialStatusFilter && specialStatusFilter !== "all" ? specialStatusFilter : undefined,
+    specialOrderType: specialFilter && specialTypeFilter !== "all" ? specialTypeFilter : undefined,
   } as any);
 
   // Get order detail with items, payments, and logs
@@ -753,6 +758,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           {translate("特别订单", "Special Orders")}
         </Button>
         {specialFilter && (
+          <>
           <Select
             value={specialStatusFilter || "pending"}
             onValueChange={(v) => setSpecialStatusFilter(v as any)}
@@ -766,6 +772,20 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               <SelectItem value="all">{translate("全部", "All")}</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={specialTypeFilter} onValueChange={setSpecialTypeFilter}>
+            <SelectTrigger className="w-[180px] h-9">
+              <SelectValue placeholder={translate("异常原因", "Special Reason")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{translate("全部原因", "All Reasons")}</SelectItem>
+              {SPECIAL_ORDER_FILTER_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {translate(option.zh, option.en)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          </>
         )}
       </div>
 
@@ -924,9 +944,14 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         {translate("已发送", "Sent")}
                       </span>
                     ) : (o as any).notificationStatus === "failed" ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-red-600">
-                        <span className="h-2 w-2 rounded-full bg-red-500" />
-                        {translate("发送失败", "Failed")}
+                      <span className="inline-flex max-w-[220px] items-center gap-1 text-xs text-red-600">
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
+                        <span>{translate("发送失败", "Failed")}</span>
+                        {(o as any).specialOrderType === "notification_failed" && (o as any).specialOrderReason && (
+                          <span className="truncate text-[10px] text-muted-foreground" title={(o as any).specialOrderReason}>
+                            — {(o as any).specialOrderReason}
+                          </span>
+                        )}
                         {(o as any).checkoutLink && (o as any).messengerId && (
                           <Button
                             variant="ghost"

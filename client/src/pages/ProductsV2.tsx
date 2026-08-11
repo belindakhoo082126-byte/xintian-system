@@ -210,7 +210,7 @@ export default function ProductsV2() {
     search: search || undefined,
     type: typeFilter !== "all" ? (typeFilter as any) : undefined,
     status: statusFilter !== "all" ? (statusFilter as any) : undefined,
-    stockFilter: stockFilter !== "all" ? (stockFilter as "low" | "out") : undefined,
+    stockFilter: stockFilter !== "all" ? (stockFilter as "low" | "out" | "anomaly") : undefined,
     stockThreshold: stockFilter === "low" ? Math.max(1, Number(lowStockThreshold) || 5) : undefined,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
@@ -601,6 +601,7 @@ export default function ProductsV2() {
             <SelectItem value="all">{translate("全部库存", "All Stock")}</SelectItem>
             <SelectItem value="low">{translate("低库存预警", "Low Stock Alert")}</SelectItem>
             <SelectItem value="out">{translate("缺货", "Out of Stock")}</SelectItem>
+            <SelectItem value="anomaly">{translate("库存异常", "Stock Exception")}</SelectItem>
           </SelectContent>
         </Select>
         {stockFilter === "low" && (

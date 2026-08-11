@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/contexts/I18nContext";
 import { toast } from "sonner";
-import { getSpecialOrderHandlingLabel, getSpecialOrderReasonLabel } from "@shared/specialOrderDisplay";
+import { getSpecialOrderHandlingLabel, getSpecialOrderReasonLabel, SPECIAL_ORDER_FILTER_OPTIONS } from "@shared/specialOrderDisplay";
 
 // V2.1.13: Status color mapping for scheduled shipping orders (8 statuses)
 const SCHEDULED_STATUS_CONFIG: Record<string, { label: { zh: string; en: string }; color: string; bgColor: string; borderColor: string }> = {
@@ -59,6 +59,8 @@ export default function Packing() {
   const [dateFrom, setDateFrom] = useState<string>(urlDate === "today" ? todayStr : "");
   const [dateTo, setDateTo] = useState<string>(urlDate === "today" ? todayStr : "");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const urlSpecialType = new URLSearchParams(searchParams).get("type");
+  const [specialTypeFilter, setSpecialTypeFilter] = useState<string>(urlSpecialType || "all");
   const utils = trpc.useUtils();
   const { data: orders, isLoading } = trpc.packing.list.useQuery({ status: activeTab as any }, { enabled: !isScheduledTab && !isSpecialTab });
   const { data: scheduledOrders, isLoading: scheduledLoading } = trpc.scheduledShipping.list.useQuery(
@@ -66,7 +68,7 @@ export default function Packing() {
     { enabled: isScheduledTab }
   );
   const { data: specialOrdersData, isLoading: specialLoading } = trpc.shippingV2.specialOrders.useQuery(
-    {},
+    { type: specialTypeFilter !== "all" ? specialTypeFilter : undefined },
     { enabled: isSpecialTab }
   );
   const rawOrderList = isScheduledTab
@@ -319,8 +321,24 @@ export default function Packing() {
                     </SelectContent>
                   </Select>
                 </div>
-                {(dateFrom || dateTo || statusFilter !== "all") && (
-                  <Button variant="outline" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setStatusFilter("all"); }}>{translate("清除筛选", "Clear Filters")}</Button>
+                {isSpecialTab && (
+                  <div>
+                    <Label className="text-xs">{translate("异常原因", "Special Reason")}</Label>
+                    <Select value={specialTypeFilter} onValueChange={setSpecialTypeFilter}>
+                      <SelectTrigger className="w-[190px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{translate("全部原因", "All Reasons")}</SelectItem>
+                        {SPECIAL_ORDER_FILTER_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {translate(option.zh, option.en)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {(dateFrom || dateTo || statusFilter !== "all" || specialTypeFilter !== "all") && (
+                  <Button variant="outline" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setStatusFilter("all"); setSpecialTypeFilter("all"); }}>{translate("清除筛选", "Clear Filters")}</Button>
                 )}
                 <div className="ml-auto text-sm text-muted-foreground">{translate("共 {count} 单", "Total {count} orders", { count: orderList.length })}</div>
               </div>
@@ -383,6 +401,11 @@ export default function Packing() {
                                   </>
                                 );
                               })()}
+                              {isSpecialTab && order.specialOrderType === "notification_failed" && order.specialOrderReason && (
+                                <span className="block max-w-[360px] truncate text-xs text-muted-foreground" title={order.specialOrderReason}>
+                                  {translate("失败内容", "Failed content")}: {order.specialOrderReason}
+                                </span>
+                              )}
                               {/* V2.1.26: Show 免邮 badge */}
                               {order.isFreeShipping && (
                                 <Badge variant="secondary" className="text-xs bg-green-100 text-green-700 border-green-300">{translate("免邮", "Free Shipping")}</Badge>

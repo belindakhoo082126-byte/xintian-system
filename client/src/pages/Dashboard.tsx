@@ -29,7 +29,6 @@ export const SPECIAL_STATUS_LABELS: Record<string, { zh: string; en: string }> =
   incomplete_info: { zh: "资料异常", en: "Incomplete Information" },
   notification_failed: { zh: "通知失败", en: "Notification Failed" },
   stock_exception: { zh: "库存异常", en: "Stock Exception" },
-  overdue: { zh: "超时未处理", en: "Overdue" },
   partial_payment: { zh: "部分汇款", en: "Partial Payment" },
   over_payment: { zh: "多汇款", en: "Over Payment" },
   amount_changed: { zh: "金额异常", en: "Amount Changed" },
@@ -289,12 +288,6 @@ export default function Dashboard() {
               <div className="rounded-lg border border-gray-100 bg-background/70 p-3 dark:border-gray-900/50 hover:bg-gray-50 dark:hover:bg-gray-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "其他" : "Other"}</p>
                 <p className="mt-1 text-2xl font-bold text-gray-600">{followUpDisplay.otherCount}</p>
-              </div>
-            </Link>
-            <Link href="/orders?special=1&type=overdue">
-              <div className={`rounded-lg border bg-background/70 p-3 ${followUpDisplay.overdueCount > 0 ? "border-red-300" : "border-slate-200 dark:border-slate-800"} hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer`}>
-                <p className="text-xs text-muted-foreground">{lang === "zh" ? "超 24 小时未处理" : "Overdue >24h"}</p>
-                <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.overdueCount}</p>
               </div>
             </Link>
           </div>

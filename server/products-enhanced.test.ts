@@ -25,6 +25,17 @@ describe("product source-of-truth safeguards", () => {
     expect(queryBlock).toContain("lt(products.stockQuantity, stockThreshold)");
   });
 
+  it("supports inventory anomaly filtering for physical products with negative stock", () => {
+    const queryBlock = source.slice(
+      source.indexOf("export async function getProductsEnhanced"),
+      source.indexOf("export async function getProductByIdEnhanced"),
+    );
+
+    expect(queryBlock).toContain("params.stockFilter === 'anomaly'");
+    expect(queryBlock).toContain("eq(products.type, 'physical')");
+    expect(queryBlock).toContain("lt(products.stockQuantity, 0)");
+  });
+
   it("records supplier-specific quick restocks as a received purchase, FIFO lot, and purchase ledger entry", () => {
     expect(source).toContain("export async function quickRestockProduct");
     expect(source).toContain("export async function getLatestSupplierProductCost");

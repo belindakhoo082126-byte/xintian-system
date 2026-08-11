@@ -338,7 +338,7 @@ export const appRouter = router({
         visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
         type: z.enum(['physical', 'membership', 'gift']).optional(),
         isFeatured: z.boolean().optional(),
-        stockFilter: z.enum(['low', 'out']).optional(),
+        stockFilter: z.enum(['low', 'out', 'anomaly']).optional(),
         stockThreshold: z.number().int().min(1).optional(),
         limit: z.number().optional(),
         offset: z.number().optional(),
@@ -4588,6 +4588,7 @@ export const appRouter = router({
     // Get special orders list
     specialOrders: adminProcedure.input(z.object({
       status: z.string().optional(),
+      type: z.string().optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
     })).query(async ({ input }) => {

@@ -3,6 +3,7 @@ import {
   getSpecialOrderHandlingLabel,
   getSpecialOrderReasonLabel,
   isSpecialOrderResolved,
+  SPECIAL_ORDER_FILTER_OPTIONS,
 } from "@shared/specialOrderDisplay";
 
 describe("特别订单列表显示", () => {
@@ -19,5 +20,18 @@ describe("特别订单列表显示", () => {
     expect(isSpecialOrderResolved(false, "pending")).toBe(false);
     expect(getSpecialOrderHandlingLabel(false, "pending").zh).toBe("待处理");
     expect(getSpecialOrderHandlingLabel(undefined, "resolved").zh).toBe("已处理");
+  });
+
+  it("提供订单管理与包货工作台一致的七类分类筛选，且不包含已移除的超时分类", () => {
+    expect(SPECIAL_ORDER_FILTER_OPTIONS.map((option) => option.value)).toEqual([
+      "pending_shipping",
+      "pending_refund",
+      "logistics_error",
+      "incomplete_info",
+      "notification_failed",
+      "over_payment",
+      "amount_changed",
+    ]);
+    expect(SPECIAL_ORDER_FILTER_OPTIONS.some((option) => option.value === "overdue")).toBe(false);
   });
 });

@@ -3225,6 +3225,11 @@ export async function getProductsEnhanced(params: {
     conditions.push(eq(products.type, 'physical'));
     conditions.push(eq(products.stockQuantity, 0));
   }
+  if (params.stockFilter === 'anomaly') {
+    // 未开启允许超卖的实体商品不应为负库存；此筛选用于处理历史库存异常。
+    conditions.push(eq(products.type, 'physical'));
+    conditions.push(lt(products.stockQuantity, 0));
+  }
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   const limit = params.limit ?? 20;
   const offset = params.offset ?? 0;
@@ -8613,12 +8618,15 @@ export async function getSpecialOrderActions(orderId: number) {
   return actions;
 }
 
-export async function getSpecialOrders(params: { status?: string; limit?: number; offset?: number }) {
+export async function getSpecialOrders(params: { status?: string; type?: string; limit?: number; offset?: number }) {
   const db = await getDb();
   if (!db) return { items: [], total: 0 };
   const conditions: any[] = [eq(orders.isSpecialOrder, true)];
   if (params.status && params.status !== "all") {
     conditions.push(eq(orders.specialOrderStatus, params.status as any));
+  }
+  if (params.type && params.type !== "all") {
+    conditions.push(eq(orders.specialOrderType, params.type as any));
   }
   const where = and(...conditions);
   const limit = params.limit ?? 20;
