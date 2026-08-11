@@ -2516,6 +2516,7 @@ export async function getPurchaseOrderItems(poId: number) {
 
 export async function createPurchaseOrder(data: {
   supplierId: number;
+  poNumber?: string;
   notes?: string;
   items: Array<{
     productId: number;
@@ -2532,7 +2533,7 @@ export async function createPurchaseOrder(data: {
   if (!db) throw new Error("Database not available");
 
   const totalAmount = data.items.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
-  const poNumber = `PO${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const poNumber = data.poNumber || `PO${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
   const poResult = await db.insert(purchaseOrders).values({
     poNumber,

@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { PackagePlus, Plus, Trash2, CheckCircle, MinusCircle, AlertTriangle } from "lucide-react";
+import { PackagePlus, Plus, Trash2, CheckCircle, MinusCircle, AlertTriangle, Eye, Edit } from "lucide-react";
 import { useI18n } from "@/contexts/I18nContext";
 
 const STATUS_BADGES: Record<string, string> = {
@@ -42,12 +42,53 @@ const ADJUSTMENT_TYPES = [
   { value: "other", zh: "其他", en: "Other" },
 ];
 
+function PurchaseOrderItems({ poId }: { poId: number }) {
+  const { lang, translate } = useI18n();
+  const { data: items, isLoading } = trpc.purchaseOrders.items.useQuery({ poId });
+  const { data: products } = trpc.products.list.useQuery({});
+
+  return (
+    <div>
+      <Label className="text-xs text-muted-foreground mb-2">{translate("进货商品", "Purchase Items")}</Label>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{translate("商品", "Product")}</TableHead>
+            <TableHead>{translate("规格", "Variant")}</TableHead>
+            <TableHead className="text-right">{translate("数量", "Qty")}</TableHead>
+            <TableHead className="text-right">{translate("本钱", "Cost")}</TableHead>
+            <TableHead className="text-right">{translate("小计", "Subtotal")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {isLoading ? (
+            <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
+          ) : items?.length === 0 ? (
+            <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">{translate("无商品", "No items")}</TableCell></TableRow>
+          ) : items?.map((item: any) => (
+            <TableRow key={item.id}>
+              <TableCell>{products?.find((p: any) => p.id === item.productId)?.name || `#${item.productId}`}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{item.variantName || '-'} {item.variantKeyword ? `(${item.variantKeyword})` : ''}</TableCell>
+              <TableCell className="text-right">{item.quantity}</TableCell>
+              <TableCell className="text-right">RM {item.unitCost}</TableCell>
+              <TableCell className="text-right font-semibold">RM {item.subtotal}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 export default function PurchaseOrders() {
   const { lang, translate } = useI18n();
   const [activeTab, setActiveTab] = useState("purchase");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<string>("none");
+  const [poNumberInput, setPoNumberInput] = useState("");
   const [notes, setNotes] = useState("");
+  const [detailPo, setDetailPo] = useState<any>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [items, setItems] = useState<PoItem[]>([{ productId: undefined, quantity: 1, unitCost: "0", sellingPrice: "", subtotal: "0", variantName: "", variantKeyword: "" }]);
   const utils = trpc.useUtils();
 
@@ -102,6 +143,7 @@ export default function PurchaseOrders() {
 
   function resetForm() {
     setSelectedSupplier("none");
+    setPoNumberInput("");
     setNotes("");
     setItems([{ productId: undefined, quantity: 1, unitCost: "0", sellingPrice: "", subtotal: "0", variantName: "", variantKeyword: "" }]);
   }
@@ -131,6 +173,7 @@ export default function PurchaseOrders() {
     if (validItems.length === 0) { toast.error(translate("请至少添加一个进货商品", "Please add at least one purchase item")); return; }
     createMutation.mutate({
       supplierId: parseInt(selectedSupplier),
+      poNumber: poNumberInput || undefined,
       notes: notes || undefined,
       items: validItems.map(i => ({
         productId: i.productId!,
@@ -209,19 +252,28 @@ export default function PurchaseOrders() {
                         {new Date(po.createdAt).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US')}
                       </TableCell>
                       <TableCell className="text-right">
-                        {po.status === "ordered" && (
+                        <div className="flex items-center justify-end gap-1">
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => {
-                              if (confirm(translate("确认已收货？库存将自动增加。", "Confirm receipt? Inventory will be automatically increased."))) {
-                                receiveMutation.mutate({ id: po.id });
-                              }
-                            }}
+                            onClick={() => { setDetailPo(po); setDetailOpen(true); }}
                           >
-                            <CheckCircle className="h-4 w-4 mr-1" />{translate("确认收货", "Confirm Receipt")}
+                            <Eye className="h-4 w-4 mr-1" />{translate("详情", "View")}
                           </Button>
-                        )}
+                          {po.status === "ordered" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (confirm(translate("确认已收货？库存将自动增加。", "Confirm receipt? Inventory will be automatically increased."))) {
+                                  receiveMutation.mutate({ id: po.id });
+                                }
+                              }}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-1" />{translate("确认收货", "Confirm Receipt")}
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -297,6 +349,10 @@ export default function PurchaseOrders() {
             <DialogTitle>{translate("新增进货单", "New Purchase Order")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <div>
+              <Label>{translate("进货单号（可选）", "PO Number (optional)")}</Label>
+              <Input value={poNumberInput} onChange={(e) => setPoNumberInput(e.target.value)} placeholder={translate("填写厂家单号，留空自动生成", "Enter supplier's PO number, leave empty for auto")} />
+            </div>
             <div>
               <Label>{translate("选择供应商 *", "Select Supplier *")}</Label>
               <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
@@ -424,6 +480,51 @@ export default function PurchaseOrders() {
             <Button onClick={handleSubmit} disabled={createMutation.isPending}>
               {translate("创建进货单", "Create Purchase Order")}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detail Dialog */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{translate("进货单详情", "Purchase Order Details")}</DialogTitle>
+          </DialogHeader>
+          {detailPo && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs text-muted-foreground">{translate("进货单号", "PO Number")}</Label>
+                  <p className="font-mono font-semibold">{detailPo.poNumber}</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">{translate("供应商", "Supplier")}</Label>
+                  <p className="font-semibold">{suppliers?.find(s => s.id === detailPo.supplierId)?.name || '-'}</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">{translate("总金额", "Total Amount")}</Label>
+                  <p className="font-semibold">RM {detailPo.totalAmount}</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">{translate("状态", "Status")}</Label>
+                  <Badge className={STATUS_BADGES[detailPo.status as string]} variant="secondary">{statusLabels[detailPo.status as keyof typeof statusLabels]?.[lang] || detailPo.status}</Badge>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">{translate("日期", "Date")}</Label>
+                  <p className="text-sm">{new Date(detailPo.createdAt).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US')}</p>
+                </div>
+                {detailPo.notes && (
+                  <div className="col-span-2">
+                    <Label className="text-xs text-muted-foreground">{translate("备注", "Notes")}</Label>
+                    <p className="text-sm">{detailPo.notes}</p>
+                  </div>
+                )}
+              </div>
+              <PurchaseOrderItems poId={detailPo.id} />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailOpen(false)}>{translate("关闭", "Close")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

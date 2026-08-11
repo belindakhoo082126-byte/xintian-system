@@ -871,9 +871,16 @@ export const appRouter = router({
         return { ...po, items };
       }),
 
+    items: adminProcedure
+      .input(z.object({ poId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getPurchaseOrderItems(input.poId);
+      }),
+
     create: adminProcedure
       .input(z.object({
         supplierId: z.number(),
+        poNumber: z.string().optional(),
         notes: z.string().optional(),
         items: z.array(z.object({
           productId: z.number(),

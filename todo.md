@@ -2659,3 +2659,15 @@
 - [x] 问题7: 退款credit自动（resolveOrderException中customerAction=refund且refundMethod=credit时自动调用refundCustomerCredit）
 - [x] 问题8: 已处理按钮+dashboard同步（前端添加"已处理"按钮调用markResolved procedure，routers.ts新增markResolved procedure）
 - [x] 问题9: 运费多收无需商品选择（overcharged_shipping类型隐藏商品选择下拉框，只显示退款金额输入和描述字段）
+
+## V2.1.27 - 商品管理与商城9项修复
+
+- [x] 问题1：组合包封面上传按钮（ProductBundles.tsx 创建和编辑对话框添加上传按钮）
+- [x] 问题2：进货单号自定义填写（db.ts createPurchaseOrder添加poNumber参数，routers.ts传递，PurchaseOrders.tsx添加输入框）
+- [x] 问题3：进货管理操作可点击（PurchaseOrders.tsx添加查看详情和编辑功能）
+- [x] 问题4：新商品商城显示（ProductsV2.tsx添加syncToMall开关到"显示与推荐"步骤）
+- [x] 问题5：商城商品照片显示（MallHome.tsx添加p.images fallback到coverImageUrl）
+- [x] 问题6：商城分类可点击（MallHome.tsx改用button+setLocation替代Link+Button）
+- [x] 问题7：商城设计美化（MallHome.tsx重写：圆角卡片、悬浮动画、渐变标签、改进布局）
+- [x] 问题8：商城主题切换生效（MallHome.tsx添加THEMES映射，根据activeTheme动态应用颜色）
+- [x] 问题9：商城Logo修复（MallSettings.tsx添加Logo上传按钮，MallHome.tsx使用VITE_APP_LOGO作为默认logo）

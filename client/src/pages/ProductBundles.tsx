@@ -5,7 +5,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import {
   Package, Plus, Search, Edit, Trash2, Eye, RefreshCw, Scissors,
-  PackageOpen, TrendingUp, AlertTriangle, History, X, Save,
+  PackageOpen, TrendingUp, AlertTriangle, History, X, Save, Upload,
 } from "lucide-react";
 import {
   Card, CardContent, CardHeader, CardTitle,
@@ -603,8 +603,37 @@ function CreateBundleDialog({
               <Input value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="如：2.5" type="number" />
             </div>
             <div>
-              <Label>封面图片 URL</Label>
-              <Input value={coverImage} onChange={(e) => setCoverImage(e.target.value)} placeholder="https://..." />
+              <Label>封面图片</Label>
+              <div className="flex items-center gap-3">
+                <Input value={coverImage} onChange={(e) => setCoverImage(e.target.value)} placeholder="https://... 或点击上传" />
+                <label className="cursor-pointer">
+                  <Button variant="outline" asChild>
+                    <span><Upload className="h-4 w-4 mr-1" />上传</span>
+                  </Button>
+                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = async (ev) => {
+                      const base64 = ev.target?.result as string;
+                      try {
+                        const res = await fetch("/api/upload", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ file: base64, filename: file.name }),
+                        });
+                        if (res.ok) {
+                          const data = await res.json();
+                          setCoverImage(data.url);
+                          toast.success("图片已上传");
+                        }
+                      } catch { toast.error("上传失败"); }
+                    };
+                    reader.readAsDataURL(file);
+                  }} />
+                </label>
+              </div>
+              {coverImage && <img src={coverImage} alt="preview" className="w-full rounded border max-h-40 object-cover" />}
             </div>
             <div className="flex items-center gap-2 pt-6">
               <Switch checked={showInMall} onCheckedChange={setShowInMall} />
@@ -834,8 +863,37 @@ function EditBundleDialog({
             <Input value={weight} onChange={(e) => setWeight(e.target.value)} type="number" />
           </div>
           <div>
-            <Label>封面图片 URL</Label>
-            <Input value={coverImage} onChange={(e) => setCoverImage(e.target.value)} />
+            <Label>封面图片</Label>
+            <div className="flex items-center gap-3">
+              <Input value={coverImage} onChange={(e) => setCoverImage(e.target.value)} placeholder="https://... 或点击上传" />
+              <label className="cursor-pointer">
+                <Button variant="outline" asChild>
+                  <span><Upload className="h-4 w-4 mr-1" />上传</span>
+                </Button>
+                <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = async (ev) => {
+                    const base64 = ev.target?.result as string;
+                    try {
+                      const res = await fetch("/api/upload", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ file: base64, filename: file.name }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        setCoverImage(data.url);
+                        toast.success("图片已上传");
+                      }
+                    } catch { toast.error("上传失败"); }
+                  };
+                  reader.readAsDataURL(file);
+                }} />
+              </label>
+            </div>
+            {coverImage && <img src={coverImage} alt="preview" className="w-full rounded border max-h-40 object-cover" />}
           </div>
           <div className="flex items-center gap-2 pt-6">
             <Switch checked={showInMall} onCheckedChange={setShowInMall} />

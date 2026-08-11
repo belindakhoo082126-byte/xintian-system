@@ -93,7 +93,7 @@ export default function MallSettings() {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   if (settings && !settingsLoaded) {
-    setSettingsForm(settings);
+    setSettingsForm({ ...settings, logoUrl: settings.logoUrl || import.meta.env.VITE_APP_LOGO || "" });
     setSettingsLoaded(true);
   }
 
@@ -198,7 +198,39 @@ export default function MallSettings() {
               <div className="grid grid-cols-2 gap-4">
                 <div><Label>{translate("商店名称", "Shop Name")}</Label><Input value={settingsForm.shopName || ""} onChange={(e) => setSettingsForm((p: any) => ({ ...p, shopName: e.target.value }))} /></div>
                 <div><Label>{translate("域名", "Domain")}</Label><Input value={settingsForm.domain || ""} onChange={(e) => setSettingsForm((p: any) => ({ ...p, domain: e.target.value }))} placeholder="xintian.com.my" /></div>
-                <div><Label>{translate("Logo URL", "Logo URL")}</Label><Input value={settingsForm.logoUrl || ""} onChange={(e) => setSettingsForm((p: any) => ({ ...p, logoUrl: e.target.value }))} /></div>
+                <div>
+                  <Label>{translate("Logo", "Logo")}</Label>
+                  <div className="flex gap-2">
+                    <Input value={settingsForm.logoUrl || ""} onChange={(e) => setSettingsForm((p: any) => ({ ...p, logoUrl: e.target.value }))} placeholder="Logo URL" />
+                    <label className="cursor-pointer shrink-0">
+                      <Button variant="outline" asChild>
+                        <span><Upload className="h-4 w-4 mr-1" />{translate("上传", "Upload")}</span>
+                      </Button>
+                      <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = async (ev) => {
+                          const base64 = ev.target?.result as string;
+                          try {
+                            const res = await fetch("/api/upload", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ file: base64, filename: file.name }),
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              setSettingsForm((p: any) => ({ ...p, logoUrl: data.url }));
+                              toast.success(translate("Logo已上传", "Logo uploaded"));
+                            }
+                          } catch { toast.error(translate("上传失败", "Upload failed")); }
+                        };
+                        reader.readAsDataURL(file);
+                      }} />
+                    </label>
+                  </div>
+                  {settingsForm.logoUrl && <img src={settingsForm.logoUrl} alt="logo" className="mt-2 h-12 w-12 rounded object-contain border" />}
+                </div>
                 <div><Label>{translate("Favicon URL", "Favicon URL")}</Label><Input value={settingsForm.faviconUrl || ""} onChange={(e) => setSettingsForm((p: any) => ({ ...p, faviconUrl: e.target.value }))} /></div>
                 <div><Label>{translate("标语", "Slogan")}</Label><Input value={settingsForm.slogan || ""} onChange={(e) => setSettingsForm((p: any) => ({ ...p, slogan: e.target.value }))} /></div>
                 <div><Label>{translate("SEO Title", "SEO Title")}</Label><Input value={settingsForm.seoTitle || ""} onChange={(e) => setSettingsForm((p: any) => ({ ...p, seoTitle: e.target.value }))} /></div>

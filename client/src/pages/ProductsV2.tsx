@@ -104,6 +104,7 @@ type ProductForm = {
   // V5: AI Tags & Selling Points
   aiTags: string[];
   aiSellingPoints: string;
+  syncToMall: boolean;
 };
 
 const EMPTY_FORM: ProductForm = {
@@ -123,6 +124,7 @@ const EMPTY_FORM: ProductForm = {
   wholesalePrice: "", agentPrice: "", moq: 0, visibleTo: ["retail", "member", "wholesale", "agent"],
   specialPriceStartDate: "", specialPriceEndDate: "",
   aiTags: [], aiSellingPoints: "",
+  syncToMall: false,
 };
 
 const RAW_STEPS = [
@@ -268,6 +270,7 @@ export default function ProductsV2() {
         specialPriceEndDate: (p as any).specialPriceEndDate ? String((p as any).specialPriceEndDate).split("T")[0] : "",
         aiTags: (() => { try { const t = JSON.parse((p as any).aiTags || "[]"); return Array.isArray(t) ? t : []; } catch { return []; } })(),
         aiSellingPoints: (p as any).aiSellingPoints || "",
+        syncToMall: (p as any).syncToMall ?? false,
       });
       setVariants(p.variants || []);
       hydratedEditingIdRef.current = editingId;
@@ -432,6 +435,7 @@ export default function ProductsV2() {
       keywordChannels: JSON.stringify(form.keywordChannels),
       aiTags: JSON.stringify(form.aiTags),
       aiSellingPoints: form.aiSellingPoints || undefined,
+      syncToMall: form.syncToMall,
     };
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...data });
@@ -1565,6 +1569,14 @@ export default function ProductsV2() {
                         <p className="text-xs text-muted-foreground">{translate("在商城首页推荐此商品", "Feature this product on the homepage")}</p>
                       </div>
                       <Switch checked={form.isFeatured} onCheckedChange={(v) => setForm({ ...form, isFeatured: v })} />
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <Label>{translate("同步到商城", "Sync to Mall")}</Label>
+                        <p className="text-xs text-muted-foreground">{translate("开启后此商品将在商城中显示", "Enable to show this product in the mall")}</p>
+                      </div>
+                      <Switch checked={form.syncToMall} onCheckedChange={(v) => setForm({ ...form, syncToMall: v })} />
                     </div>
 
                     {form.isFeatured && (
