@@ -13,6 +13,7 @@ const HARI_RAYA_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-hari-raya-co
 const MERDEKA_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-malaysia-day-continuous-tropical-garden_c5b9f763.png";
 const MID_AUTUMN_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-midautumn-continuous-osmanthus-moonlight-garden_52e83413.png";
 const VALENTINE_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-valentine-continuous-floral-love-garden_21d3202a.png";
+const CUSTOM_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-custom-continuous-botanical-studio-garden_86b009f9.png";
 
 function themeSurfaceStyle(theme: MallTheme): CSSProperties {
   return {
@@ -203,6 +204,21 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
         <div
           className="absolute inset-0"
           style={{ background: "linear-gradient(180deg, rgba(255,251,247,0.10) 0%, rgba(255,247,242,0.02) 44%, rgba(248,232,225,0.16) 100%)" }}
+        />
+      </div>
+    );
+  }
+
+  if (theme.key === "custom") {
+    return (
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          style={{ backgroundImage: `url(${CUSTOM_CONTINUOUS_BACKGROUND_URL})` }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{ background: "linear-gradient(180deg, rgba(250,249,241,0.10) 0%, rgba(248,246,237,0.02) 44%, rgba(235,239,225,0.16) 100%)" }}
         />
       </div>
     );
