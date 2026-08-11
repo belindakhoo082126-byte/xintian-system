@@ -25,6 +25,31 @@ describe("product source-of-truth safeguards", () => {
     expect(queryBlock).toContain("lt(products.stockQuantity, stockThreshold)");
   });
 
+  it("records supplier-specific quick restocks as a received purchase, FIFO lot, and purchase ledger entry", () => {
+    expect(source).toContain("export async function quickRestockProduct");
+    expect(source).toContain("export async function getLatestSupplierProductCost");
+    expect(source).toContain('status: "received"');
+    expect(source).toContain("INSERT INTO inventory_lots");
+    expect(source).toContain("'purchase', 'quick_restock'");
+  });
+
+  it("allocates supplier lots to order sales with FIFO cost records without deducting product stock twice", () => {
+    const fifoBlock = source.slice(
+      source.indexOf("async function allocateFifoCostForSale"),
+      source.indexOf("// ============================================================================\n// Profit Report helpers"),
+    );
+    expect(fifoBlock).toContain("ORDER BY purchase_date ASC, id ASC");
+    expect(fifoBlock).toContain("remaining_quantity = remaining_quantity -");
+    expect(fifoBlock).toContain("'sale', 'order_sale'");
+    expect(fifoBlock).not.toContain("stockQuantity: sql");
+
+    const createOrderBlock = source.slice(
+      source.indexOf("export async function createOrderWithSplit"),
+      source.indexOf("export async function updateOrderStatus"),
+    );
+    expect(createOrderBlock).toContain("await allocateFifoCostForSale({ orderId, productId: item.productId, quantity: item.quantity");
+  });
+
   it("uses the same order state groups when exposing product order details", () => {
     const detailBlock = source.slice(
       source.indexOf("export async function getProductOrderDetails"),

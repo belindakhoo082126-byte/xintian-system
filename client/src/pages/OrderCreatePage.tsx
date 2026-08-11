@@ -137,6 +137,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const [manualItems, setManualItems] = useState<ManualOrderItem[]>([]);
   const [quickRestockProduct, setQuickRestockProduct] = useState<any>(null);
   const [quickRestockQuantity, setQuickRestockQuantity] = useState("1");
+  const [quickRestockSupplierId, setQuickRestockSupplierId] = useState("");
+  const [quickRestockRemark, setQuickRestockRemark] = useState("");
 
   // Amounts
   const [discountAmount, setDiscountAmount] = useState("0");
@@ -197,6 +199,14 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const { data: productSearchResults } = trpc.orders.searchProductsForOrder.useQuery(
     { query: productSearchQuery },
     { enabled: productSearchQuery.length > 0 }
+  );
+  const { data: quickRestockSuppliers = [] } = trpc.suppliers.list.useQuery({ activeOnly: true });
+  const quickRestockCostQuery = trpc.purchaseOrders.lastProductCost.useQuery(
+    {
+      productId: quickRestockProduct?.id ?? 0,
+      supplierId: Number(quickRestockSupplierId) || 0,
+    },
+    { enabled: !!quickRestockProduct && !!quickRestockSupplierId },
   );
 
   // ===== Mutations =====
@@ -273,14 +283,17 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     onError: (e) => toast.error(translate("订单创建失败: {message}", "Order creation failed: {message}", { message: e.message })),
   });
 
-  const quickRestockMutation = trpc.inventoryAdjustment.create.useMutation({
+  const quickRestockMutation = trpc.purchaseOrders.quickRestock.useMutation({
     onSuccess: () => {
       utils.inventoryAdjustment.invalidate();
+      utils.purchaseOrders.invalidate();
       utils.orders.searchProductsForOrder.invalidate();
       utils.productsV2.invalidate();
-      toast.success(translate("库存已补充，可继续加入订单", "Stock replenished and ready to add to the order"));
+      toast.success(translate("补货已登记，库存、厂家批次与成本记录已同步", "Restock recorded; stock, supplier lot, and cost are synchronized"));
       setQuickRestockProduct(null);
       setQuickRestockQuantity("1");
+      setQuickRestockSupplierId("");
+      setQuickRestockRemark("");
     },
     onError: (error) => toast.error(translate("补货失败: {message}", "Restock failed: {message}", { message: error.message })),
   });
@@ -947,6 +960,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                           onClick={() => {
                             setQuickRestockProduct(p);
                             setQuickRestockQuantity("1");
+                            setQuickRestockSupplierId("");
+                            setQuickRestockRemark("");
                           }}
                         >
                           <Plus className="mr-1 h-3 w-3" />
@@ -965,6 +980,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             if (!open) {
               setQuickRestockProduct(null);
               setQuickRestockQuantity("1");
+              setQuickRestockSupplierId("");
+              setQuickRestockRemark("");
             }
           }}>
             <DialogContent className="max-w-md">
@@ -990,8 +1007,49 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                     autoFocus
                   />
                   <p className="text-xs text-muted-foreground">
-                    {translate("此操作会记录在存库日志中。", "This adjustment will be recorded in the inventory log.")}
+                    {translate("库存会即时增加，并写入该厂家的采购与库存批次记录。", "Stock increases immediately and is recorded in this supplier's purchase and inventory lot.")}
                   </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>{translate("进货厂家", "Supplier")} <span className="text-destructive">*</span></Label>
+                  <Select value={quickRestockSupplierId} onValueChange={setQuickRestockSupplierId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={translate("请选择厂家", "Select supplier")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {quickRestockSuppliers.map((supplier) => (
+                        <SelectItem key={supplier.id} value={String(supplier.id)}>{supplier.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {quickRestockSuppliers.length === 0 && (
+                    <p className="text-xs text-destructive">{translate("尚未建立可用厂家，请先到进货管理新增厂家。", "No active supplier found. Please add one in purchase management first.")}</p>
+                  )}
+                </div>
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <div className="text-sm font-medium">{translate("单位成本", "Unit Cost")}</div>
+                  {!quickRestockSupplierId ? (
+                    <p className="mt-1 text-sm text-muted-foreground">{translate("选择厂家后，自动带出该厂家此商品最近一次已收货的成本。", "Select a supplier to load this product's most recent received cost from that supplier.")}</p>
+                  ) : quickRestockCostQuery.isLoading ? (
+                    <p className="mt-1 text-sm text-muted-foreground">{translate("读取历史成本中...", "Loading cost history...")}</p>
+                  ) : quickRestockCostQuery.data ? (
+                    <div className="mt-1">
+                      <p className="text-lg font-semibold text-emerald-700">RM {Number(quickRestockCostQuery.data.unitCost).toFixed(2)}</p>
+                      <p className="text-xs text-muted-foreground">{translate("来源", "Source")}: {quickRestockCostQuery.data.poNumber || "-"}</p>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-sm text-destructive">{translate("此厂家尚无该商品的已收货成本记录。请先在进货管理建立并收货后再快捷补货。", "This supplier has no received cost record for this product. Create and receive a purchase record first.")}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="quick-restock-remark">{translate("备注", "Remark")}</Label>
+                  <Textarea
+                    id="quick-restock-remark"
+                    value={quickRestockRemark}
+                    onChange={(event) => setQuickRestockRemark(event.target.value)}
+                    placeholder={translate("例如：厂家今日补货、货品批次说明", "e.g. supplier delivery or batch note")}
+                    rows={3}
+                  />
                 </div>
               </div>
               <DialogFooter>
@@ -1005,15 +1063,22 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                       toast.error(translate("请输入大于 0 的补货数量", "Enter a restock quantity greater than 0"));
                       return;
                     }
+                    if (!quickRestockSupplierId) {
+                      toast.error(translate("请选择进货厂家", "Select a supplier"));
+                      return;
+                    }
+                    if (!quickRestockCostQuery.data) {
+                      toast.error(translate("该厂家没有此商品的历史成本，无法建立正确的利润记录", "This supplier has no cost history for this product, so a correct profit record cannot be created"));
+                      return;
+                    }
                     quickRestockMutation.mutate({
                       productId: quickRestockProduct.id,
-                      adjustmentType: "other",
-                      quantityChange: quantity,
-                      reason: "后台建单快捷补货",
-                      remark: `后台建单快捷补货：${quickRestockProduct.name}`,
+                      supplierId: Number(quickRestockSupplierId),
+                      quantity,
+                      remark: quickRestockRemark.trim() || undefined,
                     });
                   }}
-                  disabled={quickRestockMutation.isPending}
+                  disabled={quickRestockMutation.isPending || !quickRestockSupplierId || !quickRestockCostQuery.data}
                 >
                   {quickRestockMutation.isPending ? translate("保存中...", "Saving...") : translate("确认补货", "Confirm Restock")}
                 </Button>

@@ -1043,6 +1043,7 @@ export async function createOrderWithSplit(data: {
       await db.update(products).set({
         stockQuantity: sql`${products.stockQuantity} - ${item.quantity}`,
       }).where(eq(products.id, item.productId));
+      await allocateFifoCostForSale({ orderId, productId: item.productId, quantity: item.quantity, createdBy: "admin" });
     }
   }
   // V2.0.78: Auto-deduct credit from customer and write ledger
@@ -2701,6 +2702,196 @@ export async function receivePurchaseOrder(poId: number) {
       }).where(eq(variants.id, item.variantId));
     }
   }
+}
+
+/**
+ * Returns the latest received purchase cost for one product from one supplier.
+ * A quick restock deliberately uses a supplier-specific historical cost instead
+ * of the product-wide current cost, so multi-supplier cost records are not mixed.
+ */
+export async function getLatestSupplierProductCost(productId: number, supplierId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [rows] = await db.execute(sql`
+    SELECT poi.unitCost AS unitCost, po.poNumber AS poNumber, po.receivedAt AS receivedAt
+    FROM purchase_order_items poi
+    INNER JOIN purchase_orders po ON po.id = poi.purchaseOrderId
+    WHERE poi.productId = ${productId}
+      AND po.supplierId = ${supplierId}
+      AND po.status = 'received'
+    ORDER BY po.receivedAt DESC, poi.id DESC
+    LIMIT 1
+  `);
+  const result = rows as unknown as Array<{ unitCost?: string | number; poNumber?: string; receivedAt?: Date | string }>;
+  if (!result[0]?.unitCost) return null;
+
+  return {
+    unitCost: Number(result[0].unitCost),
+    poNumber: result[0].poNumber || null,
+    receivedAt: result[0].receivedAt || null,
+  };
+}
+
+/**
+ * Records an immediately received, supplier-specific replenishment from the
+ * order creation page. It keeps the existing inventory adjustment audit trail
+ * while also creating the purchase, FIFO lot and purchase ledger records used
+ * by profitability reports.
+ */
+export async function quickRestockProduct(data: {
+  productId: number;
+  supplierId: number;
+  quantity: number;
+  remark?: string;
+  adjustedBy?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const quantity = Math.floor(data.quantity);
+  if (!Number.isFinite(quantity) || quantity < 1) throw new Error("Restock quantity must be at least 1");
+
+  const [product] = await db.select({ id: products.id, name: products.name }).from(products)
+    .where(eq(products.id, data.productId)).limit(1);
+  if (!product) throw new Error("Product not found");
+
+  const [supplier] = await db.select({ id: suppliers.id, name: suppliers.name, isActive: suppliers.isActive }).from(suppliers)
+    .where(eq(suppliers.id, data.supplierId)).limit(1);
+  if (!supplier || !supplier.isActive) throw new Error("Supplier not found or inactive");
+
+  const latestCost = await getLatestSupplierProductCost(data.productId, data.supplierId);
+  if (!latestCost || latestCost.unitCost <= 0) {
+    throw new Error("此厂家尚无已收货的进货成本，请先在进货管理完成该商品的收货记录");
+  }
+
+  const unitCost = latestCost.unitCost;
+  const totalAmount = Number((quantity * unitCost).toFixed(2));
+  const now = new Date();
+  const poNumber = `QR${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const fullRemark = ["后台建单快捷补货", data.remark?.trim()].filter(Boolean).join("：");
+
+  // Create an already-received PO so the supplier and amount appear in purchase management.
+  const poResult = await db.insert(purchaseOrders).values({
+    poNumber,
+    supplierId: data.supplierId,
+    totalAmount: totalAmount.toFixed(2),
+    status: "received",
+    notes: fullRemark,
+    orderedAt: now,
+    receivedAt: now,
+  });
+  const poId = (poResult as any)[0].insertId as number;
+
+  await db.insert(purchaseOrderItems).values({
+    purchaseOrderId: poId,
+    productId: data.productId,
+    quantity,
+    unitCost: unitCost.toFixed(2),
+    subtotal: totalAmount.toFixed(2),
+  });
+
+  // Preserve the existing stock adjustment log and increment the product stock once.
+  await createInventoryAdjustment({
+    productId: data.productId,
+    adjustmentType: "other",
+    quantityChange: quantity,
+    unitCost,
+    totalCost: totalAmount,
+    adjustedBy: data.adjustedBy,
+    reason: "后台建单快捷补货",
+    remark: `${supplier.name}｜${fullRemark}`,
+  });
+
+  await db.update(products).set({
+    cost: unitCost.toFixed(2),
+    currentCost: unitCost.toFixed(2),
+  }).where(eq(products.id, data.productId));
+
+  const [updatedProduct] = await db.select({ stockQuantity: products.stockQuantity }).from(products)
+    .where(eq(products.id, data.productId)).limit(1);
+  const balanceAfter = Number(updatedProduct?.stockQuantity ?? 0);
+  const lotNo = `QR${Date.now()}${poId}`;
+
+  const lotResult = await db.execute(sql`
+    INSERT INTO inventory_lots
+      (lot_no, purchase_order_id, supplier_id, product_id, variant_id, original_quantity, remaining_quantity, unit_cost, purchase_date, status)
+    VALUES (${lotNo}, ${poId}, ${data.supplierId}, ${data.productId}, NULL, ${quantity}, ${quantity}, ${unitCost.toFixed(2)}, ${now}, 'active')
+  `);
+  const lotId = ((lotResult as any)[0]?.insertId ?? (lotResult as any).insertId) as number;
+
+  await db.execute(sql`
+    INSERT INTO inventory_ledger
+      (product_id, variant_id, lot_id, transaction_type, reference_type, reference_id, quantity_change, balance_after, unit_cost, created_by)
+    VALUES (${data.productId}, NULL, ${lotId}, 'purchase', 'quick_restock', ${poId}, ${quantity}, ${balanceAfter}, ${unitCost.toFixed(2)}, ${data.adjustedBy || 'admin'})
+  `);
+
+  return {
+    poId,
+    poNumber,
+    lotId,
+    lotNo,
+    supplierName: supplier.name,
+    quantity,
+    unitCost: unitCost.toFixed(2),
+    totalAmount: totalAmount.toFixed(2),
+    stockQuantity: balanceAfter,
+  };
+}
+
+/**
+ * Assign the physical quantity already reserved by an order to the oldest
+ * available inventory lots. Product stock was deducted by the caller; this
+ * routine only writes the supplier-cost allocation used by FIFO profit reports.
+ */
+async function allocateFifoCostForSale(data: {
+  orderId: number;
+  productId: number;
+  quantity: number;
+  createdBy?: string;
+}) {
+  const db = await getDb();
+  if (!db || data.quantity <= 0) {
+    return { allocatedQuantity: 0, unallocatedQuantity: Math.max(0, data.quantity) };
+  }
+
+  const [product] = await db.select({ stockQuantity: products.stockQuantity }).from(products)
+    .where(eq(products.id, data.productId)).limit(1);
+  let runningBalance = Number(product?.stockQuantity ?? 0) + data.quantity;
+  const [lotRows] = await db.execute(sql`
+    SELECT id, remaining_quantity AS remainingQuantity, unit_cost AS unitCost
+    FROM inventory_lots
+    WHERE product_id = ${data.productId}
+      AND status = 'active'
+      AND remaining_quantity > 0
+    ORDER BY purchase_date ASC, id ASC
+  `);
+  const lots = lotRows as unknown as Array<{ id: number; remainingQuantity: number | string; unitCost: number | string }>;
+  let remaining = data.quantity;
+  let allocated = 0;
+
+  for (const lot of lots) {
+    if (remaining <= 0) break;
+    const available = Number(lot.remainingQuantity) || 0;
+    const quantityFromLot = Math.min(remaining, available);
+    if (quantityFromLot <= 0) continue;
+
+    await db.execute(sql`
+      UPDATE inventory_lots
+      SET remaining_quantity = remaining_quantity - ${quantityFromLot},
+          status = CASE WHEN remaining_quantity - ${quantityFromLot} <= 0 THEN 'depleted' ELSE 'active' END
+      WHERE id = ${lot.id} AND remaining_quantity >= ${quantityFromLot}
+    `);
+    runningBalance -= quantityFromLot;
+    await db.execute(sql`
+      INSERT INTO inventory_ledger
+        (product_id, variant_id, lot_id, transaction_type, reference_type, reference_id, quantity_change, balance_after, unit_cost, created_by)
+      VALUES (${data.productId}, NULL, ${lot.id}, 'sale', 'order_sale', ${data.orderId}, ${-quantityFromLot}, ${runningBalance}, ${Number(lot.unitCost).toFixed(2)}, ${data.createdBy || 'system'})
+    `);
+    remaining -= quantityFromLot;
+    allocated += quantityFromLot;
+  }
+
+  return { allocatedQuantity: allocated, unallocatedQuantity: remaining };
 }
 
 // ============================================================================
@@ -5374,6 +5565,7 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
     await db.update(products).set({
       stockQuantity: sql`${products.stockQuantity} - ${item.quantity}`,
     }).where(eq(products.id, item.productId));
+    await allocateFifoCostForSale({ orderId, productId: item.productId, quantity: item.quantity, createdBy: "mall" });
   }
 
   const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
@@ -6925,6 +7117,7 @@ export async function createOrderFromLiveCapture(data: {
       await db.update(products).set({
         stockQuantity: sql`${products.stockQuantity} - ${p.quantity}`,
       }).where(eq(products.id, p.productId));
+      await allocateFifoCostForSale({ orderId, productId: p.productId, quantity: p.quantity, createdBy: "facebook_live" });
     }
   }
   // V2.0.78: Auto-deduct credit and write ledger

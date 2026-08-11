@@ -913,6 +913,26 @@ export const appRouter = router({
         await db.receivePurchaseOrder(input.id);
         return { success: true };
       }),
+
+    lastProductCost: adminProcedure
+      .input(z.object({ productId: z.number(), supplierId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getLatestSupplierProductCost(input.productId, input.supplierId);
+      }),
+
+    quickRestock: adminProcedure
+      .input(z.object({
+        productId: z.number(),
+        supplierId: z.number(),
+        quantity: z.number().int().min(1),
+        remark: z.string().max(1000).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.quickRestockProduct({
+          ...input,
+          adjustedBy: ctx.user.name || "admin",
+        });
+      }),
   }),
 
   // ===========================================================================
