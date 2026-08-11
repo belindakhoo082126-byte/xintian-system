@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import type { MallTheme, ResolvedMallTheme } from "@/lib/mallTheme";
 
 type ThemeArtworkProps = { theme: MallTheme | ResolvedMallTheme; active?: boolean };
-const NATURAL_BOTANICAL_FRAME_URL = "/manus-storage/xintian-natural-watercolor-botanical-frame_45f83b37.png";
+const NATURAL_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-natural-continuous-watercolor-landscape_03bbc155.png";
 
 function themeSurfaceStyle(theme: MallTheme): CSSProperties {
   return {
@@ -35,17 +35,15 @@ export function MallThemePreview({ theme, active = false }: ThemeArtworkProps) {
 export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
   if (theme.key === "xintian_nature") {
     return (
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-x-0 top-0 h-[34rem] bg-top bg-no-repeat opacity-75 sm:h-[42rem]"
-          style={{ backgroundImage: `url(${NATURAL_BOTANICAL_FRAME_URL})`, backgroundSize: "min(1500px, 118vw) auto" }}
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          style={{ backgroundImage: `url(${NATURAL_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
-          className="absolute inset-x-0 bottom-0 h-72 rotate-180 bg-top bg-no-repeat opacity-55 sm:h-96"
-          style={{ backgroundImage: `url(${NATURAL_BOTANICAL_FRAME_URL})`, backgroundSize: "min(1500px, 118vw) auto" }}
+          className="absolute inset-0"
+          style={{ background: "linear-gradient(180deg, rgba(248,243,233,0.12) 0%, rgba(248,243,233,0.02) 42%, rgba(248,243,233,0.16) 100%)" }}
         />
-        <div className="absolute -left-24 top-[32rem] h-72 w-80 rounded-[48%_52%_44%_56%/58%_44%_56%_42%] opacity-35" style={{ background: "#b8c3ad" }} />
-        <div className="absolute -right-28 top-[46rem] h-64 w-72 rounded-[56%_44%_52%_48%/44%_56%_42%_58%] opacity-25" style={{ background: "#d8c4a5" }} />
       </div>
     );
   }

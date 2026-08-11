@@ -21,7 +21,7 @@ describe("商城主题完整视觉系统", () => {
     expect(customTheme.visual.mascot.name.zh).toBe("星芽");
   });
 
-  it("心田自然使用暖米白、田园绿与陶土橙的植物画册配色，并有专属水彩边缘插图", () => {
+  it("心田自然使用暖米白、田园绿与陶土橙的植物画册配色，并有专属连续水彩背景", () => {
     const natureTheme = getMallTheme("xintian_nature");
     const root = path.resolve(__dirname, "..");
     const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
@@ -29,9 +29,11 @@ describe("商城主题完整视觉系统", () => {
     expect(natureTheme.primary).toBe("#31593e");
     expect(natureTheme.button).toBe("#c9703d");
     expect(natureTheme.visual.description.zh).toContain("田园植物画册");
-    expect(artwork).toContain("NATURAL_BOTANICAL_FRAME_URL");
-    expect(artwork).toContain("xintian-natural-watercolor-botanical-frame_45f83b37.png");
+    expect(artwork).toContain("NATURAL_CONTINUOUS_BACKGROUND_URL");
+    expect(artwork).toContain("xintian-natural-continuous-watercolor-landscape_03bbc155.png");
     expect(artwork).toContain('theme.key === "xintian_nature"');
+    expect(artwork).toContain("fixed inset-0 z-0");
+    expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
   });
 
   it("商城设置及客户商城主流程均使用统一的主题视觉配置，且不在页首展示主题公仔", () => {
