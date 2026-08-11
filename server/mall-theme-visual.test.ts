@@ -94,6 +94,21 @@ describe("商城主题完整视觉系统", () => {
     expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
   });
 
+  it("圣诞节使用暖白纸感、松针深绿、蔓越莓红与香槟金，并有专属连续松枝灯火庭园背景", () => {
+    const christmasTheme = getMallTheme("christmas");
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+    expect(christmasTheme.visual.description.zh).toContain("松枝");
+    expect(christmasTheme.visual.description.zh).toContain("圣诞树");
+    expect(christmasTheme.colors).toMatchObject({ primary: "#164a3a", secondary: "#b99a5a", button: "#b13a3f", background: "#fdf9ef" });
+    expect(christmasTheme.visual.motifs).toContain("✦");
+    expect(artwork).toContain("CHRISTMAS_CONTINUOUS_BACKGROUND_URL");
+    expect(artwork).toContain("xintian-christmas-continuous-pine-light-garden_95b7a972.png");
+    expect(artwork).toContain('theme.key === "christmas"');
+    expect(artwork).toContain("fixed inset-0 z-0");
+    expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
+  });
+
   it("商城设置及客户商城主流程均使用统一的主题视觉配置，且不在页首展示主题公仔", () => {
     const root = path.resolve(__dirname, "..");
     const settingsPage = fs.readFileSync(path.join(root, "client/src/pages/MallSettings.tsx"), "utf8");

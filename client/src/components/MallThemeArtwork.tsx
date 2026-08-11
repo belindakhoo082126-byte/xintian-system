@@ -7,6 +7,7 @@ const LAVENDER_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-lavender-cont
 const SAKURA_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-sakura-continuous-spring-garden-v2_b643cc4b.png";
 const NATURE_GREEN_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-natural-green-continuous-sunlit-conservatory_ce98dee3.png";
 const WARM_BROWN_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-warm-brown-continuous-terracotta-conservatory_fc8df457.png";
+const CHRISTMAS_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-christmas-continuous-pine-light-garden_95b7a972.png";
 
 function themeSurfaceStyle(theme: MallTheme): CSSProperties {
   return {
@@ -107,6 +108,21 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
         <div
           className="absolute inset-0"
           style={{ background: "linear-gradient(180deg, rgba(255,250,242,0.1) 0%, rgba(252,246,237,0.02) 44%, rgba(248,238,224,0.17) 100%)" }}
+        />
+      </div>
+    );
+  }
+
+  if (theme.key === "christmas") {
+    return (
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          style={{ backgroundImage: `url(${CHRISTMAS_CONTINUOUS_BACKGROUND_URL})` }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{ background: "linear-gradient(180deg, rgba(255,252,244,0.1) 0%, rgba(253,249,239,0.02) 44%, rgba(248,241,225,0.17) 100%)" }}
         />
       </div>
     );
