@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { ShoppingCart, Minus, Plus, ChevronLeft, Package, Truck, Shield, Sun, Droplets, Sparkles, Scissors, Plane } from "lucide-react";
 import { useI18n } from "@/contexts/I18nContext";
+import { getMallTheme } from "@/lib/mallTheme";
+import { MallThemeDecorations, MallThemeMascot } from "@/components/MallThemeArtwork";
 
 export default function MallProductDetail() {
   const [location] = useLocation();
@@ -33,6 +35,7 @@ export default function MallProductDetail() {
   const { data: product, isLoading } = trpc.mall.productDetail.useQuery({ id: productId });
   const { lang, translate } = useI18n();
   const t = (zh: string, en: string) => translate(zh, en);
+  const theme = getMallTheme(settings?.activeTheme, settings?.customThemeColors);
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
@@ -95,14 +98,16 @@ export default function MallProductDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa]">
+    <div className="relative min-h-screen overflow-x-hidden" style={{ backgroundColor: theme.background, backgroundImage: theme.visual.pattern, color: theme.font }}>
+      <MallThemeDecorations theme={theme} />
+      <div className="relative z-10">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white border-b shadow-sm">
+      <header className="sticky top-0 z-50 border-b shadow-sm" style={{ backgroundColor: `${theme.background}f2`, borderColor: `${theme.secondary}8c`, backdropFilter: "blur(12px)" }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
           <Link href="/mall"><Button variant="ghost" size="icon"><ChevronLeft className="h-5 w-5" /></Button></Link>
           <Link href="/mall" className="flex items-center gap-2">
-            <span className="text-2xl">🌿</span>
-            <span className="font-bold text-lg text-[#2d6a4f]">{settings?.shopName || t("心田", "Xintian")}</span>
+            <MallThemeMascot theme={theme} compact />
+            <span className="font-bold text-lg" style={{ color: theme.primary }}>{settings?.shopName || t("心田", "Xintian")}</span>
           </Link>
           <Link href="/mall/checkout" className="ml-auto relative">
             <Button variant="ghost"><ShoppingCart className="h-5 w-5" /></Button>
@@ -115,7 +120,7 @@ export default function MallProductDetail() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Product Images */}
           <div className="space-y-3">
-            <Card className="overflow-hidden">
+            <Card className="overflow-hidden border-white/80 bg-white/90" style={{ borderColor: `${theme.secondary}a8`, boxShadow: `0 10px 28px ${theme.primary}14` }}>
               <div className="aspect-square bg-gray-100">
                 {product.coverImageUrl ? (
                   <img src={product.coverImageUrl} alt={product.name} className="w-full h-full object-cover" />
@@ -150,7 +155,7 @@ export default function MallProductDetail() {
                   <span className="text-lg text-muted-foreground line-through">RM {unitPrice}</span>
                 </>
               ) : (
-                <span className="text-3xl font-bold text-[#2d6a4f]">RM {unitPrice}</span>
+                <span className="text-3xl font-bold" style={{ color: theme.primary }}>RM {unitPrice}</span>
               )}
               {product.compareAtPrice && parseFloat(product.compareAtPrice) > 0 && !product.isSpecial && (
                 <span className="text-lg text-muted-foreground line-through">RM {product.compareAtPrice}</span>
@@ -219,7 +224,7 @@ export default function MallProductDetail() {
             {/* Actions */}
             <div className="flex gap-3 pt-2">
               <Button variant="outline" className="flex-1" onClick={addToCart}><ShoppingCart className="h-4 w-4 mr-2" />{t("加入购物车", "Add to Cart")}</Button>
-              <Button className="flex-1 bg-[#2d6a4f] hover:bg-[#40916c]" onClick={buyNow}>{t("立即购买", "Buy Now")}</Button>
+              <Button className="flex-1 hover:opacity-90" style={{ backgroundColor: theme.button }} onClick={buyNow}>{t("立即购买", "Buy Now")}</Button>
             </div>
 
             {/* Trust badges */}
@@ -232,7 +237,7 @@ export default function MallProductDetail() {
 
         {/* Product Description */}
         {(product.fullDescZh || product.lightDesc || product.waterDesc || product.fertilizerDesc || product.pruningDesc) && (
-          <Card className="mt-6">
+          <Card className="mt-6 border-white/80 bg-white/90" style={{ borderColor: `${theme.secondary}a8`, boxShadow: `0 10px 28px ${theme.primary}10` }}>
             <CardContent className="p-6 space-y-4">
               {product.fullDescZh && (
                 <div>
@@ -278,7 +283,7 @@ export default function MallProductDetail() {
           const dims = product.dimensions as any;
           if (!dims || (!dims.diameter && !dims.height)) return null;
           return (
-            <Card className="mt-4">
+            <Card className="mt-4 border-white/80 bg-white/90" style={{ borderColor: `${theme.secondary}a8`, boxShadow: `0 10px 28px ${theme.primary}10` }}>
               <CardContent className="p-4">
                 <h3 className="font-semibold mb-2">{t("尺寸信息", "Dimensions")}</h3>
                 <div className="flex gap-4 text-sm text-muted-foreground">
@@ -300,6 +305,7 @@ export default function MallProductDetail() {
           </div>
         )}
       </main>
+      </div>
     </div>
   );
 }

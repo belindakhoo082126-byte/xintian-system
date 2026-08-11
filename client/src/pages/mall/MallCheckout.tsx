@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ChevronLeft, ClipboardPaste, Truck, Package, Merge, Plane } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { getMallTheme } from "@/lib/mallTheme";
+import { MallThemeDecorations, MallThemeMascot } from "@/components/MallThemeArtwork";
 
 export default function MallCheckout() {
   const [cart, setCart] = useState<any[]>([]);
@@ -45,6 +47,7 @@ export default function MallCheckout() {
   const utils = trpc.useUtils();
   const { data: settings } = trpc.mall.settings.useQuery();
   const { data: paymentMethods } = trpc.paymentMethods.listEnabled.useQuery();
+  const theme = getMallTheme(settings?.activeTheme, settings?.customThemeColors);
 
   // smartPaste is a query, use lazy fetch
   const [smartPasteLoading, setSmartPasteLoading] = useState(false);
@@ -210,24 +213,25 @@ export default function MallCheckout() {
 
   if (orderResult) {
     return (
-      <div className="min-h-screen bg-[#f8f9fa] flex items-center justify-center">
-        <Card className="max-w-md w-full mx-4">
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden" style={{ backgroundColor: theme.background, backgroundImage: theme.visual.pattern }}>
+        <MallThemeDecorations theme={theme} />
+        <Card className="relative z-10 mx-4 w-full max-w-md border-white/80 bg-white/90" style={{ borderColor: `${theme.secondary}a8`, boxShadow: `0 16px 36px ${theme.primary}1f` }}>
           <CardContent className="p-8 text-center space-y-4">
             <div className="w-16 h-16 mx-auto bg-green-100 rounded-full flex items-center justify-center">
               <Package className="h-8 w-8 text-green-600" />
             </div>
             <h2 className="text-xl font-semibold">{orderResult.added ? "商品已加入原订单" : "订单已创建"}</h2>
             <p className="text-muted-foreground">订单号: {orderResult.orderNumber}</p>
-            <p className="text-lg font-bold text-[#2d6a4f]">RM {orderResult.totalAmount}</p>
+            <p className="text-lg font-bold" style={{ color: theme.primary }}>RM {orderResult.totalAmount}</p>
             {orderResult.merged && <Badge>已合并到保留订单</Badge>}
             <div className="pt-4 space-y-2">
               {orderResult.added && secureAddOnOrder ? (
                 <a href={`/order/${orderResult.orderNumber}/${secureAddOnOrder.token}`}>
-                  <Button className="w-full bg-[#2d6a4f] hover:bg-[#40916c]">返回原订单</Button>
+                  <Button className="w-full hover:opacity-90" style={{ backgroundColor: theme.button }}>返回原订单</Button>
                 </a>
               ) : (
                 <Link href={`/mall/payment/${orderResult.orderNumber}?phone=${encodeURIComponent(form.contactNumber || '')}`}>
-                  <Button className="w-full bg-[#2d6a4f] hover:bg-[#40916c]">去付款</Button>
+                  <Button className="w-full hover:opacity-90" style={{ backgroundColor: theme.button }}>去付款</Button>
                 </Link>
               )}
               {/* V2.0.90: Removed "查询订单" button - redundant with "返回原订单" */}
@@ -242,22 +246,25 @@ export default function MallCheckout() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa]">
-      <header className="sticky top-0 z-50 bg-white border-b shadow-sm">
+    <div className="relative min-h-screen overflow-x-hidden" style={{ backgroundColor: theme.background, backgroundImage: theme.visual.pattern, color: theme.font }}>
+      <MallThemeDecorations theme={theme} />
+      <div className="relative z-10">
+      <header className="sticky top-0 z-50 border-b shadow-sm" style={{ backgroundColor: `${theme.background}f2`, borderColor: `${theme.secondary}8c`, backdropFilter: "blur(12px)" }}>
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-4">
           <Link href="/mall"><Button variant="ghost" size="icon"><ChevronLeft className="h-5 w-5" /></Button></Link>
           <h1 className="font-semibold text-lg">结算</h1>
+          <div className="ml-auto"><MallThemeMascot theme={theme} compact /></div>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-4">
         {secureAddOnOrder && (
-          <Card className="border-[#2d6a4f] bg-[#f0f7f2]">
+          <Card className="border bg-white/80" style={{ borderColor: theme.primary, backgroundColor: `${theme.secondary}4a` }}>
             <CardContent className="flex items-start gap-3 p-4">
-              <Merge className="mt-0.5 h-5 w-5 shrink-0 text-[#2d6a4f]" />
+              <Merge className="mt-0.5 h-5 w-5 shrink-0" style={{ color: theme.primary }} />
               <div>
-                <p className="font-semibold text-[#1b4332]">正在为原订单加单</p>
-                <p className="mt-1 text-sm text-[#35634e]">新商品将加入订单 <strong>{secureAddOnOrder.orderNumber}</strong>；原收货资料、运费与付款状态会保留，无需再次填写。</p>
+                <p className="font-semibold" style={{ color: theme.font }}>正在为原订单加单</p>
+                <p className="mt-1 text-sm" style={{ color: `${theme.font}c7` }}>新商品将加入订单 <strong>{secureAddOnOrder.orderNumber}</strong>；原收货资料、运费与付款状态会保留，无需再次填写。</p>
               </div>
             </CardContent>
           </Card>
@@ -561,6 +568,7 @@ export default function MallCheckout() {
               : `确认下单 · RM ${total.toFixed(2)}`}
         </Button>
       </main>
+      </div>
     </div>
   );
 }

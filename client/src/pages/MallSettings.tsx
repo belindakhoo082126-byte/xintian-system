@@ -14,21 +14,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Upload, Image as ImageIcon, Palette, Bell, Phone, FileText, Settings, Calendar } from "lucide-react";
-
-const THEMES = [
-  { key: "xintian_nature", label: { zh: "🌿 心田自然", en: "🌿 Xintian Nature" }, colors: { primary: "#2d6a4f", secondary: "#95d5b2", button: "#40916c", background: "#f8f9fa", font: "#1b4332" } },
-  { key: "lavender_purple", label: { zh: "💜 薰衣草紫", en: "💜 Lavender Purple" }, colors: { primary: "#7b2cbf", secondary: "#e0aaff", button: "#9d4edd", background: "#faf8ff", font: "#3c096c" } },
-  { key: "sakura_pink", label: { zh: "🌸 樱花粉", en: "🌸 Sakura Pink" }, colors: { primary: "#e5989b", secondary: "#ffd5c2", button: "#ffb4a2", background: "#fff5f7", font: "#6d6875" } },
-  { key: "nature_green", label: { zh: "🍃 自然绿", en: "🍃 Nature Green" }, colors: { primary: "#588157", secondary: "#a3b18a", button: "#3a5a40", background: "#fefce8", font: "#344e41" } },
-  { key: "warm_brown", label: { zh: "☕ 暖棕", en: "☕ Warm Brown" }, colors: { primary: "#8b5e34", secondary: "#d4a373", button: "#a47148", background: "#faf6f2", font: "#5c4033" } },
-  { key: "christmas", label: { zh: "🎄 圣诞节", en: "🎄 Christmas Day" }, colors: { primary: "#d62828", secondary: "#f1faee", button: "#003049", background: "#fefae0", font: "#1d3557" } },
-  { key: "cny", label: { zh: "🧧 农历新年", en: "🧧 Chinese New Year" }, colors: { primary: "#d62828", secondary: "#fcbf49", button: "#e63946", background: "#fff8e1", font: "#9d0208" } },
-  { key: "hari_raya", label: { zh: "🌙 开斋节", en: "🌙 Hari Raya" }, colors: { primary: "#064635", secondary: "#d4af37", button: "#0a6b4a", background: "#f5f0e1", font: "#064635" } },
-  { key: "merdeka", label: { zh: "🇲🇾 独立日", en: "🇲🇾 Hari Merdeka" }, colors: { primary: "#cc0000", secondary: "#ffff00", button: "#0000cc", background: "#fefefe", font: "#1a1a2e" } },
-  { key: "mid_autumn", label: { zh: "🥮 中秋节", en: "🥮 Mid-Autumn" }, colors: { primary: "#e76f51", secondary: "#f4a261", button: "#264653", background: "#fefae0", font: "#2a2a2a" } },
-  { key: "valentine", label: { zh: "❤️ 情人节", en: "❤️ Valentine's Day" }, colors: { primary: "#e63946", secondary: "#f1faee", button: "#d62828", background: "#fff0f3", font: "#6a040f" } },
-  { key: "custom", label: { zh: "🎨 自定义主题", en: "🎨 Custom Theme" }, colors: null },
-];
+import { MALL_THEMES } from "@/lib/mallTheme";
+import { MallThemePreview } from "@/components/MallThemeArtwork";
 
 export default function MallSettings() {
   const { translate, lang } = useI18n();
@@ -325,24 +312,22 @@ export default function MallSettings() {
             <CardHeader><CardTitle>{translate("主题中心", "Theme Center")}</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {THEMES.map((t) => (
+                {MALL_THEMES.map((t) => (
                   <Card
                     key={t.key}
-                    className={`cursor-pointer transition-all ${settingsForm.activeTheme === t.key ? "ring-2 ring-primary" : "hover:border-primary/50"}`}
+                    className={`cursor-pointer overflow-hidden transition-all duration-200 ${settingsForm.activeTheme === t.key ? "ring-2 ring-primary shadow-md" : "hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-sm"}`}
                     onClick={() => handleThemeSelect(t.key)}
                   >
-                    <CardContent className="pt-4">
-                      <div className="flex items-center justify-between mb-2">
+                    <CardContent className="space-y-3 p-3">
+                      <MallThemePreview theme={t} active={settingsForm.activeTheme === t.key} />
+                      <div className="flex items-center justify-between">
                         <span className="font-medium text-sm">{t.label[lang] || t.label.zh}</span>
                         {settingsForm.activeTheme === t.key && <Badge>{translate("当前", "Current")}</Badge>}
                       </div>
-                      {t.colors && (
-                        <div className="flex gap-1">
-                          {Object.values(t.colors).slice(0, 4).map((c, i) => (
-                            <div key={i} className="w-6 h-6 rounded border" style={{ backgroundColor: c }} />
-                          ))}
-                        </div>
-                      )}
+                      <p className="min-h-9 text-xs leading-4 text-muted-foreground">{t.visual.description[lang] || t.visual.description.zh}</p>
+                      <div className="flex gap-1" aria-label={translate("主题配色", "Theme colours")}>
+                        {Object.values(t.colors).slice(0, 4).map((c, i) => <div key={i} className="h-5 w-5 rounded-md border border-black/10" style={{ backgroundColor: c }} />)}
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
@@ -360,7 +345,7 @@ export default function MallSettings() {
                   <Select value={newSchedule.themeKey} onValueChange={(v) => setNewSchedule((p: any) => ({ ...p, themeKey: v }))}>
                     <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {THEMES.map((t) => <SelectItem key={t.key} value={t.key}>{t.label[lang] || t.label.zh}</SelectItem>)}
+                      {MALL_THEMES.map((t) => <SelectItem key={t.key} value={t.key}>{t.label[lang] || t.label.zh}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -370,7 +355,7 @@ export default function MallSettings() {
               </div>
               {themeSchedules?.map((s: any) => (
                 <div key={s.id} className="flex items-center gap-3 p-3 border rounded-lg">
-                  <Badge>{THEMES.find((t) => t.key === s.themeKey)?.label[lang] || THEMES.find((t) => t.key === s.themeKey)?.label.zh || s.themeKey}</Badge>
+                  <Badge>{MALL_THEMES.find((t) => t.key === s.themeKey)?.label[lang] || MALL_THEMES.find((t) => t.key === s.themeKey)?.label.zh || s.themeKey}</Badge>
                   <span className="text-sm text-muted-foreground">
                     {new Date(s.startDate).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US")} → {new Date(s.endDate).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US")}
                   </span>

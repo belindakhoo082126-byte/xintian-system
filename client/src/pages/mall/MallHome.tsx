@@ -7,21 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Search, ShoppingCart, MessageCircle, MapPin, Package, Boxes, Facebook, Navigation, X, Star, TrendingDown, Sparkles } from "lucide-react";
 import { MallLangToggle } from "@/components/MallLangToggle";
-
-const THEMES: Record<string, { primary: string; secondary: string; button: string; background: string; font: string }> = {
-  xintian_nature: { primary: "#2d6a4f", secondary: "#95d5b2", button: "#40916c", background: "#f8f9fa", font: "#1b4332" },
-  lavender_purple: { primary: "#7b2cbf", secondary: "#e0aaff", button: "#9d4edd", background: "#faf8ff", font: "#3c096c" },
-  sakura_pink: { primary: "#e5989b", secondary: "#ffd5c2", button: "#ffb4a2", background: "#fff5f7", font: "#6d6875" },
-  nature_green: { primary: "#588157", secondary: "#a3b18a", button: "#3a5a40", background: "#fefce8", font: "#344e41" },
-  warm_brown: { primary: "#8b5e34", secondary: "#d4a373", button: "#a47148", background: "#faf6f2", font: "#5c4033" },
-  christmas: { primary: "#d62828", secondary: "#f1faee", button: "#003049", background: "#fefae0", font: "#1d3557" },
-  cny: { primary: "#d62828", secondary: "#fcbf49", button: "#e63946", background: "#fff8e1", font: "#9d0208" },
-  hari_raya: { primary: "#064635", secondary: "#d4af37", button: "#0a6b4a", background: "#f5f0e1", font: "#064635" },
-  merdeka: { primary: "#cc0000", secondary: "#ffff00", button: "#0000cc", background: "#fefefe", font: "#1a1a2e" },
-  mid_autumn: { primary: "#e76f51", secondary: "#f4a261", button: "#264653", background: "#fefae0", font: "#2a2a2a" },
-  valentine: { primary: "#e63946", secondary: "#f1faee", button: "#d62828", background: "#fff0f3", font: "#6a040f" },
-  custom: { primary: "#2d6a4f", secondary: "#95d5b2", button: "#40916c", background: "#f8f9fa", font: "#1b4332" },
-};
+import { getMallTheme } from "@/lib/mallTheme";
+import { MallThemeDecorations, MallThemeMascot } from "@/components/MallThemeArtwork";
 
 export default function MallHome() {
   const [search, setSearch] = useState("");
@@ -38,13 +25,9 @@ export default function MallHome() {
   const { data: products, isLoading: isProductsLoading } = trpc.mall.products.useQuery({ categoryId, search: searchQuery || undefined });
   const { data: bundles } = trpc.productBundles.mallList.useQuery();
 
-  // Theme colors from settings
+  // Theme colours and visual language from settings
   const theme = useMemo(() => {
-    const themeKey = settings?.activeTheme || "xintian_nature";
-    if (themeKey === "custom" && settings?.customThemeColors) {
-      return settings.customThemeColors as { primary: string; secondary: string; button: string; background: string; font: string };
-    }
-    return THEMES[themeKey] || THEMES.xintian_nature;
+    return getMallTheme(settings?.activeTheme, settings?.customThemeColors);
   }, [settings?.activeTheme, settings?.customThemeColors]);
 
   // V2.0.93: Use state + event listener so cart count updates in real time when items are added
@@ -85,7 +68,7 @@ export default function MallHome() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: theme.background, color: theme.font }}>
+    <div className="relative min-h-screen overflow-x-hidden" style={{ backgroundColor: theme.background, backgroundImage: theme.visual.pattern, color: theme.font }}>
       <style>{`
         .mall-theme-primary { color: ${theme.primary}; }
         .mall-theme-bg-primary { background-color: ${theme.primary}; }
@@ -96,10 +79,16 @@ export default function MallHome() {
         .mall-card-hover { transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1); }
         .mall-img-zoom { transition: transform 0.4s cubic-bezier(0.23, 1, 0.32, 1); }
         .mall-img-zoom:hover { transform: scale(1.08); }
+        .mall-theme-card { border: 1px solid ${theme.secondary}9c; box-shadow: 0 10px 28px ${theme.primary}14; }
+        .mall-theme-edge { position: relative; }
+        .mall-theme-edge::before { content: ""; position: absolute; z-index: 2; left: 0; right: 0; top: 0; height: 4px; background: ${theme.visual.edge}; }
+        @media (prefers-reduced-motion: no-preference) { .mall-theme-mascot { animation: mall-theme-float 4s ease-in-out infinite; } @keyframes mall-theme-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } } }
       `}</style>
+      <MallThemeDecorations theme={theme} />
+      <div className="relative z-10">
 
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b shadow-sm" style={{ backgroundColor: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)" }}>
+      <header className="sticky top-0 z-50 border-b shadow-sm" style={{ backgroundColor: `${theme.background}f2`, borderColor: `${theme.secondary}8c`, backdropFilter: "blur(12px)" }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
           <Link href="/mall" className="flex items-center gap-2 shrink-0">
             {settings?.logoUrl ? (
@@ -108,6 +97,7 @@ export default function MallHome() {
               <img src={import.meta.env.VITE_APP_LOGO || ""} alt={settings?.shopName || "心田"} className="h-10 w-10 rounded-lg object-contain" />
             )}
             <span className="font-bold text-lg mall-theme-primary">{settings?.shopName || "心田 Xintian"}</span>
+            <MallThemeMascot theme={theme} compact />
           </Link>
           <div className="flex-1 max-w-md mx-auto">
             <div className="relative">
@@ -161,6 +151,21 @@ export default function MallHome() {
         )}
       </header>
 
+      <div className="max-w-6xl mx-auto px-4 pt-4">
+        <div className="mall-theme-edge flex items-center justify-between gap-3 overflow-hidden rounded-2xl border px-4 py-3 backdrop-blur-sm" style={{ backgroundColor: `${theme.background}d9`, borderColor: `${theme.secondary}b0`, boxShadow: `0 10px 24px ${theme.primary}10` }}>
+          <div className="flex min-w-0 items-center gap-3">
+            <MallThemeMascot theme={theme} />
+            <div className="min-w-0">
+              <p className="text-sm font-bold" style={{ color: theme.font }}>{theme.visual.mascot.name.zh}的主题小花园</p>
+              <p className="truncate text-xs" style={{ color: `${theme.font}b0` }}>{theme.visual.description.zh}</p>
+            </div>
+          </div>
+          <div className="hidden shrink-0 items-center gap-1 text-xl sm:flex" style={{ color: theme.primary }} aria-hidden="true">
+            {theme.visual.motifs.map((motif, index) => <span key={`${motif}-${index}`}>{motif}</span>)}
+          </div>
+        </div>
+      </div>
+
       {/* Notices */}
       {notices && notices.length > 0 && (
         <div className="border-b" style={{ backgroundColor: "#fff3cd", borderColor: "#ffeaa7" }}>
@@ -196,7 +201,7 @@ export default function MallHome() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {bundles.map((b: any) => (
               <Link key={b.id} href={`/mall/bundle/${b.id}`}>
-                <Card className="overflow-hidden mall-card-hover cursor-pointer group border-0 shadow-sm" style={{ borderRadius: "12px" }}>
+                <Card className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90" style={{ borderRadius: "16px" }}>
                   <div className="aspect-square overflow-hidden bg-gray-50 relative">
                     {b.coverImage ? (
                       <img src={b.coverImage} alt={b.name} className="w-full h-full object-cover mall-img-zoom" />
@@ -254,7 +259,7 @@ export default function MallHome() {
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
           {isProductsLoading && Array.from({ length: 4 }).map((_, index) => (
-            <Card key={`product-skeleton-${index}`} className="overflow-hidden border-0 shadow-sm" style={{ borderRadius: "12px" }}>
+            <Card key={`product-skeleton-${index}`} className="mall-theme-card overflow-hidden bg-white/90" style={{ borderRadius: "16px" }}>
               <div className="aspect-square animate-pulse bg-gray-100" />
               <CardContent className="space-y-2 p-3">
                 <div className="h-4 w-3/4 animate-pulse rounded bg-gray-100" />
@@ -264,7 +269,7 @@ export default function MallHome() {
           ))}
           {!isProductsLoading && products?.map((p: any) => (
             <Link key={p.id} href={`/mall/product/${p.id}`}>
-              <Card className="overflow-hidden mall-card-hover cursor-pointer group border-0 shadow-sm" style={{ borderRadius: "12px" }}>
+              <Card className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90" style={{ borderRadius: "16px" }}>
                 <div className="aspect-square overflow-hidden bg-gray-50 relative">
                   {p.coverImageUrl ? (
                     <img src={p.coverImageUrl} alt={p.name} className="w-full h-full object-cover mall-img-zoom" />
@@ -392,6 +397,7 @@ export default function MallHome() {
           <p>© {new Date().getFullYear()} {settings?.shopName || "心田 Xintian"}. All rights reserved.</p>
         </div>
       </footer>
+      </div>
     </div>
   );
 }
