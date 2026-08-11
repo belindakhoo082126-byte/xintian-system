@@ -37,6 +37,15 @@ function getStatusBadge(status: string, lang: string) {
   );
 }
 
+function getShippingLabelClassName(label: string | undefined): string {
+  const normalizedLabel = (label || "").toLowerCase();
+  if (normalizedLabel.includes("poslaju")) return "bg-red-100 text-red-800";
+  if (normalizedLabel.includes("shopee")) return "bg-orange-100 text-orange-800";
+  if (normalizedLabel.includes("lalamove")) return "bg-yellow-100 text-yellow-800";
+  if (normalizedLabel.includes("自取")) return "bg-purple-100 text-purple-800";
+  return "bg-gray-100 text-gray-800";
+}
+
 const STATUS_TABS = [
   { key: "packing", label: { zh: "待包货", en: "Packing" }, icon: Clock, color: "text-blue-600" },
   { key: "scheduled", label: { zh: "预约发货", en: "Scheduled" }, icon: Calendar, color: "text-purple-600" },
@@ -385,7 +394,7 @@ export default function Packing() {
                             <div className="flex items-center gap-2 mb-2">
                               <span className="font-semibold text-sm">{order.orderNumber}</span>
                               {order.specialLabel && (
-                                <Badge variant="destructive" className="text-xs">{order.specialLabel}</Badge>
+                                <Badge variant="outline" className={`text-xs border-0 ${getShippingLabelClassName(order.specialLabel)}`}>{order.specialLabel}</Badge>
                               )}
                               {isSpecialTab && (() => {
                                 const reason = getSpecialOrderReasonLabel(order.specialOrderType);
