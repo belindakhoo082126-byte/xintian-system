@@ -55,6 +55,7 @@ const fullShipmentInput = {
 const partialShipmentInput = {
   orderId: 90001,
   itemIds: [1001],
+  itemQuantities: [{ itemId: "1001", quantity: 1 }],
   packageData: {
     courier: "Parcel Daily",
     shippingType: "manual" as const,
@@ -120,7 +121,8 @@ describe("shipping router safety checks", () => {
     expect(dbMock.partialShipping).toHaveBeenCalledWith(
       90001,
       partialShipmentInput.itemIds,
-      partialShipmentInput.packageData
+      partialShipmentInput.packageData,
+      partialShipmentInput.itemQuantities
     );
   });
 });

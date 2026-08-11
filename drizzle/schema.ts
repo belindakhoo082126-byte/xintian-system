@@ -1380,6 +1380,26 @@ export const orderExceptions = mysqlTable("order_exceptions", {
   refundAmount: decimal("refundAmount", { precision: 10, scale: 2 }).default("0"),
   // Description of the quality issue
   description: text("description"),
+  // V2.1.26补充4: Quantity of affected items (Issue 6a/6c/6e)
+  quantity: int("quantity").default(0),
+  // V2.1.26补充4: Customer action for out_of_stock/other (Issue 6b/6f)
+  customerAction: mysqlEnum("customerAction", [
+    "replace_product", // 更换商品
+    "wait_restock",     // 等待补货
+    "refund",           // 退款
+    "pending",          // 待选择
+  ]).default("pending"),
+  // V2.1.26补充4: Replacement product info (Issue 6g)
+  replacementProductId: int("replacementProductId"),
+  replacementProductName: varchar("replacementProductName", { length: 255 }),
+  replacementQuantity: int("replacementQuantity").default(0),
+  replacementUnitPrice: decimal("replacementUnitPrice", { precision: 10, scale: 2 }).default("0"),
+  // V2.1.26补充4: Refund method (Issue 6j): credit/tng/cash
+  refundMethod: mysqlEnum("refundMethod", [
+    "credit", // 退款到Credit
+    "tng",    // 退款TNG
+    "cash",   // 退款Cash
+  ]),
   // Who created this exception
   createdBy: varchar("createdBy", { length: 255 }),
   // Who resolved it

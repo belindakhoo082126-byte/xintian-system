@@ -2613,3 +2613,28 @@
 - [x] getPackingDetail添加recipientName/recipientPhone/addressLine1/addressLine2/postcode/recipientCity/recipientState字段
 - [x] getPackingSlipData添加客户资料字段返回
 - [x] TypeScript零错误，270测试全部通过
+
+## V2.1.26 补充4 - 包货工作台Issues 5/6/7/1修复
+- [x] Issue 5: 打印格式完善 - getPackingSlipData添加extraCharge/creditUsed/extraChargeDescription/discountReason字段
+- [x] Issue 5: A5PackingSlip添加金额详情区域（商品小计/运费/折扣/额外收费/Credit/总金额）
+- [x] Issue 5: A5PackingSlip添加备注区域（客户备注+后台备注）
+- [x] Issue 5: 商品格子逻辑优化（超过2个商品才画格子，1个不需要）
+- [x] Issue 5: 格子内商品名字变大，符合格子大小
+- [x] Issue 6: 数据库Schema扩展 - order_exceptions表新增quantity/customerAction/replacementProductId/replacementQuantity/refundMethod字段
+- [x] Issue 6: createOrderException函数更新支持quantity和customerAction参数
+- [x] Issue 6: resolveOrderException函数更新支持商品更换/退款/等待补货逻辑
+- [x] Issue 6: routers.ts orderException.create/resolve更新支持新字段
+- [x] Issue 6: 前端异常处理对话框增强 - 缺货/品质异常/其他异常添加数量输入框
+- [x] Issue 6: 前端异常处理对话框增强 - 缺货/其他异常添加客户处理方式选择（更换商品/等待补货/退款）
+- [x] Issue 6: 前端异常处理对话框增强 - 更换商品添加商品搜索框（trpc.products.list）
+- [x] Issue 6: 前端异常处理对话框增强 - 退款添加退款方式选择（credit/tng/cash）
+- [x] Issue 7: partialShipping函数更新支持per-item发货数量（{itemId, quantity}[]格式）
+- [x] Issue 7: createPackage函数更新支持per-item发货数量
+- [x] Issue 7: routers.ts partialShip procedure更新支持itemQuantities参数
+- [x] Issue 7: 前端部分发货UI添加每个商品的发货数量输入框
+- [x] Issue 1: AI Smart地址解析修复 - 去除Name/Phone标签字眼
+- [x] Issue 1: AI Smart地址解析修复 - 添加马来西亚城市列表改进城市提取
+- [x] Issue 1: AI Smart地址解析修复 - 更新AI prompt明确指示去除标签
+- [x] Issue 6h: Packing.tsx添加"特别订单"标签（在今日已发货旁边）
+- [x] Issue 6h: 使用trpc.shippingV2.specialOrders查询特别订单数据
+- [x] TypeScript编译零错误，270测试全部通过

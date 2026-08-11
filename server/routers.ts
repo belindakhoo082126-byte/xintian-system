@@ -3716,9 +3716,11 @@ export const appRouter = router({
         weight: z.string().optional(),
         shippingCost: z.string().optional(),
       }),
+      // V2.1.26补充4: Per-item shipped quantity (Issue 7)
+      itemQuantities: z.array(z.object({ itemId: z.string(), quantity: z.number() })).optional(),
     })).mutation(async ({ input }) => {
       try {
-        return await db.partialShipping(input.orderId, input.itemIds, input.packageData);
+        return await db.partialShipping(input.orderId, input.itemIds, input.packageData, input.itemQuantities);
       } catch (error) {
         return rethrowPackingShippingError(error);
       }
@@ -4139,6 +4141,9 @@ export const appRouter = router({
       orderItemId: z.number().nullable().optional(),
       exceptionType: z.enum(["out_of_stock", "quality_issue", "overcharged_shipping", "other"]),
       description: z.string().optional(),
+      // V2.1.26补充4: New fields for enhanced exception handling
+      quantity: z.number().optional(),
+      customerAction: z.enum(["replace_product", "wait_restock", "refund", "pending"]).optional(),
     })).mutation(async ({ input, ctx }) => {
       const userName = ctx.user?.name || ctx.user?.email || 'Unknown';
       return await db.createOrderException({
@@ -4147,6 +4152,8 @@ export const appRouter = router({
         exceptionType: input.exceptionType,
         description: input.description,
         createdBy: userName,
+        quantity: input.quantity,
+        customerAction: input.customerAction,
       });
     }),
 
@@ -4173,6 +4180,14 @@ export const appRouter = router({
         unitCost: z.number().optional(),
       })).optional(),
       orderId: z.number(),
+      // V2.1.26补充4: New fields for enhanced exception handling
+      quantity: z.number().optional(),
+      customerAction: z.enum(["replace_product", "wait_restock", "refund", "pending"]).optional(),
+      replacementProductId: z.number().optional(),
+      replacementProductName: z.string().optional(),
+      replacementQuantity: z.number().optional(),
+      replacementUnitPrice: z.number().optional(),
+      refundMethod: z.enum(["credit", "tng", "cash"]).optional(),
     })).mutation(async ({ input, ctx }) => {
       const userName = ctx.user?.name || ctx.user?.email || 'Unknown';
 
@@ -4181,8 +4196,17 @@ export const appRouter = router({
         input.exceptionId,
         input.resolutionType,
         userName,
-        input.scrapCost,
-        input.refundAmount,
+        {
+          scrapCost: input.scrapCost,
+          refundAmount: input.refundAmount,
+          replacementProductId: input.replacementProductId,
+          replacementProductName: input.replacementProductName,
+          replacementQuantity: input.replacementQuantity,
+          replacementUnitPrice: input.replacementUnitPrice,
+          refundMethod: input.refundMethod,
+          customerAction: input.customerAction,
+          quantity: input.quantity,
+        },
       );
 
       // 2. Handle scrap items (mark as scrapped, deduct stock, log inventory adjustment)

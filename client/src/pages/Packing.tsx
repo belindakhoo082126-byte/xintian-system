@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Package, Truck, CheckCircle2, Clock, MapPin, Phone, User, ArrowLeft, Printer, Ship, Calendar, Filter } from "lucide-react";
+import { Package, Truck, CheckCircle2, Clock, MapPin, Phone, User, ArrowLeft, Printer, Ship, Calendar, Filter, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -42,6 +42,7 @@ const STATUS_TABS = [
   { key: "shipped", label: { zh: "已发货", en: "Shipped" }, icon: Truck, color: "text-green-600" },
   { key: "partial_shipped", label: { zh: "部分发货", en: "Partial Shipped" }, icon: Package, color: "text-orange-600" },
   { key: "completed", label: { zh: "今日已发货", en: "Today's Shipped" }, icon: CheckCircle2, color: "text-gray-600" },
+  { key: "special", label: { zh: "特别订单", en: "Special Orders" }, icon: AlertCircle, color: "text-red-600" },
 ] as const;
 
 export default function Packing() {
@@ -51,22 +52,31 @@ export default function Packing() {
   const [activeTab, setActiveTab] = useState<string>(urlTab || "packing");
 
   const isScheduledTab = activeTab === "scheduled";
+  const isSpecialTab = activeTab === "special";
   const urlDate = new URLSearchParams(searchParams).get("date");
   const todayStr = new Date().toISOString().split("T")[0];
   const [dateFrom, setDateFrom] = useState<string>(urlDate === "today" ? todayStr : "");
   const [dateTo, setDateTo] = useState<string>(urlDate === "today" ? todayStr : "");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const utils = trpc.useUtils();
-  const { data: orders, isLoading } = trpc.packing.list.useQuery({ status: activeTab as any }, { enabled: !isScheduledTab });
+  const { data: orders, isLoading } = trpc.packing.list.useQuery({ status: activeTab as any }, { enabled: !isScheduledTab && !isSpecialTab });
   const { data: scheduledOrders, isLoading: scheduledLoading } = trpc.scheduledShipping.list.useQuery(
     { dateFrom: dateFrom || undefined, dateTo: dateTo || undefined },
     { enabled: isScheduledTab }
   );
-  const rawOrderList = isScheduledTab ? ((scheduledOrders as any[]) || []) : ((orders as any[]) || []);
-  const orderList = isScheduledTab && statusFilter !== "all"
+  const { data: specialOrdersData, isLoading: specialLoading } = trpc.shippingV2.specialOrders.useQuery(
+    { status: "pending" },
+    { enabled: isSpecialTab }
+  );
+  const rawOrderList = isScheduledTab
+    ? ((scheduledOrders as any[]) || [])
+    : isSpecialTab
+      ? (Array.isArray(specialOrdersData) ? (specialOrdersData as any[]) : ((specialOrdersData as any)?.items || []) as any[])
+      : ((orders as any[]) || []);
+  const orderList = (isScheduledTab || isSpecialTab) && statusFilter !== "all"
     ? rawOrderList.filter((o: any) => (o.physicalStatus || o.importStatus) === statusFilter)
     : rawOrderList;
-  const isLoadingCombined = isLoading || scheduledLoading;
+  const isLoadingCombined = isLoading || scheduledLoading || specialLoading;
 
   // V2.1.26: Batch print state
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());

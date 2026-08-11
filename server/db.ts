@@ -5345,6 +5345,30 @@ export function parseSmartPaste(text: string): {
     "federal territory": "Kuala Lumpur",
   };
 
+  // V2.1.26补充4: Malaysian cities list for city extraction (Issue 1)
+  const malaysianCities = [
+    "Ipoh", "Johor Bahru", "Kuala Lumpur", "Georgetown", "Kuching", "Kota Kinabalu",
+    "Shah Alam", "Petaling Jaya", "Subang Jaya", "Klang", "Cheras", "Ampang",
+    "Kajang", "Serdang", "Puchong", "Damansara", "Seremban", "Malacca",
+    "Alor Setar", "Kota Bharu", "Kuala Terengganu", "Kuantan", "Kangar",
+    "Miri", "Sibu", "Sandakan", "Tawau", "Labuan",
+    "Gombak", "Hulu Langat", "Sepang", "Kuala Selangor", "Sabak Bernam", "Kuala Langat",
+    "Butterworth", "Bukit Mertajam", "Bayan Lepas", "Gelugor", "Balik Pulau",
+    "Menglembu", "Gopeng", "Tapah", "Kampar", "Teluk Intan", "Lumut", "Sitiawan",
+    "Taiping", "Kuala Kangsar", "Parit Buntar", "Sungai Siput",
+    "Muar", "Batu Pahat", "Kluang", "Segamat", "Kulai", "Pasir Gudang",
+    "Iskandar Puteri", "Skudai", "Pontian", "Kota Tinggi", "Mersing",
+    "Mantin", "Port Dickson", "Nilai", "Bahau", "Kuala Pilah", "Jempol",
+    "Lahad Datu", "Keningau", "Kudat", "Putatan",
+    "Bintulu", "Limbang", "Sarikei", "Kapit",
+    "Sungai Petani", "Kulim", "Baling", "Yan", "Sik", "Padang Terap",
+    "Bentong", "Raub", "Temerloh", "Pekan", "Rompin", "Jerantut", "Cameron Highlands",
+    "Pasir Mas", "Tumpat", "Pasir Puteh", "Bachok", "Tanah Merah",
+    "Kemaman", "Dungun", "Marang", "Besut", "Setiu", "Hulu Terengganu",
+    "Alor Gajah", "Jasin", "Masjid Tanah", "Merlimau",
+    "Putrajaya", "Cyberjaya", "Bandar Baru Bangi", "Bangi",
+  ];
+
   // V2.0.79: Collect address parts from labeled address lines
   const addressParts: string[] = [];
 
@@ -5467,31 +5491,43 @@ export function parseSmartPaste(text: string): {
         }
       }
     }
-    // Try to extract city — text between postcode and state
+    // V2.1.26补充4: Try to extract city using known Malaysian cities list first (Issue 1)
+    if (!result.city) {
+      for (const city of malaysianCities) {
+        const cityRegex = new RegExp(`\\b${city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+        if (cityRegex.test(fullAddress)) {
+          result.city = city;
+          break;
+        }
+      }
+    }
+    // Fallback: text between postcode and state
     if (!result.city && result.postcode) {
       const afterPostcode = fullAddress.split(result.postcode)[1] || "";
       if (result.state) {
         const stateIdx = afterPostcode.toLowerCase().indexOf(result.state.toLowerCase());
         if (stateIdx > 0) {
           const cityCandidate = afterPostcode.substring(0, stateIdx).replace(/[,，]/g, "").trim();
-          if (cityCandidate) result.city = cityCandidate;
+          if (cityCandidate && !/\d/.test(cityCandidate)) result.city = cityCandidate;
         } else {
           const cityCandidate = afterPostcode.replace(/[,，]/g, "").trim();
-          if (cityCandidate) result.city = cityCandidate.replace(new RegExp(result.state, "gi"), "").trim();
+          if (cityCandidate && !/\d/.test(cityCandidate)) result.city = cityCandidate.replace(new RegExp(result.state, "gi"), "").trim();
         }
       } else {
         const cityCandidate = afterPostcode.replace(/[,，]/g, "").trim();
-        if (cityCandidate) result.city = cityCandidate;
+        if (cityCandidate && !/\d/.test(cityCandidate)) result.city = cityCandidate;
       }
     }
 
-    // Split address into line1 and line2
+    // V2.1.26补充4: Split address into line1 and line2 (Issue 1)
     // Remove postcode, city, state from the full address to get the street portion
     let streetPart = fullAddress;
-    if (result.postcode) streetPart = streetPart.replace(new RegExp(`\b${result.postcode}\b`), "");
+    if (result.postcode) streetPart = streetPart.replace(new RegExp(`\\b${result.postcode}\\b`), "");
     if (result.city) streetPart = streetPart.replace(new RegExp(result.city, "gi"), "");
     if (result.state) streetPart = streetPart.replace(new RegExp(result.state, "gi"), "");
     streetPart = streetPart.replace(/[,，]/g, " ").replace(/\s+/g, " ").trim();
+    // V2.1.26补充4: Also strip any remaining Name:/Phone:/Hp:/etc labels from street part (Issue 1)
+    streetPart = streetPart.replace(/^\s*(name|phone|hp|tel|contact|receiver|recipient|收件人|姓名|电话|联络|手机)\s*[:：]?\s*/i, "").trim();
 
     if (streetPart) {
       // Split by comma or into two roughly equal parts
@@ -5538,6 +5574,8 @@ export async function aiSmartParse(text: string) {
     const prompt = `Parse this Malaysian customer address text. Return JSON only, no explanation.
 Extract: customerName, contactNumber, addressLine1, addressLine2, postcode, city, state, area ("West Malaysia" or "East Malaysia").
 Sabah/Sarawak/Labuan = East Malaysia, all others = West Malaysia.
+IMPORTANT: Remove any labels like "Name:", "Phone:", "Hp:", "Tel:", "Receiver:", "Address:", "ADD:" etc. from the values. Only return the actual data, not the labels.
+IMPORTANT: Do NOT put the entire address in addressLine1. Split it properly: street address in addressLine1, additional info in addressLine2, postcode in postcode, city in city, state in state.
 
 Text:
 ${text}`;
@@ -5851,6 +5889,11 @@ export async function getPackingDetail(orderId: number) {
     isSpecialOrder: orders.isSpecialOrder,
     specialOrderType: orders.specialOrderType,
     specialOrderStatus: orders.specialOrderStatus,
+    // V2.1.26补充4: Add extraCharge, creditUsed, extraChargeDescription, discountReason for A5 slip
+    extraCharge: orders.extraCharge,
+    extraChargeDescription: orders.extraChargeDescription,
+    creditUsed: orders.creditUsed,
+    discountReason: orders.discountReason,
   }).from(orders)
     .leftJoin(customers, eq(orders.customerId, customers.id))
     .where(eq(orders.id, orderId))
@@ -5947,6 +5990,12 @@ export async function getPackingSlipData(orderId: number) {
   else if (detail.shippingMethod === "east_malaysia_poslaju") shippingMethodLabel = "东马 POSLAJU";
   else shippingMethodLabel = "西马";
 
+  // V2.1.26补充4: Add extraCharge, creditUsed, extraChargeDescription, discountReason for A5 slip
+  const extraCharge = parseFloat((detail as any).extraCharge || "0");
+  const creditUsed = parseFloat((detail as any).creditUsed || "0");
+  const extraChargeDescription = (detail as any).extraChargeDescription || "";
+  const discountReason = (detail as any).discountReason || "";
+
   return {
     orderNumber: detail.orderNumber,
     customerName: detail.customerName,
@@ -5978,6 +6027,11 @@ export async function getPackingSlipData(orderId: number) {
       totalAmount: totalAmount.toFixed(2),
       physicalSubtotal: physicalSubtotal.toFixed(2),
       isFreeShipping,
+      // V2.1.26补充4: Additional amount details for A5 slip
+      extraCharge: extraCharge.toFixed(2),
+      extraChargeDescription,
+      creditUsed: creditUsed.toFixed(2),
+      discountReason,
     },
     specialLabel,
     shippingMethodLabel,
@@ -5995,6 +6049,7 @@ export async function createPackage(data: {
   weight?: string;
   shippingCost?: string;
   itemIds?: number[]; // For partial shipping: which order items are in this package
+  itemQuantities?: { itemId: string; quantity: number }[]; // V2.1.26补充4: Per-item shipped quantity (Issue 7)
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -6025,10 +6080,13 @@ export async function createPackage(data: {
       // Get the order item to know quantity
       const item = await db.select().from(orderItems).where(eq(orderItems.id, itemId)).limit(1);
       if (item.length > 0) {
+        // V2.1.26补充4: Use per-item quantity if provided, otherwise full quantity
+        const qtyEntry = data.itemQuantities?.find(q => q.itemId === String(itemId));
+        const shippedQty = qtyEntry ? qtyEntry.quantity : item[0].quantity;
         await db.insert(packageItems).values({
           packageId,
           orderItemId: itemId,
-          quantity: item[0].quantity,
+          quantity: shippedQty,
         });
       }
     }
@@ -6095,7 +6153,9 @@ export async function partialShipping(orderId: number, itemIds: number[], packag
   providerOrderId?: string;
   weight?: string;
   shippingCost?: string;
-}) {
+}, itemQuantities?: { itemId: string; quantity: number }[]) {
+  // V2.1.26补充4: itemQuantities maps orderItemId -> shipped quantity (Issue 7)
+  // If not provided, defaults to full quantity for each item
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -6116,39 +6176,49 @@ export async function partialShipping(orderId: number, itemIds: number[], packag
     throw new Error("PACKING_ITEM_NOT_IN_ORDER");
   }
 
+  // V2.1.26补充4: Check already shipped quantities (not just IDs)
   const existingPackages = await db.select().from(packages).where(eq(packages.orderId, orderId));
-  const alreadyPackedItemIds = new Set<number>();
+  const alreadyShippedQty: Map<number, number> = new Map();
   for (const pkg of existingPackages) {
     const pkgItems = await db.select().from(packageItems).where(eq(packageItems.packageId, pkg.id));
     for (const pi of pkgItems) {
-      alreadyPackedItemIds.add(pi.orderItemId);
+      alreadyShippedQty.set(pi.orderItemId, (alreadyShippedQty.get(pi.orderItemId) || 0) + pi.quantity);
     }
   }
-  if (itemIds.some((itemId) => alreadyPackedItemIds.has(itemId))) {
-    throw new Error("PACKING_ITEM_ALREADY_SHIPPED");
+  // Validate: total shipped qty (existing + new) must not exceed order qty
+  for (const itemId of itemIds) {
+    const orderItem = allItems.find((it) => it.id === itemId);
+    if (!orderItem) continue;
+    const alreadyShipped = alreadyShippedQty.get(itemId) || 0;
+    const qtyEntry = itemQuantities?.find(q => q.itemId === String(itemId));
+    const newQty = qtyEntry ? qtyEntry.quantity : orderItem.quantity;
+    if (alreadyShipped + newQty > orderItem.quantity) {
+      throw new Error(`PACKING_QUANTITY_EXCEEDED: item ${itemId} already shipped ${alreadyShipped}, trying to ship ${newQty}, total ${orderItem.quantity}`);
+    }
   }
-  
-  // Create package with selected items
+
+  // Create package with selected items and quantities
   await createPackage({
     orderId,
     ...packageData,
     itemIds,
+    itemQuantities,
   });
   
-  // Check if all items are now shipped
+  // Check if all items are now fully shipped
   const allPackages = await db.select().from(packages).where(eq(packages.orderId, orderId));
   
-  // Get all shipped item IDs
-  const shippedItemIds = new Set<number>();
+  // Get total shipped quantities per item
+  const totalShippedQty: Map<number, number> = new Map();
   for (const pkg of allPackages) {
     const pkgItems = await db.select().from(packageItems).where(eq(packageItems.packageId, pkg.id));
     for (const pi of pkgItems) {
-      shippedItemIds.add(pi.orderItemId);
+      totalShippedQty.set(pi.orderItemId, (totalShippedQty.get(pi.orderItemId) || 0) + pi.quantity);
     }
   }
   
-  // Check if all items are shipped
-  const allShipped = allItems.every((item) => shippedItemIds.has(item.id));
+  // Check if all items are fully shipped (shipped qty >= order qty)
+  const allShipped = allItems.every((item) => (totalShippedQty.get(item.id) || 0) >= item.quantity);
   
   // Update order status
   await db.update(orders).set({
@@ -7343,6 +7413,9 @@ export async function createOrderException(data: {
   exceptionType: 'out_of_stock' | 'quality_issue' | 'overcharged_shipping' | 'other';
   description?: string;
   createdBy?: string;
+  // V2.1.26补充4: New fields for enhanced exception handling
+  quantity?: number;
+  customerAction?: 'replace_product' | 'wait_restock' | 'refund' | 'pending';
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -7352,6 +7425,9 @@ export async function createOrderException(data: {
     exceptionType: data.exceptionType,
     description: data.description ?? null,
     createdBy: data.createdBy ?? null,
+    // V2.1.26补充4: New fields
+    quantity: data.quantity ?? 0,
+    customerAction: data.customerAction ?? 'pending',
   });
   const id = (result as any).insertId;
   const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, Number(id))).limit(1);
@@ -7362,19 +7438,48 @@ export async function resolveOrderException(
   exceptionId: number,
   resolutionType: 'replace' | 'wait_restock' | 'refund',
   resolvedBy: string,
-  scrapCost?: number,
-  refundAmount?: number,
+  options?: {
+    scrapCost?: number;
+    refundAmount?: number;
+    // V2.1.26补充4: Replacement product info
+    replacementProductId?: number;
+    replacementProductName?: string;
+    replacementQuantity?: number;
+    replacementUnitPrice?: number;
+    // V2.1.26补充4: Refund method (credit/tng/cash)
+    refundMethod?: 'credit' | 'tng' | 'cash';
+    // V2.1.26补充4: Customer action
+    customerAction?: 'replace_product' | 'wait_restock' | 'refund' | 'pending';
+    quantity?: number;
+  },
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(orderExceptions).set({
+  const updateData: any = {
     resolutionType,
     status: 'resolved',
     resolvedBy,
     resolvedAt: new Date(),
-    scrapCost: (scrapCost ?? 0).toString(),
-    refundAmount: (refundAmount ?? 0).toString(),
-  }).where(eq(orderExceptions.id, exceptionId));
+    scrapCost: (options?.scrapCost ?? 0).toString(),
+    refundAmount: (options?.refundAmount ?? 0).toString(),
+  };
+  // V2.1.26补充4: Set new fields if provided
+  if (options?.replacementProductId) {
+    updateData.replacementProductId = options.replacementProductId;
+    updateData.replacementProductName = options.replacementProductName ?? null;
+    updateData.replacementQuantity = options.replacementQuantity ?? 0;
+    updateData.replacementUnitPrice = (options.replacementUnitPrice ?? 0).toString();
+  }
+  if (options?.refundMethod) {
+    updateData.refundMethod = options.refundMethod;
+  }
+  if (options?.customerAction) {
+    updateData.customerAction = options.customerAction;
+  }
+  if (options?.quantity !== undefined) {
+    updateData.quantity = options.quantity;
+  }
+  await db.update(orderExceptions).set(updateData).where(eq(orderExceptions.id, exceptionId));
   const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1);
   return rows[0];
 }

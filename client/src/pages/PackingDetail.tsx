@@ -48,6 +48,16 @@ export default function PackingDetail() {
   const [replacementProductId, setReplacementProductId] = useState<number | "">("");
   const [replacementQty, setReplacementQty] = useState(1);
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
+  // V2.1.26补充4: Per-item ship quantity for partial shipping (Issue 7)
+  const [shipQuantities, setShipQuantities] = useState<Record<number, number>>({});
+  // V2.1.26补充4: New state for enhanced exception handling (Issue 6)
+  const [exceptionQuantity, setExceptionQuantity] = useState<number>(1);
+  const [customerAction, setCustomerAction] = useState<"replace_product" | "wait_restock" | "refund" | "pending">("pending");
+  const [refundMethod, setRefundMethod] = useState<"credit" | "tng" | "cash">("credit");
+  const [productSearchQuery, setProductSearchQuery] = useState("");
+  const [productSearchResults, setProductSearchResults] = useState<any[]>([]);
+  const [replacementUnitPrice, setReplacementUnitPrice] = useState<number>(0);
+  const [replacementProductName, setReplacementProductName] = useState("");
   const [packages, setPackages] = useState<Array<{
     courier: string;
     shippingType: "auto" | "manual" | "parcelking";
@@ -119,7 +129,16 @@ export default function PackingDetail() {
       setExceptionItemId("");
       setReplacementProductId("");
       setReplacementQty(1);
+      // V2.1.26补充4: Reset new state
+      setExceptionQuantity(1);
+      setCustomerAction("pending");
+      setRefundMethod("credit");
+      setProductSearchQuery("");
+      setProductSearchResults([]);
+      setReplacementUnitPrice(0);
+      setReplacementProductName("");
       utils.packing.detail.invalidate({ orderId });
+      utils.packing.list.invalidate();
     },
     onError: (err) => toast.error(translate("处理异常失败: ", "Failed to resolve exception: ") + err.message),
   });
@@ -231,6 +250,10 @@ export default function PackingDetail() {
                 toast.error(translate("手动物流必须填写 Tracking Number", "Manual logistics must have a Tracking Number"));
         return;
       }
+      // V2.1.26补充4: Pass per-item ship quantities (Issue 7)
+      const itemQuantities = selectedItems
+        .filter((itemId) => shipQuantities[itemId] !== undefined)
+        .map((itemId) => ({ itemId: String(itemId), quantity: shipQuantities[itemId] }));
       partialShipMutation.mutate({
         orderId,
         itemIds: selectedItems,
@@ -240,6 +263,7 @@ export default function PackingDetail() {
           trackingNumber: pkg.trackingNumber || undefined,
           weight: pkg.weight || undefined,
         },
+        itemQuantities: itemQuantities.length > 0 ? itemQuantities : undefined,
       });
     }
   };
@@ -248,6 +272,12 @@ export default function PackingDetail() {
     setSelectedItems((prev) =>
       prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId]
     );
+  };
+
+  // V2.1.26补充4: Update ship quantity for a specific item (Issue 7)
+  const updateShipQuantity = (itemId: number, qty: number, maxQty: number) => {
+    const clampedQty = Math.max(1, Math.min(qty, maxQty));
+    setShipQuantities((prev) => ({ ...prev, [itemId]: clampedQty }));
   };
 
   const addPackage = () => {
@@ -441,7 +471,7 @@ export default function PackingDetail() {
                   {translate("新增异常处理", "New Exception")}
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-lg">
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>{translate("异常处理", "Exception Handling")}</DialogTitle>
                 </DialogHeader>
@@ -449,7 +479,7 @@ export default function PackingDetail() {
                   {/* Step 1: Exception Type */}
                   <div className="space-y-2">
                     <Label>{translate("异常类型", "Exception Type")}</Label>
-                    <Select value={exceptionType} onValueChange={(v: any) => setExceptionType(v)}>
+                    <Select value={exceptionType} onValueChange={(v: any) => { setExceptionType(v); setCustomerAction("pending"); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="out_of_stock">{translate("商品缺货", "Out of Stock")}</SelectItem>
@@ -463,7 +493,7 @@ export default function PackingDetail() {
                   {/* Step 2: Select affected item */}
                   <div className="space-y-2">
                     <Label>{translate("涉及商品", "Affected Item")}</Label>
-                    <Select value={String(exceptionItemId)} onValueChange={(v) => setExceptionItemId(Number(v))}>
+                    <Select value={String(exceptionItemId)} onValueChange={(v) => { setExceptionItemId(Number(v)); const item = (d.items as any[]).find((it: any) => it.id === Number(v)); if (item) setExceptionQuantity(item.quantity); }}>
                       <SelectTrigger><SelectValue placeholder={translate("选择商品", "Select item")} /></SelectTrigger>
                       <SelectContent>
                         {(d.items as any[]).map((item: any) => (
@@ -475,6 +505,21 @@ export default function PackingDetail() {
                     </Select>
                   </div>
 
+                  {/* V2.1.26补充4: Step 2b: Quantity input (Issue 6a/6c/6e) - show for out_of_stock, quality_issue, other */}
+                  {exceptionType !== "overcharged_shipping" && exceptionItemId !== "" && (
+                    <div className="space-y-2">
+                      <Label>{translate("异常数量", "Affected Quantity")}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={(d.items as any[]).find((it: any) => it.id === exceptionItemId)?.quantity || 1}
+                        value={exceptionQuantity}
+                        onChange={(e) => setExceptionQuantity(Math.max(1, Math.min(Number(e.target.value), (d.items as any[]).find((it: any) => it.id === exceptionItemId)?.quantity || 1)))}
+                      />
+                      <p className="text-xs text-muted-foreground">{translate("填写受影响的数量", "Enter the affected quantity")}</p>
+                    </div>
+                  )}
+
                   {/* Step 3: Description */}
                   <div className="space-y-2">
                     <Label>{translate("异常描述", "Description")}</Label>
@@ -485,16 +530,88 @@ export default function PackingDetail() {
                     />
                   </div>
 
-                  {/* Step 4: Resolution (for quality_issue) */}
-                  {exceptionType === "quality_issue" && (
+                  {/* V2.1.26补充4: Step 4: Customer Action (Issue 6b/6f) - show for out_of_stock, quality_issue, other */}
+                  {exceptionType !== "overcharged_shipping" && (
                     <div className="space-y-2">
-                      <Label>{translate("客户处理方式", "Customer Resolution")}</Label>
-                      <Select value={resolutionType} onValueChange={(v: any) => setResolutionType(v)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                      <Label>{translate("客户处理方式", "Customer Action")}</Label>
+                      <Select value={customerAction} onValueChange={(v: any) => setCustomerAction(v)}>
+                        <SelectTrigger><SelectValue placeholder={translate("选择处理方式", "Select action")} /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="replace">{translate("更换商品", "Replace Product")}</SelectItem>
+                          <SelectItem value="replace_product">{translate("更换商品", "Replace Product")}</SelectItem>
                           <SelectItem value="wait_restock">{translate("等待补货", "Wait for Restock")}</SelectItem>
                           <SelectItem value="refund">{translate("退款", "Refund")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* V2.1.26补充4: Step 5: Product Search for replacement (Issue 6g) */}
+                  {customerAction === "replace_product" && (
+                    <div className="space-y-2 border rounded-lg p-3 bg-blue-50 dark:bg-blue-950/20">
+                      <Label>{translate("搜索更换商品", "Search Replacement Product")}</Label>
+                      <Input
+                        value={productSearchQuery}
+                        onChange={(e) => {
+                          setProductSearchQuery(e.target.value);
+                          if (e.target.value.length >= 2) {
+                            utils.products.list.fetch({ search: e.target.value }).then((res: any) => setProductSearchResults((res || []).slice(0, 10)));
+                          } else {
+                            setProductSearchResults([]);
+                          }
+                        }}
+                        placeholder={translate("输入商品名称或关键词...", "Enter product name or keyword...")}
+                      />
+                      {productSearchResults.length > 0 && (
+                        <div className="max-h-40 overflow-y-auto border rounded-md">
+                          {productSearchResults.map((p: any) => (
+                            <div
+                              key={p.id}
+                              className="flex items-center justify-between p-2 hover:bg-accent cursor-pointer border-b last:border-0"
+                              onClick={() => {
+                                setReplacementProductId(p.id);
+                                setReplacementProductName(p.name);
+                                setReplacementUnitPrice(Number(p.price) || 0);
+                                setProductSearchQuery(p.name);
+                                setProductSearchResults([]);
+                              }}
+                            >
+                              <div>
+                                <div className="font-medium text-sm">{p.name}</div>
+                                <div className="text-xs text-muted-foreground">RM {Number(p.price || 0).toFixed(2)} {p.stock !== undefined && `| ${translate("库存", "Stock")}: ${p.stock}`}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {replacementProductId !== "" && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <Badge variant="secondary" className="text-xs">{translate("已选:", "Selected:")} {replacementProductName}</Badge>
+                          <span className="text-xs">RM {replacementUnitPrice.toFixed(2)}</span>
+                          <div className="flex items-center gap-1">
+                            <Label className="text-xs">{translate("数量:", "Qty:")}</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={replacementQty}
+                              onChange={(e) => setReplacementQty(Math.max(1, Number(e.target.value)))}
+                              className="w-16 h-8"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* V2.1.26补充4: Step 6: Refund Method (Issue 6j) */}
+                  {customerAction === "refund" && (
+                    <div className="space-y-2 border rounded-lg p-3 bg-orange-50 dark:bg-orange-950/20">
+                      <Label>{translate("退款方式", "Refund Method")}</Label>
+                      <Select value={refundMethod} onValueChange={(v: any) => setRefundMethod(v)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="credit">{translate("退款到Credit", "Refund to Credit")}</SelectItem>
+                          <SelectItem value="tng">{translate("退款TNG", "Refund to TNG")}</SelectItem>
+                          <SelectItem value="cash">{translate("退款Cash", "Refund to Cash")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -507,37 +624,59 @@ export default function PackingDetail() {
                     </Button>
                     <Button
                       onClick={() => {
-                        if (exceptionType === "quality_issue" && resolutionType !== "wait_restock") {
+                        const actionMap: Record<string, string> = { replace_product: "replace", wait_restock: "wait_restock", refund: "refund" };
+                        const needsResolve = customerAction !== "pending" && customerAction !== "wait_restock";
+                        if (needsResolve) {
                           // For replace/refund, create + resolve in one step
                           createExceptionMutation.mutate({
                             orderId,
                             orderItemId: exceptionItemId || undefined,
                             exceptionType,
                             description: exceptionDesc,
+                            quantity: exceptionQuantity,
+                            customerAction,
                           }, {
                             onSuccess: (created: any) => {
+                              const selectedItem = (d.items as any[]).find((it: any) => it.id === exceptionItemId);
                               resolveExceptionMutation.mutate({
                                 exceptionId: created.id,
-                                resolutionType,
+                                resolutionType: actionMap[customerAction] as any,
                                 orderId,
-                                scrapItems: exceptionItemId ? (d.items as any[])
+                                quantity: exceptionQuantity,
+                                customerAction,
+                                replacementProductId: customerAction === "replace_product" && replacementProductId !== "" ? Number(replacementProductId) : undefined,
+                                replacementProductName: customerAction === "replace_product" ? replacementProductName : undefined,
+                                replacementQuantity: customerAction === "replace_product" ? replacementQty : undefined,
+                                replacementUnitPrice: customerAction === "replace_product" ? replacementUnitPrice : undefined,
+                                refundMethod: customerAction === "refund" ? refundMethod : undefined,
+                                scrapItems: exceptionType === "quality_issue" && exceptionItemId ? (d.items as any[])
                                   .filter((it: any) => it.id === exceptionItemId)
                                   .map((it: any) => ({
                                     orderItemId: it.id,
                                     productId: it.productId,
                                     productName: it.productName,
-                                    quantity: it.quantity,
+                                    quantity: exceptionQuantity,
                                     unitCost: Number(it.unitPrice) || 0,
                                   })) : [],
+                                replacementItems: customerAction === "replace_product" && replacementProductId !== "" ? [{
+                                  productId: Number(replacementProductId),
+                                  productName: replacementProductName,
+                                  quantity: replacementQty,
+                                  unitPrice: replacementUnitPrice,
+                                  subtotal: replacementUnitPrice * replacementQty,
+                                }] : undefined,
                               });
                             },
                           });
                         } else {
+                          // For wait_restock or pending, just create the exception
                           createExceptionMutation.mutate({
                             orderId,
                             orderItemId: exceptionItemId || undefined,
                             exceptionType,
                             description: exceptionDesc,
+                            quantity: exceptionQuantity,
+                            customerAction,
                           });
                         }
                       }}
@@ -822,7 +961,13 @@ export default function PackingDetail() {
                         <Checkbox
                           id={`item-${item.id}`}
                           checked={selectedItems.includes(item.id)}
-                          onCheckedChange={() => toggleItem(item.id)}
+                          onCheckedChange={() => {
+                            toggleItem(item.id);
+                            // Initialize ship quantity to full quantity when first selected
+                            if (!selectedItems.includes(item.id)) {
+                              setShipQuantities((prev) => ({ ...prev, [item.id]: item.quantity }));
+                            }
+                          }}
                         />
                         <label
                           htmlFor={`item-${item.id}`}
@@ -830,6 +975,21 @@ export default function PackingDetail() {
                         >
                           {item.productName} {item.variationName && `(${item.variationName})`} x {item.quantity}
                         </label>
+                        {/* V2.1.26补充4: Quantity input for partial shipping (Issue 7) */}
+                        {selectedItems.includes(item.id) && item.quantity > 1 && (
+                          <div className="flex items-center gap-1 ml-auto">
+                            <Label className="text-xs text-muted-foreground">{translate("发货数量", "Ship Qty")}:</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={item.quantity}
+                              value={shipQuantities[item.id] ?? item.quantity}
+                              onChange={(e) => updateShipQuantity(item.id, Number(e.target.value), item.quantity)}
+                              className="w-16 h-8 text-sm"
+                            />
+                            <span className="text-xs text-muted-foreground">/ {item.quantity}</span>
+                          </div>
+                        )}
                       </div>
                     ))
                   )}
@@ -962,7 +1122,9 @@ export default function PackingDetail() {
   // V2.1.26: Simplified A5 Packing Slip - no images, large order number, large quantity, keywords, unit price, shipping method
   function A5PackingSlip({ data, translate, lang }: { data: any; translate: (zh: string, en: string, params?: Record<string, string | number>) => string; lang: "zh" | "en" }) {
     const allItems = [...(data.items || []), ...(data.giftItems || [])];
-    const useGrid = allItems.length > 2;
+    // V2.1.26补充4: Only use grid when more than 2 product items (Issue 5e)
+    const productItemCount = (data.items || []).length;
+    const useGrid = productItemCount > 2;
     return (
       <div className="a5-slip" style={{ width: "148mm", padding: "8mm", fontFamily: "sans-serif", fontSize: "12px", color: "#000" }}>
         {/* V2.1.26: Large shipping method label at top */}
@@ -998,21 +1160,21 @@ export default function PackingDetail() {
         {/* V2.1.26: Items - large quantity, keywords, unit price, subtotal */}
         <div style={{ marginBottom: "8px" }}>
           {useGrid ? (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
               {data.items.map((item: any, i: number) => (
-                <div key={i} style={{ border: "1px solid #000", padding: "4px", borderRadius: "4px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px", marginBottom: "2px" }}>
-                    <span style={{ fontSize: "16px" }}>☐</span>
-                    <span style={{ fontWeight: "bold", fontSize: "13px" }}>{item.productName}</span>
+                <div key={i} style={{ border: "2px solid #000", padding: "8px", borderRadius: "6px", minHeight: "80px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                    <span style={{ fontSize: "20px" }}>☐</span>
+                    <span style={{ fontWeight: "bold", fontSize: "18px", lineHeight: "1.2" }}>{item.productName}</span>
                   </div>
-                  {item.keyword && <div style={{ fontSize: "11px", color: "#555", marginLeft: "20px" }}>{item.keyword}</div>}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "2px" }}>
-                    <span style={{ fontSize: "11px" }}>RM{Number(item.unitPrice || 0).toFixed(0)} × {item.quantity}</span>
-                    <span style={{ fontSize: "28px", fontWeight: "bold", border: "3px solid #000", padding: "2px 8px", borderRadius: "4px" }}>
+                  {item.keyword && <div style={{ fontSize: "14px", color: "#555", marginLeft: "26px" }}>{item.keyword}</div>}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "6px" }}>
+                    <span style={{ fontSize: "14px" }}>RM{Number(item.unitPrice || 0).toFixed(0)} × {item.quantity}</span>
+                    <span style={{ fontSize: "36px", fontWeight: "bold", border: "4px solid #000", padding: "4px 12px", borderRadius: "6px" }}>
                       {item.quantity}
                     </span>
                   </div>
-                  <div style={{ fontSize: "11px", textAlign: "right" }}>小计: RM{Number(item.subtotal || 0).toFixed(2)}</div>
+                  <div style={{ fontSize: "13px", textAlign: "right", marginTop: "4px" }}>小计: RM{Number(item.subtotal || 0).toFixed(2)}</div>
                 </div>
               ))}
             </div>
@@ -1062,11 +1224,40 @@ export default function PackingDetail() {
           )}
         </div>
 
-        {/* V2.1.26: Order total - large display */}
+        {/* V2.1.26补充4: Order amount details (Issue 5c) */}
         <div style={{ borderTop: "2px solid #000", margin: "4px 0" }} />
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "16px", fontWeight: "bold", marginBottom: "4px" }}>
-          <span>{translate("订单总数:", "Order Total:")}</span>
-          <span>RM {data.summary.totalAmount}</span>
+        <div style={{ marginBottom: "6px", fontSize: "13px", lineHeight: "1.6" }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>{translate("商品小计:", "Item Subtotal:")}</span>
+            <span>RM {data.summary.physicalSubtotal || data.summary.regularTotal}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>{translate("运费:", "Shipping Fee:")}</span>
+            <span>RM {data.summary.shippingFee}</span>
+          </div>
+          {parseFloat(data.summary.discountAmount || "0") > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{translate("折扣:", "Discount:")} {data.summary.discountReason ? `(${data.summary.discountReason})` : ""}</span>
+              <span>-RM {data.summary.discountAmount}</span>
+            </div>
+          )}
+          {parseFloat(data.summary.extraCharge || "0") > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{translate("额外收费:", "Extra Charge:")} {data.summary.extraChargeDescription ? `(${data.summary.extraChargeDescription})` : ""}</span>
+              <span>+RM {data.summary.extraCharge}</span>
+            </div>
+          )}
+          {parseFloat(data.summary.creditUsed || "0") > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{translate("Credit:", "Credit:")}</span>
+              <span>-RM {data.summary.creditUsed}</span>
+            </div>
+          )}
+          <div style={{ borderTop: "1px solid #000", margin: "2px 0" }} />
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "16px", fontWeight: "bold" }}>
+            <span>{translate("总金额:", "Total Amount:")}</span>
+            <span>RM {data.summary.totalAmount}</span>
+          </div>
         </div>
         {data.summary.isFreeShipping && (
           <div style={{ textAlign: "center", fontSize: "14px", fontWeight: "bold", color: "green", marginBottom: "4px" }}>
