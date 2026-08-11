@@ -79,6 +79,21 @@ describe("商城主题完整视觉系统", () => {
     expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
   });
 
+  it("暖棕使用暖米白纸感、陶土棕、木质棕与橄榄绿，并有专属连续陶土木质温室背景", () => {
+    const warmBrownTheme = getMallTheme("warm_brown");
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+    expect(warmBrownTheme.visual.description.zh).toContain("木质工作台");
+    expect(warmBrownTheme.visual.description.zh).toContain("干燥花草");
+    expect(warmBrownTheme.colors).toMatchObject({ primary: "#6b432d", secondary: "#c8a77b", button: "#b95f36", background: "#fbf5eb" });
+    expect(warmBrownTheme.visual.motifs).toContain("⌁");
+    expect(artwork).toContain("WARM_BROWN_CONTINUOUS_BACKGROUND_URL");
+    expect(artwork).toContain("xintian-warm-brown-continuous-terracotta-conservatory_fc8df457.png");
+    expect(artwork).toContain('theme.key === "warm_brown"');
+    expect(artwork).toContain("fixed inset-0 z-0");
+    expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
+  });
+
   it("商城设置及客户商城主流程均使用统一的主题视觉配置，且不在页首展示主题公仔", () => {
     const root = path.resolve(__dirname, "..");
     const settingsPage = fs.readFileSync(path.join(root, "client/src/pages/MallSettings.tsx"), "utf8");
