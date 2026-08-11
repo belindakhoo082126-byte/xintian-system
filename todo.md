@@ -2671,3 +2671,8 @@
 - [x] 问题7：商城设计美化（MallHome.tsx重写：圆角卡片、悬浮动画、渐变标签、改进布局）
 - [x] 问题8：商城主题切换生效（MallHome.tsx添加THEMES映射，根据activeTheme动态应用颜色）
 - [x] 问题9：商城Logo修复（MallSettings.tsx添加Logo上传按钮，MallHome.tsx使用VITE_APP_LOGO作为默认logo）
+
+## V2.1.27补充 - 东马Poslaju运费计算修复
+
+- [x] 修复processEastMalaysiaPosLajuWeight发货地址从KL(50000)改为槟城(11700)
+- [x] 修复Poslaju服务匹配逻辑（使用service_name匹配，不fallback到第一个服务）

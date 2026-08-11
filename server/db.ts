@@ -8056,19 +8056,24 @@ export async function processEastMalaysiaPosLajuWeight(
     const { priceQuery, isParcelKingConfigured } = await import("./parcelking");
     if (isParcelKingConfigured()) {
       const result = await priceQuery({
-        from_postcode: "50000", // Default origin (KL)
+        from_postcode: "11700", // Origin: Gelugor, Pulau Pinang
         to_postcode: shippingPostcode || "",
         parcel_weight_kg: actualWeightKg,
-        from_state: "Kuala Lumpur",
+        from_state: "Pulau Pinang",
         to_state: shippingState || "",
       });
-      // Find PosLaju service (service_id may vary, find the cheapest)
+      // Find PosLaju service - match by service_name (API returns service_name, not courier_name)
       if (result.services && result.services.length > 0) {
         const poslajuService = result.services.find((s: any) =>
-          s.courier_name?.toLowerCase().includes("poslaju") ||
-          s.service_name?.toLowerCase().includes("poslaju")
-        ) || result.services[0]; // fallback to first service
-        apiShippingFee = Number(poslajuService.total_price || poslajuService.shipping_fee || 0);
+          (s.service_name || "").toLowerCase().includes("poslaju") ||
+          (s.service_name || "").toLowerCase().includes("pos laju")
+        );
+        if (poslajuService) {
+          apiShippingFee = Number(poslajuService.total_price || poslajuService.shipping_fee || 0);
+        } else {
+          // If no PosLaju found, don't fallback to first service - use weight-based estimate
+          console.warn("[processEastMalaysiaPosLajuWeight] No PosLaju service found in API result");
+        }
       }
     }
   } catch (error) {
