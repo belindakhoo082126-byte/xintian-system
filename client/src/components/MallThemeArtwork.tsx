@@ -9,6 +9,7 @@ const NATURE_GREEN_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-natural-g
 const WARM_BROWN_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-warm-brown-continuous-terracotta-conservatory_fc8df457.png";
 const CHRISTMAS_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-christmas-continuous-pine-light-garden_95b7a972.png";
 const HARI_RAYA_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-hari-raya-continuous-emerald-moonlight-garden_da1892d4.png";
+const MERDEKA_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-malaysia-day-continuous-tropical-garden_c5b9f763.png";
 
 function themeSurfaceStyle(theme: MallTheme): CSSProperties {
   return {
@@ -139,6 +140,21 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
         <div
           className="absolute inset-0"
           style={{ background: "linear-gradient(180deg, rgba(255,252,242,0.1) 0%, rgba(253,248,233,0.02) 44%, rgba(244,238,214,0.17) 100%)" }}
+        />
+      </div>
+    );
+  }
+
+  if (theme.key === "merdeka") {
+    return (
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          style={{ backgroundImage: `url(${MERDEKA_CONTINUOUS_BACKGROUND_URL})` }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{ background: "linear-gradient(180deg, rgba(255,252,245,0.1) 0%, rgba(255,249,240,0.02) 44%, rgba(249,241,226,0.17) 100%)" }}
         />
       </div>
     );

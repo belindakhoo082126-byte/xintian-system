@@ -124,6 +124,21 @@ describe("商城主题完整视觉系统", () => {
     expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
   });
 
+  it("MY独立日使用暖白纸感、国旗海军蓝、国庆红与金色，并有专属连续国庆热带庭园背景", () => {
+    const merdekaTheme = getMallTheme("merdeka");
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+    expect(merdekaTheme.visual.description.zh).toContain("木槿花");
+    expect(merdekaTheme.visual.description.zh).toContain("城市天际线");
+    expect(merdekaTheme.colors).toMatchObject({ primary: "#193d6e", secondary: "#d5a948", button: "#c63e3e", background: "#fffaf2" });
+    expect(merdekaTheme.visual.motifs).toContain("☾");
+    expect(artwork).toContain("MERDEKA_CONTINUOUS_BACKGROUND_URL");
+    expect(artwork).toContain("xintian-malaysia-day-continuous-tropical-garden_c5b9f763.png");
+    expect(artwork).toContain('theme.key === "merdeka"');
+    expect(artwork).toContain("fixed inset-0 z-0");
+    expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
+  });
+
   it("商城设置及客户商城主流程均使用统一的主题视觉配置，且不在页首展示主题公仔", () => {
     const root = path.resolve(__dirname, "..");
     const settingsPage = fs.readFileSync(path.join(root, "client/src/pages/MallSettings.tsx"), "utf8");
