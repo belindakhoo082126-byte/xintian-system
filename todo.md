@@ -2718,3 +2718,7 @@
 
 - [x] 修复刷新余额按钮：accountInfo procedure现在同时更新DB中的accountBalance和lastSyncAt
 - [x] 修复刷新余额按钮：添加toast反馈显示同步结果
+
+## V2.1.30补充2 - 2项Bug修复
+- [x] 问题1：存库日志无数据 - resolveOrderException在refund/replace_product/wait_restock三种处理方式下都添加createInventoryAdjustment调用，记录原商品库存减少
+- [x] 问题2：所有报告数据为0 - 修复13个报告函数中的snake_case列名为camelCase（TiDB大小写敏感）

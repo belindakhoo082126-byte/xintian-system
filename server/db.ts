@@ -3755,39 +3755,39 @@ export async function getBusinessOverview(dateRange: DateRange) {
   // 1. Total revenue (product subtotal only, no shipping, no cancelled, no test)
   const [revenueRows] = await db.execute(sql`
     SELECT 
-      COALESCE(SUM(o.physical_subtotal), 0) as total_revenue,
-      COALESCE(SUM(CASE WHEN o.paid_amount > 0 THEN o.paid_amount ELSE 0 END), 0) as total_paid,
-      COALESCE(SUM(CASE WHEN o.physical_status != 'cancelled' THEN o.total_amount - o.paid_amount ELSE 0 END), 0) as total_unpaid,
+      COALESCE(SUM(o.physicalSubtotal), 0) as total_revenue,
+      COALESCE(SUM(CASE WHEN o.paidAmount > 0 THEN o.paidAmount ELSE 0 END), 0) as total_paid,
+      COALESCE(SUM(CASE WHEN o.physicalStatus != 'cancelled' THEN o.totalAmount - o.paidAmount ELSE 0 END), 0) as total_unpaid,
       COUNT(*) as total_orders,
-      SUM(CASE WHEN o.paid_amount > 0 AND o.paid_amount >= o.total_amount THEN 1 ELSE 0 END) as paid_orders,
-      SUM(CASE WHEN o.paid_amount = 0 THEN 1 ELSE 0 END) as unpaid_orders,
-      SUM(CASE WHEN o.physical_status = 'shipped' OR o.physical_status = 'completed' THEN 1 ELSE 0 END) as shipped_packages,
-      COALESCE(SUM(o.shipping_fee), 0) as shipping_income
+      SUM(CASE WHEN o.paidAmount > 0 AND o.paidAmount >= o.totalAmount THEN 1 ELSE 0 END) as paid_orders,
+      SUM(CASE WHEN o.paidAmount = 0 THEN 1 ELSE 0 END) as unpaid_orders,
+      SUM(CASE WHEN o.physicalStatus = 'shipped' OR o.physicalStatus = 'completed' THEN 1 ELSE 0 END) as shipped_packages,
+      COALESCE(SUM(o.shippingFee), 0) as shipping_income
     FROM orders o
-    WHERE o.created_at >= ${startMs} AND o.created_at <= ${endMs}
-      AND o.physical_status != 'cancelled'
-      AND o.order_type != 'membership'
+    WHERE o.createdAt >= ${startMs} AND o.createdAt <= ${endMs}
+      AND o.physicalStatus != 'cancelled'
+      AND o.orderType != 'membership'
   `);
 
   // 2. Refund total
   const [refundRows] = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) as total_refunds, COUNT(*) as refund_count
     FROM customer_refunds
-    WHERE refund_date >= ${startMs} AND refund_date <= ${endMs}
+    WHERE refundDate >= ${startMs} AND refundDate <= ${endMs}
   `);
 
   // 3. Order statistics
   const [orderStatRows] = await db.execute(sql`
     SELECT 
       COUNT(*) as total_orders,
-      SUM(CASE WHEN physical_status = 'completed' THEN 1 ELSE 0 END) as completed,
-      SUM(CASE WHEN physical_status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
-      SUM(CASE WHEN paid_amount > 0 AND paid_amount >= total_amount THEN 1 ELSE 0 END) as paid,
-      SUM(CASE WHEN paid_amount = 0 THEN 1 ELSE 0 END) as unpaid,
-      SUM(CASE WHEN physical_status = 'shipped' THEN 1 ELSE 0 END) as shipped
+      SUM(CASE WHEN physicalStatus = 'completed' THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN physicalStatus = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
+      SUM(CASE WHEN paidAmount > 0 AND paidAmount >= totalAmount THEN 1 ELSE 0 END) as paid,
+      SUM(CASE WHEN paidAmount = 0 THEN 1 ELSE 0 END) as unpaid,
+      SUM(CASE WHEN physicalStatus = 'shipped' THEN 1 ELSE 0 END) as shipped
     FROM orders
-    WHERE created_at >= ${startMs} AND created_at <= ${endMs}
-      AND order_type != 'membership'
+    WHERE createdAt >= ${startMs} AND createdAt <= ${endMs}
+      AND orderType != 'membership'
   `);
 
   // 4. FIFO cost (from inventory_ledger where transaction_type = 'sale')
@@ -3851,25 +3851,24 @@ export async function getTopProductsByQuantity(dateRange: DateRange, limit = 10)
   const { start, end } = dateRange;
   const [rows] = await db.execute(sql`
     SELECT 
-      oi.product_id,
-      oi.product_name,
-      oi.variation_name,
+            oi.productId,
+      oi.productName,
+      oi.variationName,
       SUM(oi.quantity) as total_quantity,
       SUM(oi.subtotal) as total_sales
     FROM order_items oi
-    INNER JOIN orders o ON oi.order_id = o.id
-    WHERE o.created_at >= ${start.getTime()} AND o.created_at <= ${end.getTime()}
-      AND o.physical_status != 'cancelled'
-      AND oi.product_type = 'physical'
-    GROUP BY oi.product_id, oi.variation_id
+    INNER JOIN orders o ON oi.orderId = o.id
+    WHERE o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+      AND o.physicalStatus != 'cancelled'
+      AND oi.productType = 'physical'
+    GROUP BY oi.productId, oi.variationId
     ORDER BY total_quantity DESC
     LIMIT ${limit}
   `);
-
   return (rows as unknown as any[]).map((r: any) => ({
-    productId: r.product_id,
-    productName: r.product_name,
-    variantName: r.variation_name,
+    productId: r.productId,
+    productName: r.productName,
+    variantName: r.variationName,
     totalQuantity: Number(r.total_quantity) || 0,
     totalSales: Number(r.total_sales) || 0,
   }));
@@ -3883,25 +3882,24 @@ export async function getTopProductsByRevenue(dateRange: DateRange, limit = 10) 
   const { start, end } = dateRange;
   const [rows] = await db.execute(sql`
     SELECT 
-      oi.product_id,
-      oi.product_name,
-      oi.variation_name,
+            oi.productId,
+      oi.productName,
+      oi.variationName,
       SUM(oi.quantity) as total_quantity,
       SUM(oi.subtotal) as total_sales
     FROM order_items oi
-    INNER JOIN orders o ON oi.order_id = o.id
-    WHERE o.created_at >= ${start.getTime()} AND o.created_at <= ${end.getTime()}
-      AND o.physical_status != 'cancelled'
-      AND oi.product_type = 'physical'
-    GROUP BY oi.product_id, oi.variation_id
+    INNER JOIN orders o ON oi.orderId = o.id
+    WHERE o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+      AND o.physicalStatus != 'cancelled'
+      AND oi.productType = 'physical'
+    GROUP BY oi.productId, oi.variationId
     ORDER BY total_sales DESC
     LIMIT ${limit}
   `);
-
   return (rows as unknown as any[]).map((r: any) => ({
-    productId: r.product_id,
-    productName: r.product_name,
-    variantName: r.variation_name,
+    productId: r.productId,
+    productName: r.productName,
+    variantName: r.variationName,
     totalQuantity: Number(r.total_quantity) || 0,
     totalSales: Number(r.total_sales) || 0,
   }));
@@ -3915,7 +3913,7 @@ export async function getTopProductsByProfit(dateRange: DateRange, limit = 10) {
   const { start, end } = dateRange;
   const [rows] = await db.execute(sql`
     SELECT 
-      il.product_id,
+            il.product_id,
       p.name as product_name,
       SUM(ABS(il.quantity_change) * il.unit_cost) as fifo_cost,
       COALESCE(oi_sum.total_sales, 0) as total_sales,
@@ -3923,21 +3921,20 @@ export async function getTopProductsByProfit(dateRange: DateRange, limit = 10) {
     FROM inventory_ledger il
     LEFT JOIN products p ON il.product_id = p.id
     LEFT JOIN (
-      SELECT oi.product_id, SUM(oi.subtotal) as total_sales
+      SELECT oi.productId, SUM(oi.subtotal) as total_sales
       FROM order_items oi
-      INNER JOIN orders o ON oi.order_id = o.id
-      WHERE o.created_at >= ${start.getTime()} AND o.created_at <= ${end.getTime()}
-        AND o.physical_status != 'cancelled'
-        AND oi.product_type = 'physical'
-      GROUP BY oi.product_id
-    ) oi_sum ON il.product_id = oi_sum.product_id
+      INNER JOIN orders o ON oi.orderId = o.id
+      WHERE o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+        AND o.physicalStatus != 'cancelled'
+        AND oi.productType = 'physical'
+      GROUP BY oi.productId
+    ) oi_sum ON il.product_id = oi_sum.productId
     WHERE il.transaction_type = 'sale'
       AND il.created_at >= ${start.getTime()} AND il.created_at <= ${end.getTime()}
     GROUP BY il.product_id
     ORDER BY gross_profit DESC
     LIMIT ${limit}
   `);
-
   return (rows as unknown as any[]).map((r: any) => ({
     productId: r.product_id,
     productName: r.product_name,
@@ -3956,29 +3953,28 @@ export async function getTopCustomersBySpending(dateRange: DateRange, limit = 10
   const { start, end } = dateRange;
   const [rows] = await db.execute(sql`
     SELECT 
-      c.id,
-      c.customer_id as customer_code,
-      c.display_name,
-      c.facebook_name,
-      c.avatar_url,
+            c.id,
+      c.customerId as customer_code,
+      c.displayName,
+      c.facebookName,
+      c.avatarUrl,
       COUNT(o.id) as order_count,
-      COALESCE(SUM(o.paid_amount), 0) as total_paid,
-      MAX(o.created_at) as last_order_date
+      COALESCE(SUM(o.paidAmount), 0) as total_paid,
+      MAX(o.createdAt) as last_order_date
     FROM orders o
-    INNER JOIN customers c ON o.customer_id = c.id
-    WHERE o.created_at >= ${start.getTime()} AND o.created_at <= ${end.getTime()}
-      AND o.physical_status != 'cancelled'
-      AND o.order_type != 'membership'
+    INNER JOIN customers c ON o.customerId = c.id
+    WHERE o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+      AND o.physicalStatus != 'cancelled'
+      AND o.orderType != 'membership'
     GROUP BY c.id
     ORDER BY total_paid DESC
     LIMIT ${limit}
   `);
-
   return (rows as unknown as any[]).map((r: any) => ({
     customerId: r.id,
     customerCode: r.customer_code,
-    displayName: r.display_name || r.facebook_name,
-    avatarUrl: r.avatar_url,
+    displayName: r.displayName || r.facebookName,
+    avatarUrl: r.avatarUrl,
     orderCount: Number(r.order_count) || 0,
     totalPaid: Number(r.total_paid) || 0,
     lastOrderDate: r.last_order_date,
@@ -3994,38 +3990,38 @@ export async function getSalesPaymentReport(dateRange: DateRange) {
   const [rows] = await db.execute(sql`
     SELECT 
       o.id,
-      o.order_number,
-      o.facebook_name,
-      o.physical_subtotal,
-      o.shipping_fee,
-      o.total_amount,
-      o.paid_amount,
-      (o.total_amount - o.paid_amount) as balance,
-      o.physical_status,
-      o.payment_method,
-      o.created_at,
-      o.shipped_at,
-      o.completed_at
+      o.orderNumber,
+      o.facebookName,
+      o.physicalSubtotal,
+      o.shippingFee,
+      o.totalAmount,
+      o.paidAmount,
+      (o.totalAmount - o.paidAmount) as balance,
+      o.physicalStatus,
+      o.paymentMethodName as payment_method,
+      o.createdAt,
+      o.shippedAt,
+      o.completedAt
     FROM orders o
-    WHERE o.created_at >= ${start.getTime()} AND o.created_at <= ${end.getTime()}
-      AND o.order_type != 'membership'
-    ORDER BY o.created_at DESC
+    WHERE o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+      AND o.orderType != 'membership'
+    ORDER BY o.createdAt DESC
   `);
 
   return (rows as unknown as any[]).map((r: any) => ({
     id: r.id,
-    orderNumber: r.order_number,
-    customerName: r.facebook_name,
-    productSubtotal: Number(r.physical_subtotal) || 0,
-    shippingFee: Number(r.shipping_fee) || 0,
-    totalAmount: Number(r.total_amount) || 0,
-    paidAmount: Number(r.paid_amount) || 0,
+    orderNumber: r.orderNumber,
+    customerName: r.facebookName,
+    productSubtotal: Number(r.physicalSubtotal) || 0,
+    shippingFee: Number(r.shippingFee) || 0,
+    totalAmount: Number(r.totalAmount) || 0,
+    paidAmount: Number(r.paidAmount) || 0,
     balance: Number(r.balance) || 0,
-    status: r.physical_status,
+    status: r.physicalStatus,
     paymentMethod: r.payment_method,
-    createdAt: r.created_at,
-    shippedAt: r.shipped_at,
-    completedAt: r.completed_at,
+    createdAt: r.createdAt,
+    shippedAt: r.shippedAt,
+    completedAt: r.completedAt,
   }));
 }
 
@@ -4037,34 +4033,34 @@ export async function getProductSalesReport(dateRange: DateRange) {
   const { start, end } = dateRange;
   const [rows] = await db.execute(sql`
     SELECT 
-      oi.product_id,
-      oi.product_name,
-      oi.variation_name,
+      oi.productId,
+      oi.productName,
+      oi.variationName,
       SUM(oi.quantity) as total_quantity,
       SUM(oi.subtotal) as total_sales,
       COUNT(DISTINCT o.id) as order_count,
       COALESCE(il_sum.fifo_cost, 0) as fifo_cost,
       COALESCE(SUM(oi.subtotal), 0) - COALESCE(il_sum.fifo_cost, 0) as gross_profit
     FROM order_items oi
-    INNER JOIN orders o ON oi.order_id = o.id
+    INNER JOIN orders o ON oi.orderId = o.id
     LEFT JOIN (
       SELECT product_id, SUM(ABS(quantity_change) * unit_cost) as fifo_cost
       FROM inventory_ledger
       WHERE transaction_type = 'sale'
         AND created_at >= ${start.getTime()} AND created_at <= ${end.getTime()}
       GROUP BY product_id
-    ) il_sum ON oi.product_id = il_sum.product_id
-    WHERE o.created_at >= ${start.getTime()} AND o.created_at <= ${end.getTime()}
-      AND o.physical_status != 'cancelled'
-      AND oi.product_type = 'physical'
-    GROUP BY oi.product_id, oi.variation_id
+    ) il_sum ON oi.productId = il_sum.product_id
+    WHERE o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+      AND o.physicalStatus != 'cancelled'
+      AND oi.productType = 'physical'
+    GROUP BY oi.productId, oi.variationId
     ORDER BY total_sales DESC
   `);
 
   return (rows as unknown as any[]).map((r: any) => ({
-    productId: r.product_id,
-    productName: r.product_name,
-    variantName: r.variation_name,
+    productId: r.productId,
+    productName: r.productName,
+    variantName: r.variationName,
     totalQuantity: Number(r.total_quantity) || 0,
     totalSales: Number(r.total_sales) || 0,
     orderCount: Number(r.order_count) || 0,
@@ -4083,21 +4079,21 @@ export async function getCustomerSpendingReport(dateRange: DateRange) {
   const [rows] = await db.execute(sql`
     SELECT 
       c.id,
-      c.customer_id as customer_code,
-      c.display_name,
-      c.facebook_name,
-      c.phone,
-      c.whatsapp_phone,
+      c.customerId as customer_code,
+      c.displayName,
+      c.facebookName,
+      c.phoneNumber as phone,
+      c.whatsappPhone,
       COUNT(o.id) as order_count,
-      COALESCE(SUM(o.total_amount), 0) as total_order_amount,
-      COALESCE(SUM(o.paid_amount), 0) as total_paid,
-      COALESCE(SUM(o.total_amount - o.paid_amount), 0) as total_unpaid,
-      MAX(o.created_at) as last_order_date
+      COALESCE(SUM(o.totalAmount), 0) as total_order_amount,
+      COALESCE(SUM(o.paidAmount), 0) as total_paid,
+      COALESCE(SUM(o.totalAmount - o.paidAmount), 0) as total_unpaid,
+      MAX(o.createdAt) as last_order_date
     FROM customers c
-    LEFT JOIN orders o ON c.id = o.customer_id
-      AND o.created_at >= ${start.getTime()} AND o.created_at <= ${end.getTime()}
-      AND o.physical_status != 'cancelled'
-      AND o.order_type != 'membership'
+    LEFT JOIN orders o ON c.id = o.customerId
+      AND o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+      AND o.physicalStatus != 'cancelled'
+      AND o.orderType != 'membership'
     GROUP BY c.id
     HAVING order_count > 0
     ORDER BY total_paid DESC
@@ -4106,9 +4102,9 @@ export async function getCustomerSpendingReport(dateRange: DateRange) {
   return (rows as unknown as any[]).map((r: any) => ({
     customerId: r.id,
     customerCode: r.customer_code,
-    displayName: r.display_name || r.facebook_name,
+    displayName: r.displayName || r.facebookName,
     phone: r.phone,
-    whatsappPhone: r.whatsapp_phone,
+    whatsappPhone: r.whatsappPhone,
     orderCount: Number(r.order_count) || 0,
     totalOrderAmount: Number(r.total_order_amount) || 0,
     totalPaid: Number(r.total_paid) || 0,
@@ -4128,7 +4124,7 @@ export async function getPurchaseInventoryReport(dateRange: DateRange) {
   const [purchaseRows] = await db.execute(sql`
     SELECT 
       COUNT(*) as total_orders,
-      COALESCE(SUM(total_amount), 0) as total_amount,
+      COALESCE(SUM(totalAmount), 0) as total_amount,
       SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmed_count,
       SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as draft_count
     FROM purchase_orders
@@ -4195,34 +4191,34 @@ export async function getRefundRecords(dateRange: DateRange) {
   const [rows] = await db.execute(sql`
     SELECT 
       cr.id,
-      cr.order_id,
-      o.order_number,
-      c.display_name,
-      c.facebook_name,
+      cr.orderId,
+      o.orderNumber,
+      c.displayName,
+      c.facebookName,
       cr.amount,
-      cr.refund_method,
+      cr.refundMethod,
       cr.reason,
-      cr.operator_name,
-      cr.refund_date,
-      cr.created_at
+      cr.operatorName,
+      cr.refundDate,
+      cr.createdAt
     FROM customer_refunds cr
-    LEFT JOIN orders o ON cr.order_id = o.id
-    LEFT JOIN customers c ON cr.customer_id = c.id
-    WHERE cr.refund_date >= ${start.getTime()} AND cr.refund_date <= ${end.getTime()}
-    ORDER BY cr.refund_date DESC
+    LEFT JOIN orders o ON cr.orderId = o.id
+    LEFT JOIN customers c ON cr.customerId = c.id
+    WHERE cr.refundDate >= ${start.getTime()} AND cr.refundDate <= ${end.getTime()}
+    ORDER BY cr.refundDate DESC
   `);
 
   return (rows as unknown as any[]).map((r: any) => ({
     id: r.id,
-    orderId: r.order_id,
-    orderNumber: r.order_number,
-    customerName: r.display_name || r.facebook_name,
+    orderId: r.orderId,
+    orderNumber: r.orderNumber,
+    customerName: r.displayName || r.facebookName,
     amount: Number(r.amount) || 0,
-    refundMethod: r.refund_method,
+    refundMethod: r.refundMethod,
     reason: r.reason,
-    operatorName: r.operator_name,
-    refundDate: r.refund_date,
-    createdAt: r.created_at,
+    operatorName: r.operatorName,
+    refundDate: r.refundDate,
+    createdAt: r.createdAt,
   }));
 }
 
@@ -7548,6 +7544,22 @@ export async function resolveOrderException(
         // Recalculate order totals
         await recalculateOrderTotals(orderId);
 
+        // V2.1.30补充2: Create inventory adjustment for refund (record stock reduction for original product)
+        const adjustmentType = exception[0].exceptionType === 'quality_issue' ? 'quality_issue' : 'other';
+        const productCost = await db.select({ cost: products.cost }).from(products)
+          .where(eq(products.id, orderItem[0].productId)).limit(1);
+        const unitCost = productCost[0] ? Number(productCost[0].cost || 0) : 0;
+        await createInventoryAdjustment({
+          productId: orderItem[0].productId,
+          adjustmentType: adjustmentType as any,
+          quantityChange: -excQuantity,
+          unitCost,
+          totalCost: unitCost * excQuantity,
+          orderExceptionId: exceptionId,
+          adjustedBy: resolvedBy,
+          reason: `异常处理退款 - ${exception[0].exceptionType}`,
+        });
+
         // Issue 7: Auto refund to credit if refundMethod is credit
         if (options?.refundMethod === 'credit') {
           const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
@@ -7576,6 +7588,22 @@ export async function resolveOrderException(
             subtotal: (unitPrice * newQty).toString(),
           }).where(eq(orderItems.id, exception[0].orderItemId!));
         }
+
+        // V2.1.30补充2: Create inventory adjustment for original product (record stock reduction)
+        const adjustmentType = exception[0].exceptionType === 'quality_issue' ? 'quality_issue' : 'other';
+        const productCost = await db.select({ cost: products.cost }).from(products)
+          .where(eq(products.id, orderItem[0].productId)).limit(1);
+        const unitCost = productCost[0] ? Number(productCost[0].cost || 0) : 0;
+        await createInventoryAdjustment({
+          productId: orderItem[0].productId,
+          adjustmentType: adjustmentType as any,
+          quantityChange: -excQuantity,
+          unitCost,
+          totalCost: unitCost * excQuantity,
+          orderExceptionId: exceptionId,
+          adjustedBy: resolvedBy,
+          reason: `异常处理更换商品 - 原商品${orderItem[0].productName}`,
+        });
 
         // Add replacement product as new order item
         if (options?.replacementProductId) {
@@ -7638,6 +7666,25 @@ export async function resolveOrderException(
 
     // Issue 8: For wait_restock - create special status for dashboard sync
     if (customerAction === 'wait_restock') {
+      // V2.1.30补充2: Create inventory adjustment for wait_restock (record stock reduction)
+      if (excQuantity > 0 && exception[0].orderItemId) {
+        const orderItem = await db.select().from(orderItems).where(eq(orderItems.id, exception[0].orderItemId)).limit(1);
+        if (orderItem.length > 0) {
+          const productCost = await db.select({ cost: products.cost }).from(products)
+            .where(eq(products.id, orderItem[0].productId)).limit(1);
+          const unitCost = productCost[0] ? Number(productCost[0].cost || 0) : 0;
+          await createInventoryAdjustment({
+            productId: orderItem[0].productId,
+            adjustmentType: 'other',
+            quantityChange: -excQuantity,
+            unitCost,
+            totalCost: unitCost * excQuantity,
+            orderExceptionId: exceptionId,
+            adjustedBy: resolvedBy,
+            reason: `异常处理等待补货 - ${orderItem[0].productName}`,
+          });
+        }
+      }
       await createOrderSpecialStatus({
         orderId,
         type: 'stock_exception',
@@ -7828,12 +7875,12 @@ export async function getProfitAnalysisReport(dateRange: { start: Date; end: Dat
   // Sales revenue
   const [revenueRows] = await db.execute(sql`
     SELECT
-      COALESCE(SUM(o.physical_subtotal), 0) as sales_revenue,
-      COALESCE(SUM(o.shipping_fee), 0) as shipping_income
+      COALESCE(SUM(o.physicalSubtotal), 0) as sales_revenue,
+      COALESCE(SUM(o.shippingFee), 0) as shipping_income
     FROM orders o
-    WHERE o.created_at >= ${startMs} AND o.created_at <= ${endMs}
-      AND o.physical_status != 'cancelled'
-      AND o.order_type != 'membership'
+    WHERE o.createdAt >= ${startMs} AND o.createdAt <= ${endMs}
+      AND o.physicalStatus != 'cancelled'
+      AND o.orderType != 'membership'
   `);
 
   // FIFO cost
@@ -7846,24 +7893,24 @@ export async function getProfitAnalysisReport(dateRange: { start: Date; end: Dat
 
   // Shipping cost (from shipments)
   const [shippingCostRows] = await db.execute(sql`
-    SELECT COALESCE(SUM(shipping_cost), 0) as shipping_cost
+    SELECT COALESCE(SUM(shippingCost), 0) as shipping_cost
     FROM shipments
-    WHERE created_at >= ${startMs} AND created_at <= ${endMs}
+    WHERE createdAt >= ${startMs} AND createdAt <= ${endMs}
   `);
 
   // Scrap cost (from order_exceptions)
   const [scrapRows] = await db.execute(sql`
-    SELECT COALESCE(SUM(scrap_cost), 0) as scrap_cost
+    SELECT COALESCE(SUM(scrapCost), 0) as scrap_cost
     FROM order_exceptions
     WHERE status = 'resolved'
-      AND created_at >= ${startMs} AND created_at <= ${endMs}
+      AND createdAt >= ${startMs} AND createdAt <= ${endMs}
   `);
 
   // Refund loss (from customer_refunds)
   const [refundRows] = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) as refund_loss
     FROM customer_refunds
-    WHERE refund_date >= ${startMs} AND refund_date <= ${endMs}
+    WHERE refundDate >= ${startMs} AND refundDate <= ${endMs}
   `);
 
   const rev = (revenueRows as unknown as any[])[0] ?? {};
@@ -7908,25 +7955,25 @@ export async function getLossAnalysisReport(dateRange: { start: Date; end: Date 
   // Summary by adjustment type
   const [typeRows] = await db.execute(sql`
     SELECT
-      adjustment_type,
-      COALESCE(SUM(ABS(quantity_change)), 0) as total_units,
-      COALESCE(SUM(total_cost), 0) as total_cost
+      adjustmentType,
+      COALESCE(SUM(ABS(quantityChange)), 0) as total_units,
+      COALESCE(SUM(totalCost), 0) as total_cost
     FROM inventory_adjustments
-    WHERE created_at >= ${startMs} AND created_at <= ${endMs}
-    GROUP BY adjustment_type
+    WHERE createdAt >= ${startMs} AND createdAt <= ${endMs}
+    GROUP BY adjustmentType
   `);
 
   // Product loss ranking
   const [productRows] = await db.execute(sql`
     SELECT
-      ia.product_id,
+      ia.productId,
       p.name as product_name,
-      COALESCE(SUM(ABS(ia.quantity_change)), 0) as loss_units,
-      COALESCE(SUM(ia.total_cost), 0) as loss_cost
+      COALESCE(SUM(ABS(ia.quantityChange)), 0) as loss_units,
+      COALESCE(SUM(ia.totalCost), 0) as loss_cost
     FROM inventory_adjustments ia
-    LEFT JOIN products p ON ia.product_id = p.id
-    WHERE ia.created_at >= ${startMs} AND ia.created_at <= ${endMs}
-    GROUP BY ia.product_id, p.name
+    LEFT JOIN products p ON ia.productId = p.id
+    WHERE ia.createdAt >= ${startMs} AND ia.createdAt <= ${endMs}
+    GROUP BY ia.productId, p.name
     ORDER BY loss_cost DESC
     LIMIT 20
   `);
@@ -7934,27 +7981,27 @@ export async function getLossAnalysisReport(dateRange: { start: Date; end: Date 
   // Category loss ranking
   const [categoryRows] = await db.execute(sql`
     SELECT
-      c.name_zh as category_name,
-      COALESCE(SUM(ABS(ia.quantity_change)), 0) as loss_units,
-      COALESCE(SUM(ia.total_cost), 0) as loss_cost
+      c.nameZh as category_name,
+      COALESCE(SUM(ABS(ia.quantityChange)), 0) as loss_units,
+      COALESCE(SUM(ia.totalCost), 0) as loss_cost
     FROM inventory_adjustments ia
-    LEFT JOIN products p ON ia.product_id = p.id
-    LEFT JOIN categories c ON p.category_id = c.id
-    WHERE ia.created_at >= ${startMs} AND ia.created_at <= ${endMs}
-    GROUP BY c.id, c.name_zh
+    LEFT JOIN products p ON ia.productId = p.id
+    LEFT JOIN categories c ON p.categoryId = c.id
+    WHERE ia.createdAt >= ${startMs} AND ia.createdAt <= ${endMs}
+    GROUP BY c.id, c.nameZh
     ORDER BY loss_cost DESC
     LIMIT 20
   `);
 
   // Total stock for loss rate calculation
   const [stockRows] = await db.execute(sql`
-    SELECT COALESCE(SUM(stock_quantity), 0) as total_stock
+    SELECT COALESCE(SUM(stockQuantity), 0) as total_stock
     FROM products
     WHERE type = 'physical' AND status = 'active'
   `);
 
   const types = (typeRows as unknown as any[]).map((r: any) => ({
-    adjustmentType: r.adjustment_type,
+    adjustmentType: r.adjustmentType,
     lossUnits: Number(r.total_units) || 0,
     lossCost: Number(r.total_cost) || 0,
   }));
@@ -7970,7 +8017,7 @@ export async function getLossAnalysisReport(dateRange: { start: Date; end: Date 
     totalLossCost,
     lossRate: Math.round(lossRate * 100) / 100,
     productRanking: (productRows as unknown as any[]).map((r: any) => ({
-      productId: r.product_id,
+      productId: r.productId,
       productName: r.product_name,
       lossUnits: Number(r.loss_units) || 0,
       lossCost: Number(r.loss_cost) || 0,
@@ -8697,26 +8744,26 @@ export async function getSpecialPriceProductProfit(dateRange: { start: Date; end
   // Get order items for products that are marked as special (isSpecial = true)
   const [rows] = await db.execute(sql`
     SELECT 
-      oi.product_id,
-      oi.product_name,
+      oi.productId,
+      oi.productName,
       oi.quantity,
-      oi.unit_price,
+      oi.unitPrice as unit_price,
       oi.subtotal,
-      p.is_special,
-      p.special_price,
-      p.selling_price,
-      p.current_cost,
+      p.isSpecial as is_special,
+      p.specialPrice as special_price,
+      p.sellingPrice as selling_price,
+      p.currentCost as current_cost,
       p.cost,
-      o.order_number,
-      o.created_at
+      o.orderNumber as order_number,
+      o.createdAt
     FROM order_items oi
-    INNER JOIN orders o ON oi.order_id = o.id
-    INNER JOIN products p ON oi.product_id = p.id
-    WHERE o.created_at >= ${startMs} AND o.created_at <= ${endMs}
-      AND o.physical_status != 'cancelled'
-      AND oi.product_type = 'physical'
-      AND p.is_special = 1
-    ORDER BY o.created_at DESC
+    INNER JOIN orders o ON oi.orderId = o.id
+    INNER JOIN products p ON oi.productId = p.id
+    WHERE o.createdAt >= ${startMs} AND o.createdAt <= ${endMs}
+      AND o.physicalStatus != 'cancelled'
+      AND oi.productType = 'physical'
+      AND p.isSpecial = 1
+    ORDER BY o.createdAt DESC
   `);
 
   const items = rows as unknown as any[];
@@ -8750,8 +8797,8 @@ export async function getSpecialPriceProductProfit(dateRange: { start: Date; end
     totalCost += itemCost;
 
     details.push({
-      productId: item.product_id,
-      productName: item.product_name,
+      productId: item.productId,
+      productName: item.productName,
       orderNumber: item.order_number,
       quantity: qty,
       unitPrice: unitPrice.toFixed(2),
@@ -8762,7 +8809,7 @@ export async function getSpecialPriceProductProfit(dateRange: { start: Date; end
       subtotal: subtotal.toFixed(2),
       itemCost: itemCost.toFixed(2),
       profit: itemProfit.toFixed(2),
-      date: new Date(item.created_at).toLocaleDateString(),
+      date: new Date(item.createdAt).toLocaleDateString(),
     });
   }
 
