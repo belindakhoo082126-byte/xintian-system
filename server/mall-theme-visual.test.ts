@@ -109,6 +109,21 @@ describe("商城主题完整视觉系统", () => {
     expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
   });
 
+  it("开斋节使用暖白纸感、翡翠深绿、柔和青绿与香槟金，并有专属连续翡翠月光庭园背景", () => {
+    const hariRayaTheme = getMallTheme("hari_raya");
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+    expect(hariRayaTheme.visual.description.zh).toContain("马来粽");
+    expect(hariRayaTheme.visual.description.zh).toContain("金色灯笼");
+    expect(hariRayaTheme.colors).toMatchObject({ primary: "#0d5c49", secondary: "#6a9d7a", button: "#c69a48", background: "#fdf7e9" });
+    expect(hariRayaTheme.visual.motifs).toContain("☾");
+    expect(artwork).toContain("HARI_RAYA_CONTINUOUS_BACKGROUND_URL");
+    expect(artwork).toContain("xintian-hari-raya-continuous-emerald-moonlight-garden_da1892d4.png");
+    expect(artwork).toContain('theme.key === "hari_raya"');
+    expect(artwork).toContain("fixed inset-0 z-0");
+    expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
+  });
+
   it("商城设置及客户商城主流程均使用统一的主题视觉配置，且不在页首展示主题公仔", () => {
     const root = path.resolve(__dirname, "..");
     const settingsPage = fs.readFileSync(path.join(root, "client/src/pages/MallSettings.tsx"), "utf8");
