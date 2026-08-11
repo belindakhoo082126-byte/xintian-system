@@ -49,6 +49,21 @@ describe("商城主题完整视觉系统", () => {
     expect(artwork).toContain("fixed inset-0 z-0");
   });
 
+  it("樱花粉使用暖白纸感、樱花粉、日落珊瑚粉与苔藓绿，并有专属连续春日庭园背景", () => {
+    const sakuraTheme = getMallTheme("sakura_pink");
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+    expect(sakuraTheme.visual.description.zh).toContain("春日水彩");
+    expect(sakuraTheme.visual.description.zh).toContain("水面庭园");
+    expect(sakuraTheme.colors).toMatchObject({ primary: "#c97887", secondary: "#a7b591", button: "#e58b76", background: "#fffaf4" });
+    expect(sakuraTheme.visual.motifs).toContain("✿");
+    expect(artwork).toContain("SAKURA_CONTINUOUS_BACKGROUND_URL");
+    expect(artwork).toContain("xintian-sakura-continuous-spring-garden-v2_b643cc4b.png");
+    expect(artwork).toContain('theme.key === "sakura_pink"');
+    expect(artwork).toContain("fixed inset-0 z-0");
+    expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
+  });
+
   it("商城设置及客户商城主流程均使用统一的主题视觉配置，且不在页首展示主题公仔", () => {
     const root = path.resolve(__dirname, "..");
     const settingsPage = fs.readFileSync(path.join(root, "client/src/pages/MallSettings.tsx"), "utf8");
