@@ -1,7 +1,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useI18n } from "@/contexts/I18nContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { Languages, Sun, Moon, Leaf } from "lucide-react";
+import { Languages, Leaf, Sun, Moon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,14 +47,36 @@ type MenuChild = {
   label: string | { zh: string; en: string };
   path?: string;
   children?: MenuChild[];
+  accent?: MenuAccent;
 };
 type MenuGroup = {
   icon: any;
   label: string | { zh: string; en: string };
   children: MenuChild[];
+  accent?: MenuAccent;
 };
 
 type MenuEntry = MenuChild | MenuGroup;
+
+type MenuAccent = {
+  iconClass: string;
+  activeClass: string;
+};
+
+const MENU_ACCENTS = {
+  dashboard: { iconClass: "text-rose-600", activeClass: "data-[active=true]:bg-rose-50 data-[active=true]:text-rose-900 dark:data-[active=true]:bg-rose-950/35 dark:data-[active=true]:text-rose-100" },
+  live: { iconClass: "text-amber-600", activeClass: "data-[active=true]:bg-amber-50 data-[active=true]:text-amber-900 dark:data-[active=true]:bg-amber-950/35 dark:data-[active=true]:text-amber-100" },
+  campaign: { iconClass: "text-blue-600", activeClass: "data-[active=true]:bg-blue-50 data-[active=true]:text-blue-900 dark:data-[active=true]:bg-blue-950/35 dark:data-[active=true]:text-blue-100" },
+  orders: { iconClass: "text-orange-600", activeClass: "data-[active=true]:bg-orange-50 data-[active=true]:text-orange-900 dark:data-[active=true]:bg-orange-950/35 dark:data-[active=true]:text-orange-100" },
+  packing: { iconClass: "text-teal-600", activeClass: "data-[active=true]:bg-teal-50 data-[active=true]:text-teal-900 dark:data-[active=true]:bg-teal-950/35 dark:data-[active=true]:text-teal-100" },
+  products: { iconClass: "text-emerald-600", activeClass: "data-[active=true]:bg-emerald-50 data-[active=true]:text-emerald-900 dark:data-[active=true]:bg-emerald-950/35 dark:data-[active=true]:text-emerald-100" },
+  customers: { iconClass: "text-violet-600", activeClass: "data-[active=true]:bg-violet-50 data-[active=true]:text-violet-900 dark:data-[active=true]:bg-violet-950/35 dark:data-[active=true]:text-violet-100" },
+  ai: { iconClass: "text-indigo-600", activeClass: "data-[active=true]:bg-indigo-50 data-[active=true]:text-indigo-900 dark:data-[active=true]:bg-indigo-950/35 dark:data-[active=true]:text-indigo-100" },
+  import: { iconClass: "text-pink-600", activeClass: "data-[active=true]:bg-pink-50 data-[active=true]:text-pink-900 dark:data-[active=true]:bg-pink-950/35 dark:data-[active=true]:text-pink-100" },
+  reports: { iconClass: "text-purple-600", activeClass: "data-[active=true]:bg-purple-50 data-[active=true]:text-purple-900 dark:data-[active=true]:bg-purple-950/35 dark:data-[active=true]:text-purple-100" },
+  logistics: { iconClass: "text-cyan-600", activeClass: "data-[active=true]:bg-cyan-50 data-[active=true]:text-cyan-900 dark:data-[active=true]:bg-cyan-950/35 dark:data-[active=true]:text-cyan-100" },
+  settings: { iconClass: "text-slate-600", activeClass: "data-[active=true]:bg-slate-100 data-[active=true]:text-slate-900 dark:data-[active=true]:bg-slate-800 dark:data-[active=true]:text-slate-100" },
+} satisfies Record<string, MenuAccent>;
 
 function isGroup(item: MenuEntry): item is MenuGroup {
   return (item as MenuGroup).children !== undefined;
@@ -62,13 +84,14 @@ function isGroup(item: MenuEntry): item is MenuGroup {
 
 const menuStructure: MenuEntry[] = [
   // 1. Dashboard
-  { icon: LayoutDashboard, label: "nav.dashboard", path: "/" },
+  { icon: LayoutDashboard, label: "nav.dashboard", path: "/", accent: MENU_ACCENTS.dashboard },
 
   // 2. 直播管理
   {
     icon: Video,
     label: { zh: "直播管理", en: "Live Management" },
     path: "/live-rooms",
+    accent: MENU_ACCENTS.live,
   },
 
   // 2b. Facebook Campaign
@@ -76,12 +99,14 @@ const menuStructure: MenuEntry[] = [
     icon: Megaphone,
     label: { zh: "FB Campaign", en: "FB Campaign" },
     path: "/campaigns",
+    accent: MENU_ACCENTS.campaign,
   },
 
   // 3. 订单管理
   {
     icon: ShoppingCart,
     label: { zh: "订单管理", en: "Order Management" },
+    accent: MENU_ACCENTS.orders,
     children: [
       { icon: Home, label: { zh: "本地订单", en: "Local Orders" }, path: "/orders/local" },
       { icon: Plane, label: { zh: "中国代购订单", en: "Import Orders" }, path: "/orders/import" },
@@ -93,12 +118,13 @@ const menuStructure: MenuEntry[] = [
   },
 
   // 4. 包货工作台
-  { icon: PackageCheck, label: "nav.packing", path: "/packing" },
+  { icon: PackageCheck, label: "nav.packing", path: "/packing", accent: MENU_ACCENTS.packing },
 
   // 5. 商品管理
   {
     icon: Package,
     label: { zh: "商品管理", en: "Product Management" },
+    accent: MENU_ACCENTS.products,
     children: [
       { icon: Package, label: "nav.products", path: "/products" },
       { icon: Boxes, label: { zh: "组合包管理", en: "Product Bundles" }, path: "/product-bundles" },
@@ -110,12 +136,13 @@ const menuStructure: MenuEntry[] = [
   },
 
   // 6. 客户管理
-  { icon: Users, label: "nav.customers", path: "/customers" },
+  { icon: Users, label: "nav.customers", path: "/customers", accent: MENU_ACCENTS.customers },
 
   // 7. AI 客服
   {
     icon: Bot,
     label: { zh: "AI 客服", en: "AI Customer Service" },
+    accent: MENU_ACCENTS.ai,
     children: [
       { icon: MessageSquare, label: { zh: "Chat 客服", en: "Chat" }, path: "/chat" },
       { icon: AlertCircle, label: { zh: "AI 转人工通知", en: "AI Handover" }, path: "/ai-handover" },
@@ -129,6 +156,7 @@ const menuStructure: MenuEntry[] = [
   {
     icon: Plane,
     label: { zh: "中国代购采购", en: "Import Purchasing" },
+    accent: MENU_ACCENTS.import,
     children: [
       { icon: FileText, label: { zh: "CN（中国采购）", en: "CN (China Purchase)" }, path: "/import-batches?tab=cn" },
       { icon: Boxes, label: { zh: "IB（Import Batch）", en: "IB (Import Batch)" }, path: "/import-batches?tab=ib" },
@@ -139,6 +167,7 @@ const menuStructure: MenuEntry[] = [
   {
     icon: BarChart3,
     label: { zh: "报告", en: "Reports" },
+    accent: MENU_ACCENTS.reports,
     children: [
       { icon: DollarSign, label: { zh: "销售与收款", en: "Sales & Payment" }, path: "/reports/sales-payment" },
       { icon: ShoppingBag, label: { zh: "商品销售", en: "Product Sales" }, path: "/reports/product-sales" },
@@ -154,6 +183,7 @@ const menuStructure: MenuEntry[] = [
   {
     icon: Ship,
     label: { zh: "物流", en: "Logistics" },
+    accent: MENU_ACCENTS.logistics,
     children: [
       { icon: Ship, label: { zh: "运费规则", en: "Shipping Rules" }, path: "/shipping-rules" },
       { icon: Warehouse, label: "nav.logistics", path: "/logistics" },
@@ -164,6 +194,7 @@ const menuStructure: MenuEntry[] = [
   {
     icon: Settings,
     label: "nav.systemSettings",
+    accent: MENU_ACCENTS.settings,
     children: [
       { icon: Facebook, label: "nav.facebookSettings", path: "/facebook-settings" },
       { icon: CreditCard, label: "nav.paymentSettings", path: "/payment-settings" },
@@ -364,7 +395,7 @@ function DashboardLayoutContent({
           disableTransition={isResizing}
         >
           <SidebarHeader className="h-16 justify-center">
-            <div className="flex items-center gap-3 px-2 transition-all w-full">
+            <div className="flex items-center gap-2 px-2 transition-all w-full">
               <button
                 onClick={toggleSidebar}
                 className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
@@ -372,16 +403,26 @@ function DashboardLayoutContent({
               >
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
-              {!isCollapsed ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <Leaf className="h-5 w-5 text-primary shrink-0" />
+              <div className={`flex items-center min-w-0 ${isCollapsed ? "flex-1 justify-center" : "flex-1 gap-2"}`}>
+                <img
+                  src="/manus-storage/xintian-logo_701b1761.png"
+                  alt="心田 Xin Tian"
+                  className="h-8 w-8 rounded-full object-cover ring-1 ring-primary/20 shrink-0"
+                />
+                {!isCollapsed && (
                   <span className="font-bold tracking-tight truncate text-primary">
-                    心田 XLCS
+                    心田 Xin Tian
                   </span>
-                </div>
-              ) : (
-                <Leaf className="h-5 w-5 text-primary mx-auto" />
-              )}
+                )}
+              </div>
+              <button
+                onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+                className={`h-8 rounded-md border border-primary/20 bg-primary/5 px-2 text-[11px] font-semibold text-primary hover:bg-primary/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isCollapsed ? "absolute right-1 top-1" : "shrink-0"}`}
+                aria-label={lang === "zh" ? "Switch to English" : "切换为中文"}
+                title={lang === "zh" ? "English" : "中文"}
+              >
+                {lang === "zh" ? "EN" : "中文"}
+              </button>
             </div>
           </SidebarHeader>
 
@@ -401,6 +442,7 @@ function DashboardLayoutContent({
                         location={location}
                         setLocation={setLocation}
                         resolveLabel={resolveLabel}
+                        accent={item.accent}
                       />
                     </SidebarMenuItem>
                   );
@@ -413,9 +455,9 @@ function DashboardLayoutContent({
                         isActive={isActive}
                         onClick={() => child.path && setLocation(child.path)}
                         tooltip={resolveLabel(child.label)}
-                        className="h-10 transition-all font-normal"
+                        className={`h-10 transition-all font-normal ${child.accent?.activeClass ?? ""}`}
                       >
-                        <child.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+                        <child.icon className={`h-4 w-4 ${child.accent?.iconClass ?? (isActive ? "text-primary" : "")}`} />
                         <span>{resolveLabel(child.label)}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -508,18 +550,6 @@ function DashboardLayoutContent({
           </div>
         )}
         <main className="flex-1 p-4">
-          {/* Top-right language toggle — always visible (hidden when printing) */}
-          <div className="fixed top-3 right-4 z-50 no-print">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-              className="h-8 px-3 text-xs gap-1.5 bg-background/80 backdrop-blur shadow-sm"
-            >
-              <Languages className="h-3.5 w-3.5" />
-              {lang === "zh" ? "EN" : "中文"}
-            </Button>
-          </div>
           {children}
         </main>
       </SidebarInset>
@@ -537,6 +567,7 @@ function CollapsibleMenuGroup({
   location,
   setLocation,
   resolveLabel,
+  accent,
 }: {
   icon: any;
   label: string;
@@ -546,6 +577,7 @@ function CollapsibleMenuGroup({
   location: string;
   setLocation: (path: string) => void;
   resolveLabel: (label: string | { zh: string; en: string }) => string;
+  accent?: MenuAccent;
 }) {
   const [open, setOpen] = useState(true);
 
@@ -561,9 +593,9 @@ function CollapsibleMenuGroup({
         isActive={isActive}
         onClick={() => setOpen(!open)}
         tooltip={label}
-        className="h-10 transition-all font-normal"
+        className={`h-10 transition-all font-normal ${accent?.activeClass ?? ""}`}
       >
-        <Icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+        <Icon className={`h-4 w-4 ${accent?.iconClass ?? (isActive ? "text-primary" : "")}`} />
         <span>{label}</span>
       </SidebarMenuButton>
     );
@@ -574,9 +606,9 @@ function CollapsibleMenuGroup({
       <SidebarMenuButton
         isActive={isActive}
         onClick={() => setOpen(!open)}
-        className="h-10 transition-all font-normal"
+        className={`h-10 transition-all font-normal ${accent?.activeClass ?? ""}`}
       >
-        <Icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+        <Icon className={`h-4 w-4 ${accent?.iconClass ?? (isActive ? "text-primary" : "")}`} />
         <span>{label}</span>
         <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
       </SidebarMenuButton>
