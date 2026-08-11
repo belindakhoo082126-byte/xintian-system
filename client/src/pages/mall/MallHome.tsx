@@ -82,10 +82,12 @@ export default function MallHome() {
         .mall-theme-bg-button { background-color: ${theme.button}; }
         .mall-theme-border-primary { border-color: ${theme.primary}; }
         .mall-theme-text-font { color: ${theme.font}; }
-        .mall-card-hover:hover { box-shadow: 0 8px 30px rgba(0,0,0,0.12); transform: translateY(-2px); }
-        .mall-card-hover { transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1); }
-        .mall-img-zoom { transition: transform 0.4s cubic-bezier(0.23, 1, 0.32, 1); }
-        .mall-img-zoom:hover { transform: scale(1.08); }
+        .mall-card-hover { transition: transform 260ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 260ms cubic-bezier(0.23, 1, 0.32, 1); will-change: transform; }
+        .mall-card-hover:hover { box-shadow: 0 18px 36px rgba(36, 68, 44, 0.18); transform: translateY(-6px) scale(1.018); }
+        .mall-card-hover:focus-within { box-shadow: 0 18px 36px rgba(36, 68, 44, 0.18); transform: translateY(-4px) scale(1.012); }
+        .mall-img-zoom { transition: transform 420ms cubic-bezier(0.23, 1, 0.32, 1); }
+        .mall-card-hover:hover .mall-img-zoom { transform: scale(1.075); }
+        @media (prefers-reduced-motion: reduce) { .mall-card-hover, .mall-img-zoom { transition: none; } .mall-card-hover:hover, .mall-card-hover:focus-within { transform: none; } }
         .mall-theme-card { border: 1px solid ${theme.secondary}9c; box-shadow: 0 10px 28px ${theme.primary}14; }
         .mall-theme-edge { position: relative; }
         .mall-theme-edge::before { content: ""; position: absolute; z-index: 2; left: 0; right: 0; top: 0; height: 4px; background: ${theme.visual.edge}; }
@@ -118,7 +120,7 @@ export default function MallHome() {
             </div>
           </div>
           <Link href="/mall/checkout" className="shrink-0">
-            <Button variant="ghost" className="relative" size="icon">
+            <Button id="mall-cart-anchor" variant="ghost" className="relative" size="icon">
               <ShoppingCart className="h-5 w-5" style={{ color: theme.primary }} />
               {cartCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs" style={{ backgroundColor: theme.button }}>{cartCount}</Badge>}
             </Button>

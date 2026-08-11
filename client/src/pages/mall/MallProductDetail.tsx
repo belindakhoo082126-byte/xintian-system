@@ -7,10 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ShoppingCart, Minus, Plus, ChevronLeft, Package, Truck, Shield, Sun, Droplets, Sparkles, Scissors, Plane } from "lucide-react";
+import { ShoppingCart, Minus, Plus, ChevronLeft, Package, Truck, Shield, Sun, Droplets, Sparkles, Scissors, Plane, Heart, Share2, Facebook, MessageCircle, Link2 } from "lucide-react";
 import { useI18n } from "@/contexts/I18nContext";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
+import { MallCartFlyAnimation, type MallCartFlight } from "@/components/MallCartFlyAnimation";
+import { getMallShareLinks, MALL_FAVORITES_STORAGE_KEY, readMallFavoriteIds, toggleMallFavoriteId } from "@/lib/mallInteractions";
 
 export default function MallProductDetail() {
   const [location] = useLocation();
@@ -18,6 +20,8 @@ export default function MallProductDetail() {
   const [quantity, setQuantity] = useState(1);
   const [selectedVariantId, setSelectedVariantId] = useState<number | undefined>(undefined);
   const [cartCount, setCartCount] = useState(0);
+  const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
+  const [cartFlight, setCartFlight] = useState<MallCartFlight | null>(null);
 
   useEffect(() => {
     const loadCart = () => {
@@ -29,6 +33,13 @@ export default function MallProductDetail() {
     loadCart();
     window.addEventListener("cart-updated", loadCart);
     return () => window.removeEventListener("cart-updated", loadCart);
+  }, []);
+
+  useEffect(() => {
+    const loadFavorites = () => setFavoriteIds(readMallFavoriteIds(localStorage.getItem(MALL_FAVORITES_STORAGE_KEY)));
+    loadFavorites();
+    window.addEventListener("mall-favorites-updated", loadFavorites);
+    return () => window.removeEventListener("mall-favorites-updated", loadFavorites);
   }, []);
 
   const { data: settings } = trpc.mall.settings.useQuery();
@@ -58,10 +69,25 @@ export default function MallProductDetail() {
   const unitPrice = selectedVariant?.sellingPrice || product!.sellingPrice || "0";
   const subtotal = (parseFloat(unitPrice) * quantity).toFixed(2);
 
-  function addToCart() {
+  function launchCartFlight(origin?: HTMLElement) {
+    const originRect = origin?.getBoundingClientRect();
+    const cartRect = document.getElementById("mall-cart-anchor")?.getBoundingClientRect();
+    if (!originRect || !cartRect) return;
+    const flightId = Date.now();
+    setCartFlight({
+      id: flightId,
+      fromX: originRect.left + originRect.width / 2 - 20,
+      fromY: originRect.top + originRect.height / 2 - 20,
+      toX: cartRect.left + cartRect.width / 2 - 20,
+      toY: cartRect.top + cartRect.height / 2 - 20,
+    });
+    window.setTimeout(() => setCartFlight((current) => current?.id === flightId ? null : current), 900);
+  }
+
+  function addToCart(origin?: HTMLElement): boolean {
     if (variants.length > 0 && !selectedVariantId) {
       toast.error(t("请选择规格", "Please select a variant"));
-      return;
+      return false;
     }
     try {
       const cart = JSON.parse(localStorage.getItem("mall_cart") || "[]");
@@ -81,10 +107,13 @@ export default function MallProductDetail() {
         });
       }
       localStorage.setItem("mall_cart", JSON.stringify(cart));
+      launchCartFlight(origin);
       toast.success(t("已加入购物车", "Added to cart"));
       window.dispatchEvent(new Event("cart-updated"));
+      return true;
     } catch (e) {
       toast.error(t("加入购物车失败", "Failed to add to cart"));
+      return false;
     }
   }
 
@@ -93,13 +122,45 @@ export default function MallProductDetail() {
       toast.error(t("请选择规格", "Please select a variant"));
       return;
     }
-    addToCart();
-    window.location.href = "/mall/checkout";
+    if (addToCart()) window.location.href = "/mall/checkout";
+  }
+
+  function toggleFavorite() {
+    const nextFavoriteIds = toggleMallFavoriteId(favoriteIds, product!.id);
+    setFavoriteIds(nextFavoriteIds);
+    localStorage.setItem(MALL_FAVORITES_STORAGE_KEY, JSON.stringify(nextFavoriteIds));
+    window.dispatchEvent(new Event("mall-favorites-updated"));
+    toast.success(nextFavoriteIds.includes(product!.id) ? t("已加入收藏", "Saved to favorites") : t("已取消收藏", "Removed from favorites"));
+  }
+
+  async function shareProduct(channel: "native" | "whatsapp" | "facebook" | "copy") {
+    const url = window.location.href;
+    const shareText = `${product!.name} · RM ${product!.isSpecial && product!.specialPrice ? product!.specialPrice : unitPrice}`;
+    if (channel === "native" && navigator.share) {
+      try {
+        await navigator.share({ title: product!.name, text: shareText, url });
+      } catch {
+        // The share sheet can be dismissed without being an error visible to the customer.
+      }
+      return;
+    }
+    if (channel === "copy" || (channel === "native" && !navigator.share)) {
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success(t("商品链接已复制", "Product link copied"));
+      } catch {
+        toast.error(t("复制链接失败", "Could not copy link"));
+      }
+      return;
+    }
+    const links = getMallShareLinks({ url, text: shareText });
+    window.open(channel === "whatsapp" ? links.whatsapp : links.facebook, "_blank", "noopener,noreferrer");
   }
 
   return (
     <div className="relative min-h-screen overflow-x-hidden" style={{ backgroundColor: theme.background, backgroundImage: theme.visual.pattern, color: theme.font }}>
       <MallThemeDecorations theme={theme} />
+      <MallCartFlyAnimation flight={cartFlight} />
       <div className="relative z-10">
       {/* Header */}
       <header className="sticky top-0 z-50 border-b shadow-sm" style={{ backgroundColor: `${theme.background}f2`, borderColor: `${theme.secondary}8c`, backdropFilter: "blur(12px)" }}>
@@ -109,7 +170,7 @@ export default function MallProductDetail() {
             <span className="font-bold text-lg" style={{ color: theme.primary }}>{settings?.shopName || t("心田", "Xintian")}</span>
           </Link>
           <Link href="/mall/checkout" className="ml-auto relative">
-            <Button variant="ghost"><ShoppingCart className="h-5 w-5" /></Button>
+            <Button id="mall-cart-anchor" variant="ghost"><ShoppingCart className="h-5 w-5" /></Button>
             {cartCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">{cartCount}</Badge>}
           </Link>
         </div>
@@ -222,8 +283,19 @@ export default function MallProductDetail() {
 
             {/* Actions */}
             <div className="flex gap-3 pt-2">
-              <Button variant="outline" className="flex-1" onClick={addToCart}><ShoppingCart className="h-4 w-4 mr-2" />{t("加入购物车", "Add to Cart")}</Button>
+              <Button variant="outline" className="flex-1" onClick={(event) => addToCart(event.currentTarget)}><ShoppingCart className="h-4 w-4 mr-2" />{t("加入购物车", "Add to Cart")}</Button>
               <Button className="flex-1 hover:opacity-90" style={{ backgroundColor: theme.button }} onClick={buyNow}>{t("立即购买", "Buy Now")}</Button>
+            </div>
+
+            <div className="flex flex-wrap gap-2" aria-label={t("商品互动", "Product actions")}>
+              <Button variant="outline" size="sm" onClick={toggleFavorite} aria-pressed={favoriteIds.includes(product.id)} className={favoriteIds.includes(product.id) ? "border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100" : ""}>
+                <Heart className="mr-1.5 h-4 w-4" fill={favoriteIds.includes(product.id) ? "currentColor" : "none"} />
+                {favoriteIds.includes(product.id) ? t("已收藏", "Saved") : t("加入收藏", "Favorite")}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => void shareProduct("native")}><Share2 className="mr-1.5 h-4 w-4" />{t("分享", "Share")}</Button>
+              <Button variant="outline" size="icon" onClick={() => void shareProduct("whatsapp")} title="WhatsApp"><MessageCircle className="h-4 w-4 text-[#25D366]" /></Button>
+              <Button variant="outline" size="icon" onClick={() => void shareProduct("facebook")} title="Facebook"><Facebook className="h-4 w-4 text-[#1877F2]" /></Button>
+              <Button variant="outline" size="icon" onClick={() => void shareProduct("copy")} title={t("复制链接", "Copy link")}><Link2 className="h-4 w-4" /></Button>
             </div>
 
             {/* Trust badges */}
