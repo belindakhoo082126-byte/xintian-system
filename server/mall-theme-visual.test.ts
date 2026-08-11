@@ -18,7 +18,7 @@ describe("商城主题完整视觉系统", () => {
   it("自定义主题保留完整视觉语言，同时采用管理员保存的配色", () => {
     const customTheme = getMallTheme("custom", { primary: "#111111", secondary: "#222222", button: "#333333", background: "#444444", font: "#555555" });
     expect(customTheme.primary).toBe("#111111");
-    expect(customTheme.visual.mascot.name.zh).toBe("画园");
+    expect(customTheme.visual.mascot.name.zh).toBe("百花芽");
   });
 
   it("心田自然使用暖米白、田园绿与陶土橙的植物画册配色，并有专属连续水彩背景", () => {
@@ -184,19 +184,20 @@ describe("商城主题完整视觉系统", () => {
     expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
   });
 
-  it("自定义主题使用植物画室庭园默认视觉，并保留自定义颜色覆盖机制", () => {
+  it("自定义主题使用参考图启发的百花温室庭园默认视觉，并保留自定义颜色覆盖机制", () => {
     const customTheme = getMallTheme("custom");
     const customPalette = { primary: "#123456", secondary: "#234567", button: "#345678", background: "#456789", font: "#56789a" };
     const resolvedCustomTheme = getMallTheme("custom", customPalette);
     const root = path.resolve(__dirname, "..");
     const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
-    expect(customTheme.visual.description.zh).toContain("连续植物画室庭园水彩");
-    expect(customTheme.visual.description.zh).toContain("植物绘图桌");
-    expect(customTheme.colors).toMatchObject({ primary: "#285943", secondary: "#9aaf8b", button: "#c47845", background: "#faf8ef" });
+    expect(customTheme.visual.description.zh).toContain("连续百花温室庭园水彩");
+    expect(customTheme.visual.description.zh).toContain("兰花");
+    expect(customTheme.colors).toMatchObject({ primary: "#365b3c", secondary: "#9eaa82", button: "#d18793", background: "#fcfbf3" });
+    expect(customTheme.visual.motifs).toContain("✿");
     expect(resolvedCustomTheme.colors).toEqual(customPalette);
     expect(resolvedCustomTheme.primary).toBe(customPalette.primary);
     expect(artwork).toContain("CUSTOM_CONTINUOUS_BACKGROUND_URL");
-    expect(artwork).toContain("xintian-custom-continuous-botanical-studio-garden_86b009f9.png");
+    expect(artwork).toContain("xintian-custom-reference-continuous-blooms-conservatory-garden_31e915e6.png");
     expect(artwork).toContain('theme.key === "custom"');
     expect(artwork).toContain("fixed inset-0 z-0");
     expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
