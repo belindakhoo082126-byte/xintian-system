@@ -5,7 +5,7 @@ import path from "node:path";
 
 describe("商城主题完整视觉系统", () => {
   it("为每个主题定义了背景图案、边缘装饰与符合节日或田园风格的图标元素", () => {
-    expect(MALL_THEMES).toHaveLength(12);
+    expect(MALL_THEMES).toHaveLength(13);
     for (const theme of MALL_THEMES) {
       expect(theme.visual.pattern.length).toBeGreaterThan(20);
       expect(theme.visual.edge).toContain("gradient");
@@ -180,6 +180,21 @@ describe("商城主题完整视觉系统", () => {
     expect(artwork).toContain("VALENTINE_CONTINUOUS_BACKGROUND_URL");
     expect(artwork).toContain("xintian-valentine-reference-continuous-conservatory-garden_c4d227fd.png");
     expect(artwork).toContain('theme.key === "valentine"');
+    expect(artwork).toContain("fixed inset-0 z-0");
+    expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
+  });
+
+  it("母亲节使用暖白纸感、康乃馨粉、雾蓝、鼠尾草绿与香槟金，并有专属连续花礼温室庭园背景", () => {
+    const mothersDayTheme = getMallTheme("mothers_day");
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+    expect(mothersDayTheme.visual.description.zh).toContain("连续花礼温室庭园水彩");
+    expect(mothersDayTheme.visual.description.zh).toContain("康乃馨");
+    expect(mothersDayTheme.colors).toMatchObject({ primary: "#965b62", secondary: "#9ea893", button: "#d98673", background: "#fffaf2" });
+    expect(mothersDayTheme.visual.motifs).toContain("🌷");
+    expect(artwork).toContain("MOTHERS_DAY_CONTINUOUS_BACKGROUND_URL");
+    expect(artwork).toContain("xintian-mothers-day-continuous-gift-garden_aaa13d54.png");
+    expect(artwork).toContain('theme.key === "mothers_day"');
     expect(artwork).toContain("fixed inset-0 z-0");
     expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
   });

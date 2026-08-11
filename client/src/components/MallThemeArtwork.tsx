@@ -13,6 +13,7 @@ const HARI_RAYA_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-hari-raya-co
 const MERDEKA_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-malaysia-day-continuous-tropical-garden_c5b9f763.png";
 const MID_AUTUMN_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-midautumn-continuous-osmanthus-moonlight-garden_52e83413.png";
 const VALENTINE_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-valentine-reference-continuous-conservatory-garden_c4d227fd.png";
+const MOTHERS_DAY_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-mothers-day-continuous-gift-garden_aaa13d54.png";
 const CUSTOM_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-custom-reference-continuous-blooms-conservatory-garden_31e915e6.png";
 
 function themeSurfaceStyle(theme: MallTheme): CSSProperties {
@@ -204,6 +205,21 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
         <div
           className="absolute inset-0"
           style={{ background: "linear-gradient(180deg, rgba(255,252,247,0.08) 0%, rgba(255,248,243,0.01) 44%, rgba(246,230,224,0.14) 100%)" }}
+        />
+      </div>
+    );
+  }
+
+  if (theme.key === "mothers_day") {
+    return (
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.88]"
+          style={{ backgroundImage: `url(${MOTHERS_DAY_CONTINUOUS_BACKGROUND_URL})` }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{ background: "linear-gradient(180deg, rgba(255,253,248,0.08) 0%, rgba(255,249,242,0.01) 44%, rgba(238,228,219,0.14) 100%)" }}
         />
       </div>
     );
