@@ -111,10 +111,8 @@ export default function PackingDetail() {
 
   const createExceptionMutation = trpc.orderException.create.useMutation({
     onSuccess: () => {
-      toast.success(translate("异常已记录", "Exception recorded"));
-      setExceptionDialogOpen(false);
-      setExceptionDesc("");
-      // V2.1.26: Fix - invalidate packing detail so exception shows up
+      // V2.1.26补充4: Don't close dialog here - the inline onSuccess in save handler decides whether to close
+      // This global onSuccess just invalidates queries to refresh data
       utils.packing.detail.invalidate({ orderId });
       utils.orderException.list.invalidate({ orderId });
     },
@@ -449,7 +447,7 @@ export default function PackingDetail() {
               <div className="space-y-2">
                 {(exceptions as any[]).map((exc: any) => (
                   <div key={exc.id} className="flex items-center justify-between border rounded-lg p-3 bg-orange-50 dark:bg-orange-950/20">
-                    <div className="text-sm">
+                    <div className="text-sm flex-1">
                       <Badge variant={exc.status === "resolved" ? "secondary" : "destructive"} className="mr-2">
                         {exc.status === "resolved" ? translate("已处理", "Resolved") : translate("待处理", "Open")}
                       </Badge>
@@ -457,8 +455,32 @@ export default function PackingDetail() {
                        exc.exceptionType === "quality_issue" ? translate("植物品质异常", "Quality Issue") :
                        exc.exceptionType === "overcharged_shipping" ? translate("运费多收", "Overcharged Shipping") :
                        translate("其他异常", "Other")}
+                      {exc.quantity > 0 && <span className="text-muted-foreground ml-2">×{exc.quantity}</span>}
+                      {exc.customerAction && exc.customerAction !== "pending" && (
+                        <span className="text-muted-foreground ml-2">—
+                          {exc.customerAction === "replace_product" ? translate("更换商品", "Replace Product") :
+                           exc.customerAction === "wait_restock" ? translate("等待补货", "Wait Restock") :
+                           exc.customerAction === "refund" ? translate("退款", "Refund") : ""}
+                        </span>
+                      )}
                       {exc.description && <span className="text-muted-foreground ml-2">— {exc.description}</span>}
                     </div>
+                    {exc.status !== "resolved" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setExceptionType(exc.exceptionType);
+                          setExceptionDesc(exc.description || "");
+                          setExceptionItemId(exc.orderItemId ? Number(exc.orderItemId) : "");
+                          setExceptionQuantity(exc.quantity || 1);
+                          setCustomerAction(exc.customerAction || "pending");
+                          setExceptionDialogOpen(true);
+                        }}
+                      >
+                        {translate("修改", "Edit")}
+                      </Button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -637,6 +659,7 @@ export default function PackingDetail() {
                             customerAction,
                           }, {
                             onSuccess: (created: any) => {
+                              toast.success(translate("异常已记录", "Exception recorded"));
                               const selectedItem = (d.items as any[]).find((it: any) => it.id === exceptionItemId);
                               resolveExceptionMutation.mutate({
                                 exceptionId: created.id,
@@ -677,6 +700,22 @@ export default function PackingDetail() {
                             description: exceptionDesc,
                             quantity: exceptionQuantity,
                             customerAction,
+                          }, {
+                            onSuccess: () => {
+                              toast.success(translate("异常已记录", "Exception recorded"));
+                              setExceptionDialogOpen(false);
+                              setExceptionDesc("");
+                              setExceptionItemId("");
+                              setExceptionQuantity(1);
+                              setCustomerAction("pending");
+                              setRefundMethod("credit");
+                              setProductSearchQuery("");
+                              setProductSearchResults([]);
+                              setReplacementProductId("");
+                              setReplacementQty(1);
+                              setReplacementUnitPrice(0);
+                              setReplacementProductName("");
+                            },
                           });
                         }
                       }}

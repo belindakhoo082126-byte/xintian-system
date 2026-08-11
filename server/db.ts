@@ -963,6 +963,7 @@ export async function createOrderWithSplit(data: {
     physicalSubtotal: physicalSubtotal.toFixed(2),
     membershipSubtotal: membershipSubtotal.toFixed(2),
     shippingFee: shippingFee.toFixed(2),
+    customerPaidShipping: shippingFee.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
     physicalStatus: "pending",
     importStatus: data.orderCategory === "import" ? "pending" : null,
@@ -1362,13 +1363,13 @@ export async function updateOrderItems(orderId: number, items: Array<{
   }
 
   const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
-  await db.update(orders).set({
+    await db.update(orders).set({
     physicalSubtotal: physicalSubtotal.toFixed(2),
     shippingFee: shippingFee.toFixed(2),
+    customerPaidShipping: shippingFee.toFixed(2),
     totalWeight: totalWeight.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
   }).where(eq(orders.id, orderId));
-
   // Log to timeline
   if (changes.length > 0) {
     await logOrderOperation(orderId, "admin_edit", `Admin修改商品：\n${changes.join("\n")}`, JSON.stringify({
@@ -5272,6 +5273,7 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
   await db.update(orders).set({
     physicalSubtotal: physicalSubtotal.toFixed(2),
     shippingFee: shippingFee.toFixed(2),
+    customerPaidShipping: shippingFee.toFixed(2),
     totalWeight: totalWeight.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
     physicalStatus: newPhysicalStatus,
@@ -5813,7 +5815,7 @@ export async function getPackingOrders(status: string) {
   }).from(orders)
     .leftJoin(customers, eq(orders.customerId, customers.id))
     .where(or(...statusConditions))
-    .orderBy(desc(orders.paymentConfirmedAt), desc(orders.createdAt));
+    .orderBy(desc(orders.createdAt));
   
   // Get item count and types for each order
   const enriched = await Promise.all(result.map(async (o) => {
@@ -5837,7 +5839,8 @@ export async function getPackingOrders(status: string) {
     
     // V2.1.26: Calculate isFreeShipping
     const physicalSubtotalNum = parseFloat(o.physicalSubtotal || "0");
-    const isFreeShipping = physicalSubtotalNum >= 150;
+    // V2.1.26补充5: Free shipping only for west_malaysia and lalamove (>=RM150), not east Malaysia
+    const isFreeShipping = (o.shippingMethod === 'west_malaysia' || o.shippingMethod === 'lalamove') && physicalSubtotalNum >= 150;
     
     return { ...o, totalQuantity: totalQty, itemTypes, specialLabel, effectiveStatus, isFreeShipping };
   }));

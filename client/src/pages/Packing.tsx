@@ -135,26 +135,42 @@ export default function Packing() {
     }
   };
 
-  // V2.1.26: Render slip data into HTML and print via hidden iframe
+  // V2.1.26: Render slip data into HTML and print via hidden iframe - unified with A5PackingSlip format
   const printSlipData = (slipDataList: any[]) => {
     const html = slipDataList.map((data) => {
-      const allItems = [...(data.items || []), ...(data.giftItems || [])];
-      const useGrid = allItems.length > 2;
+      const productItemCount = (data.items || []).length;
+      const useGrid = productItemCount > 2;
       const shippingLabel = data.shippingMethodLabel || data.specialLabel || "西马";
+
+      // Customer info section
+      const customerInfoHtml = `
+        <div style="margin-bottom:4px;font-size:12px;line-height:1.4">
+          ${data.facebookName ? `<div><strong>FB:</strong> ${data.facebookName}</div>` : ""}
+          <div><strong>收件人:</strong> ${data.recipientName || data.customerName || ""}</div>
+          <div><strong>电话:</strong> ${data.recipientPhone || data.customerPhone || ""}</div>
+          <div><strong>地址:</strong> ${[
+            data.addressLine1,
+            data.addressLine2,
+            data.postcode || data.recipientPostcode,
+            data.recipientCity,
+            data.recipientState
+          ].filter(Boolean).join(", ")}</div>
+        </div>`;
+
       const itemsHtml = useGrid
-        ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
             ${data.items.map((item: any) => `
-              <div style="border:1px solid #000;padding:4px;border-radius:4px">
-                <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
-                  <span style="font-size:16px">☐</span>
-                  <span style="font-weight:bold;font-size:13px">${item.productName}</span>
+              <div style="border:2px solid #000;padding:8px;border-radius:6px;min-height:80px">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                  <span style="font-size:20px">☐</span>
+                  <span style="font-weight:bold;font-size:18px;line-height:1.2">${item.productName}</span>
                 </div>
-                ${item.keyword ? `<div style="font-size:11px;color:#555;margin-left:20px">${item.keyword}</div>` : ""}
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px">
-                  <span style="font-size:11px">RM${Number(item.unitPrice || 0).toFixed(0)} × ${item.quantity}</span>
-                  <span style="font-size:28px;font-weight:bold;border:3px solid #000;padding:2px 8px;border-radius:4px">${item.quantity}</span>
+                ${item.keyword ? `<div style="font-size:14px;color:#555;margin-left:26px">${item.keyword}</div>` : ""}
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+                  <span style="font-size:14px">RM${Number(item.unitPrice || 0).toFixed(0)} × ${item.quantity}</span>
+                  <span style="font-size:36px;font-weight:bold;border:4px solid #000;padding:4px 12px;border-radius:6px">${item.quantity}</span>
                 </div>
-                <div style="font-size:11px;text-align:right">小计: RM${Number(item.subtotal || 0).toFixed(2)}</div>
+                <div style="font-size:13px;text-align:right;margin-top:4px">小计: RM${Number(item.subtotal || 0).toFixed(2)}</div>
               </div>
             `).join("")}
           </div>`
@@ -188,6 +204,20 @@ export default function Packing() {
             `).join("")}`
         : "";
 
+      // Amount details section
+      const s = data.summary || {};
+      const amountHtml = `
+        <div style="border-top:2px solid #000;margin:4px 0"></div>
+        <div style="margin-bottom:6px;font-size:13px;line-height:1.6">
+          <div style="display:flex;justify-content:space-between"><span>商品小计:</span><span>RM ${s.physicalSubtotal || s.regularTotal || "0.00"}</span></div>
+          <div style="display:flex;justify-content:space-between"><span>运费:</span><span>RM ${s.shippingFee || "0.00"}</span></div>
+          ${parseFloat(s.discountAmount || "0") > 0 ? `<div style="display:flex;justify-content:space-between"><span>折扣: ${s.discountReason ? `(${s.discountReason})` : ""}</span><span>-RM ${s.discountAmount}</span></div>` : ""}
+          ${parseFloat(s.extraCharge || "0") > 0 ? `<div style="display:flex;justify-content:space-between"><span>额外收费: ${s.extraChargeDescription ? `(${s.extraChargeDescription})` : ""}</span><span>+RM ${s.extraCharge}</span></div>` : ""}
+          ${parseFloat(s.creditUsed || "0") > 0 ? `<div style="display:flex;justify-content:space-between"><span>Credit:</span><span>-RM ${s.creditUsed}</span></div>` : ""}
+          <div style="border-top:1px solid #000;margin:2px 0"></div>
+          <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold"><span>总金额:</span><span>RM ${s.totalAmount || "0.00"}</span></div>
+        </div>`;
+
       const remarksHtml = data.remarks && data.remarks.length > 0
         ? `<div style="margin-bottom:8px;border:2px solid #000;padding:4px">
             ${data.remarks.map((r: any) => {
@@ -202,13 +232,11 @@ export default function Packing() {
       return `
         <div style="page-break-after:always;width:148mm;padding:8mm;font-family:sans-serif;font-size:12px;color:#000">
           <div style="text-align:center;font-size:36px;font-weight:bold;margin-bottom:4px;border:3px solid #000;padding:6px">${shippingLabel}</div>
-          <div style="text-align:center;font-size:28px;font-weight:bold;margin-bottom:8px">${data.orderNumber}</div>
+          <div style="text-align:center;font-size:28px;font-weight:bold;margin-bottom:4px">${data.orderNumber}</div>
+          ${customerInfoHtml}
           <div style="border-top:2px solid #000;margin:4px 0"></div>
           <div style="margin-bottom:8px">${itemsHtml}${giftHtml}</div>
-          <div style="border-top:2px solid #000;margin:4px 0"></div>
-          <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;margin-bottom:4px">
-            <span>订单总数:</span><span>RM ${data.summary.totalAmount}</span>
-          </div>
+          ${amountHtml}
           ${data.summary.isFreeShipping ? `<div style="text-align:center;font-size:14px;font-weight:bold;color:green;margin-bottom:4px">免邮</div>` : ""}
           ${remarksHtml}
         </div>

@@ -2638,3 +2638,12 @@
 - [x] Issue 6h: Packing.tsx添加"特别订单"标签（在今日已发货旁边）
 - [x] Issue 6h: 使用trpc.shippingV2.specialOrders查询特别订单数据
 - [x] TypeScript编译零错误，270测试全部通过
+
+## V2.1.26 补充5 - 6项Bug修复
+
+- [x] 问题1: OrderBrowsePage区域6付款记录同步显示（添加审核状态列、操作人列、编辑/审核/拒绝按钮和对话框）
+- [x] 问题2: 包货工作台排序改为新到旧（createdAt DESC）
+- [x] 问题3: 东马免邮显示修复（isFreeShipping只对west_malaysia和lalamove显示，东马显示"不适用"）
+- [x] 问题4: 东马运费记录同步（createOrderWithSplit/addToSecureOrder/addMallItemsToOrder添加customerPaidShipping字段，更新已有订单数据）
+- [x] 问题5: 异常处理保存和修改功能（修复createExceptionMutation onSuccess冲突，添加已有异常编辑按钮）
+- [x] 问题6: 打印格式统一和美化（Packing.tsx列表打印格式与PackingDetail.tsx A5PackingSlip统一，添加客户资料和金额详情）

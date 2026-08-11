@@ -5,6 +5,7 @@ import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
@@ -14,6 +15,7 @@ import {
   CreditCard, History, MessageSquare, PackageCheck, Calendar,
   Sprout, TreePine, AlertCircle, Download, Printer, Eye,
   Copy, MessageCircle, Bell, Send, Plus, Upload, Loader2, Trash2,
+  CheckCircle, Pencil, X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -85,6 +87,13 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const [paymentForm, setPaymentForm] = useState({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const receiptFileRef = useRef<HTMLInputElement>(null);
+  // V2.1.26补充5: Payment review/edit/reject state
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectPaymentId, setRejectPaymentId] = useState<number | null>(null);
+  const [editPaymentDialogOpen, setEditPaymentDialogOpen] = useState(false);
+  const [editPaymentId, setEditPaymentId] = useState<number | null>(null);
+  const [editPaymentForm, setEditPaymentForm] = useState({ amount: "", paymentMethod: "", receiptUrl: "", notes: "" });
 
   // Preload logo as dataURL for Preview — same asset as export/print
   useEffect(() => {
@@ -319,6 +328,27 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
       setPaymentForm({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
     },
     onError: (e: any) => toast.error(translate("添加付款失败: {message}", "Payment failed: {message}", { message: e.message })),
+  });
+  // V2.1.26补充5: Review payment mutation
+  const reviewPaymentMutation = trpc.orders.reviewPayment.useMutation({
+    onSuccess: () => {
+      utils.orders.getDetail.invalidate({ id: orderId });
+      toast.success(translate("付款审核已更新", "Payment review updated"));
+      setRejectDialogOpen(false);
+      setRejectReason("");
+      setRejectPaymentId(null);
+    },
+    onError: (e: any) => toast.error(translate("审核失败: {message}", "Review failed: {message}", { message: e.message })),
+  });
+  // V2.1.26补充5: Edit payment mutation
+  const editPaymentMutation = trpc.orders.editPayment.useMutation({
+    onSuccess: () => {
+      utils.orders.getDetail.invalidate({ id: orderId });
+      toast.success(translate("付款记录已更新", "Payment record updated"));
+      setEditPaymentDialogOpen(false);
+      setEditPaymentId(null);
+    },
+    onError: (e: any) => toast.error(translate("更新失败: {message}", "Update failed: {message}", { message: e.message })),
   });
   async function handleUploadReceipt(file: File) {
     if (!file) return;
@@ -693,8 +723,11 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                   <th className="text-left p-3 font-medium">{translate("日期", "Date")}</th>
                   <th className="text-right p-3 font-medium">{translate("金额", "Amount")}</th>
                   <th className="text-left p-3 font-medium">{translate("付款方式", "Method")}</th>
+                  <th className="text-left p-3 font-medium">{translate("审核状态", "Status")}</th>
                   <th className="text-left p-3 font-medium">{translate("付款凭证", "Receipt")}</th>
                   <th className="text-left p-3 font-medium">{translate("备注", "Notes")}</th>
+                  <th className="text-left p-3 font-medium">{translate("操作人", "Recorded By")}</th>
+                  <th className="text-left p-3 font-medium no-print">{translate("操作", "Action")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -702,13 +735,65 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                   <tr key={idx} className="border-b last:border-0">
                     <td className="p-3">{new Date(p.paymentDate || p.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</td>
                     <td className="p-3 text-right font-medium">RM {parseFloat(p.amount).toFixed(2)}</td>
-                    <td className="p-3">{p.paymentMethodName || "-"}</td>
+                    <td className="p-3">{p.paymentMethodName || p.paymentMethod || "-"}</td>
+                    <td className="p-3">
+                      {p.reviewStatus === 'approved' && <Badge className="bg-green-100 text-green-700">{translate("已确认", "Approved")}</Badge>}
+                      {p.reviewStatus === 'pending' && <Badge className="bg-orange-100 text-orange-700">{translate("待审核", "Pending")}</Badge>}
+                      {p.reviewStatus === 'rejected' && <Badge className="bg-red-100 text-red-700">{translate("审核失败", "Rejected")}</Badge>}
+                    </td>
                     <td className="p-3">{p.receiptUrl ? <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{translate("查看", "View")}</a> : "-"}</td>
-                    <td className="p-3 text-muted-foreground">{p.notes || "-"}</td>
+                    <td className="p-3 text-muted-foreground">
+                      {p.notes || "-"}
+                      {p.rejectReason && <div className="text-red-500 text-xs mt-1">{p.rejectReason}</div>}
+                    </td>
+                    <td className="p-3 text-sm">
+                      {p.operatorName || (p.paymentSource === 'customer_upload' ? translate("客户", "Customer") : "-")}
+                      {p.reviewedBy && <div className="text-xs text-muted-foreground">{translate("审核人", "Reviewer")}: {p.reviewedBy}</div>}
+                    </td>
+                    <td className="p-3 no-print">
+                      {p.reviewStatus === 'pending' && (
+                        <div className="flex gap-1">
+                          {p.receiptUrl && (
+                            <a href={p.receiptUrl} target="_blank" rel="noreferrer">
+                              <Button size="sm" variant="outline" className="h-7 px-2">
+                                <Eye className="h-3 w-3 mr-1" />{translate("查看", "View")}
+                              </Button>
+                            </a>
+                          )}
+                          <Button size="sm" className="h-7 px-2 bg-green-600 hover:bg-green-700" disabled={reviewPaymentMutation.isPending}
+                            onClick={() => reviewPaymentMutation.mutate({ paymentId: p.id, action: 'approve' })}>
+                            <CheckCircle className="h-3 w-3 mr-1" />{translate("通过", "Approve")}
+                          </Button>
+                          <Button size="sm" variant="destructive" className="h-7 px-2" disabled={reviewPaymentMutation.isPending}
+                            onClick={() => { setRejectPaymentId(p.id); setRejectReason(""); setRejectDialogOpen(true); }}>
+                            <X className="h-3 w-3 mr-1" />{translate("失败", "Reject")}
+                          </Button>
+                        </div>
+                      )}
+                      {p.reviewStatus === 'approved' && (
+                        <div className="flex gap-1">
+                          {p.receiptUrl && (
+                            <a href={p.receiptUrl} target="_blank" rel="noreferrer">
+                              <Button size="sm" variant="ghost" className="h-7 px-2">
+                                <Eye className="h-3 w-3" />
+                              </Button>
+                            </a>
+                          )}
+                          <Button size="sm" variant="ghost" className="h-7 px-2"
+                            onClick={() => {
+                              setEditPaymentId(p.id);
+                              setEditPaymentForm({ amount: String(p.amount), paymentMethod: p.paymentMethod || "", receiptUrl: p.receiptUrl || "", notes: p.notes || "" });
+                              setEditPaymentDialogOpen(true);
+                            }}>
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {(!o.payments || o.payments.length === 0) && (
-                  <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">{translate("无付款记录", "No payment records")}</td></tr>
+                  <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">{translate("无付款记录", "No payment records")}</td></tr>
                 )}
               </tbody>
             </table>
@@ -872,6 +957,85 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* V2.1.26补充5: Reject Payment Dialog */}
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("驳回付款凭证", "Reject Payment Receipt")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>{translate("驳回原因", "Reject Reason")}</Label>
+              <Textarea value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={3} placeholder={translate("请填写驳回原因...", "Please enter reject reason...")} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button variant="destructive" disabled={reviewPaymentMutation.isPending}
+              onClick={() => {
+                if (!rejectPaymentId) return;
+                reviewPaymentMutation.mutate({ paymentId: rejectPaymentId, action: 'reject', rejectReason });
+              }}>
+              {reviewPaymentMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+              {translate("确认驳回", "Confirm Reject")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* V2.1.26补充5: Edit Payment Dialog */}
+      <Dialog open={editPaymentDialogOpen} onOpenChange={setEditPaymentDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("编辑付款记录", "Edit Payment Record")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>{translate("金额", "Amount")}</Label>
+              <Input type="number" step="0.01" value={editPaymentForm.amount}
+                onChange={(e) => setEditPaymentForm({ ...editPaymentForm, amount: e.target.value })} />
+            </div>
+            <div>
+              <Label>{translate("付款方式", "Payment Method")}</Label>
+              <Select value={editPaymentForm.paymentMethod} onValueChange={(v) => setEditPaymentForm({ ...editPaymentForm, paymentMethod: v })}>
+                <SelectTrigger><SelectValue placeholder={translate("选择付款方式", "Select payment method")} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="qr_pay">QR Pay (TNG/DuitNow)</SelectItem>
+                  <SelectItem value="online_transfer">Online Transfer</SelectItem>
+                  <SelectItem value="banking">Banking</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{translate("备注", "Notes")}</Label>
+              <Textarea value={editPaymentForm.notes}
+                onChange={(e) => setEditPaymentForm({ ...editPaymentForm, notes: e.target.value })}
+                rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPaymentDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button disabled={editPaymentMutation.isPending}
+              onClick={() => {
+                if (!editPaymentId) return;
+                editPaymentMutation.mutate({
+                  paymentId: editPaymentId,
+                  amount: editPaymentForm.amount,
+                  paymentMethod: editPaymentForm.paymentMethod,
+                  notes: editPaymentForm.notes,
+                });
+              }}>
+              {editPaymentMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+              {translate("保存", "Save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Preview Document Dialog — same OrderDocument template as export/print */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
