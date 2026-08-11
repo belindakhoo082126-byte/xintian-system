@@ -41,7 +41,16 @@ export default function LogisticsIntegration() {
   };
 
   const handleRefreshAccount = async () => {
-    await accountInfoQuery.refetch();
+    try {
+      const result = await accountInfoQuery.refetch();
+      if (result.data?.success) {
+        toast.success(`余额已同步: ${formatRM(result.data.data?.credit)}`);
+      } else {
+        toast.error("同步失败: " + (result.data?.error || "未知错误"));
+      }
+    } catch (e: any) {
+      toast.error("同步失败: " + e.message);
+    }
     refetch();
   };
 

@@ -2713,3 +2713,8 @@
 - [x] 问题4：快递公司只显示Poslaju/Line Clear（移除Parcel King/JNT/Ninja Van/DHL等）
 - [x] 问题5：Lalamove自动显示（固定快递公司，只填追踪号，确认发货即可）
 - [x] 问题6：东马Shopee自动显示（固定快递公司，只填追踪号，确认发货即可）
+
+## V2.1.30补充 - ParcelDaily余额同步修复
+
+- [x] 修复刷新余额按钮：accountInfo procedure现在同时更新DB中的accountBalance和lastSyncAt
+- [x] 修复刷新余额按钮：添加toast反馈显示同步结果

@@ -2654,6 +2654,13 @@ export const appRouter = router({
       }
       try {
         const info = await parceldaily.checkAccountInfo();
+        if (info.data) {
+          // Update balance in DB so the UI shows it
+          await db.updateShippingProvider("parceldaily", {
+            accountBalance: info.data.credit.toString() as any,
+            lastSyncAt: new Date() as any,
+          });
+        }
         return { success: true, data: info.data };
       } catch (error: any) {
         return { success: false, error: error.message };
