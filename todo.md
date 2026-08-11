@@ -2695,3 +2695,21 @@
 - [x] 问题3：Dashboard特别状态多汇款数量同步修复（orders表+order_special_statuses表合并计数）
 - [x] 问题4：Dashboard存库预警点击404修复（路由从/products-v2改为/products）
 - [x] 问题5：商品管理存库日志乱码修复（SelectItem空值导致React崩溃，改为"all"）
+
+## V2.1.30 - 6项Bug修复
+
+- [ ] 问题1：Dashboard多汇款重复计数（orders表+order_special_statuses表合并去重）
+- [ ] 问题2：异常保存乱码（NaN id）+重复记录修复
+- [ ] 问题3：更换商品后原商品数量同步扣除（MON x5→x4）
+- [ ] 问题4：快递公司只显示Poslaju/Line Clear
+- [ ] 问题5：Lalamove订单自动显示lalamove，无需其他选择
+- [ ] 问题6：东马Shopee订单自动显示Shopee，无需其他选择
+
+## V2.1.30 - 6项Bug修复
+
+- [x] 问题1：Dashboard多汇款重复计数修复（JOIN orders表过滤已发货/取消订单）
+- [x] 问题2：异常保存乱码+重复记录修复（createOrderException用insertId替代$returningId）
+- [x] 问题3：更换商品后库存数量同步（resolveOrderException已正确扣除替换商品库存）
+- [x] 问题4：快递公司只显示Poslaju/Line Clear（移除Parcel King/JNT/Ninja Van/DHL等）
+- [x] 问题5：Lalamove自动显示（固定快递公司，只填追踪号，确认发货即可）
+- [x] 问题6：东马Shopee自动显示（固定快递公司，只填追踪号，确认发货即可）

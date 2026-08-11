@@ -7450,7 +7450,7 @@ export async function createOrderException(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(orderExceptions).values({
+  const [inserted] = await db.insert(orderExceptions).values({
     orderId: data.orderId,
     orderItemId: data.orderItemId ?? null,
     exceptionType: data.exceptionType,
@@ -7460,8 +7460,16 @@ export async function createOrderException(data: {
     quantity: data.quantity ?? 0,
     customerAction: data.customerAction ?? 'pending',
   });
-  const id = (result as any).insertId;
-  const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, Number(id))).limit(1);
+  const newId = (inserted as any).insertId;
+  if (!newId || isNaN(Number(newId))) {
+    // Fallback: query the latest record for this order
+    const rows = await db.select().from(orderExceptions)
+      .where(eq(orderExceptions.orderId, data.orderId))
+      .orderBy(desc(orderExceptions.id))
+      .limit(1);
+    return rows[0];
+  }
+  const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, Number(newId))).limit(1);
   return rows[0];
 }
 
@@ -8798,11 +8806,13 @@ export async function getSpecialOrderFollowUpStats() {
   // V2.1.19: Query from order_special_statuses table (new multi-status system)
   const [ssRows] = await db.execute(sql`
     SELECT 
-      type,
+      oss.type,
       COUNT(*) as cnt
-    FROM order_special_statuses
-    WHERE status = 'pending'
-    GROUP BY type
+    FROM order_special_statuses oss
+    JOIN orders o ON o.id = oss.orderId
+    WHERE oss.status = 'pending'
+      AND o.physicalStatus NOT IN ('shipped', 'completed', 'cancelled')
+    GROUP BY oss.type
   `);
   const typeCounts: Record<string, number> = {};
   (ssRows as unknown as any[]).forEach((r: any) => {

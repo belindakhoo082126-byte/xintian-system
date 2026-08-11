@@ -13,19 +13,28 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare, RefreshCw, AlertTriangle } from "lucide-react";
+import { useEffect } from "react";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
 
+// V2.1.30: Only show Parcel Daily services (Poslaju for east Malaysia, Line Clear for west Malaysia)
 const COURIERS = [
-  { zh: "Parcel Daily", en: "Parcel Daily" },
-  { zh: "Parcel King", en: "Parcel King" },
-  { zh: "PosLaju", en: "PosLaju" },
-  { zh: "JNT", en: "JNT" },
-  { zh: "Ninja Van", en: "Ninja Van" },
-  { zh: "DHL", en: "DHL" },
-  { zh: "Lalamove", en: "Lalamove" },
-  { zh: "Shopee Xpress", en: "Shopee Xpress" },
-  { zh: "其他", en: "Other" },
+  { zh: "Poslaju", en: "Poslaju" },
+  { zh: "Line Clear", en: "Line Clear" },
 ];
+
+// V2.1.30: Auto-set courier based on order shipping method
+function getAutoCourier(shippingMethod: string): string {
+  if (shippingMethod === "east_malaysia_poslaju") return "Poslaju";
+  if (shippingMethod === "west_malaysia") return "Line Clear";
+  if (shippingMethod === "lalamove") return "Lalamove";
+  if (shippingMethod === "east_malaysia_shopee") return "Shopee Xpress";
+  return "Line Clear";
+}
+
+// V2.1.30: Check if shipping method has fixed courier (no user selection needed)
+function isFixedCourier(shippingMethod: string): boolean {
+  return shippingMethod === "lalamove" || shippingMethod === "east_malaysia_shopee";
+}
 
 export default function PackingDetail() {
   const { id } = useParams<{ id: string }>();
@@ -64,10 +73,22 @@ export default function PackingDetail() {
     trackingNumber: string;
     weight: string;
     serviceId: string;
-  }>>([{ courier: "Parcel Daily", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
+  }>>([{ courier: "Line Clear", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
   const [actualWeightInput, setActualWeightInput] = useState("");
 
   const { data: specialActions } = trpc.shippingV2.specialOrderActions.useQuery({ orderId }, { enabled: !!detail });
+
+  // V2.1.30: Auto-set courier based on order shipping method when detail loads
+  useEffect(() => {
+    if (detail) {
+      const shippingMethod = (detail as any).shippingMethod || "west_malaysia";
+      const autoCourier = getAutoCourier(shippingMethod);
+      setPackages((prev) => prev.map((p) => ({
+        ...p,
+        courier: autoCourier,
+      })));
+    }
+  }, [detail]);
   const updateWeightMutation = trpc.shippingV2.updateActualWeight.useMutation({
     onSuccess: (data) => {
       if (data.needsSpecialOrder) {
@@ -103,7 +124,7 @@ export default function PackingDetail() {
       utils.packing.list.invalidate();
       utils.packing.detail.invalidate({ orderId });
       utils.shipping.packages.invalidate({ orderId });
-      setPackages([{ courier: "Parcel Daily", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
+      setPackages([{ courier: "Line Clear", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
       setSelectedItems([]);
     },
     onError: (err) => toast.error(translate(`Parcel King 发货失败: ${err.message}`, `Parcel King Shipping Failed: ${err.message}`)),
@@ -214,28 +235,6 @@ export default function PackingDetail() {
   });
 
   const handleShip = (mode: "full" | "partial") => {
-    // Check for Parcel King packages
-    const hasParcelKing = packages.some((p) => p.shippingType === "parcelking");
-    if (hasParcelKing) {
-      const pkPkg = packages.find((p) => p.shippingType === "parcelking")!;
-      if (!pkPkg.serviceId) {
-                toast.error(translate("请选择 Parcel King 服务", "Please select Parcel King service"));
-        return;
-      }
-      if (!pkPkg.weight || parseFloat(pkPkg.weight) <= 0) {
-                toast.error(translate("请输入包裹重量", "Please enter package weight"));
-        return;
-      }
-      createParcelKingMutation.mutate({
-        orderId,
-        serviceId: parseInt(pkPkg.serviceId),
-        weightKg: parseFloat(pkPkg.weight),
-        isPartial: mode === "partial",
-        itemIds: mode === "partial" ? selectedItems : undefined,
-      });
-      return;
-    }
-
     if (mode === "full") {
       if (packages.length === 0) {
                 toast.error(translate("请至少添加一个包裹", "Please add at least one package"));
@@ -300,7 +299,7 @@ export default function PackingDetail() {
   };
 
   const addPackage = () => {
-    setPackages((prev) => [...prev, { courier: "Parcel Daily", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
+    setPackages((prev) => [...prev, { courier: "Line Clear", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
   };
 
   const removePackage = (index: number) => {
@@ -1107,42 +1106,55 @@ export default function PackingDetail() {
 
             <h3 className="font-semibold text-sm">{translate("包裹信息", "Package Information")}:</h3>
             <div className="space-y-3">
-              {packages.map((pkg, index) => (
+              {packages.map((pkg, index) => {
+                const fixedCourier = isFixedCourier(d.shippingMethod || "west_malaysia");
+                return (
                 <div key={index} className="flex items-end gap-2 border p-3 rounded-md relative">
                   <div className="grid grid-cols-2 gap-2 flex-grow">
-                    <div className="space-y-1">
-                      <Label htmlFor={`courier-${index}`}>{translate("快递公司", "Courier")}</Label>
-                      <Select
-                        value={pkg.courier}
-                        onValueChange={(value) => updatePackage(index, "courier", value)}
-                      >
-                        <SelectTrigger id={`courier-${index}`}>
-                          <SelectValue placeholder={translate("选择快递公司", "Select courier")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {COURIERS.map((c) => (
-                            <SelectItem key={c.en} value={c.zh}>{lang === "zh" ? c.zh : c.en}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor={`shipping-type-${index}`}>{translate("发货类型", "Shipping Type")}</Label>
-                      <Select
-                        value={pkg.shippingType}
-                        onValueChange={(value: "auto" | "manual" | "parcelking") => updatePackage(index, "shippingType", value)}
-                      >
-                        <SelectTrigger id={`shipping-type-${index}`}>
-                          <SelectValue placeholder={translate("选择发货类型", "Select shipping type")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="manual">{translate("手动发货", "Manual")}</SelectItem>
-                          <SelectItem value="auto">{translate("自动发货 (API)", "Auto (API)")}</SelectItem>
-                          <SelectItem value="parcelking">{translate("Parcel King", "Parcel King")}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {pkg.shippingType === "manual" && (
+                    {/* V2.1.30: For lalamove/shopee, show courier as read-only text */}
+                    {fixedCourier ? (
+                      <div className="space-y-1 col-span-2">
+                        <Label>{translate("快递公司", "Courier")}</Label>
+                        <div className="border rounded-md px-3 py-2 bg-muted/50 text-sm font-medium">{pkg.courier}</div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <Label htmlFor={`courier-${index}`}>{translate("快递公司", "Courier")}</Label>
+                        <Select
+                          value={pkg.courier}
+                          onValueChange={(value) => updatePackage(index, "courier", value)}
+                        >
+                          <SelectTrigger id={`courier-${index}`}>
+                            <SelectValue placeholder={translate("选择快递公司", "Select courier")} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {COURIERS.map((c) => (
+                              <SelectItem key={c.en} value={c.zh}>{lang === "zh" ? c.zh : c.en}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {/* V2.1.30: Hide shipping type for fixed courier methods */}
+                    {!fixedCourier && (
+                      <div className="space-y-1">
+                        <Label htmlFor={`shipping-type-${index}`}>{translate("发货类型", "Shipping Type")}</Label>
+                        <Select
+                          value={pkg.shippingType}
+                          onValueChange={(value: "auto" | "manual") => updatePackage(index, "shippingType", value)}
+                        >
+                          <SelectTrigger id={`shipping-type-${index}`}>
+                            <SelectValue placeholder={translate("选择发货类型", "Select shipping type")} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="manual">{translate("手动发货", "Manual")}</SelectItem>
+                            <SelectItem value="auto">{translate("自动发货 (API)", "Auto (API)")}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {/* V2.1.30: For lalamove/shopee, always show tracking number input */}
+                    {(pkg.shippingType === "manual" || fixedCourier) && (
                       <div className="space-y-1 col-span-2">
                         <Label htmlFor={`tracking-number-${index}`}>{translate("追踪号", "Tracking Number")}</Label>
                         <Input
@@ -1153,25 +1165,7 @@ export default function PackingDetail() {
                         />
                       </div>
                     )}
-                    {pkg.shippingType === "parcelking" && (
-                      <div className="space-y-1">
-                        <Label htmlFor={`parcelking-service-${index}`}>{translate("Parcel King 服务", "Parcel King Service")}</Label>
-                        <Select
-                          value={pkg.serviceId}
-                          onValueChange={(value) => updatePackage(index, "serviceId", value)}
-                        >
-                          <SelectTrigger id={`parcelking-service-${index}`}>
-                            <SelectValue placeholder={translate("选择服务", "Select service")} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(parcelKingServicesQuery.data as any)?.success && (parcelKingServicesQuery.data as any).services?.map((service: any) => (
-                              <SelectItem key={service.id} value={String(service.id)}>{service.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    {(pkg.shippingType === "manual" || pkg.shippingType === "parcelking") && (
+                    {!fixedCourier && (
                       <div className="space-y-1">
                         <Label htmlFor={`weight-${index}`}>{translate("重量 (kg)", "Weight (kg)")}</Label>
                         <Input
@@ -1195,10 +1189,14 @@ export default function PackingDetail() {
                     </Button>
                   )}
                 </div>
-              ))}
-              <Button variant="outline" size="sm" onClick={addPackage}>
-                <Plus className="h-4 w-4 mr-1" />{translate("新增包裹", "Add Package")}
-              </Button>
+                );
+              })}
+              {/* V2.1.30: Hide add package button for fixed courier methods */}
+              {!isFixedCourier(d.shippingMethod || "west_malaysia") && (
+                <Button variant="outline" size="sm" onClick={addPackage}>
+                  <Plus className="h-4 w-4 mr-1" />{translate("新增包裹", "Add Package")}
+                </Button>
+              )}
             </div>
 
               <Button
