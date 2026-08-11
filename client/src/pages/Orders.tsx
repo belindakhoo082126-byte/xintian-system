@@ -18,6 +18,7 @@ import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileTe
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSearch, useLocation } from "wouter";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
+import { getSpecialOrderHandlingLabel, getSpecialOrderReasonLabel } from "@shared/specialOrderDisplay";
 
 const PHYSICAL_STATUS = {
   pending: { label: "未汇款订单", enLabel: "Unpaid Order", variant: "outline" },
@@ -205,6 +206,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     hasRemark: remarkFilter !== "all" ? (remarkFilter === "with" ? true : false) : undefined,
     notificationStatus: notificationFilter !== "all" ? notificationFilter : undefined,
     isSpecialOrder: specialFilter || undefined,
+    specialOrderStatus: specialFilter && specialStatusFilter && specialStatusFilter !== "all" ? specialStatusFilter : undefined,
   } as any);
 
   // Get order detail with items, payments, and logs
@@ -894,11 +896,23 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                           <Badge variant={statusMap[statusVal as keyof typeof statusMap]?.variant || "outline"}>
                             {translate(statusMap[statusVal as keyof typeof statusMap]?.label || statusVal, statusMap[statusVal as keyof typeof statusMap]?.enLabel || statusVal)}
                           </Badge>
-                          {(o as any).isSpecialOrder && (
-                            <Badge variant="destructive" className="ml-1 text-xs">
-                              {translate("特别", "Special")}
-                            </Badge>
-                          )}
+                          {(o as any).isSpecialOrder && (() => {
+                            const reason = getSpecialOrderReasonLabel((o as any).specialOrderType);
+                            const handling = getSpecialOrderHandlingLabel((o as any).isResolved, (o as any).specialOrderStatus);
+                            return (
+                              <>
+                                <Badge variant="destructive" className="ml-1 text-xs">
+                                  {translate("特别", "Special")}
+                                </Badge>
+                                <Badge variant="outline" className={`ml-1 text-xs ${reason.className}`}>
+                                  {translate(reason.zh, reason.en)}
+                                </Badge>
+                                <Badge variant="outline" className={`ml-1 text-xs ${handling.className}`}>
+                                  {translate(handling.zh, handling.en)}
+                                </Badge>
+                              </>
+                            );
+                          })()}
                         </>
                       );
                     })()}

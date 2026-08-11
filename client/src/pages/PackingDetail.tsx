@@ -1243,8 +1243,8 @@ export default function PackingDetail() {
 
         {/* V2.1.26: Customer info - show orderer name (下单人) + recipient */}
         <div style={{ marginBottom: "4px", fontSize: "12px", lineHeight: "1.4" }}>
-          <div><strong>{translate("下单人:", "Orderer:")}</strong> {data.facebookName || data.customerName || "-"}</div>
-          <div><strong>{translate("收件人:", "Recipient:")}</strong> {data.recipientName || data.customerName || "-"}</div>
+          <div><strong>{translate("下单人:", "Orderer:")}</strong> <span style={{ fontSize: "16px", fontWeight: "bold" }}>{data.facebookName || data.customerName || "-"}</span></div>
+          <div><strong>{translate("收件人:", "Recipient:")}</strong> <span style={{ fontSize: "16px", fontWeight: "bold" }}>{data.recipientName || data.customerName || "-"}</span></div>
           <div><strong>{translate("电话:", "Phone:")}</strong> {data.recipientPhone || data.customerPhone}</div>
           <div><strong>{translate("地址:", "Address:")}</strong> {
             [
@@ -1267,7 +1267,7 @@ export default function PackingDetail() {
                 <div key={i} style={{ border: "2px solid #000", padding: "8px", borderRadius: "6px", minHeight: "80px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
                     <span style={{ fontSize: "20px" }}>☐</span>
-                    <span style={{ fontWeight: "bold", fontSize: "18px", lineHeight: "1.2" }}>{item.productName}</span>
+                    <span style={{ fontWeight: "bold", fontSize: "22px", lineHeight: "1.2" }}>{item.productName}</span>
                   </div>
                   {item.keyword && <div style={{ fontSize: "14px", color: "#555", marginLeft: "26px" }}>{item.keyword}</div>}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "6px" }}>
@@ -1285,7 +1285,7 @@ export default function PackingDetail() {
               <div key={i} style={{ marginBottom: "6px", paddingBottom: "4px", borderBottom: "1px dashed #ccc" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                   <span style={{ fontSize: "16px" }}>☐</span>
-                  <span style={{ fontWeight: "bold", fontSize: "14px" }}>{item.productName}</span>
+                  <span style={{ fontWeight: "bold", fontSize: "18px", lineHeight: "1.2" }}>{item.productName}</span>
                   {item.variationName && <span style={{ fontSize: "11px" }}>({item.variationName})</span>}
                 </div>
                 {item.keyword && <div style={{ fontSize: "11px", color: "#555", marginLeft: "20px" }}>{translate("关键词:", "Keyword:")} {item.keyword}</div>}
@@ -1313,7 +1313,7 @@ export default function PackingDetail() {
                 <div key={i} style={{ marginBottom: "4px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                     <span style={{ fontSize: "16px" }}>☐</span>
-                    <span><strong>{translate("赠品", "Gift")}</strong> {gift.productName}</span>
+                    <span style={{ fontSize: "16px", fontWeight: "bold" }}><strong>{translate("赠品", "Gift")}</strong> {gift.productName}</span>
                   </div>
                   <div style={{ marginLeft: "20px", display: "flex", justifyContent: "flex-end" }}>
                     <span style={{ fontSize: "24px", fontWeight: "bold", border: "2px solid #000", padding: "1px 8px", borderRadius: "3px" }}>

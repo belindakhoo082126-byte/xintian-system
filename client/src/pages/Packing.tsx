@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/contexts/I18nContext";
 import { toast } from "sonner";
+import { getSpecialOrderHandlingLabel, getSpecialOrderReasonLabel } from "@shared/specialOrderDisplay";
 
 // V2.1.13: Status color mapping for scheduled shipping orders (8 statuses)
 const SCHEDULED_STATUS_CONFIG: Record<string, { label: { zh: string; en: string }; color: string; bgColor: string; borderColor: string }> = {
@@ -65,7 +66,7 @@ export default function Packing() {
     { enabled: isScheduledTab }
   );
   const { data: specialOrdersData, isLoading: specialLoading } = trpc.shippingV2.specialOrders.useQuery(
-    { status: "pending" },
+    {},
     { enabled: isSpecialTab }
   );
   const rawOrderList = isScheduledTab
@@ -145,8 +146,8 @@ export default function Packing() {
       // Customer info section
       const customerInfoHtml = `
         <div style="margin-bottom:4px;font-size:12px;line-height:1.4">
-          <div><strong>下单人:</strong> ${data.facebookName || data.customerName || "-"}</div>
-          <div><strong>收件人:</strong> ${data.recipientName || data.customerName || "-"}</div>
+          <div><strong>下单人:</strong> <span style="font-size:16px;font-weight:bold">${data.facebookName || data.customerName || "-"}</span></div>
+          <div><strong>收件人:</strong> <span style="font-size:16px;font-weight:bold">${data.recipientName || data.customerName || "-"}</span></div>
           <div><strong>电话:</strong> ${data.recipientPhone || data.customerPhone || ""}</div>
           <div><strong>地址:</strong> ${[
             data.addressLine1,
@@ -163,7 +164,7 @@ export default function Packing() {
               <div style="border:2px solid #000;padding:8px;border-radius:6px;min-height:80px">
                 <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
                   <span style="font-size:20px">☐</span>
-                  <span style="font-weight:bold;font-size:18px;line-height:1.2">${item.productName}</span>
+                  <span style="font-weight:bold;font-size:22px;line-height:1.2">${item.productName}</span>
                 </div>
                 ${item.keyword ? `<div style="font-size:14px;color:#555;margin-left:26px">${item.keyword}</div>` : ""}
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
@@ -178,7 +179,7 @@ export default function Packing() {
             <div style="margin-bottom:6px;padding-bottom:4px;border-bottom:1px dashed #ccc">
               <div style="display:flex;align-items:center;gap:4px">
                 <span style="font-size:16px">☐</span>
-                <span style="font-weight:bold;font-size:14px">${item.productName}</span>
+                <span style="font-weight:bold;font-size:18px;line-height:1.2">${item.productName}</span>
                 ${item.variationName ? `<span style="font-size:11px">(${item.variationName})</span>` : ""}
               </div>
               ${item.keyword ? `<div style="font-size:11px;color:#555;margin-left:20px">关键词: ${item.keyword}</div>` : ""}
@@ -195,7 +196,7 @@ export default function Packing() {
               <div style="margin-bottom:4px">
                 <div style="display:flex;align-items:center;gap:4px">
                   <span style="font-size:16px">☐</span>
-                  <span><strong>赠品</strong> ${gift.productName}</span>
+                  <span style="font-size:16px;font-weight:bold"><strong>赠品</strong> ${gift.productName}</span>
                 </div>
                 <div style="margin-left:20px;display:flex;justify-content:flex-end">
                   <span style="font-size:24px;font-weight:bold;border:2px solid #000;padding:1px 8px;border-radius:3px">${gift.quantity}</span>
@@ -368,6 +369,20 @@ export default function Packing() {
                               {order.specialLabel && (
                                 <Badge variant="destructive" className="text-xs">{order.specialLabel}</Badge>
                               )}
+                              {isSpecialTab && (() => {
+                                const reason = getSpecialOrderReasonLabel(order.specialOrderType);
+                                const handling = getSpecialOrderHandlingLabel(order.isResolved, order.specialOrderStatus);
+                                return (
+                                  <>
+                                    <Badge variant="outline" className={`text-xs ${reason.className}`}>
+                                      {translate(reason.zh, reason.en)}
+                                    </Badge>
+                                    <Badge variant="outline" className={`text-xs ${handling.className}`}>
+                                      {translate(handling.zh, handling.en)}
+                                    </Badge>
+                                  </>
+                                );
+                              })()}
                               {/* V2.1.26: Show 免邮 badge */}
                               {order.isFreeShipping && (
                                 <Badge variant="secondary" className="text-xs bg-green-100 text-green-700 border-green-300">{translate("免邮", "Free Shipping")}</Badge>
