@@ -139,6 +139,21 @@ describe("商城主题完整视觉系统", () => {
     expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
   });
 
+  it("中秋节使用暖白纸感、月夜深蓝、桂花绿与月光金，并有专属连续桂香月夜庭园背景", () => {
+    const midAutumnTheme = getMallTheme("mid_autumn");
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+    expect(midAutumnTheme.visual.description.zh).toContain("桂香月夜庭园水彩");
+    expect(midAutumnTheme.visual.description.zh).toContain("桂花枝");
+    expect(midAutumnTheme.colors).toMatchObject({ primary: "#1a2744", secondary: "#4a6741", button: "#d4a843", background: "#fffaf0" });
+    expect(midAutumnTheme.visual.motifs).toContain("☾");
+    expect(artwork).toContain("MID_AUTUMN_CONTINUOUS_BACKGROUND_URL");
+    expect(artwork).toContain("xintian-midautumn-continuous-osmanthus-moonlight-garden_52e83413.png");
+    expect(artwork).toContain('theme.key === "mid_autumn"');
+    expect(artwork).toContain("fixed inset-0 z-0");
+    expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
+  });
+
   it("商城设置及客户商城主流程均使用统一的主题视觉配置，且不在页首展示主题公仔", () => {
     const root = path.resolve(__dirname, "..");
     const settingsPage = fs.readFileSync(path.join(root, "client/src/pages/MallSettings.tsx"), "utf8");
