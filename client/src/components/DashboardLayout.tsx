@@ -68,7 +68,7 @@ const MENU_ACCENTS = {
   live: { iconClass: "text-amber-600", activeClass: "data-[active=true]:bg-amber-50 data-[active=true]:text-amber-900 dark:data-[active=true]:bg-amber-950/35 dark:data-[active=true]:text-amber-100" },
   campaign: { iconClass: "text-blue-600", activeClass: "data-[active=true]:bg-blue-50 data-[active=true]:text-blue-900 dark:data-[active=true]:bg-blue-950/35 dark:data-[active=true]:text-blue-100" },
   orders: { iconClass: "text-orange-600", activeClass: "data-[active=true]:bg-orange-50 data-[active=true]:text-orange-900 dark:data-[active=true]:bg-orange-950/35 dark:data-[active=true]:text-orange-100" },
-  packing: { iconClass: "text-teal-600", activeClass: "data-[active=true]:bg-teal-50 data-[active=true]:text-teal-900 dark:data-[active=true]:bg-teal-950/35 dark:data-[active=true]:text-teal-100" },
+  packing: { iconClass: "text-[#7B3F00]", activeClass: "data-[active=true]:bg-[#FFF2E6] data-[active=true]:text-[#5A2D0C] dark:data-[active=true]:bg-[#5A2D0C]/35 dark:data-[active=true]:text-[#FFE4CC]" },
   products: { iconClass: "text-emerald-600", activeClass: "data-[active=true]:bg-emerald-50 data-[active=true]:text-emerald-900 dark:data-[active=true]:bg-emerald-950/35 dark:data-[active=true]:text-emerald-100" },
   customers: { iconClass: "text-violet-600", activeClass: "data-[active=true]:bg-violet-50 data-[active=true]:text-violet-900 dark:data-[active=true]:bg-violet-950/35 dark:data-[active=true]:text-violet-100" },
   ai: { iconClass: "text-indigo-600", activeClass: "data-[active=true]:bg-indigo-50 data-[active=true]:text-indigo-900 dark:data-[active=true]:bg-indigo-950/35 dark:data-[active=true]:text-indigo-100" },
@@ -118,7 +118,7 @@ const menuStructure: MenuEntry[] = [
   },
 
   // 4. 包货工作台
-  { icon: PackageCheck, label: "nav.packing", path: "/packing", accent: MENU_ACCENTS.packing },
+  { icon: Truck, label: "nav.packing", path: "/packing", accent: MENU_ACCENTS.packing },
 
   // 5. 商品管理
   {
