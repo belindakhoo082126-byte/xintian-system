@@ -109,6 +109,21 @@ describe("商城主题完整视觉系统", () => {
     expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
   });
 
+  it("农历新年使用暖白纸感、中国红、沉静赭棕与古典金，并有专属连续福瑞庭园背景", () => {
+    const cnyTheme = getMallTheme("cny");
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+    expect(cnyTheme.visual.description.zh).toContain("完整连续福瑞庭园水彩");
+    expect(cnyTheme.visual.description.zh).toContain("舞狮");
+    expect(cnyTheme.colors).toMatchObject({ primary: "#a62322", secondary: "#c79b42", button: "#c84c31", background: "#fff8e7" });
+    expect(cnyTheme.visual.motifs).toContain("✦");
+    expect(artwork).toContain("CNY_CONTINUOUS_BACKGROUND_URL");
+    expect(artwork).toContain("xintian-cny-continuous-prosperity-garden_7668df94.png");
+    expect(artwork).toContain('theme.key === "cny"');
+    expect(artwork).toContain("fixed inset-0 z-0");
+    expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
+  });
+
   it("开斋节使用暖白纸感、翡翠深绿、柔和青绿与香槟金，并有专属连续翡翠月光庭园背景", () => {
     const hariRayaTheme = getMallTheme("hari_raya");
     const root = path.resolve(__dirname, "..");
