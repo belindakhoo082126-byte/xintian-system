@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { ArrowLeft, Package, Truck, CheckCircle, Clock, AlertCircle, PauseCircle, Bell, History, FileText, MessageSquare, User, Lock, Trash2, Plus, Sprout, Calendar, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Package, Truck, CheckCircle, Clock, AlertCircle, PauseCircle, Bell, History, FileText, MessageSquare, User, Lock, Trash2, Plus, Sprout, Calendar, AlertTriangle, RotateCw } from "lucide-react";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
 
 const HOLD_TYPE_LABELS_RAW: Record<string, { zh: string; en: string }> = {
@@ -87,6 +87,15 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
   const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
   const { data: repots } = trpc.repots.list.useQuery({ orderId });
   const { data: potProducts } = trpc.repots.potProducts.useQuery();
+
+  const resendCheckoutMutation = trpc.orders.resendCheckout.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      utils.notifications.invalidate();
+      toast.success(translate("通知已重新发送到 Messenger", "Notification resent to Messenger"));
+    },
+    onError: (e) => toast.error(translate("重新发送失败: {message}", "Resend failed: {message}", { message: e.message })),
+  });
 
   const confirmPaymentMutation = trpc.orderWorkflow.confirmPayment.useMutation({
     onSuccess: () => {
@@ -528,6 +537,18 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                       {new Date(n.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
                     </p>
                   </div>
+                  {n.status === "failed" && n.type === "checkout_reminder" && order?.checkoutLink && order?.messengerId && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 shrink-0 gap-1 text-xs"
+                      onClick={() => resendCheckoutMutation.mutate({ orderId })}
+                      disabled={resendCheckoutMutation.isPending}
+                    >
+                      <RotateCw className="h-3.5 w-3.5" />
+                      {translate("重新发送", "Resend")}
+                    </Button>
+                  )}
                 </div>
               ))}
             </CardContent>

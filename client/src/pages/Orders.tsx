@@ -924,7 +924,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                                 <Badge variant="destructive" className="ml-1 text-xs">
                                   {translate("特别", "Special")}
                                 </Badge>
-                                <Badge variant="outline" className={`ml-1 text-xs ${reason.className}`}>
+                                <Badge variant="outline" className={`ml-1 inline-flex items-center gap-1 text-xs ${reason.className}`}>
+                                  <span aria-hidden="true" className="font-bold leading-none">{reason.icon}</span>
                                   {translate(reason.zh, reason.en)}
                                 </Badge>
                                 <Badge variant="outline" className={`ml-1 text-xs ${handling.className}`}>
@@ -952,20 +953,20 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                             — {(o as any).specialOrderReason}
                           </span>
                         )}
-                        {(o as any).checkoutLink && (o as any).messengerId && (
+                        {(o as any).specialType === "notification_failed" && (o as any).checkoutLink && (o as any).messengerId && (
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5 ml-1"
+                            variant="outline"
+                            size="sm"
+                            className="ml-1 h-6 gap-1 px-2 text-[11px]"
                             title={translate("重新发送", "Resend")}
                             onClick={(e) => {
                               e.stopPropagation();
-                              const fullLink = `${window.location.origin}${(o as any).checkoutLink}`;
-                              const msg = `您好，感恩您的支持 ❤️\n\n目前还没收到您的汇款及确认信息。\n\n请您点击以下链接查询您的订单（${(o as any).orderNumber || ""}）：\n\n${fullLink}\n\n进入订单后，除了可以查询订单，也可以继续到商城加单 ❤️\n\n西马消费满 RM150（特价商品除外），10kg 内即可享受免邮优惠。`;
-                              resendCheckoutMutation.mutate({ orderId: (o as any).id, customMessage: msg });
+                              resendCheckoutMutation.mutate({ orderId: (o as any).id });
                             }}
+                            disabled={resendCheckoutMutation.isPending}
                           >
                             <RotateCw className="h-3 w-3" />
+                            {translate("重新发送", "Resend")}
                           </Button>
                         )}
                       </span>

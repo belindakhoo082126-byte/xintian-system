@@ -3,6 +3,7 @@ import {
   getSpecialOrderHandlingLabel,
   getSpecialOrderReasonLabel,
   isSpecialOrderResolved,
+  SPECIAL_ORDER_REASON_LABELS,
   SPECIAL_ORDER_FILTER_OPTIONS,
 } from "@shared/specialOrderDisplay";
 
@@ -33,5 +34,13 @@ describe("特别订单列表显示", () => {
       "amount_changed",
     ]);
     expect(SPECIAL_ORDER_FILTER_OPTIONS.some((option) => option.value === "overdue")).toBe(false);
+  });
+
+  it("为七类可筛选特别状态提供非空图标与彩色标签样式", () => {
+    for (const option of SPECIAL_ORDER_FILTER_OPTIONS) {
+      const label = SPECIAL_ORDER_REASON_LABELS[option.value];
+      expect(label.icon).not.toBe("");
+      expect(label.className).toMatch(/bg-|text-|border-/);
+    }
   });
 });
