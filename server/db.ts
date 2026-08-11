@@ -3004,7 +3004,7 @@ export async function getProductsEnhanced(params: {
   }
   if (params.stockFilter === 'low') {
     conditions.push(eq(products.type, 'physical'));
-    conditions.push(lte(products.stockQuantity, 10));
+    conditions.push(lte(products.stockQuantity, 5));
     conditions.push(gt(products.stockQuantity, 0));
   }
   if (params.stockFilter === 'out') {

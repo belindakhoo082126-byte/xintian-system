@@ -880,10 +880,14 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
           {productSearchResults && (productSearchResults as any[]).length > 0 && productSearchQuery && (
             <ScrollArea className="h-[200px] border rounded-lg">
               <div className="p-2 space-y-1">
-                {(productSearchResults as any[]).slice(0, 20).map((p: any) => (
+                {(productSearchResults as any[]).slice(0, 20).map((p: any) => {
+                  const outOfStock = (p.stockQuantity ?? 0) <= 0 && !p.allowOversold;
+                  return (
                   <button
                     key={p.id}
+                    disabled={outOfStock}
                     onClick={() => {
+                      if (outOfStock) return;
                       const unitPrice = orderNature === "wholesale" ? (p.wholesalePrice || p.sellingPrice || "0") : orderNature === "agent" ? (p.agentPrice || p.sellingPrice || "0") : (p.sellingPrice || p.regularPrice || "0");
                       setManualItems(prev => [...prev, {
                         productId: p.id,
@@ -903,7 +907,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                       }]);
                       setProductSearchQuery("");
                     }}
-                    className="w-full text-left p-2 rounded hover:bg-muted text-sm flex items-center justify-between"
+                    className={`w-full text-left p-2 rounded text-sm flex items-center justify-between ${outOfStock ? "opacity-40 cursor-not-allowed" : "hover:bg-muted"}`}
                   >
                     <div className="flex items-center gap-2">
                       {(p.coverImageUrl || p.imageUrl) && <img src={p.coverImageUrl || p.imageUrl} alt="" className="w-10 h-10 rounded object-cover" />}
@@ -914,10 +918,12 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                     </div>
                     <div className="text-right">
                       <div className="font-medium">RM {p.sellingPrice || p.regularPrice || "0"}</div>
-                      {p.wholesalePrice && <div className="text-xs text-muted-foreground">{translate("批发", "Wholesale")}: RM {p.wholesalePrice}</div>}
+                      {outOfStock && <div className="text-xs text-red-500">{translate("库存不足", "Out of stock")}</div>}
+                      {p.wholesalePrice && !outOfStock && <div className="text-xs text-muted-foreground">{translate("批发", "Wholesale")}: RM {p.wholesalePrice}</div>}
                     </div>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </ScrollArea>
           )}

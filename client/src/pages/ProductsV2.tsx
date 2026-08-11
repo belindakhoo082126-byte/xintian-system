@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Upload, Bot, Loader2 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const RAW_PRODUCT_TYPES = [
   { value: "physical", zh: "实体商品", en: "Physical Product" },
@@ -565,6 +566,16 @@ export default function ProductsV2() {
             <SelectItem value="out_of_stock">{translate("缺货", "Out of Stock")}</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={stockFilter} onValueChange={(v) => { setStockFilter(v); setPage(0); }}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder={translate("库存筛选", "Stock Filter")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{translate("全部库存", "All Stock")}</SelectItem>
+            <SelectItem value="low">{translate("低库存 (<5)", "Low Stock (<5)")}</SelectItem>
+            <SelectItem value="out">{translate("缺货", "Out of Stock")}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Products Table */}
@@ -622,11 +633,40 @@ export default function ProductsV2() {
                   </TableCell>
                   <TableCell>
                     {p.type === "physical" ? (
-                      <div className="text-sm space-y-0.5">
-                        <div>{translate("存库", "Stock")}: <span className="font-medium">{p.stockQuantity ?? 0}</span></div>
-                        <div className="text-blue-600">{translate("已下单", "Ordered")}: <span className="font-medium">{p.orderedCount ?? 0}</span></div>
-                        <div className="text-green-600">{translate("已完成", "Completed")}: <span className="font-medium">{p.completedCount ?? 0}</span></div>
-                      </div>
+                      <TooltipProvider>
+                        <div className="text-sm space-y-0.5">
+                          <div>{translate("存库", "Stock")}: <span className="font-medium">{p.stockQuantity ?? 0}</span></div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="text-blue-600 cursor-help">{translate("已下单", "Ordered")}: <span className="font-medium">{p.orderedCount ?? 0}</span></div>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <div className="text-xs space-y-0.5">
+                                <div className="font-medium">{translate("已下单包含以下订单状态", "Ordered includes these order statuses")}:</div>
+                                <div>• {translate("挂单 / Hold Order", "Hold Order")}</div>
+                                <div>• {translate("待汇款 / Pending", "Pending")}</div>
+                                <div>• {translate("保留订单 / Reserved", "Reserved")}</div>
+                                <div>• {translate("待审核付款凭证 / Receipt Uploaded", "Receipt Uploaded")}</div>
+                                <div>• {translate("部分汇款 / Partial Payment", "Partial Payment")}</div>
+                                <div>• {translate("待备货 / Packing", "Packing")}</div>
+                                <div>• {translate("部分发货 / Partial Shipped", "Partial Shipped")}</div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="text-green-600 cursor-help">{translate("已完成", "Completed")}: <span className="font-medium">{p.completedCount ?? 0}</span></div>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <div className="text-xs space-y-0.5">
+                                <div className="font-medium">{translate("已完成包含以下订单状态", "Completed includes these order statuses")}:</div>
+                                <div>• {translate("已发货 / Shipped", "Shipped")}</div>
+                                <div>• {translate("已完成 / Completed", "Completed")}</div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </TooltipProvider>
                     ) : translate("—", "—")}
                   </TableCell>
                   <TableCell>

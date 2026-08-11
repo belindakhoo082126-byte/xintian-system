@@ -2749,3 +2749,12 @@
 - [x] 商品管理显示存库/已下单/已完成（orderedCount包含pending/hold_order/partial_payment/receipt_uploaded/packing/partial_shipped）
 - [x] 订单创建页商品卡显示即时库存（移除SKU，显示availableQuantity）
 - [x] 单据不显示menu字体（Sidebar和mobile header添加no-print class）
+
+## V2.1.30补充5 - 3项UI增强
+- [ ] 商品管理页面增加低库存预警筛选功能（库存<5）
+- [ ] 建单页库存为0的商品置灰并禁用添加按钮
+- [ ] 已下单/已完成数字旁增加悬浮提示显示订单状态
+## V2.1.30补充5 - 3项库存UI优化
+- [x] 商品管理页面增加低库存预警筛选（库存<5件）
+- [x] 建单页库存为0商品置灰禁用添加按钮
+- [x] 已下单/已完成数字旁增加悬浮提示显示订单状态
