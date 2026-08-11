@@ -77,6 +77,8 @@ interface ManualOrderItem {
   sku?: string;
   keyword?: string;
   sellingPrice?: string;
+  availableStock?: number;
+  allowOversold?: boolean;
   // V2.0.66: Product classification for repotting remarks filtering
   isPot?: boolean;
   categoryId?: number;
@@ -433,6 +435,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         productId: product.id,
         productName: product.name,
         productType: product.type || "physical",
+        availableStock: Number((product as any).stockQuantity ?? 0),
+        allowOversold: !!(product as any).allowOversold,
         unitPrice,
         subtotal: (quantity * price).toFixed(2),
         unitCost: (product as any).costPrice || (product as any).supplierCost || "0",
@@ -454,6 +458,10 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     }
     if (!customerForm.name.trim() && !customerForm.facebookName.trim() && !isWalkIn) {
       toast.error(translate("请输入客户名称或 Facebook 名称", "Please enter customer name or Facebook name"));
+      return;
+    }
+    if (hasStockShortage) {
+      toast.error(translate("商品数量超过可售库存，请调整后再提交", "One or more quantities exceed available stock. Please adjust before submitting."));
       return;
     }
     if (isWalkIn) {
@@ -560,6 +568,13 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const localPaymentsTotal = localPayments.reduce((sum, p) => sum + parseFloat(p.amount || "0"), 0);
 
   const isSubmitting = findCustomerMutation.isPending || createOrderMutation.isPending || addPaymentMutation.isPending;
+  const stockShortageItems = manualItems.filter((item) =>
+    item.productType === "physical"
+    && !item.allowOversold
+    && item.availableStock !== undefined
+    && item.quantity > item.availableStock,
+  );
+  const hasStockShortage = stockShortageItems.length > 0;
   const orderTypeLabel = orderCategory === "import" ? translate("中国代购订单", "Import Order") : translate("本地订单", "Local Order");
   const orderNumberPrefix = orderCategory === "import" ? "XTC" : "XT";
   const statusOptions = orderCategory === "import" ? IMPORT_ORDER_STATUSES : LOCAL_ORDER_STATUSES;
@@ -929,6 +944,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                           sku: p.sku,
                           keyword: p.keyword || "",
                           sellingPrice: p.sellingPrice || p.regularPrice || "0",
+                          availableStock: Number(p.stockQuantity ?? 0),
+                          allowOversold: Boolean(p.allowOversold),
                           isPot: p.isPot || false,
                           categoryId: p.categoryId,
                         }]);
@@ -1156,7 +1173,13 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                 <div className="grid grid-cols-12 gap-2 items-end">
                   <div className="col-span-3">
                     <Label className="text-xs">{translate("数量", "Quantity")}</Label>
-                    <Input type="number" className="h-9" value={item.quantity} onChange={(e) => updateManualItem(idx, "quantity", e.target.value === "" ? "" : parseInt(e.target.value) || 0)} />
+                    <Input
+                      type="number"
+                      min="1"
+                      className={`h-9 ${item.productType === "physical" && !item.allowOversold && item.availableStock !== undefined && item.quantity > item.availableStock ? "border-destructive text-destructive focus-visible:ring-destructive" : ""}`}
+                      value={item.quantity}
+                      onChange={(e) => updateManualItem(idx, "quantity", e.target.value === "" ? "" : parseInt(e.target.value) || 0)}
+                    />
                   </div>
                   <div className="col-span-3">
                     <Label className="text-xs">{translate("单价", "Unit Price")}</Label>
@@ -1174,6 +1197,14 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                     )}
                   </div>
                 </div>
+                {item.productType === "physical" && !item.allowOversold && item.availableStock !== undefined && item.quantity > item.availableStock && (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {translate("库存不足：可售库存只剩 {stock} 件，当前数量为 {quantity} 件。请调整数量后再提交。", "Insufficient stock: only {stock} unit(s) are available, but the quantity is {quantity}. Adjust it before submitting.", {
+                      stock: String(Math.max(0, item.availableStock)),
+                      quantity: String(item.quantity),
+                    })}
+                  </div>
+                )}
               </div>
             ))}
             {manualItems.length === 0 && (
@@ -1425,11 +1456,11 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         <Button variant="outline" onClick={() => window.history.back()}>
           {translate("取消", "Cancel")}
         </Button>
-        <Button variant="outline" onClick={() => setPreviewMode(true)} disabled={manualItems.length === 0}>
+        <Button variant="outline" onClick={() => setPreviewMode(true)} disabled={manualItems.length === 0 || hasStockShortage}>
           <Eye className="h-4 w-4 mr-1" />
           {translate("浏览订单", "Preview Order")}
         </Button>
-        <Button onClick={handleCreateOrder} disabled={isSubmitting || manualItems.length === 0} size="lg">
+        <Button onClick={handleCreateOrder} disabled={isSubmitting || manualItems.length === 0 || hasStockShortage} size="lg">
           <Save className="h-4 w-4 mr-1" />
           {isSubmitting ? translate("保存中...", "Saving...") : translate("确认建立订单", "Confirm Create Order")}
         </Button>

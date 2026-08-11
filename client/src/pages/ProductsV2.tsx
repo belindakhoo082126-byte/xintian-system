@@ -637,15 +637,16 @@ export default function ProductsV2() {
                 <TableHead>{translate("售价", "Selling Price")}</TableHead>
                 <TableHead>{translate("状态", "Status")}</TableHead>
                 <TableHead>{translate("库存", "Stock")}</TableHead>
+                <TableHead>{translate("允许超卖", "Allow Oversold")}</TableHead>
                 <TableHead>{translate("推荐", "Featured")}</TableHead>
                 <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
               ) : products.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
               ) : products.map(p => (
                 <TableRow key={p.id}>
                   <TableCell className="font-medium">
@@ -724,6 +725,21 @@ export default function ProductsV2() {
                           </Tooltip>
                         </div>
                       </TooltipProvider>
+                    ) : translate("—", "—")}
+                  </TableCell>
+                  <TableCell>
+                    {p.type === "physical" ? (
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={!!p.allowOversold}
+                          disabled={updateMutation.isPending}
+                          onCheckedChange={(allowOversold) => updateMutation.mutate({ id: p.id, allowOversold })}
+                          aria-label={translate(`允许「{name}」超卖`, `Allow oversold for "{name}"`, { name: p.name })}
+                        />
+                        <span className={`text-xs font-medium ${p.allowOversold ? "text-amber-700" : "text-muted-foreground"}`}>
+                          {p.allowOversold ? translate("已开启", "On") : translate("未开启", "Off")}
+                        </span>
+                      </div>
                     ) : translate("—", "—")}
                   </TableCell>
                   <TableCell>

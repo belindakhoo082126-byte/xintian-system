@@ -461,6 +461,7 @@ export const appRouter = router({
         dimensions: z.any().optional(),
         weightKg: z.string().optional(),
         stockQuantity: z.number().optional(),
+        allowOversold: z.boolean().optional(),
         isFeatured: z.boolean().optional(),
         featuredSortOrder: z.number().optional(),
         membershipIntro: z.string().optional(),
