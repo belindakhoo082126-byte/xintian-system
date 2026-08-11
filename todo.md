@@ -2687,3 +2687,11 @@
 - [x] 问题6: 物流绑定ParcelDaily，停用ParcelKing
 - [x] 问题7: 西马运费改用ParcelDaily Line Clear
 - [x] 问题8: 东马运费改用ParcelDaily Poslaju
+
+## V2.1.29 - 5项Bug修复
+
+- [x] 问题1：删除AI Smart地址填写功能，改为手动填写，客户收件资料同步到客户管理
+- [x] 问题2：客户已有收件资料时，各渠道下单自动同步收件资料（直播/私聊/AI/商城）
+- [x] 问题3：Dashboard特别状态多汇款数量同步修复（orders表+order_special_statuses表合并计数）
+- [x] 问题4：Dashboard存库预警点击404修复（路由从/products-v2改为/products）
+- [x] 问题5：商品管理存库日志乱码修复（SelectItem空值导致React崩溃，改为"all"）

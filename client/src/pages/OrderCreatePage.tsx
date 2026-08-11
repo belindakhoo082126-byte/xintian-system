@@ -14,8 +14,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
-  Search, Plus, Trash2, X, ArrowLeft, Eye, Save, ClipboardPaste,
-  User, Package, DollarSign, Truck, FileText, Sparkles, CreditCard, Maximize2,
+  Search, Plus, Trash2, X, ArrowLeft, Eye, Save,
+  User, Package, DollarSign, Truck, FileText, CreditCard, Maximize2,
   Sprout, Upload, Loader2,
 } from "lucide-react";
 import { parseLegacyAddress } from "@shared/parseAddress";
@@ -106,10 +106,6 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     messengerId: "",
   });
 
-  // Smart Paste
-  const [smartPasteText, setSmartPasteText] = useState("");
-  const [smartPasteLoading, setSmartPasteLoading] = useState(false);
-
   // Recipient form
   const [recipientForm, setRecipientForm] = useState({
     recipientName: "",
@@ -122,12 +118,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     country: "Malaysia",
   });
     const [buyerIsRecipient, setBuyerIsRecipient] = useState(true);
-  // V2.0.62: Ref to prevent useEffect from overwriting Smart Parse results
-  const smartParseUpdatingRef = useRef(false);
   // V2.0.43: Auto-sync customerForm to recipientForm when buyer is recipient
   useEffect(() => {
-    // Skip if Smart Parse is currently updating (it sets both forms directly)
-    if (smartParseUpdatingRef.current) return;
     if (buyerIsRecipient) {
       setRecipientForm(prev => ({
         ...prev,
@@ -279,11 +271,6 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     onError: (e) => toast.error(translate("订单创建失败: {message}", "Order creation failed: {message}", { message: e.message })),
   });
 
-  const smartParseMutation = trpc.orders.aiSmartParse.useQuery(
-    { text: smartPasteText },
-    { enabled: false }
-  );
-
   // ===== Computed values =====
   const physicalSubtotal = useMemo(() => {
     return manualItems
@@ -378,57 +365,6 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
       }
     }
     setCustomerSearchQuery("");
-  }
-
-  async function handleSmartPaste() {
-    if (!smartPasteText.trim()) {
-      toast.error(translate("请粘贴客户资料文字", "Please paste customer info text"));
-      return;
-    }
-    setSmartPasteLoading(true);
-    try {
-      const result = await utils.orders.aiSmartParse.fetch({ text: smartPasteText });
-      if (result) {
-        // V2.0.64: Set flag to prevent useEffect from overwriting Smart Parse results
-        smartParseUpdatingRef.current = true;
-
-        // V2.0.79: AI Smart only updates recipient info (Section 3), NOT customer name (Section 2)
-        // Customer name is only synced from recipient name when "buyer is recipient" checkbox is on
-        // (the existing useEffect at line 128 handles that sync automatically)
-
-        // V2.0.79: Only update customer phone number (not name) — name stays as-is
-        const customerUpdates: Record<string, string> = {};
-        if (result.contactNumber) customerUpdates.phoneNumber = result.contactNumber;
-        // V2.0.79: Only update customer name if buyer is recipient (so they're the same person)
-        if (result.customerName && buyerIsRecipient) customerUpdates.name = result.customerName;
-        if (Object.keys(customerUpdates).length > 0) {
-          setCustomerForm(prev => ({ ...prev, ...customerUpdates }));
-        }
-
-        // V2.0.64: Single batch update for recipientForm — one setState call, no race
-        setRecipientForm(prev => ({
-          ...prev,
-          recipientName: result.customerName || prev.recipientName,
-          recipientPhone: result.contactNumber || prev.recipientPhone,
-          addressLine1: result.addressLine1 || prev.addressLine1,
-          addressLine2: result.addressLine2 || prev.addressLine2,
-          city: result.city || prev.city,
-          state: result.state || prev.state,
-          postcode: result.postcode || prev.postcode,
-        }));
-
-        if (result.area === "East Malaysia") {
-          setShippingMethod("east_malaysia_poslaju");
-        }
-        toast.success(translate("Smart Parse 完成（{method}）", "Smart Parse complete ({method})", { method: result.method }));
-        // Reset flag after state updates have flushed
-        setTimeout(() => { smartParseUpdatingRef.current = false; }, 200);
-      }
-    } catch (e: any) {
-      toast.error(translate("Smart Parse 失败: {message}", "Smart Parse failed: {message}", { message: e.message }));
-    } finally {
-      setSmartPasteLoading(false);
-    }
   }
 
   function addManualItem() {
@@ -825,24 +761,6 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               </Button>
             </div>
           )}
-
-          {/* Smart Paste */}
-          <div className="border rounded-lg p-3 bg-muted/30">
-            <Label className="text-xs flex items-center gap-1 mb-2">
-              <Sparkles className="h-3 w-3" />
-              {translate("AI Smart Paste / AI智能地址", "AI Smart Paste")}
-            </Label>
-            <Textarea
-              value={smartPasteText}
-              onChange={(e) => setSmartPasteText(e.target.value)}
-              rows={4}
-              placeholder={translate("粘贴客户姓名、电话及地址...\n例如:\nAlice Tan\n012-3456789\n12 Jalan ABC\nTaman Mutiara\n11900 Bayan Lepas\nPulau Pinang", "Paste customer name, phone and address...\ne.g:\nAlice Tan\n012-3456789\n12 Jalan ABC\nTaman Mutiara\n11900 Bayan Lepas\nPulau Pinang")}
-            />
-            <Button variant="outline" size="sm" className="mt-2" onClick={handleSmartPaste} disabled={smartPasteLoading}>
-              <ClipboardPaste className="h-3 w-3 mr-1" />
-              {smartPasteLoading ? translate("识别中...", "Parsing...") : translate("智能识别", "Smart Parse")}
-            </Button>
-          </div>
 
           {/* Customer form fields */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">

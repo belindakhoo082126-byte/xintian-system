@@ -989,6 +989,10 @@ export async function createOrderWithSplit(data: {
     // V2.0.85: Save recipient info on order
     recipientName: data.recipientName || null,
     recipientPhone: data.recipientPhone || null,
+    // V2.1.29: Save structured address fields on order
+    addressLine1: data.addressLine1 || null,
+    addressLine2: data.addressLine2 || null,
+    postcode: data.postcode || null,
     recipientCity: data.city || null,
     recipientState: data.state || null,
     recipientPostcode: data.postcode || null,
@@ -1022,26 +1026,18 @@ export async function createOrderWithSplit(data: {
     await useCustomerCredit(data.customerId, autoCreditUsed, orderId, orderNumber);
   }
 
-  // V2.0.85: Auto-sync address to customer profile if customer has no address
-  const [existingCustomer] = await db.select({
-    address: customers.address,
-    city: customers.city,
-    state: customers.state,
-    postalCode: customers.postalCode,
-    country: customers.country,
-  }).from(customers).where(eq(customers.id, data.customerId)).limit(1);
-
-  const hasCustomerAddress = existingCustomer && (existingCustomer.address || existingCustomer.city || existingCustomer.state);
+  // V2.1.29: Auto-sync address to customer profile — always update when address is provided
   const hasOrderAddress = data.shippingAddress || data.addressLine1 || data.city;
-
-  if (!hasCustomerAddress && hasOrderAddress) {
-    // V2.1.20: Auto-sync address to customer profile — save addressLine1 directly (no concatenation)
+  if (hasOrderAddress) {
     const syncAddress = data.addressLine1 || data.shippingAddress || null;
     await db.update(customers).set({
       address: syncAddress,
+      addressLine1: data.addressLine1 || null,
+      addressLine2: data.addressLine2 || null,
       city: data.city || null,
       state: data.state || null,
       postalCode: data.postcode || null,
+      postcode: data.postcode || null,
       country: data.country || null,
     }).where(eq(customers.id, data.customerId));
   }
@@ -5076,6 +5072,10 @@ export async function mallCheckout(data: {
     // V2.0.85: Save recipient info on order
     recipientName: data.customerName || null,
     recipientPhone: data.contactNumber || null,
+    // V2.1.29: Save structured address fields on order
+    addressLine1: data.addressLine1 || null,
+    addressLine2: data.addressLine2 || null,
+    postcode: data.postcode || null,
     recipientCity: data.city || null,
     recipientState: data.state || null,
     recipientPostcode: data.postcode || null,
@@ -5115,6 +5115,19 @@ export async function mallCheckout(data: {
     }).where(eq(products.id, item.productId));
   }
 
+  // V2.1.29: Auto-sync address to customer profile from mall checkout
+  if (data.addressLine1 || data.city) {
+    await db.update(customers).set({
+      address: data.addressLine1 || null,
+      addressLine1: data.addressLine1 || null,
+      addressLine2: data.addressLine2 || null,
+      city: data.city || null,
+      state: data.state || null,
+      postalCode: data.postcode || null,
+      postcode: data.postcode || null,
+      country: data.area || null,
+    }).where(eq(customers.id, customer.id));
+  }
   // Update customer stats
   await db.update(customers).set({
     totalOrders: sql`${customers.totalOrders} + 1`,
@@ -6717,6 +6730,16 @@ export async function createOrderFromLiveCapture(data: {
     campaignName: data.campaignName || null,
     sourceType: data.sourceType || null,
     creditUsed: autoCreditUsed.toFixed(2),
+    // V2.1.29: Auto-sync customer's existing address to order
+    recipientName: customer.name || customer.facebookName || data.commenterName || null,
+    recipientPhone: customer.phoneNumber || null,
+    addressLine1: customer.addressLine1 || null,
+    addressLine2: customer.addressLine2 || null,
+    postcode: customer.postcode || customer.postalCode || null,
+    recipientCity: customer.city || null,
+    recipientState: customer.state || null,
+    recipientPostcode: customer.postcode || customer.postalCode || null,
+    recipientCountry: customer.country || null,
   });
   
     const orderId = (orderResult as any)[0].insertId;
@@ -8785,21 +8808,27 @@ export async function getSpecialOrderFollowUpStats() {
   (ssRows as unknown as any[]).forEach((r: any) => {
     typeCounts[r.type] = Number(r.cnt) || 0;
   });
-  // Also count from orders table for backward compatibility (legacy single-status)
+  // V2.1.29: Also count from orders table for backward compatibility (legacy single-status)
+  // Add legacy counts to order_special_statuses counts, excluding orders already tracked in the new table
   const [legacyRows] = await db.execute(sql`
     SELECT 
-      specialOrderType,
+      o.specialOrderType,
       COUNT(*) as cnt
-    FROM orders
-    WHERE isSpecialOrder = 1
-      AND specialOrderStatus = 'pending'
-      AND physicalStatus != 'cancelled'
-    GROUP BY specialOrderType
+    FROM orders o
+    WHERE o.isSpecialOrder = 1
+      AND o.specialOrderStatus = 'pending'
+      AND o.physicalStatus != 'cancelled'
+      AND NOT EXISTS (
+        SELECT 1 FROM order_special_statuses oss 
+        WHERE oss.orderId = o.id 
+          AND oss.type = o.specialOrderType 
+          AND oss.status = 'pending'
+      )
+    GROUP BY o.specialOrderType
   `);
   (legacyRows as unknown as any[]).forEach((r: any) => {
-    if (!typeCounts[r.specialOrderType]) {
-      typeCounts[r.specialOrderType] = Number(r.cnt) || 0;
-    }
+    const key = r.specialOrderType || 'other';
+    typeCounts[key] = (typeCounts[key] || 0) + (Number(r.cnt) || 0);
   });
   const pendingShippingCount = typeCounts['pending_shipping'] || 0;
   const pendingRefundCount = typeCounts['pending_refund'] || 0;

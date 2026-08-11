@@ -24,7 +24,7 @@ export default function InventoryLog() {
   const { translate, lang } = useI18n();
   const utils = trpc.useUtils();
 
-  const [filterType, setFilterType] = useState<string>("");
+  const [filterType, setFilterType] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [adjProductId, setAdjProductId] = useState<number | "">("");
   const [adjType, setAdjType] = useState<"quality_issue" | "plant_death" | "pest_disease" | "human_damage" | "lost" | "other">("quality_issue");
@@ -34,7 +34,7 @@ export default function InventoryLog() {
   const [adjRemark, setAdjRemark] = useState("");
 
   const { data: adjustments, isLoading, refetch, isFetching } = trpc.inventoryAdjustment.list.useQuery(
-    filterType ? { adjustmentType: filterType } : undefined,
+    filterType !== "all" ? { adjustmentType: filterType } : undefined,
   );
 
   const { data: products } = trpc.products.list.useQuery(undefined);
@@ -158,7 +158,7 @@ export default function InventoryLog() {
               <Select value={filterType} onValueChange={setFilterType}>
                 <SelectTrigger className="w-[200px]"><SelectValue placeholder={translate("全部", "All")} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">{translate("全部", "All")}</SelectItem>
+                  <SelectItem value="all">{translate("全部", "All")}</SelectItem>
                   {Object.entries(ADJUSTMENT_TYPE_LABELS).map(([key, val]) => (
                     <SelectItem key={key} value={key}>
                       {lang === "zh" ? val.zh : val.en}
