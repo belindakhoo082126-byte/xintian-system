@@ -835,6 +835,63 @@ export async function resolveOrderCategory(opts: {
   return "local";
 }
 
+/**
+ * Atomically reserves physical-product stock for an order.  The stock check is
+ * intentionally part of the UPDATE condition instead of a separate read, so
+ * concurrent orders cannot both consume the final available units.
+ */
+export async function reserveProductStocksForOrder(items: Array<{ productId: number; quantity: number }>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const requested = new Map<number, number>();
+  for (const item of items) {
+    if (!item.productId) continue;
+    const quantity = Number(item.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      throw new Error("STOCK_INSUFFICIENT: 商品数量必须大于 0");
+    }
+    requested.set(item.productId, (requested.get(item.productId) || 0) + quantity);
+  }
+
+  const reserved: Array<{ productId: number; quantity: number }> = [];
+  try {
+    for (const [productId, quantity] of Array.from(requested.entries())) {
+      const result = await db.update(products).set({
+        stockQuantity: sql`${products.stockQuantity} - ${quantity}`,
+      }).where(and(
+        eq(products.id, productId),
+        or(
+          eq(products.allowOversold, true),
+          and(
+            or(eq(products.allowOversold, false), isNull(products.allowOversold)),
+            gte(products.stockQuantity, quantity),
+          ),
+        ),
+      ));
+
+      const affectedRows = Number((result as any)?.[0]?.affectedRows ?? (result as any)?.affectedRows ?? 0);
+      if (affectedRows < 1) {
+        const current = await db.select({ name: products.name, stockQuantity: products.stockQuantity })
+          .from(products).where(eq(products.id, productId)).limit(1);
+        const productName = current[0]?.name || `商品 #${productId}`;
+        const available = Math.max(0, Number(current[0]?.stockQuantity ?? 0));
+        throw new Error(`STOCK_INSUFFICIENT: ${productName} 库存不足，目前最多可下单 ${available} 件`);
+      }
+      reserved.push({ productId, quantity });
+    }
+  } catch (error) {
+    // If a later product cannot be reserved, release all earlier reservations
+    // so this failed request never leaves a partial inventory hold.
+    for (const item of reserved) {
+      await db.update(products).set({
+        stockQuantity: sql`${products.stockQuantity} + ${item.quantity}`,
+      }).where(eq(products.id, item.productId));
+    }
+    throw error;
+  }
+}
+
 export async function createOrderWithSplit(data: {
   customerId: number;
   facebookName?: string;
@@ -884,24 +941,9 @@ export async function createOrderWithSplit(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // V2.1.30补充3: Check stock for physical products — block order if stock is 0
+  // Physical products reserve stock atomically immediately before the order is
+  // created. A separate read is not safe when multiple users order at once.
   const physicalItems = data.items.filter(i => i.productType === "physical");
-  if (physicalItems.length > 0) {
-    for (const item of physicalItems) {
-      const productRows = await db.select({
-        id: products.id,
-        stockQuantity: products.stockQuantity,
-        name: products.name,
-        allowOversold: products.allowOversold,
-      }).from(products).where(eq(products.id, item.productId)).limit(1);
-      if (productRows.length > 0) {
-        const product = productRows[0];
-        if (!product.allowOversold && product.stockQuantity !== null && product.stockQuantity < item.quantity) {
-          throw new Error(`STOCK_INSUFFICIENT: ${product.name} 库存不足，目前最多可下单 ${product.stockQuantity} 件`);
-        }
-      }
-    }
-  }
 
   // Physical and gift items both go through the physical order flow
   // Gift items have price=0 but still count toward shipping weight and free-shipping threshold
@@ -965,6 +1007,9 @@ export async function createOrderWithSplit(data: {
   const totalAmount = preCreditTotal - autoCreditUsed;
   
   // V2.0.99: Generate sequential order number with XT/XTC prefix (XT00001, XTC00001)
+  if (physicalItems.length > 0) {
+    await reserveProductStocksForOrder(physicalItems);
+  }
   const prefix = data.orderCategory === "import" ? "XTC" : "XT";
   const orderNumber = await generateOrderNumber(prefix);
   const secureToken = generateSecureToken();
@@ -1038,11 +1083,8 @@ export async function createOrderWithSplit(data: {
       unitCost: item.unitCost || "0",
       originalUnitPrice: item.originalUnitPrice || null,
     });
-    // V2.1.30补充4: Atomic stock deduction — 下单即占用库存
+    // Stock was atomically reserved before the order was created.
     if (item.productType === "physical" && item.productId) {
-      await db.update(products).set({
-        stockQuantity: sql`${products.stockQuantity} - ${item.quantity}`,
-      }).where(eq(products.id, item.productId));
       await allocateFifoCostForSale({ orderId, productId: item.productId, quantity: item.quantity, createdBy: "admin" });
     }
   }
@@ -1265,39 +1307,18 @@ export async function updateOrderItems(orderId: number, items: Array<{
   const updatedItems = items.filter(i => i.id && oldItemsMap.has(i.id));
   const deletedItems = oldItems.filter((i: any) => !items.some(ni => ni.id === i.id));
 
-  // V2.1.30补充4: Stock validation before making changes
-  // Check stock for new items and quantity increases on existing items
-  for (const ni of newItems) {
-    if (ni.productId) {
-      const productRows = await db.select({
-        id: products.id,
-        stockQuantity: products.stockQuantity,
-        name: products.name,
-        allowOversold: products.allowOversold,
-      }).from(products).where(eq(products.id, ni.productId)).limit(1);
-      if (productRows.length > 0 && !productRows[0].allowOversold && productRows[0].stockQuantity !== null) {
-        if (productRows[0].stockQuantity < ni.quantity) {
-          throw new Error(`STOCK_INSUFFICIENT: ${productRows[0].name} 库存不足，目前最多可下单 ${productRows[0].stockQuantity} 件`);
-        }
-      }
-    }
-  }
-  for (const ui of updatedItems) {
-    const old = oldItemsMap.get(ui.id!) as any;
-    const qtyDiff = ui.quantity - old.quantity;
-    if (qtyDiff > 0 && old.productId) {
-      const productRows = await db.select({
-        id: products.id,
-        stockQuantity: products.stockQuantity,
-        name: products.name,
-        allowOversold: products.allowOversold,
-      }).from(products).where(eq(products.id, old.productId)).limit(1);
-      if (productRows.length > 0 && !productRows[0].allowOversold && productRows[0].stockQuantity !== null) {
-        if (productRows[0].stockQuantity < qtyDiff) {
-          throw new Error(`STOCK_INSUFFICIENT: ${productRows[0].name} 库存不足，目前该订单最多可调整至 ${old.quantity + productRows[0].stockQuantity} 件`);
-        }
-      }
-    }
+  // Reserve every newly-added unit and positive quantity difference with a
+  // conditional UPDATE. This prevents order editing from bypassing the same
+  // stock rule used by new orders.
+  const additionalReservations = [
+    ...newItems.filter((item) => !!item.productId).map((item) => ({ productId: item.productId!, quantity: item.quantity })),
+    ...updatedItems.map((item) => {
+      const old = oldItemsMap.get(item.id!) as any;
+      return { productId: old.productId as number, quantity: item.quantity - old.quantity };
+    }).filter((item) => !!item.productId && item.quantity > 0),
+  ];
+  if (additionalReservations.length > 0) {
+    await reserveProductStocksForOrder(additionalReservations);
   }
 
   for (const ni of newItems) {
@@ -1341,9 +1362,11 @@ export async function updateOrderItems(orderId: number, items: Array<{
           stockQuantity: sql`${productVariations.stockQuantity} - ${qtyDiff}`,
         }).where(eq(productVariations.id, old.variationId));
       }
-      await db.update(products).set({
-        stockQuantity: sql`${products.stockQuantity} - ${qtyDiff}`,
-      }).where(eq(products.id, old.productId));
+      if (qtyDiff < 0) {
+        await db.update(products).set({
+          stockQuantity: sql`${products.stockQuantity} + ${Math.abs(qtyDiff)}`,
+        }).where(eq(products.id, old.productId));
+      }
     }
     const subtotal = (parseFloat(ui.unitPrice) * ui.quantity).toFixed(2);
     await db.update(orderItems).set({
@@ -1379,9 +1402,7 @@ export async function updateOrderItems(orderId: number, items: Array<{
           stockQuantity: sql`${productVariations.stockQuantity} - ${ni.quantity}`,
         }).where(eq(productVariations.id, ni.variationId));
       }
-      await db.update(products).set({
-        stockQuantity: sql`${products.stockQuantity} - ${ni.quantity}`,
-      }).where(eq(products.id, ni.productId));
+      // Product stock was atomically reserved above before item insertion.
     }
   }
 
@@ -5285,6 +5306,7 @@ export async function mallCheckout(data: {
     if (!mergeTarget) {
       throw new Error("Selected hold order is no longer available for this customer");
     }
+    await reserveProductStocksForOrder(data.items);
 
     // Add items to existing order
     for (const item of data.items) {
@@ -5353,6 +5375,7 @@ export async function mallCheckout(data: {
 
   // Create new order
   // V2.1.04: Use resolveOrderCategory for unified routing
+  await reserveProductStocksForOrder(data.items);
   const mallProductIds = data.items.map(i => i.productId).filter(Boolean) as number[];
   const resolvedCategory = await resolveOrderCategory({ productIds: mallProductIds });
   const isImport = resolvedCategory === "import";
@@ -5419,10 +5442,7 @@ export async function mallCheckout(data: {
         stockQuantity: sql`${productVariations.stockQuantity} - ${item.quantity}`,
       }).where(eq(productVariations.id, item.variationId));
     }
-    // Deduct from product stock
-    await db.update(products).set({
-      stockQuantity: sql`${products.stockQuantity} - ${item.quantity}`,
-    }).where(eq(products.id, item.productId));
+    // Product stock was atomically reserved before order creation.
   }
 
   // V2.1.29: Auto-sync address to customer profile from mall checkout
@@ -5522,23 +5542,7 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
       }
     }
   }
-  // V2.1.30补充4: Unified stock check with allowOversold support
-  for (const item of items) {
-    if (item.productId > 0) {
-      const productRows = await db.select({
-        id: products.id,
-        stockQuantity: products.stockQuantity,
-        name: products.name,
-        allowOversold: products.allowOversold,
-      }).from(products).where(eq(products.id, item.productId)).limit(1);
-      if (productRows.length > 0) {
-        const product = productRows[0];
-        if (!product.allowOversold && product.stockQuantity !== null && product.stockQuantity < item.quantity) {
-          throw new Error(`STOCK_INSUFFICIENT: ${product.name} 库存不足，目前最多可下单 ${product.stockQuantity} 件`);
-        }
-      }
-    }
-  }
+  await reserveProductStocksForOrder(items);
   for (const item of items) {
     await db.insert(orderItems).values({
       orderId,
@@ -5562,9 +5566,7 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
         stockQuantity: sql`${productVariations.stockQuantity} - ${item.quantity}`,
       }).where(eq(productVariations.id, item.variationId));
     }
-    await db.update(products).set({
-      stockQuantity: sql`${products.stockQuantity} - ${item.quantity}`,
-    }).where(eq(products.id, item.productId));
+    // Product stock was atomically reserved before the item was inserted.
     await allocateFifoCostForSale({ orderId, productId: item.productId, quantity: item.quantity, createdBy: "mall" });
   }
 
@@ -6996,6 +6998,7 @@ export async function createOrderFromLiveCapture(data: {
   
   if (existingOrderId) {
     // Merge into existing order: add new items
+    await reserveProductStocksForOrder(data.matchedProducts);
     for (const p of data.matchedProducts) {
       const itemSubtotal = (parseFloat(p.unitPrice) * p.quantity).toFixed(2);
       await db.insert(orderItems).values({
@@ -7010,12 +7013,7 @@ export async function createOrderFromLiveCapture(data: {
         facebookKeyword: p.keyword,
         discount: "0.00",
       });
-      // V2.1.30补充4: Atomic stock deduction for merged items
-      if (p.productId) {
-        await db.update(products).set({
-          stockQuantity: sql`${products.stockQuantity} - ${p.quantity}`,
-        }).where(eq(products.id, p.productId));
-      }
+      // Product stock was atomically reserved before the item was inserted.
     }
     // Recalculate order total
     const allItems = await db.select({
@@ -7055,6 +7053,7 @@ export async function createOrderFromLiveCapture(data: {
   const finalTotal = subtotal - autoCreditUsed;
 
   // V2.1.02: Use XTC prefix for import_preorder live rooms, XT for normal live rooms
+  await reserveProductStocksForOrder(data.matchedProducts);
   const prefix = isImportOrder ? "XTC" : "XT";
   const orderNumber = await generateOrderNumber(prefix);
   const secureToken = generateSecureToken();
@@ -7112,11 +7111,8 @@ export async function createOrderFromLiveCapture(data: {
       facebookKeyword: p.keyword,
       discount: "0.00",
     });
-    // V2.1.30补充4: Atomic stock deduction — 下单即占用库存
+    // Product stock was atomically reserved before order creation.
     if (p.productId) {
-      await db.update(products).set({
-        stockQuantity: sql`${products.stockQuantity} - ${p.quantity}`,
-      }).where(eq(products.id, p.productId));
       await allocateFifoCostForSale({ orderId, productId: p.productId, quantity: p.quantity, createdBy: "facebook_live" });
     }
   }
