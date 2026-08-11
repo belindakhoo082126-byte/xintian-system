@@ -8052,32 +8052,23 @@ export async function processEastMalaysiaPosLajuWeight(
   let actualShippingFee = 0;
 
   try {
-    // Call ParcelKing API for real shipping rate
-    const { priceQuery, isParcelKingConfigured } = await import("./parcelking");
-    if (isParcelKingConfigured()) {
-      const result = await priceQuery({
-        from_postcode: "11700", // Origin: Gelugor, Pulau Pinang
-        to_postcode: shippingPostcode || "",
-        parcel_weight_kg: actualWeightKg,
-        from_state: "Pulau Pinang",
-        to_state: shippingState || "",
+    // Use ParcelDaily API for real shipping rate (V2.1.28: switched from ParcelKing to ParcelDaily)
+    const { getQuote, isParcelDailyConfigured } = await import("./parceldaily");
+    if (isParcelDailyConfigured()) {
+      const quoteResult = await getQuote({
+        fromPostcode: "11700", // Origin: Gelugor, Pulau Pinang
+        toPostcode: shippingPostcode || "",
+        kg: actualWeightKg,
       });
-      // Find PosLaju service - match by service_name (API returns service_name, not courier_name)
-      if (result.services && result.services.length > 0) {
-        const poslajuService = result.services.find((s: any) =>
-          (s.service_name || "").toLowerCase().includes("poslaju") ||
-          (s.service_name || "").toLowerCase().includes("pos laju")
-        );
-        if (poslajuService) {
-          apiShippingFee = Number(poslajuService.total_price || poslajuService.shipping_fee || 0);
-        } else {
-          // If no PosLaju found, don't fallback to first service - use weight-based estimate
-          console.warn("[processEastMalaysiaPosLajuWeight] No PosLaju service found in API result");
-        }
+      // ParcelDaily returns poslajuPrice directly in the response
+      if (quoteResult.success && quoteResult.success.poslajuPrice) {
+        apiShippingFee = Number(quoteResult.success.poslajuPrice);
+      } else {
+        console.warn("[processEastMalaysiaPosLajuWeight] No Poslaju price found in ParcelDaily quote result");
       }
     }
   } catch (error) {
-    console.error("[processEastMalaysiaPosLajuWeight] ParcelKing API error:", error);
+    console.error("[processEastMalaysiaPosLajuWeight] ParcelDaily API error:", error);
   }
 
   // Fallback: if API didn't return a price, use weight-based estimate

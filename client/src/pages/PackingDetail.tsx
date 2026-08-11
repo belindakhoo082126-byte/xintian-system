@@ -659,14 +659,14 @@ export default function PackingDetail() {
                               onClick={() => {
                                 setReplacementProductId(p.id);
                                 setReplacementProductName(p.name);
-                                setReplacementUnitPrice(Number(p.price) || 0);
+                                setReplacementUnitPrice(Number(p.sellingPrice || p.price) || 0);
                                 setProductSearchQuery(p.name);
                                 setProductSearchResults([]);
                               }}
                             >
                               <div>
                                 <div className="font-medium text-sm">{p.name}</div>
-                                <div className="text-xs text-muted-foreground">RM {Number(p.price || 0).toFixed(2)} {p.stock !== undefined && `| ${translate("库存", "Stock")}: ${p.stock}`}</div>
+                                <div className="text-xs text-muted-foreground">RM {Number(p.sellingPrice || p.price || 0).toFixed(2)} {p.stock !== undefined && `| ${translate("库存", "Stock")}: ${p.stock}`}</div>
                               </div>
                             </div>
                           ))}
@@ -1399,42 +1399,7 @@ export default function PackingDetail() {
           </div>
         )}
 
-        {/* Order Remarks */}
-        {data.remarks && data.remarks.length > 0 && (
-          <div style={{ marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
-            {data.remarks.map((r: any, i: number) => (
-              <div key={i} style={{ marginBottom: "4px" }}>
-                {r.remarkCategory === "repotting" && (
-                  <>
-                    <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("换盆", "Repotting")}</div>
-                    <div style={{ fontSize: "11px", marginLeft: "8px" }}>{r.content}</div>
-                  </>
-                )}
-                {r.remarkCategory === "desired_delivery_date" && (
-                  <>
-                    <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("发货日期", "Delivery Date")}</div>
-                    <div style={{ fontSize: "11px", marginLeft: "8px" }}>
-                      {r.desiredDeliveryDate ? new Date(r.desiredDeliveryDate).toLocaleDateString() : ""}
-                      {r.desiredDeliveryReason && <span> — {r.desiredDeliveryReason}</span>}
-                    </div>
-                  </>
-                )}
-                {r.remarkCategory === "select_tree" && (
-                  <>
-                    <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("选树身", "Select Tree")}</div>
-                    <div style={{ fontSize: "11px", marginLeft: "8px" }}>{r.content}</div>
-                  </>
-                )}
-                {r.remarkCategory === "other" && (
-                  <>
-                    <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("其他备注", "Other Remark")}</div>
-                    <div style={{ fontSize: "11px", marginLeft: "8px" }}>{r.content}</div>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+
       </div>
     );
   }

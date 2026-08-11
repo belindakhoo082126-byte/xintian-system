@@ -2676,3 +2676,14 @@
 
 - [x] 修复processEastMalaysiaPosLajuWeight发货地址从KL(50000)改为槟城(11700)
 - [x] 修复Poslaju服务匹配逻辑（使用service_name匹配，不fallback到第一个服务）
+
+## V2.1.28 - 包货工作台8项修复
+
+- [x] 问题1: A5打印重复备注修复（移除旧remarks显示，只保留customerRemark/adminRemarks）
+- [x] 问题2: 更换商品价格为0修复（使用sellingPrice而非price字段）
+- [x] 问题3: 异常处理更换商品实际操作（同步订单商品列表+扣减库存+recalculateOrderTotals）
+- [x] 问题4: 退款credit同步客户credit+订单商品数量扣除
+- [x] 问题5: 东马Poslaju运费改用ParcelDaily API查询
+- [x] 问题6: 物流绑定ParcelDaily，停用ParcelKing
+- [x] 问题7: 西马运费改用ParcelDaily Line Clear
+- [x] 问题8: 东马运费改用ParcelDaily Poslaju

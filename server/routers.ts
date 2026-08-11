@@ -4213,6 +4213,7 @@ export const appRouter = router({
           refundMethod: input.refundMethod,
           customerAction: input.customerAction,
           quantity: input.quantity,
+          orderId: input.orderId,
         },
       );
 
@@ -4467,9 +4468,10 @@ export const appRouter = router({
           specialOrderType: needsSpecialOrder ? "pending_shipping" as const : null,
         };
       } else if (shippingMethod === "east_malaysia_poslaju") {
-        const shippingAddr = (order as any).shippingAddress || "";
-        const postcode = (order as any).shippingPostcode || "";
-        const state = (order as any).shippingState || "";
+        // V2.1.28: Use recipient address fields (not shippingAddress which may be a combined text)
+        const shippingAddr = (order as any).addressLine1 || (order as any).shippingAddress || "";
+        const postcode = (order as any).recipientPostcode || (order as any).postcode || "";
+        const state = (order as any).recipientState || "";
         result = await db.processEastMalaysiaPosLajuWeight(
           input.actualWeight,
           customerPaidShipping,
