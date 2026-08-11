@@ -135,6 +135,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   // Product search
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [manualItems, setManualItems] = useState<ManualOrderItem[]>([]);
+  const [quickRestockProduct, setQuickRestockProduct] = useState<any>(null);
+  const [quickRestockQuantity, setQuickRestockQuantity] = useState("1");
 
   // Amounts
   const [discountAmount, setDiscountAmount] = useState("0");
@@ -269,6 +271,18 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
       setLocation("/orders/" + (orderCategory === "import" ? "import" : "local"));
     },
     onError: (e) => toast.error(translate("订单创建失败: {message}", "Order creation failed: {message}", { message: e.message })),
+  });
+
+  const quickRestockMutation = trpc.inventoryAdjustment.create.useMutation({
+    onSuccess: () => {
+      utils.inventoryAdjustment.invalidate();
+      utils.orders.searchProductsForOrder.invalidate();
+      utils.productsV2.invalidate();
+      toast.success(translate("库存已补充，可继续加入订单", "Stock replenished and ready to add to the order"));
+      setQuickRestockProduct(null);
+      setQuickRestockQuantity("1");
+    },
+    onError: (error) => toast.error(translate("补货失败: {message}", "Restock failed: {message}", { message: error.message })),
   });
 
   // ===== Computed values =====
@@ -883,50 +897,129 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                 {(productSearchResults as any[]).slice(0, 20).map((p: any) => {
                   const outOfStock = (p.stockQuantity ?? 0) <= 0 && !p.allowOversold;
                   return (
-                  <button
-                    key={p.id}
-                    disabled={outOfStock}
-                    onClick={() => {
-                      if (outOfStock) return;
-                      const unitPrice = orderNature === "wholesale" ? (p.wholesalePrice || p.sellingPrice || "0") : orderNature === "agent" ? (p.agentPrice || p.sellingPrice || "0") : (p.sellingPrice || p.regularPrice || "0");
-                      setManualItems(prev => [...prev, {
-                        productId: p.id,
-                        productName: p.name,
-                        productType: p.type || "physical",
-                        quantity: 1,
-                        unitPrice,
-                        subtotal: unitPrice,
-                        priceType: orderNature,
-                        unitCost: p.costPrice || p.supplierCost || "0",
-                        image: p.coverImageUrl || p.imageUrl || p.image,
-                        sku: p.sku,
-                        keyword: p.keyword || "",
-                        sellingPrice: p.sellingPrice || p.regularPrice || "0",
-                        isPot: p.isPot || false,
-                        categoryId: p.categoryId,
-                      }]);
-                      setProductSearchQuery("");
-                    }}
-                    className={`w-full text-left p-2 rounded text-sm flex items-center justify-between ${outOfStock ? "opacity-40 cursor-not-allowed" : "hover:bg-muted"}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      {(p.coverImageUrl || p.imageUrl) && <img src={p.coverImageUrl || p.imageUrl} alt="" className="w-10 h-10 rounded object-cover" />}
-                      <div>
-                        <div className="font-medium">{p.name}</div>
-                        <div className="text-xs text-muted-foreground">{translate("库存", "Stock")}: <span className={p.stockQuantity <= 0 ? "text-red-500 font-medium" : "text-green-600 font-medium"}>{p.stockQuantity ?? 0}</span> {p.keywords && `· ${p.keywords}`}</div>
+                  <div key={p.id} className={`rounded ${outOfStock ? "bg-muted/30" : ""}`}>
+                    <button
+                      disabled={outOfStock}
+                      onClick={() => {
+                        if (outOfStock) return;
+                        const unitPrice = orderNature === "wholesale" ? (p.wholesalePrice || p.sellingPrice || "0") : orderNature === "agent" ? (p.agentPrice || p.sellingPrice || "0") : (p.sellingPrice || p.regularPrice || "0");
+                        setManualItems(prev => [...prev, {
+                          productId: p.id,
+                          productName: p.name,
+                          productType: p.type || "physical",
+                          quantity: 1,
+                          unitPrice,
+                          subtotal: unitPrice,
+                          priceType: orderNature,
+                          unitCost: p.costPrice || p.supplierCost || "0",
+                          image: p.coverImageUrl || p.imageUrl || p.image,
+                          sku: p.sku,
+                          keyword: p.keyword || "",
+                          sellingPrice: p.sellingPrice || p.regularPrice || "0",
+                          isPot: p.isPot || false,
+                          categoryId: p.categoryId,
+                        }]);
+                        setProductSearchQuery("");
+                      }}
+                      className={`w-full text-left p-2 rounded text-sm flex items-center justify-between ${outOfStock ? "opacity-40 cursor-not-allowed" : "hover:bg-muted"}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {(p.coverImageUrl || p.imageUrl) && <img src={p.coverImageUrl || p.imageUrl} alt="" className="w-10 h-10 rounded object-cover" />}
+                        <div>
+                          <div className="font-medium">{p.name}</div>
+                          <div className="text-xs text-muted-foreground">{translate("库存", "Stock")}: <span className={p.stockQuantity <= 0 ? "text-red-500 font-medium" : "text-green-600 font-medium"}>{p.stockQuantity ?? 0}</span> {p.keywords && `· ${p.keywords}`}</div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium">RM {p.sellingPrice || p.regularPrice || "0"}</div>
-                      {outOfStock && <div className="text-xs text-red-500">{translate("库存不足", "Out of stock")}</div>}
-                      {p.wholesalePrice && !outOfStock && <div className="text-xs text-muted-foreground">{translate("批发", "Wholesale")}: RM {p.wholesalePrice}</div>}
-                    </div>
-                  </button>
+                      <div className="text-right">
+                        <div className="font-medium">RM {p.sellingPrice || p.regularPrice || "0"}</div>
+                        {outOfStock && <div className="text-xs text-red-500">{translate("库存不足", "Out of stock")}</div>}
+                        {p.wholesalePrice && !outOfStock && <div className="text-xs text-muted-foreground">{translate("批发", "Wholesale")}: RM {p.wholesalePrice}</div>}
+                      </div>
+                    </button>
+                    {outOfStock && (
+                      <div className="flex items-center justify-between gap-2 border-t px-2 pb-2 pt-1">
+                        <span className="text-xs text-muted-foreground">{translate("补货后即可加入本订单", "Restock before adding to this order")}</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            setQuickRestockProduct(p);
+                            setQuickRestockQuantity("1");
+                          }}
+                        >
+                          <Plus className="mr-1 h-3 w-3" />
+                          {translate("快捷修改库存", "Quick Restock")}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                   );
                 })}
               </div>
             </ScrollArea>
           )}
+
+          <Dialog open={!!quickRestockProduct} onOpenChange={(open) => {
+            if (!open) {
+              setQuickRestockProduct(null);
+              setQuickRestockQuantity("1");
+            }
+          }}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{translate("快捷修改库存", "Quick Restock")}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="rounded-lg bg-muted/50 p-3">
+                  <p className="font-medium">{quickRestockProduct?.name}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {translate("当前库存", "Current stock")}: {quickRestockProduct?.stockQuantity ?? 0}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="quick-restock-quantity">{translate("补充数量", "Quantity to add")}</Label>
+                  <Input
+                    id="quick-restock-quantity"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={quickRestockQuantity}
+                    onChange={(event) => setQuickRestockQuantity(event.target.value)}
+                    autoFocus
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {translate("此操作会记录在存库日志中。", "This adjustment will be recorded in the inventory log.")}
+                  </p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setQuickRestockProduct(null)} disabled={quickRestockMutation.isPending}>
+                  {translate("取消", "Cancel")}
+                </Button>
+                <Button
+                  onClick={() => {
+                    const quantity = Math.floor(Number(quickRestockQuantity));
+                    if (!quickRestockProduct || !Number.isFinite(quantity) || quantity < 1) {
+                      toast.error(translate("请输入大于 0 的补货数量", "Enter a restock quantity greater than 0"));
+                      return;
+                    }
+                    quickRestockMutation.mutate({
+                      productId: quickRestockProduct.id,
+                      adjustmentType: "other",
+                      quantityChange: quantity,
+                      reason: "后台建单快捷补货",
+                      remark: `后台建单快捷补货：${quickRestockProduct.name}`,
+                    });
+                  }}
+                  disabled={quickRestockMutation.isPending}
+                >
+                  {quickRestockMutation.isPending ? translate("保存中...", "Saving...") : translate("确认补货", "Confirm Restock")}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Order items */}
           <div className="space-y-2">

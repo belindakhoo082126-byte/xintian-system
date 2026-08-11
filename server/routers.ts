@@ -339,11 +339,21 @@ export const appRouter = router({
         type: z.enum(['physical', 'membership', 'gift']).optional(),
         isFeatured: z.boolean().optional(),
         stockFilter: z.enum(['low', 'out']).optional(),
+        stockThreshold: z.number().int().min(1).optional(),
         limit: z.number().optional(),
         offset: z.number().optional(),
       }).optional())
       .query(async ({ input }) => {
         return await db.getProductsEnhanced(input || {});
+      }),
+
+    orderDetails: adminProcedure
+      .input(z.object({
+        productId: z.number().int().positive(),
+        type: z.enum(['ordered', 'completed']),
+      }))
+      .query(async ({ input }) => {
+        return await db.getProductOrderDetails(input.productId, input.type);
       }),
 
     getById: adminProcedure

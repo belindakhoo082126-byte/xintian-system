@@ -2974,6 +2974,7 @@ export async function getProductsEnhanced(params: {
   type?: string;
   isFeatured?: boolean;
   stockFilter?: string;
+  stockThreshold?: number;
   limit?: number;
   offset?: number;
 }) {
@@ -3003,8 +3004,9 @@ export async function getProductsEnhanced(params: {
     conditions.push(eq(products.isFeatured, params.isFeatured));
   }
   if (params.stockFilter === 'low') {
+    const stockThreshold = Math.max(1, Math.floor(params.stockThreshold ?? 5));
     conditions.push(eq(products.type, 'physical'));
-    conditions.push(lte(products.stockQuantity, 5));
+    conditions.push(lt(products.stockQuantity, stockThreshold));
     conditions.push(gt(products.stockQuantity, 0));
   }
   if (params.stockFilter === 'out') {
@@ -3062,6 +3064,51 @@ export async function getProductsEnhanced(params: {
   }));
 
   return { items: itemsWithPending, total };
+}
+
+/**
+ * Returns the concrete orders behind a product's ordered/completed counters.
+ * The status groups intentionally mirror getProductsEnhanced so the dialog
+ * always explains the exact number displayed in Products V2.
+ */
+export async function getProductOrderDetails(productId: number, type: 'ordered' | 'completed') {
+  const db = await getDb();
+  if (!db) return [];
+
+  const statusCondition = type === 'ordered'
+    ? sql`o.physicalStatus IN ('pending', 'hold_order', 'partial_payment', 'receipt_uploaded', 'packing', 'partial_shipped')`
+    : sql`o.physicalStatus IN ('shipped', 'completed')`;
+
+  const rows = await db.execute(sql`
+    SELECT
+      o.id AS orderId,
+      o.orderNumber AS orderNumber,
+      o.physicalStatus AS physicalStatus,
+      oi.quantity AS quantity,
+      COALESCE(
+        NULLIF(o.facebookName, ''),
+        NULLIF(c.facebookName, ''),
+        NULLIF(c.name, ''),
+        NULLIF(c.displayName, ''),
+        '—'
+      ) AS customerName,
+      COALESCE(c.phoneNumber, c.whatsappPhone, '') AS customerPhone
+    FROM order_items oi
+    JOIN orders o ON o.id = oi.orderId
+    LEFT JOIN customers c ON c.id = o.customerId
+    WHERE oi.productId = ${productId}
+      AND ${statusCondition}
+    ORDER BY o.createdAt DESC, oi.id DESC
+  `);
+
+  return rows as unknown as Array<{
+    orderId: number;
+    orderNumber: string;
+    physicalStatus: string;
+    quantity: number;
+    customerName: string;
+    customerPhone: string | null;
+  }>;
 }
 
 export async function getProductByIdEnhanced(id: number) {

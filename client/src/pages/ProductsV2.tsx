@@ -160,12 +160,26 @@ export default function ProductsV2() {
     const entry = RAW_PRODUCT_TYPES.find((item) => item.value === type);
     return translate(entry?.zh ?? type, entry?.en ?? type);
   };
+  const getPhysicalStatusLabel = (status: string) => {
+    const labels: Record<string, { zh: string; en: string }> = {
+      pending: { zh: "待汇款", en: "Pending Payment" },
+      hold_order: { zh: "保留订单", en: "Hold Order" },
+      partial_payment: { zh: "部分汇款", en: "Partial Payment" },
+      receipt_uploaded: { zh: "待审核付款凭证", en: "Payment Proof Review" },
+      packing: { zh: "待包货", en: "Pending Packing" },
+      partial_shipped: { zh: "部分发货", en: "Partial Shipped" },
+      shipped: { zh: "已发货", en: "Shipped" },
+      completed: { zh: "已完成", en: "Completed" },
+    };
+    return translate(labels[status]?.zh ?? status, labels[status]?.en ?? status);
+  };
   const searchParams = useSearch();
   const urlStock = new URLSearchParams(searchParams).get("stock");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [stockFilter, setStockFilter] = useState<string>(urlStock || "all");
+  const [lowStockThreshold, setLowStockThreshold] = useState("5");
   const [page, setPage] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -183,6 +197,11 @@ export default function ProductsV2() {
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [uploadingVariant, setUploadingVariant] = useState(false);
   const [coverPreview, setCoverPreview] = useState("");
+  const [orderDetailsTarget, setOrderDetailsTarget] = useState<{
+    productId: number;
+    productName: string;
+    type: "ordered" | "completed";
+  } | null>(null);
   const hydratedEditingIdRef = useRef<number | null>(null);
   const utils = trpc.useUtils();
 
@@ -192,6 +211,7 @@ export default function ProductsV2() {
     type: typeFilter !== "all" ? (typeFilter as any) : undefined,
     status: statusFilter !== "all" ? (statusFilter as any) : undefined,
     stockFilter: stockFilter !== "all" ? (stockFilter as "low" | "out") : undefined,
+    stockThreshold: stockFilter === "low" ? Math.max(1, Number(lowStockThreshold) || 5) : undefined,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   });
@@ -202,6 +222,13 @@ export default function ProductsV2() {
   const products = productsData?.items || [];
   const totalCount = productsData?.total || 0;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const orderDetailsQuery = trpc.productsV2.orderDetails.useQuery(
+    {
+      productId: orderDetailsTarget?.productId ?? 0,
+      type: orderDetailsTarget?.type ?? "ordered",
+    },
+    { enabled: !!orderDetailsTarget },
+  );
 
   // Detail query for editing
   const detailQuery = trpc.productsV2.getById.useQuery(
@@ -572,10 +599,28 @@ export default function ProductsV2() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{translate("全部库存", "All Stock")}</SelectItem>
-            <SelectItem value="low">{translate("低库存 (<5)", "Low Stock (<5)")}</SelectItem>
+            <SelectItem value="low">{translate("低库存预警", "Low Stock Alert")}</SelectItem>
             <SelectItem value="out">{translate("缺货", "Out of Stock")}</SelectItem>
           </SelectContent>
         </Select>
+        {stockFilter === "low" && (
+          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5">
+            <span className="whitespace-nowrap text-sm text-muted-foreground">{translate("少于", "Below")}</span>
+            <Input
+              aria-label={translate("低库存阈值", "Low stock threshold")}
+              type="number"
+              min="1"
+              step="1"
+              value={lowStockThreshold}
+              onChange={(event) => {
+                setLowStockThreshold(event.target.value);
+                setPage(0);
+              }}
+              className="h-8 w-16 bg-background text-center"
+            />
+            <span className="whitespace-nowrap text-sm text-muted-foreground">{translate("件", "units")}</span>
+          </div>
+        )}
       </div>
 
       {/* Products Table */}
@@ -638,7 +683,13 @@ export default function ProductsV2() {
                           <div>{translate("存库", "Stock")}: <span className="font-medium">{p.stockQuantity ?? 0}</span></div>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <div className="text-blue-600 cursor-help">{translate("已下单", "Ordered")}: <span className="font-medium">{p.orderedCount ?? 0}</span></div>
+                              <button
+                                type="button"
+                                className="cursor-pointer text-blue-600 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type: "ordered" })}
+                              >
+                                {translate("已下单", "Ordered")}: <span className="font-medium">{p.orderedCount ?? 0}</span>
+                              </button>
                             </TooltipTrigger>
                             <TooltipContent className="max-w-xs">
                               <div className="text-xs space-y-0.5">
@@ -655,7 +706,13 @@ export default function ProductsV2() {
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <div className="text-green-600 cursor-help">{translate("已完成", "Completed")}: <span className="font-medium">{p.completedCount ?? 0}</span></div>
+                              <button
+                                type="button"
+                                className="cursor-pointer text-green-600 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type: "completed" })}
+                              >
+                                {translate("已完成", "Completed")}: <span className="font-medium">{p.completedCount ?? 0}</span>
+                              </button>
                             </TooltipTrigger>
                             <TooltipContent className="max-w-xs">
                               <div className="text-xs space-y-0.5">
@@ -715,6 +772,52 @@ export default function ProductsV2() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={!!orderDetailsTarget} onOpenChange={(open) => { if (!open) setOrderDetailsTarget(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {orderDetailsTarget?.productName} · {orderDetailsTarget?.type === "ordered" ? translate("已下单订单明细", "Ordered Details") : translate("已完成订单明细", "Completed Details")}
+            </DialogTitle>
+          </DialogHeader>
+          {orderDetailsQuery.isLoading ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">{translate("加载订单明细中...", "Loading order details...")}</div>
+          ) : orderDetailsQuery.isError ? (
+            <div className="py-10 text-center text-sm text-destructive">{translate("无法读取订单明细，请稍后重试。", "Unable to load order details. Please try again.")}</div>
+          ) : (orderDetailsQuery.data?.length ?? 0) === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">{translate("目前没有符合此状态的订单。", "No orders match this status.")}</div>
+          ) : (
+            <div className="max-h-[55vh] overflow-y-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{translate("订单号", "Order No.")}</TableHead>
+                    <TableHead>{translate("客户", "Customer")}</TableHead>
+                    <TableHead>{translate("状态", "Status")}</TableHead>
+                    <TableHead className="text-right">{translate("数量", "Qty")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {orderDetailsQuery.data?.map((detail) => (
+                    <TableRow key={`${detail.orderId}-${detail.orderNumber}`}>
+                      <TableCell className="font-medium">{detail.orderNumber}</TableCell>
+                      <TableCell>
+                        <div>{detail.customerName}</div>
+                        {detail.customerPhone && <div className="text-xs text-muted-foreground">{detail.customerPhone}</div>}
+                      </TableCell>
+                      <TableCell><Badge variant="outline">{getPhysicalStatusLabel(detail.physicalStatus)}</Badge></TableCell>
+                      <TableCell className="text-right font-medium">{detail.quantity}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOrderDetailsTarget(null)}>{translate("关闭", "Close")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Pagination */}
       {totalPages > 1 && (
