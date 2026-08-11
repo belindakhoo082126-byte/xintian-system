@@ -909,7 +909,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                       {(p.coverImageUrl || p.imageUrl) && <img src={p.coverImageUrl || p.imageUrl} alt="" className="w-10 h-10 rounded object-cover" />}
                       <div>
                         <div className="font-medium">{p.name}</div>
-                        <div className="text-xs text-muted-foreground">SKU: {p.sku} {p.keywords && `· ${p.keywords}`}</div>
+                        <div className="text-xs text-muted-foreground">{translate("库存", "Stock")}: <span className={p.stockQuantity <= 0 ? "text-red-500 font-medium" : "text-green-600 font-medium"}>{p.stockQuantity ?? 0}</span> {p.keywords && `· ${p.keywords}`}</div>
                       </div>
                     </div>
                     <div className="text-right">
@@ -956,7 +956,6 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="font-medium text-sm leading-snug" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{item.productName}</div>
                       <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                        {item.sku && <span><span className="font-medium">SKU:</span> {item.sku}</span>}
                         {item.keyword && <span><span className="font-medium">{translate("关键字", "Keyword")}:</span> {item.keyword}</span>}
                       </div>
                       {item.variationName && (

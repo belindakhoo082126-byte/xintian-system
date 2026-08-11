@@ -892,11 +892,12 @@ export async function createOrderWithSplit(data: {
         id: products.id,
         stockQuantity: products.stockQuantity,
         name: products.name,
+        allowOversold: products.allowOversold,
       }).from(products).where(eq(products.id, item.productId)).limit(1);
       if (productRows.length > 0) {
         const product = productRows[0];
-        if (product.stockQuantity !== null && product.stockQuantity <= 0) {
-          throw new Error(`STOCK_OUT_OF_STOCK: ${product.name} 存库为0，不可下单`);
+        if (!product.allowOversold && product.stockQuantity !== null && product.stockQuantity < item.quantity) {
+          throw new Error(`STOCK_INSUFFICIENT: ${product.name} 库存不足，目前最多可下单 ${product.stockQuantity} 件`);
         }
       }
     }
@@ -1021,7 +1022,7 @@ export async function createOrderWithSplit(data: {
   // Log operation
   await logOrderOperation(orderId, "create", `Order created with ${data.items.length} items`, null, null);
 
-  // Insert order items
+    // Insert order items
   for (const item of data.items) {
     await db.insert(orderItems).values({
       orderId,
@@ -1037,8 +1038,13 @@ export async function createOrderWithSplit(data: {
       unitCost: item.unitCost || "0",
       originalUnitPrice: item.originalUnitPrice || null,
     });
+    // V2.1.30补充4: Atomic stock deduction — 下单即占用库存
+    if (item.productType === "physical" && item.productId) {
+      await db.update(products).set({
+        stockQuantity: sql`${products.stockQuantity} - ${item.quantity}`,
+      }).where(eq(products.id, item.productId));
+    }
   }
-
   // V2.0.78: Auto-deduct credit from customer and write ledger
   if (autoCreditUsed > 0) {
     await useCustomerCredit(data.customerId, autoCreditUsed, orderId, orderNumber);
@@ -1257,6 +1263,41 @@ export async function updateOrderItems(orderId: number, items: Array<{
   const newItems = items.filter(i => !i.id);
   const updatedItems = items.filter(i => i.id && oldItemsMap.has(i.id));
   const deletedItems = oldItems.filter((i: any) => !items.some(ni => ni.id === i.id));
+
+  // V2.1.30补充4: Stock validation before making changes
+  // Check stock for new items and quantity increases on existing items
+  for (const ni of newItems) {
+    if (ni.productId) {
+      const productRows = await db.select({
+        id: products.id,
+        stockQuantity: products.stockQuantity,
+        name: products.name,
+        allowOversold: products.allowOversold,
+      }).from(products).where(eq(products.id, ni.productId)).limit(1);
+      if (productRows.length > 0 && !productRows[0].allowOversold && productRows[0].stockQuantity !== null) {
+        if (productRows[0].stockQuantity < ni.quantity) {
+          throw new Error(`STOCK_INSUFFICIENT: ${productRows[0].name} 库存不足，目前最多可下单 ${productRows[0].stockQuantity} 件`);
+        }
+      }
+    }
+  }
+  for (const ui of updatedItems) {
+    const old = oldItemsMap.get(ui.id!) as any;
+    const qtyDiff = ui.quantity - old.quantity;
+    if (qtyDiff > 0 && old.productId) {
+      const productRows = await db.select({
+        id: products.id,
+        stockQuantity: products.stockQuantity,
+        name: products.name,
+        allowOversold: products.allowOversold,
+      }).from(products).where(eq(products.id, old.productId)).limit(1);
+      if (productRows.length > 0 && !productRows[0].allowOversold && productRows[0].stockQuantity !== null) {
+        if (productRows[0].stockQuantity < qtyDiff) {
+          throw new Error(`STOCK_INSUFFICIENT: ${productRows[0].name} 库存不足，目前该订单最多可调整至 ${old.quantity + productRows[0].stockQuantity} 件`);
+        }
+      }
+    }
+  }
 
   for (const ni of newItems) {
     changes.push(`+ ${ni.productName} ×${ni.quantity} @RM${ni.unitPrice}`);
@@ -2136,19 +2177,19 @@ export async function cancelOrderWithReason(id: number, reason: string, operator
     cancelledBy: operator || null,
   }).where(eq(orders.id, id));
 
-  // Release reserved stock for live room products if this was a live order
-  if (order[0].liveRoomId) {
-    const items = await db.select().from(orderItems).where(eq(orderItems.orderId, id));
-    for (const item of items) {
+  // V2.1.30补充4: Release stock for ALL cancelled orders (not just live orders)
+  // 取消即释放库存
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, id));
+  for (const item of items) {
+    if (item.productId) {
       if (item.variationId) {
         await db.update(productVariations).set({
           stockQuantity: sql`${productVariations.stockQuantity} + ${item.quantity}`,
         }).where(eq(productVariations.id, item.variationId));
-      } else {
-        await db.update(products).set({
-          stockQuantity: sql`${products.stockQuantity} + ${item.quantity}`,
-        }).where(eq(products.id, item.productId));
       }
+      await db.update(products).set({
+        stockQuantity: sql`${products.stockQuantity} + ${item.quantity}`,
+      }).where(eq(products.id, item.productId));
     }
   }
 
@@ -2986,12 +3027,13 @@ export async function getProductsEnhanced(params: {
   let pendingMap: Record<number, number> = {};
   let completedMap: Record<number, number> = {};
   if (productIds.length > 0) {
-    // 已下单: orders in pending, hold_order, partial_payment (保留订单, 挂单, 待结账)
+    // V2.1.30补充4: 已下单 = all statuses where stock is reserved (not shipped/completed/cancelled)
+    // Includes: pending, hold_order, partial_payment, receipt_uploaded, packing, partial_shipped
     const pendingItems = await db.execute(sql`
       SELECT oi.productId, COALESCE(SUM(oi.quantity), 0) as pendingQty
       FROM order_items oi
       JOIN orders o ON o.id = oi.orderId
-      WHERE o.physicalStatus IN ('pending', 'hold_order', 'partial_payment')
+      WHERE o.physicalStatus IN ('pending', 'hold_order', 'partial_payment', 'receipt_uploaded', 'packing', 'partial_shipped')
       AND oi.productId IN (${sql.join(productIds, sql`, `)})
       GROUP BY oi.productId
     `);
@@ -5242,18 +5284,19 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
       }
     }
   }
-  // V2.1.30补充3: Check stock for products — block order if stock is 0
+  // V2.1.30补充4: Unified stock check with allowOversold support
   for (const item of items) {
     if (item.productId > 0) {
       const productRows = await db.select({
         id: products.id,
         stockQuantity: products.stockQuantity,
         name: products.name,
+        allowOversold: products.allowOversold,
       }).from(products).where(eq(products.id, item.productId)).limit(1);
       if (productRows.length > 0) {
         const product = productRows[0];
-        if (product.stockQuantity !== null && product.stockQuantity <= 0) {
-          throw new Error(`STOCK_OUT_OF_STOCK: ${product.name} 存库为0，不可下单`);
+        if (!product.allowOversold && product.stockQuantity !== null && product.stockQuantity < item.quantity) {
+          throw new Error(`STOCK_INSUFFICIENT: ${product.name} 库存不足，目前最多可下单 ${product.stockQuantity} 件`);
         }
       }
     }
@@ -6637,17 +6680,18 @@ export async function createOrderFromLiveCapture(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // V2.1.30补充3: Check stock for products — block order if stock is 0
+  // V2.1.30补充4: Unified stock check with allowOversold support
   for (const p of data.matchedProducts) {
     const productRows = await db.select({
       id: products.id,
       stockQuantity: products.stockQuantity,
       name: products.name,
+      allowOversold: products.allowOversold,
     }).from(products).where(eq(products.id, p.productId)).limit(1);
     if (productRows.length > 0) {
       const product = productRows[0];
-      if (product.stockQuantity !== null && product.stockQuantity <= 0) {
-        throw new Error(`STOCK_OUT_OF_STOCK: ${product.name} 存库为0，不可下单`);
+      if (!product.allowOversold && product.stockQuantity !== null && product.stockQuantity < p.quantity) {
+        throw new Error(`STOCK_INSUFFICIENT: ${product.name} 库存不足，目前最多可下单 ${product.stockQuantity} 件`);
       }
     }
   }
@@ -6727,6 +6771,12 @@ export async function createOrderFromLiveCapture(data: {
         facebookKeyword: p.keyword,
         discount: "0.00",
       });
+      // V2.1.30补充4: Atomic stock deduction for merged items
+      if (p.productId) {
+        await db.update(products).set({
+          stockQuantity: sql`${products.stockQuantity} - ${p.quantity}`,
+        }).where(eq(products.id, p.productId));
+      }
     }
     // Recalculate order total
     const allItems = await db.select({
@@ -6808,7 +6858,7 @@ export async function createOrderFromLiveCapture(data: {
   });
   
     const orderId = (orderResult as any)[0].insertId;
-  // Create order items
+    // Create order items
   for (const p of data.matchedProducts) {
     const itemSubtotal = (parseFloat(p.unitPrice) * p.quantity).toFixed(2);
     await db.insert(orderItems).values({
@@ -6823,8 +6873,13 @@ export async function createOrderFromLiveCapture(data: {
       facebookKeyword: p.keyword,
       discount: "0.00",
     });
+    // V2.1.30补充4: Atomic stock deduction — 下单即占用库存
+    if (p.productId) {
+      await db.update(products).set({
+        stockQuantity: sql`${products.stockQuantity} - ${p.quantity}`,
+      }).where(eq(products.id, p.productId));
+    }
   }
-  
   // V2.0.78: Auto-deduct credit and write ledger
   if (autoCreditUsed > 0) {
     await useCustomerCredit(customer.id, autoCreditUsed, orderId, orderNumber);

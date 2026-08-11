@@ -2738,3 +2738,14 @@
 - [x] 问题4: ParcelDaily API已连接确认 (createOrder→checkoutOrder→getConsignmentNote获取AWB)
 - [x] 问题5: 库存为0禁止下单 (createOrderWithSplit/createOrderFromLiveCapture/addMallItemsToOrder添加库存检查)
 - [x] 问题6: 商品显示存库/已下单/已完成数量 (getProductsEnhanced添加orderedCount/completedCount, ProductsV2显示)
+
+## V2.1.30补充4 - 商品库存逻辑完整重构
+- [x] 所有下单入口统一库存校验（createOrderWithSplit/createOrderFromLiveCapture/addMallItemsToOrder）
+- [x] 下单即占用库存（原子化UPDATE扣减stockQuantity）
+- [x] 取消订单释放库存（cancelOrderWithReason修复，所有订单都回库存）
+- [x] 修改订单数量同步库存（updateOrderItems检查+扣减/释放）
+- [x] 删除订单商品回库存（updateOrderItems删除时回库存）
+- [x] 防止超卖（allowOversold字段，未开启时禁止超出库存下单）
+- [x] 商品管理显示存库/已下单/已完成（orderedCount包含pending/hold_order/partial_payment/receipt_uploaded/packing/partial_shipped）
+- [x] 订单创建页商品卡显示即时库存（移除SKU，显示availableQuantity）
+- [x] 单据不显示menu字体（Sidebar和mobile header添加no-print class）

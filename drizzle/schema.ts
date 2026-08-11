@@ -207,6 +207,9 @@ export const products = mysqlTable("products", {
   // V5: AI Selling Points — for AI reply enrichment (free text, not used for filtering)
   aiSellingPoints: text("aiSellingPoints"),
 
+  // V2.1.30补充4: Allow oversold — if true, stock can go negative
+  allowOversold: boolean("allowOversold").default(false).notNull(),
+
   // Internal notes
   notes: text("notes"),
 
