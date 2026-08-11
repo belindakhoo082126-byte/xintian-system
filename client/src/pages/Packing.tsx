@@ -145,8 +145,8 @@ export default function Packing() {
       // Customer info section
       const customerInfoHtml = `
         <div style="margin-bottom:4px;font-size:12px;line-height:1.4">
-          ${data.facebookName ? `<div><strong>FB:</strong> ${data.facebookName}</div>` : ""}
-          <div><strong>收件人:</strong> ${data.recipientName || data.customerName || ""}</div>
+          <div><strong>下单人:</strong> ${data.facebookName || data.customerName || "-"}</div>
+          <div><strong>收件人:</strong> ${data.recipientName || data.customerName || "-"}</div>
           <div><strong>电话:</strong> ${data.recipientPhone || data.customerPhone || ""}</div>
           <div><strong>地址:</strong> ${[
             data.addressLine1,

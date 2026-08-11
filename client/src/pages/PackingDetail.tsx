@@ -1241,12 +1241,10 @@ export default function PackingDetail() {
           {data.orderNumber}
         </div>
 
-        {/* V2.1.26: Customer info */}
+        {/* V2.1.26: Customer info - show orderer name (下单人) + recipient */}
         <div style={{ marginBottom: "4px", fontSize: "12px", lineHeight: "1.4" }}>
-          {data.facebookName && (
-            <div><strong>FB:</strong> {data.facebookName}</div>
-          )}
-          <div><strong>{translate("收件人:", "Recipient:")}</strong> {data.recipientName || data.customerName}</div>
+          <div><strong>{translate("下单人:", "Orderer:")}</strong> {data.facebookName || data.customerName || "-"}</div>
+          <div><strong>{translate("收件人:", "Recipient:")}</strong> {data.recipientName || data.customerName || "-"}</div>
           <div><strong>{translate("电话:", "Phone:")}</strong> {data.recipientPhone || data.customerPhone}</div>
           <div><strong>{translate("地址:", "Address:")}</strong> {
             [

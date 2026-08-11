@@ -622,11 +622,10 @@ export default function ProductsV2() {
                   </TableCell>
                   <TableCell>
                     {p.type === "physical" ? (
-                      <div className="text-sm">
-                        <span>{translate("现货", "Stock")}: {p.availableQuantity ?? p.stockQuantity ?? 0}</span>
-                        {(p.pendingQuantity > 0) && (
-                          <span className="text-muted-foreground ml-1">({p.pendingQuantity}{translate("未付款", "unpaid")})</span>
-                        )}
+                      <div className="text-sm space-y-0.5">
+                        <div>{translate("存库", "Stock")}: <span className="font-medium">{p.stockQuantity ?? 0}</span></div>
+                        <div className="text-blue-600">{translate("已下单", "Ordered")}: <span className="font-medium">{p.orderedCount ?? 0}</span></div>
+                        <div className="text-green-600">{translate("已完成", "Completed")}: <span className="font-medium">{p.completedCount ?? 0}</span></div>
                       </div>
                     ) : translate("—", "—")}
                   </TableCell>

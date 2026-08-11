@@ -884,6 +884,24 @@ export async function createOrderWithSplit(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  // V2.1.30补充3: Check stock for physical products — block order if stock is 0
+  const physicalItems = data.items.filter(i => i.productType === "physical");
+  if (physicalItems.length > 0) {
+    for (const item of physicalItems) {
+      const productRows = await db.select({
+        id: products.id,
+        stockQuantity: products.stockQuantity,
+        name: products.name,
+      }).from(products).where(eq(products.id, item.productId)).limit(1);
+      if (productRows.length > 0) {
+        const product = productRows[0];
+        if (product.stockQuantity !== null && product.stockQuantity <= 0) {
+          throw new Error(`STOCK_OUT_OF_STOCK: ${product.name} 存库为0，不可下单`);
+        }
+      }
+    }
+  }
+
   // Physical and gift items both go through the physical order flow
   // Gift items have price=0 but still count toward shipping weight and free-shipping threshold
   const hasPhysical = data.items.some(i => i.productType === "physical" || i.productType === "gift");
@@ -2963,25 +2981,41 @@ export async function getProductsEnhanced(params: {
   const countResult = await db.select({ count: sql`count(*)` }).from(products).where(where);
   const total = Number(countResult[0]?.count) || 0;
 
-  // Calculate pending (on-hold) quantity for each product: sum of order items in pending/checkout status
+  // V2.1.30补充3: Calculate orderedCount (pending/hold/checkout) and completedCount (shipped) for each product
   const productIds = items.map((p: any) => p.id);
   let pendingMap: Record<number, number> = {};
+  let completedMap: Record<number, number> = {};
   if (productIds.length > 0) {
+    // 已下单: orders in pending, hold_order, partial_payment (保留订单, 挂单, 待结账)
     const pendingItems = await db.execute(sql`
       SELECT oi.productId, COALESCE(SUM(oi.quantity), 0) as pendingQty
       FROM order_items oi
       JOIN orders o ON o.id = oi.orderId
-      WHERE o.physicalStatus IN ('pending', 'checkout', 'confirmed')
+      WHERE o.physicalStatus IN ('pending', 'hold_order', 'partial_payment')
       AND oi.productId IN (${sql.join(productIds, sql`, `)})
       GROUP BY oi.productId
     `);
     for (const row of pendingItems as any[]) {
       pendingMap[row.productId] = Number(row.pendingQty) || 0;
     }
+    // 已完成: orders in shipped status
+    const completedItems = await db.execute(sql`
+      SELECT oi.productId, COALESCE(SUM(oi.quantity), 0) as completedQty
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.orderId
+      WHERE o.physicalStatus IN ('shipped', 'completed')
+      AND oi.productId IN (${sql.join(productIds, sql`, `)})
+      GROUP BY oi.productId
+    `);
+    for (const row of completedItems as any[]) {
+      completedMap[row.productId] = Number(row.completedQty) || 0;
+    }
   }
   const itemsWithPending = items.map((p: any) => ({
     ...p,
     pendingQuantity: pendingMap[p.id] || 0,
+    orderedCount: pendingMap[p.id] || 0,
+    completedCount: completedMap[p.id] || 0,
     availableQuantity: (p.stockQuantity || 0) - (pendingMap[p.id] || 0),
   }));
 
@@ -5208,7 +5242,22 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
       }
     }
   }
-
+  // V2.1.30补充3: Check stock for products — block order if stock is 0
+  for (const item of items) {
+    if (item.productId > 0) {
+      const productRows = await db.select({
+        id: products.id,
+        stockQuantity: products.stockQuantity,
+        name: products.name,
+      }).from(products).where(eq(products.id, item.productId)).limit(1);
+      if (productRows.length > 0) {
+        const product = productRows[0];
+        if (product.stockQuantity !== null && product.stockQuantity <= 0) {
+          throw new Error(`STOCK_OUT_OF_STOCK: ${product.name} 存库为0，不可下单`);
+        }
+      }
+    }
+  }
   for (const item of items) {
     await db.insert(orderItems).values({
       orderId,
@@ -6152,10 +6201,13 @@ export async function fullShipping(orderId: number, packageList: Array<{
     });
   }
   
-  // Update order status to shipped
+  // Update order status to shipped + sync courier/tracking to orders table for order management area 8
+  const lastPackage = packageList[packageList.length - 1];
   await db.update(orders).set({
     physicalStatus: "shipped",
     shippedAt: new Date(),
+    courierCompany: lastPackage.courier || null,
+    trackingNumber: lastPackage.trackingNumber || null,
   }).where(eq(orders.id, orderId));
   
   return { success: true };
@@ -6237,10 +6289,12 @@ export async function partialShipping(orderId: number, itemIds: number[], packag
   // Check if all items are fully shipped (shipped qty >= order qty)
   const allShipped = allItems.every((item) => (totalShippedQty.get(item.id) || 0) >= item.quantity);
   
-  // Update order status
+  // Update order status + sync courier/tracking to orders table for order management area 8
   await db.update(orders).set({
     physicalStatus: allShipped ? "shipped" : "partial_shipped",
     ...(allShipped ? { shippedAt: new Date() } : {}),
+    courierCompany: packageData.courier || null,
+    trackingNumber: packageData.trackingNumber || null,
   }).where(eq(orders.id, orderId));
   
   return { success: true, allShipped };
@@ -6582,6 +6636,21 @@ export async function createOrderFromLiveCapture(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // V2.1.30补充3: Check stock for products — block order if stock is 0
+  for (const p of data.matchedProducts) {
+    const productRows = await db.select({
+      id: products.id,
+      stockQuantity: products.stockQuantity,
+      name: products.name,
+    }).from(products).where(eq(products.id, p.productId)).limit(1);
+    if (productRows.length > 0) {
+      const product = productRows[0];
+      if (product.stockQuantity !== null && product.stockQuantity <= 0) {
+        throw new Error(`STOCK_OUT_OF_STOCK: ${product.name} 存库为0，不可下单`);
+      }
+    }
+  }
 
   // Idempotency guard: Facebook may retry webhook delivery. If we already
   // processed this comment, return the existing order instead of creating a

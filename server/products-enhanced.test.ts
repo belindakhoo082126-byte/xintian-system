@@ -10,7 +10,7 @@ describe("product source-of-truth safeguards", () => {
       source.indexOf("export async function getProductByIdEnhanced"),
     );
 
-    expect(queryBlock).toContain("o.physicalStatus IN ('pending', 'checkout', 'confirmed')");
+    expect(queryBlock).toContain("o.physicalStatus IN ('pending', 'hold_order', 'partial_payment')");
     expect(queryBlock).not.toContain("o.status IN ('pending', 'checkout', 'confirmed')");
   });
 

@@ -508,8 +508,8 @@ function DashboardLayoutContent({
           </div>
         )}
         <main className="flex-1 p-4">
-          {/* Top-right language toggle — always visible */}
-          <div className="fixed top-3 right-4 z-50">
+          {/* Top-right language toggle — always visible (hidden when printing) */}
+          <div className="fixed top-3 right-4 z-50 no-print">
             <Button
               variant="outline"
               size="sm"

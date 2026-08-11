@@ -2722,3 +2722,19 @@
 ## V2.1.30补充2 - 2项Bug修复
 - [x] 问题1：存库日志无数据 - resolveOrderException在refund/replace_product/wait_restock三种处理方式下都添加createInventoryAdjustment调用，记录原商品库存减少
 - [x] 问题2：所有报告数据为0 - 修复13个报告函数中的snake_case列名为camelCase（TiDB大小写敏感）
+
+## V2.1.30补充3 - 6项Bug修复
+- [ ] 问题1：包货工作台追踪号码/快递公司未同步到订单管理区域8
+- [ ] 问题2：A5打印单据缺少下单人名字（FB名字/手动填写名字）
+- [ ] 问题3：单据移除语言切换图标
+- [ ] 问题4：确认ParcelDaily API连接状态及AWB自动生成
+- [ ] 问题5：库存为0时禁止下单（直播/私聊/AI/商城）
+- [ ] 问题6：商品显示存库/已下单/已完成数量
+
+## V2.1.30补充3 - 6项Bug修复
+- [x] 问题1: 包货工作台追踪号码/快递公司同步到订单管理区域8 (fullShipping/partialShipping更新orders.courierCompany/trackingNumber)
+- [x] 问题2: A5打印单据显示下单人名字 (PackingDetail A5PackingSlip + Packing.tsx列表打印)
+- [x] 问题3: 单据不显示语言切换图标 (DashboardLayout语言按钮添加no-print class)
+- [x] 问题4: ParcelDaily API已连接确认 (createOrder→checkoutOrder→getConsignmentNote获取AWB)
+- [x] 问题5: 库存为0禁止下单 (createOrderWithSplit/createOrderFromLiveCapture/addMallItemsToOrder添加库存检查)
+- [x] 问题6: 商品显示存库/已下单/已完成数量 (getProductsEnhanced添加orderedCount/completedCount, ProductsV2显示)
