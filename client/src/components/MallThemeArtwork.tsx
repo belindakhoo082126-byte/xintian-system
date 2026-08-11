@@ -5,6 +5,7 @@ type ThemeArtworkProps = { theme: MallTheme | ResolvedMallTheme; active?: boolea
 const NATURAL_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-natural-continuous-watercolor-landscape_03bbc155.png";
 const LAVENDER_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-lavender-continuous-moonlit-meadow_65b21502.png";
 const SAKURA_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-sakura-continuous-spring-garden-v2_b643cc4b.png";
+const NATURE_GREEN_CONTINUOUS_BACKGROUND_URL = "/manus-storage/xintian-natural-green-continuous-sunlit-conservatory_ce98dee3.png";
 
 function themeSurfaceStyle(theme: MallTheme): CSSProperties {
   return {
@@ -75,6 +76,21 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
         <div
           className="absolute inset-0"
           style={{ background: "linear-gradient(180deg, rgba(255,251,246,0.1) 0%, rgba(255,249,245,0.02) 44%, rgba(255,247,241,0.15) 100%)" }}
+        />
+      </div>
+    );
+  }
+
+  if (theme.key === "nature_green") {
+    return (
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          style={{ backgroundImage: `url(${NATURE_GREEN_CONTINUOUS_BACKGROUND_URL})` }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{ background: "linear-gradient(180deg, rgba(250,252,246,0.1) 0%, rgba(248,251,244,0.02) 44%, rgba(243,248,237,0.16) 100%)" }}
         />
       </div>
     );

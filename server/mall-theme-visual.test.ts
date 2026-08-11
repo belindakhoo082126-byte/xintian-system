@@ -64,6 +64,21 @@ describe("商城主题完整视觉系统", () => {
     expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
   });
 
+  it("自然绿使用暖白温室、森林绿、鼠尾草绿与嫩芽绿，并有专属连续温室绿植背景", () => {
+    const natureGreenTheme = getMallTheme("nature_green");
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+    expect(natureGreenTheme.visual.description.zh).toContain("暖白温室");
+    expect(natureGreenTheme.visual.description.zh).toContain("垂吊藤蔓");
+    expect(natureGreenTheme.colors).toMatchObject({ primary: "#0f5b45", secondary: "#86a77b", button: "#1d6c54", background: "#f8faf3" });
+    expect(natureGreenTheme.visual.motifs).toContain("⌁");
+    expect(artwork).toContain("NATURE_GREEN_CONTINUOUS_BACKGROUND_URL");
+    expect(artwork).toContain("xintian-natural-green-continuous-sunlit-conservatory_ce98dee3.png");
+    expect(artwork).toContain('theme.key === "nature_green"');
+    expect(artwork).toContain("fixed inset-0 z-0");
+    expect(artwork).toContain("bg-cover bg-center bg-no-repeat");
+  });
+
   it("商城设置及客户商城主流程均使用统一的主题视觉配置，且不在页首展示主题公仔", () => {
     const root = path.resolve(__dirname, "..");
     const settingsPage = fs.readFileSync(path.join(root, "client/src/pages/MallSettings.tsx"), "utf8");
