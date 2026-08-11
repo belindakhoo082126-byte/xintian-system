@@ -116,18 +116,39 @@ export default function PackingDetail() {
       utils.packing.detail.invalidate({ orderId });
       utils.orderException.list.invalidate({ orderId });
     },
-    onError: (err) => toast.error(translate("创建异常失败: ", "Failed to create exception: ") + err.message),
+    onError: (err) => toast.error("创建异常失败: " + err.message),
+  });
+
+  // V2.1.26补充6: Delete exception mutation (Issue 2)
+  const deleteExceptionMutation = trpc.orderException.delete.useMutation({
+    onSuccess: () => {
+      toast.success("异常已删除");
+      utils.packing.detail.invalidate({ orderId });
+      utils.orderException.list.invalidate({ orderId });
+      utils.packing.list.invalidate();
+    },
+    onError: (err) => toast.error("删除失败: " + err.message),
+  });
+
+  // V2.1.26补充6: Mark exception as resolved (Issue 8)
+  const markResolvedMutation = trpc.orderException.markResolved.useMutation({
+    onSuccess: () => {
+      toast.success("异常已处理");
+      utils.packing.detail.invalidate({ orderId });
+      utils.orderException.list.invalidate({ orderId });
+      utils.packing.list.invalidate();
+    },
+    onError: (err) => toast.error("处理失败: " + err.message),
   });
 
   const resolveExceptionMutation = trpc.orderException.resolve.useMutation({
     onSuccess: () => {
-      toast.success(translate("异常已处理", "Exception resolved"));
+      toast.success("异常已处理");
       setExceptionDialogOpen(false);
       setExceptionDesc("");
       setExceptionItemId("");
       setReplacementProductId("");
       setReplacementQty(1);
-      // V2.1.26补充4: Reset new state
       setExceptionQuantity(1);
       setCustomerAction("pending");
       setRefundMethod("credit");
@@ -138,7 +159,7 @@ export default function PackingDetail() {
       utils.packing.detail.invalidate({ orderId });
       utils.packing.list.invalidate();
     },
-    onError: (err) => toast.error(translate("处理异常失败: ", "Failed to resolve exception: ") + err.message),
+    onError: (err) => toast.error("处理异常失败: " + err.message),
   });
 
   const { data: exceptions } = trpc.orderException.list.useQuery({ orderId }, { enabled: !!detail });
@@ -465,22 +486,50 @@ export default function PackingDetail() {
                       )}
                       {exc.description && <span className="text-muted-foreground ml-2">— {exc.description}</span>}
                     </div>
-                    {exc.status !== "resolved" && (
+                    <div className="flex items-center gap-1">
+                      {exc.status !== "resolved" && (
+                        <>
+                          {/* V2.1.26补充6: Mark as resolved button (Issue 8) */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-green-300 text-green-600 hover:bg-green-50"
+                            onClick={() => markResolvedMutation.mutate({ exceptionId: exc.id })}
+                            disabled={markResolvedMutation.isPending}
+                          >
+                            {translate("已处理", "Resolved")}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setExceptionType(exc.exceptionType);
+                              setExceptionDesc(exc.description || "");
+                              setExceptionItemId(exc.orderItemId ? Number(exc.orderItemId) : "");
+                              setExceptionQuantity(exc.quantity || 1);
+                              setCustomerAction(exc.customerAction || "pending");
+                              setExceptionDialogOpen(true);
+                            }}
+                          >
+                            {translate("修改", "Edit")}
+                          </Button>
+                        </>
+                      )}
+                      {/* V2.1.26补充6: Delete button (Issue 2) */}
                       <Button
                         size="sm"
                         variant="outline"
+                        className="border-red-300 text-red-600 hover:bg-red-50"
                         onClick={() => {
-                          setExceptionType(exc.exceptionType);
-                          setExceptionDesc(exc.description || "");
-                          setExceptionItemId(exc.orderItemId ? Number(exc.orderItemId) : "");
-                          setExceptionQuantity(exc.quantity || 1);
-                          setCustomerAction(exc.customerAction || "pending");
-                          setExceptionDialogOpen(true);
+                          if (confirm("确定删除此异常记录?")) {
+                            deleteExceptionMutation.mutate({ exceptionId: exc.id });
+                          }
                         }}
+                        disabled={deleteExceptionMutation.isPending}
                       >
-                        {translate("修改", "Edit")}
+                        <X className="h-4 w-4" />
                       </Button>
-                    )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -512,7 +561,8 @@ export default function PackingDetail() {
                     </Select>
                   </div>
 
-                  {/* Step 2: Select affected item */}
+                  {/* V2.1.26补充6: Step 2: Select affected item - hidden for overcharged_shipping (Issue 9) */}
+                  {exceptionType !== "overcharged_shipping" && (
                   <div className="space-y-2">
                     <Label>{translate("涉及商品", "Affected Item")}</Label>
                     <Select value={String(exceptionItemId)} onValueChange={(v) => { setExceptionItemId(Number(v)); const item = (d.items as any[]).find((it: any) => it.id === Number(v)); if (item) setExceptionQuantity(item.quantity); }}>
@@ -526,6 +576,23 @@ export default function PackingDetail() {
                       </SelectContent>
                     </Select>
                   </div>
+                  )}
+
+                  {/* V2.1.26补充6: Refund amount input for overcharged_shipping (Issue 9) */}
+                  {exceptionType === "overcharged_shipping" && (
+                    <div className="space-y-2 border rounded-lg p-3 bg-orange-50 dark:bg-orange-950/20">
+                      <Label>{translate("退款金额 (RM)", "Refund Amount (RM)")}</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        value={exceptionQuantity}
+                        onChange={(e) => setExceptionQuantity(Math.max(0, Number(e.target.value)))}
+                        placeholder="0.00"
+                      />
+                      <p className="text-xs text-muted-foreground">{translate("输入需退给客户的运费差额", "Enter shipping overcharge to refund")}</p>
+                    </div>
+                  )}
 
                   {/* V2.1.26补充4: Step 2b: Quantity input (Issue 6a/6c/6e) - show for out_of_stock, quality_issue, other */}
                   {exceptionType !== "overcharged_shipping" && exceptionItemId !== "" && (
@@ -659,7 +726,7 @@ export default function PackingDetail() {
                             customerAction,
                           }, {
                             onSuccess: (created: any) => {
-                              toast.success(translate("异常已记录", "Exception recorded"));
+                              toast.success("异常已记录");
                               const selectedItem = (d.items as any[]).find((it: any) => it.id === exceptionItemId);
                               resolveExceptionMutation.mutate({
                                 exceptionId: created.id,
@@ -702,7 +769,7 @@ export default function PackingDetail() {
                             customerAction,
                           }, {
                             onSuccess: () => {
-                              toast.success(translate("异常已记录", "Exception recorded"));
+                              toast.success("异常已记录");
                               setExceptionDialogOpen(false);
                               setExceptionDesc("");
                               setExceptionItemId("");
@@ -738,8 +805,8 @@ export default function PackingDetail() {
             <CardTitle className="text-base flex items-center gap-2">
               <Package className="h-4 w-4 text-blue-500" />
               {translate("实际重量与运费", "Actual Weight & Shipping")}
-              {/* V2.1.26: Show 免邮 badge — only for west_malaysia, east_malaysia has no free shipping */}
-              {detail && detail.shippingMethod === "west_malaysia" && Number((detail as any).physicalSubtotal || 0) >= 150 && (
+              {/* V2.1.26补充6: Show 免邮 badge — west_malaysia & lalamove only (Issue 6 sync with Packing.tsx) */}
+              {detail && (detail.shippingMethod === "west_malaysia" || detail.shippingMethod === "lalamove") && Number((detail as any).physicalSubtotal || 0) >= 150 && (
                 <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-300">{translate("免邮", "Free Shipping")}</Badge>
               )}
             </CardTitle>
@@ -763,7 +830,7 @@ export default function PackingDetail() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">{translate("免邮状态", "Free Shipping")}: </span>
-                  <span className="font-medium">{detail.shippingMethod === "west_malaysia" ? (Number((detail as any).physicalSubtotal || 0) >= 150 ? translate("是（满RM150免邮10kg内）", "Yes (Free for 10kg if RM150+)") : translate("否（未满RM150）", "No (Under RM150)")) : translate("不适用", "N/A")}</span>
+                  <span className="font-medium">{(detail.shippingMethod === "west_malaysia" || detail.shippingMethod === "lalamove") ? (Number((detail as any).physicalSubtotal || 0) >= 150 ? translate("是（满RM150免邮）", "Yes (Free shipping over RM150)") : translate("否（未满RM150）", "No (Under RM150)")) : translate("不适用", "N/A")}</span>
                 </div>
               </div>
             )}
@@ -1304,6 +1371,34 @@ export default function PackingDetail() {
           </div>
         )}
 
+        {/* V2.1.26补充6: Customer Remark (Issue 4) */}
+        {data.customerRemark && (
+          <div style={{ marginBottom: "4px", border: "2px solid #000", padding: "4px" }}>
+            <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("客户备注", "Customer Remark")}</div>
+            <div style={{ fontSize: "11px", marginLeft: "8px" }}>{data.customerRemark}</div>
+          </div>
+        )}
+
+        {/* V2.1.26补充6: Admin Remarks (Issue 4) */}
+        {data.adminRemarks && data.adminRemarks.length > 0 && (
+          <div style={{ marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
+            <div style={{ fontWeight: "bold", fontSize: "12px", marginBottom: "4px" }}>📌 {translate("后台备注", "Admin Remarks")}</div>
+            {data.adminRemarks.map((r: any, i: number) => (
+              <div key={i} style={{ marginBottom: "4px" }}>
+                <div style={{ fontSize: "11px", marginLeft: "8px" }}>
+                  {r.remarkCategory === "repotting" ? translate("换盆", "Repotting") :
+                   r.remarkCategory === "desired_delivery_date" ? translate("发货日期", "Delivery Date") :
+                   r.remarkCategory === "select_tree" ? translate("选树身", "Select Tree") :
+                   r.remarkCategory === "other" ? translate("其他", "Other") : r.remarkCategory}
+                  {r.content && <span> — {r.content}</span>}
+                  {r.desiredDeliveryDate && <span> — {new Date(r.desiredDeliveryDate).toLocaleDateString()}</span>}
+                  {r.desiredDeliveryReason && <span> ({r.desiredDeliveryReason})</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Order Remarks */}
         {data.remarks && data.remarks.length > 0 && (
           <div style={{ marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
@@ -1317,11 +1412,17 @@ export default function PackingDetail() {
                 )}
                 {r.remarkCategory === "desired_delivery_date" && (
                   <>
-                    <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("希望收货日期", "Desired Delivery Date")}</div>
+                    <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("发货日期", "Delivery Date")}</div>
                     <div style={{ fontSize: "11px", marginLeft: "8px" }}>
                       {r.desiredDeliveryDate ? new Date(r.desiredDeliveryDate).toLocaleDateString() : ""}
                       {r.desiredDeliveryReason && <span> — {r.desiredDeliveryReason}</span>}
                     </div>
+                  </>
+                )}
+                {r.remarkCategory === "select_tree" && (
+                  <>
+                    <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("选树身", "Select Tree")}</div>
+                    <div style={{ fontSize: "11px", marginLeft: "8px" }}>{r.content}</div>
                   </>
                 )}
                 {r.remarkCategory === "other" && (

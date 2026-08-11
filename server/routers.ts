@@ -4275,6 +4275,27 @@ export const appRouter = router({
     replacements: protectedProcedure.input(z.object({ exceptionId: z.number() })).query(async ({ input }) => {
       return await db.getOrderExceptionReplacements(input.exceptionId);
     }),
+
+    // V2.1.26补充6: Delete an exception (Issue 2)
+    delete: protectedProcedure.input(z.object({ exceptionId: z.number() })).mutation(async ({ input }) => {
+      await db.deleteOrderException(input.exceptionId);
+      return { success: true };
+    }),
+
+    // V2.1.26补充6: Mark an exception as resolved/processed (Issue 8)
+    markResolved: protectedProcedure.input(z.object({
+      exceptionId: z.number(),
+      orderId: z.number().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const userName = ctx.user?.name || ctx.user?.email || 'Unknown';
+      const exception = await db.resolveOrderException(
+        input.exceptionId,
+        'wait_restock',
+        userName,
+        { orderId: input.orderId || 0, customerAction: 'pending' },
+      );
+      return { success: true, exception };
+    }),
   }),
 
   // ===========================================================================

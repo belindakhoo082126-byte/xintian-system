@@ -5983,9 +5983,10 @@ export async function getPackingSlipData(orderId: number) {
   // V3.0: Fetch all order remarks for A5 slip (unified: repotting, desired_delivery_date, other)
   const allRemarks = await getOrderRemarks(orderId);
 
-  // V2.1.26: Add physicalSubtotal and isFreeShipping
+  // V2.1.26补充6: Fix isFreeShipping - only for west_malaysia and lalamove (Issue 6)
   const physicalSubtotal = parseFloat((detail as any).physicalSubtotal || "0");
-  const isFreeShipping = physicalSubtotal >= 150;
+  const shippingMethod = (detail as any).shippingMethod || "";
+  const isFreeShipping = (shippingMethod === "west_malaysia" || shippingMethod === "lalamove") && physicalSubtotal >= 150;
   // V2.1.26: Determine shipping method label (including 西马)
   let shippingMethodLabel = "";
   if (detail.shippingMethod === "lalamove") shippingMethodLabel = "LALAMOVE";
@@ -6018,6 +6019,9 @@ export async function getPackingSlipData(orderId: number) {
     items: detail.items,
     giftItems,
     remarks: allRemarks,
+    // V2.1.26补充6: Add customerRemark and adminRemarks for A5 slip (Issue 4)
+    customerRemark: allRemarks.filter((r: any) => r.type === "customer").map((r: any) => r.content).join("\n"),
+    adminRemarks: allRemarks.filter((r: any) => r.type === "internal" || r.remarkCategory === "repotting" || r.remarkCategory === "desired_delivery_date" || r.remarkCategory === "other"),
     summary: {
       itemTypes: detail.items.length,
       regularTotal: regularTotal.toFixed(2),
@@ -7454,6 +7458,8 @@ export async function resolveOrderException(
     // V2.1.26补充4: Customer action
     customerAction?: 'replace_product' | 'wait_restock' | 'refund' | 'pending';
     quantity?: number;
+    // V2.1.26补充6: orderId for quantity sync and credit refund
+    orderId?: number;
   },
 ) {
   const db = await getDb();
@@ -7483,8 +7489,174 @@ export async function resolveOrderException(
     updateData.quantity = options.quantity;
   }
   await db.update(orderExceptions).set(updateData).where(eq(orderExceptions.id, exceptionId));
+
+  // V2.1.26补充6: Issue 3+7 - Sync quantity and auto refund credit
+  const exception = await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1);
+  if (exception.length > 0 && exception[0].orderId) {
+    const orderId = exception[0].orderId;
+    const excQuantity = options?.quantity || exception[0].quantity || 0;
+    const customerAction = options?.customerAction || exception[0].customerAction || 'pending';
+
+    // Issue 3: For refund - reduce order item quantity by exception quantity
+    if (customerAction === 'refund' && excQuantity > 0 && exception[0].orderItemId) {
+      const orderItem = await db.select().from(orderItems).where(eq(orderItems.id, exception[0].orderItemId)).limit(1);
+      if (orderItem.length > 0) {
+        const newQty = orderItem[0].quantity - excQuantity;
+        if (newQty <= 0) {
+          // Delete the order item if quantity reaches 0
+          await db.delete(orderItems).where(eq(orderItems.id, exception[0].orderItemId!));
+        } else {
+          // Update quantity and subtotal
+          const unitPrice = Number(orderItem[0].unitPrice || 0);
+          await db.update(orderItems).set({
+            quantity: newQty,
+            subtotal: (unitPrice * newQty).toString(),
+          }).where(eq(orderItems.id, exception[0].orderItemId!));
+        }
+        // Recalculate order totals
+        await recalculateOrderTotals(orderId);
+
+        // Issue 7: Auto refund to credit if refundMethod is credit
+        if (options?.refundMethod === 'credit') {
+          const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+          if (order.length > 0 && order[0].customerId) {
+            const unitPrice = Number(orderItem[0].unitPrice || 0);
+            const refundAmount = unitPrice * excQuantity;
+            if (refundAmount > 0) {
+              await refundCustomerCredit(order[0].customerId, refundAmount, orderId, order[0].orderNumber || undefined);
+            }
+          }
+        }
+      }
+    }
+
+    // Issue 3: For replace_product - reduce original item qty, add replacement item, deduct stock
+    if (customerAction === 'replace_product' && excQuantity > 0 && exception[0].orderItemId) {
+      const orderItem = await db.select().from(orderItems).where(eq(orderItems.id, exception[0].orderItemId)).limit(1);
+      if (orderItem.length > 0) {
+        const newQty = orderItem[0].quantity - excQuantity;
+        if (newQty <= 0) {
+          await db.delete(orderItems).where(eq(orderItems.id, exception[0].orderItemId!));
+        } else {
+          const unitPrice = Number(orderItem[0].unitPrice || 0);
+          await db.update(orderItems).set({
+            quantity: newQty,
+            subtotal: (unitPrice * newQty).toString(),
+          }).where(eq(orderItems.id, exception[0].orderItemId!));
+        }
+
+        // Add replacement product as new order item
+        if (options?.replacementProductId) {
+          const replacementQty = options.replacementQuantity || excQuantity;
+          const replacementPrice = options.replacementUnitPrice || 0;
+          const replacementSubtotal = replacementPrice * replacementQty;
+
+          // Check if replacement product already exists in order items
+          const existingItem = await db.select().from(orderItems).where(
+            and(eq(orderItems.orderId, orderId), eq(orderItems.productId, options.replacementProductId))
+          ).limit(1);
+          if (existingItem.length > 0) {
+            // Increase quantity of existing item
+            const updatedQty = existingItem[0].quantity + replacementQty;
+            const updatedSubtotal = Number(existingItem[0].unitPrice || 0) * updatedQty;
+            await db.update(orderItems).set({
+              quantity: updatedQty,
+              subtotal: updatedSubtotal.toString(),
+            }).where(eq(orderItems.id, existingItem[0].id));
+          } else {
+            // Add new order item
+            await db.insert(orderItems).values({
+              orderId,
+              productId: options.replacementProductId,
+              productName: options.replacementProductName || "替换商品",
+              quantity: replacementQty,
+              unitPrice: replacementPrice.toString(),
+              subtotal: replacementSubtotal.toString(),
+              productType: "physical" as any,
+            });
+          }
+
+          // Deduct replacement product stock
+          await createInventoryAdjustment({
+            productId: options.replacementProductId,
+            adjustmentType: 'other',
+            quantityChange: -replacementQty,
+            adjustedBy: resolvedBy,
+            reason: '异常处理更换商品',
+          });
+        }
+
+        // Recalculate order totals
+        await recalculateOrderTotals(orderId);
+
+        // Handle price difference refund if replacement is cheaper
+        if (options?.replacementProductId && options?.refundMethod === 'credit') {
+          const originalUnitPrice = Number(orderItem[0].unitPrice || 0);
+          const replacementUnitPrice = options.replacementUnitPrice || 0;
+          const priceDiff = (originalUnitPrice - replacementUnitPrice) * excQuantity;
+          if (priceDiff > 0) {
+            const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+            if (order.length > 0 && order[0].customerId) {
+              await refundCustomerCredit(order[0].customerId, priceDiff, orderId, order[0].orderNumber || undefined);
+            }
+          }
+        }
+      }
+    }
+
+    // Issue 8: For wait_restock - create special status for dashboard sync
+    if (customerAction === 'wait_restock') {
+      await createOrderSpecialStatus({
+        orderId,
+        type: 'stock_exception',
+        reason: `等待补货 - 异常#${exceptionId}`,
+        source: 'manual',
+        createdBy: resolvedBy,
+      });
+    }
+  }
+
+  broadcastChanges(["orders", "dashboard"]);
   const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1);
   return rows[0];
+}
+
+// V2.1.26补充6: Delete an order exception (Issue 2)
+export async function deleteOrderException(exceptionId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(orderExceptions).where(eq(orderExceptions.id, exceptionId));
+  broadcastChanges(["orders", "dashboard"]);
+}
+
+// V2.1.26补充6: Add an order item (used by exception replacement logic)
+export async function addOrderItem(data: {
+  orderId: number;
+  productId: number;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+  productType?: string;
+  productSku?: string;
+  variationId?: number;
+  variationName?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(orderItems).values({
+    orderId: data.orderId,
+    productId: data.productId,
+    productName: data.productName,
+    quantity: data.quantity,
+    unitPrice: data.unitPrice.toString(),
+    subtotal: data.subtotal.toString(),
+    productType: (data.productType || "physical") as any,
+    productSku: data.productSku || null,
+    variationId: data.variationId || null,
+    variationName: data.variationName || null,
+  });
+  broadcastChanges(["orders"]);
 }
 
 export async function createOrderExceptionItem(data: {

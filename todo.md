@@ -2647,3 +2647,15 @@
 - [x] 问题4: 东马运费记录同步（createOrderWithSplit/addToSecureOrder/addMallItemsToOrder添加customerPaidShipping字段，更新已有订单数据）
 - [x] 问题5: 异常处理保存和修改功能（修复createExceptionMutation onSuccess冲突，添加已有异常编辑按钮）
 - [x] 问题6: 打印格式统一和美化（Packing.tsx列表打印格式与PackingDetail.tsx A5PackingSlip统一，添加客户资料和金额详情）
+
+## V2.1.26 补充6 - 包货工作台9项Bug修复
+
+- [x] 问题1: 异常保存乱码修复（toast消息改用直接中文字符串，不通过translate函数）
+- [x] 问题2: 异常处理删除功能（db.ts新增deleteOrderException，routers.ts新增delete procedure，前端添加红色X删除按钮）
+- [x] 问题3: 异常数量同步扣除/增加库存（resolveOrderException增强：退款减orderItems数量，更换商品减原商品+扣新商品库存，调用recalculateOrderTotals）
+- [x] 问题4: 单据备注同步（getPackingSlipData返回customerRemark和adminRemarks，A5PackingSlip组件显示客户备注和后台备注）
+- [x] 问题5: 单据格式统一（A5PackingSlip添加select_tree备注类型，与Packing.tsx列表打印格式一致）
+- [x] 问题6: 西马免邮状态同步（详情页isFreeShipping判断改为west_malaysia和lalamove，与Packing.tsx列表页同步）
+- [x] 问题7: 退款credit自动（resolveOrderException中customerAction=refund且refundMethod=credit时自动调用refundCustomerCredit）
+- [x] 问题8: 已处理按钮+dashboard同步（前端添加"已处理"按钮调用markResolved procedure，routers.ts新增markResolved procedure）
+- [x] 问题9: 运费多收无需商品选择（overcharged_shipping类型隐藏商品选择下拉框，只显示退款金额输入和描述字段）
