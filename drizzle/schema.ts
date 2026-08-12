@@ -2147,6 +2147,22 @@ export const cnChangeLogs = mysqlTable("cn_change_logs", {
 export type CnChangeLog = typeof cnChangeLogs.$inferSelect;
 
 // ============================================================================
+// CN payment-expiry execution log (one durable row per scheduled/manual sweep)
+// ============================================================================
+export const cnExpiryRunLogs = mysqlTable("cn_expiry_run_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  inspectedCount: int("inspectedCount").default(0).notNull(),
+  cancelledCount: int("cancelledCount").default(0).notNull(),
+  failedCount: int("failedCount").default(0).notNull(),
+  cancelledOrderNumbers: json("cancelledOrderNumbers").$type<string[] | null>(),
+  runAt: timestamp("runAt").defaultNow().notNull(),
+}, (table) => ({
+  runAtIdx: index("cn_expiry_run_logs_run_at_idx").on(table.runAt),
+}));
+
+export type CnExpiryRunLog = typeof cnExpiryRunLogs.$inferSelect;
+
+// ============================================================================
 // IB change audit (all editable IB header/item fields retain before/after values)
 // ============================================================================
 export const importBatchChangeLogs = mysqlTable("import_batch_change_logs", {

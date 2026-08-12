@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Plane, Package, Calculator, CheckCircle2, AlertTriangle, Printer, CalendarDays, Layers3 } from "lucide-react";
+import { Plus, Pencil, Trash2, Plane, Package, Calculator, CheckCircle2, AlertTriangle, Printer, CalendarDays, Layers3, Link2, Clock3, FileCheck2 } from "lucide-react";
 import { toast } from "sonner";
 
 const statusLabels: Record<string, string> = {
@@ -63,6 +63,11 @@ export default function ImportBatches() {
   const queryClient = trpc.useUtils();
   const batchesQuery = trpc.importBatches.list.useQuery({});
   const batches = batchesQuery.data as any[] | undefined;
+  const cnIbSummaryQuery = trpc.importBatches.getDashboardSummary.useQuery(undefined, {
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  const cnIbSummary = cnIbSummaryQuery.data as any | undefined;
 
   // Read ?tab= URL param to switch between CN (China Purchase) and IB (Import Batch) views
   const [urlTab, setUrlTab] = useState<string>(() => {
@@ -581,6 +586,60 @@ export default function ImportBatches() {
         </Dialog>
         )}
       </div>
+
+      {cnIbSummaryQuery.isError ? (
+        <Card role="alert" className="border-amber-200 bg-amber-50">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3 text-amber-900">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <p className="font-semibold">CN／IB摘要暂时无法加载</p>
+                <p className="mt-1 text-sm">关联订单数与最近超期处理结果未能读取；为避免误导，系统不会显示零值统计。</p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => cnIbSummaryQuery.refetch()} disabled={cnIbSummaryQuery.isFetching}>重新载入摘要</Button>
+          </CardContent>
+        </Card>
+      ) : (
+      <section aria-label="CN／IB工作摘要" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <Card className="border-sky-100 bg-gradient-to-br from-sky-50 to-white shadow-sm">
+          <CardContent className="flex items-start gap-3 p-4">
+            <span className="rounded-lg bg-sky-100 p-2 text-sky-700"><Link2 className="h-5 w-5" /></span>
+            <div>
+              <p className="text-sm font-medium text-slate-600">关联订单数</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{cnIbSummaryQuery.isLoading ? "—" : cnIbSummary?.activeLinkedOrderCount ?? 0}</p>
+              <p className="text-xs text-slate-500">有效XTC订单；累计关联 {cnIbSummary?.linkedOrderCount ?? 0} 张</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-violet-100 bg-gradient-to-br from-violet-50 to-white shadow-sm">
+          <CardContent className="flex items-start gap-3 p-4">
+            <span className="rounded-lg bg-violet-100 p-2 text-violet-700"><Package className="h-5 w-5" /></span>
+            <div>
+              <p className="text-sm font-medium text-slate-600">CN／IB单据</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{cnIbSummaryQuery.isLoading ? "—" : `${cnIbSummary?.cnCount ?? 0} / ${cnIbSummary?.ibCount ?? 0}`}</p>
+              <p className="text-xs text-slate-500">CN采购单／IB入库单</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-amber-100 bg-gradient-to-br from-amber-50 to-white shadow-sm sm:col-span-2 xl:col-span-1">
+          <CardContent className="flex items-start gap-3 p-4">
+            <span className="rounded-lg bg-amber-100 p-2 text-amber-700"><Clock3 className="h-5 w-5" /></span>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-600">最近超期处理结果</p>
+              {cnIbSummary?.lastExpiryRun ? (
+                <>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">检查 {cnIbSummary.lastExpiryRun.inspectedCount} 张，自动取消 {cnIbSummary.lastExpiryRun.cancelledCount} 张{cnIbSummary.lastExpiryRun.failedCount ? `，失败 ${cnIbSummary.lastExpiryRun.failedCount} 张` : ""}</p>
+                  <p className="mt-1 truncate text-xs text-slate-500">{new Date(cnIbSummary.lastExpiryRun.runAt).toLocaleString("zh-MY")}</p>
+                </>
+              ) : (
+                <p className="mt-1 text-sm text-slate-500">尚未有超期巡检记录</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+      )}
 
       <Tabs value={selectedBatchId ? "detail" : "list"} className="w-full">
         <TabsList>

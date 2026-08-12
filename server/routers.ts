@@ -5737,6 +5737,9 @@ export const appRouter = router({
       .input(z.object({ ibId: z.number().int().positive(), reason: z.string().trim().min(1, '解锁 IB 必须填写原因。') }))
       .mutation(async ({ input, ctx }) => db.unlockImportBatch(input.ibId, ctx.user.id, input.reason)),
 
+    getDashboardSummary: adminProcedure
+      .query(async () => db.getCnIbDashboardSummary()),
+
     processExpiredCnOrders: adminProcedure
       .mutation(async () => db.processExpiredCNOrders()),
 

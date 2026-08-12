@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import {
   autoMatchXtcOrders,
   createChinaPreorderWithAutoIB,
@@ -54,6 +54,7 @@ describe.sequential("CN/IB 隔离端到端演练", () => {
     const db = await getDb();
     if (!db) return;
 
+    await db.execute(sql`DELETE FROM cn_expiry_run_logs WHERE JSON_SEARCH(cancelledOrderNumbers, 'one', ${`${qaKey}-UNPAID`}) IS NOT NULL`);
     if (batchIds.length > 0) {
       await db.delete(importBatchChangeLogs).where(inArray(importBatchChangeLogs.ibId, batchIds));
       await db.delete(cnChangeLogs).where(inArray(cnChangeLogs.cnId, batchIds));

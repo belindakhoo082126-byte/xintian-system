@@ -8,6 +8,7 @@ const routerSource = readProjectFile("server/routers.ts");
 const schemaSource = readProjectFile("drizzle/schema.ts");
 const migrationSource = readProjectFile("drizzle/0019_cn_ib_stage_refactor.sql");
 const ibAuditMigrationSource = readProjectFile("drizzle/0020_ib_change_audit.sql");
+const expiryRunMigrationSource = readProjectFile("drizzle/0021_cn_expiry_run_logs.sql");
 const pageSource = readProjectFile("client/src/pages/ImportBatches.tsx");
 const productPageSource = readProjectFile("client/src/pages/ProductsV2.tsx");
 const serverEntrySource = readProjectFile("server/_core/index.ts");
@@ -68,6 +69,8 @@ describe("CN/IB 重构与商品数量阶段", () => {
     expect(expiredOrders).toContain("receipt_uploaded");
     expect(expiredOrders).toContain("cancelOrderWithReason");
     expect(expiredOrders).toContain("receiptUrl");
+    expect(expiredOrders).toContain("cnExpiryRunLogs");
+    expect(expiredOrders).toContain("cancelledOrderNumbers");
     expect(serverEntrySource).toContain('app.post("/api/scheduled/cn-payment-expiry"');
     expect(serverEntrySource).toContain("!user.isCron || !user.taskUid");
     expect(serverEntrySource).toContain("processExpiredCNOrders()");
@@ -81,6 +84,21 @@ describe("CN/IB 重构与商品数量阶段", () => {
     expect(unlock).toContain("reason");
     expect(unlock).toContain("isLocked: false");
     expect(routerSource).toContain("解锁 IB 必须填写原因");
+  });
+
+  it("CN／IB页面显示真实关联订单总览与最近超期巡检结果", () => {
+    expect(schemaSource).toContain("cnExpiryRunLogs");
+    expect(expiryRunMigrationSource).toContain("cn_expiry_run_logs");
+    expect(expiryRunMigrationSource).toContain("inspectedCount");
+    expect(expiryRunMigrationSource).toContain("cancelledCount");
+    expect(dbSource).toContain("getCnIbDashboardSummary");
+    expect(routerSource).toContain("getDashboardSummary: adminProcedure");
+    expect(pageSource).toContain("cnIbSummaryQuery");
+    expect(pageSource).toContain("关联订单数");
+    expect(pageSource).toContain("最近超期处理结果");
+    expect(pageSource).toContain("cnIbSummaryQuery.isError");
+    expect(pageSource).toContain("CN／IB摘要暂时无法加载");
+    expect(pageSource).toContain("重新载入摘要");
   });
 
   it("IB主单和商品明细修改均保留字段级前后值、操作者与时间审计", () => {

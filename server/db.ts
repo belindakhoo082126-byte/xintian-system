@@ -23,7 +23,7 @@ import {
   orderExceptions, orderExceptionItems, orderExceptionReplacements, inventoryAdjustments,
   orderSubOrders, specialOrderActions,
   // V2.0 imports
-  liveRooms, importBatches, importBatchItems, cnChangeLogs, importBatchChangeLogs,
+  liveRooms, importBatches, importBatchItems, cnChangeLogs, cnExpiryRunLogs, importBatchChangeLogs,
   // V2.0 Phase 2 imports - Live Room Products
   liveRoomProducts,
   // V2.0 Phase 2.5 imports - Live AI Flows
@@ -10010,6 +10010,32 @@ export async function unlockImportBatch(ibId: number, operatorId: number | undef
   return { success: true };
 }
 
+/** Global CN/IB workbench summary. It only reads persisted order links and expiry-run audit rows. */
+export async function getCnIbDashboardSummary() {
+  const db = await getDb();
+  if (!db) return { linkedOrderCount: 0, activeLinkedOrderCount: 0, cnCount: 0, ibCount: 0, lastExpiryRun: null };
+  const counts = unwrapMySqlRows<{
+    linkedOrderCount: number | string;
+    activeLinkedOrderCount: number | string;
+    cnCount: number | string;
+    ibCount: number | string;
+  }>(await db.execute(sql`
+    SELECT
+      (SELECT COUNT(*) FROM orders o INNER JOIN import_batches cn ON cn.id = o.importBatchId WHERE cn.documentType = 'cn' AND o.orderCategory = 'import') AS linkedOrderCount,
+      (SELECT COUNT(*) FROM orders o INNER JOIN import_batches cn ON cn.id = o.importBatchId WHERE cn.documentType = 'cn' AND o.orderCategory = 'import' AND o.physicalStatus <> 'cancelled') AS activeLinkedOrderCount,
+      (SELECT COUNT(*) FROM import_batches WHERE documentType = 'cn') AS cnCount,
+      (SELECT COUNT(*) FROM import_batches WHERE documentType = 'ib') AS ibCount
+  `))[0];
+  const [lastExpiryRun] = await db.select().from(cnExpiryRunLogs).orderBy(desc(cnExpiryRunLogs.runAt)).limit(1);
+  return {
+    linkedOrderCount: Number(counts?.linkedOrderCount ?? 0),
+    activeLinkedOrderCount: Number(counts?.activeLinkedOrderCount ?? 0),
+    cnCount: Number(counts?.cnCount ?? 0),
+    ibCount: Number(counts?.ibCount ?? 0),
+    lastExpiryRun: lastExpiryRun ?? null,
+  };
+}
+
 /** Idempotent expiry sweep: cancel only overdue import orders without a pending proof review. */
 export async function processExpiredCNOrders() {
   const db = await getDb();
@@ -10041,6 +10067,7 @@ export async function processExpiredCNOrders() {
       )
   `));
   const cancelled: Array<{ id: number; orderNumber: string }> = [];
+  const failed: Array<{ id: number; orderNumber: string }> = [];
   for (const order of candidates) {
     try {
       await cancelOrderWithReason(order.id, '超过中国代购汇款期限且未有有效付款凭证，系统自动取消', '系统自动');
@@ -10048,9 +10075,19 @@ export async function processExpiredCNOrders() {
       cancelled.push(order);
     } catch (error) {
       console.error('[CN expiry] unable to cancel order', order.id, error);
+      failed.push(order);
     }
   }
-  return { inspected: candidates.length, cancelledCount: cancelled.length, cancelled };
+  const runAt = new Date();
+  await db.insert(cnExpiryRunLogs).values({
+    inspectedCount: candidates.length,
+    cancelledCount: cancelled.length,
+    failedCount: failed.length,
+    cancelledOrderNumbers: cancelled.map(order => order.orderNumber),
+    runAt,
+  });
+  broadcastChange('importBatches');
+  return { inspected: candidates.length, cancelledCount: cancelled.length, failedCount: failed.length, cancelled, runAt };
 }
 
 export async function deleteImportBatch(id: number) {
