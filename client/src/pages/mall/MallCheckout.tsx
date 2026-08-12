@@ -14,6 +14,7 @@ import { ChevronLeft, ClipboardPaste, Truck, Package, Merge, Plane, Minus, Plus,
 import { Checkbox } from "@/components/ui/checkbox";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
+import { MALL_CART_STORAGE_KEY, readMallCartItems } from "@/lib/mallInteractions";
 
 export default function MallCheckout() {
   const [cart, setCart] = useState<any[]>([]);
@@ -59,7 +60,7 @@ export default function MallCheckout() {
 
   const checkoutMutation = trpc.mall.checkout.useMutation({
     onSuccess: (data: any) => {
-      localStorage.removeItem("mall_cart");
+      localStorage.removeItem(MALL_CART_STORAGE_KEY);
       setOrderResult(data);
       toast.success(data.merged ? "已合并到保留订单" : "订单已创建");
     },
@@ -68,7 +69,7 @@ export default function MallCheckout() {
 
   const secureAddOnMutation = trpc.mall.addToSecureOrder.useMutation({
     onSuccess: (data: any) => {
-      localStorage.removeItem("mall_cart");
+      localStorage.removeItem(MALL_CART_STORAGE_KEY);
       // V2.0.90: Keep the order session in localStorage so user can add more items later
       setOrderResult({ ...data, added: true });
       toast.success("商品已加入原订单，请返回订单链接完成付款");
@@ -77,7 +78,7 @@ export default function MallCheckout() {
   });
 
   useEffect(() => {
-    try { setCart(JSON.parse(localStorage.getItem("mall_cart") || "[]")); } catch { setCart([]); }
+    try { setCart(readMallCartItems(localStorage.getItem(MALL_CART_STORAGE_KEY))); } catch { setCart([]); }
     try {
       // V2.0.90: Use localStorage for persistent order session - survives across page navigations
       const saved = localStorage.getItem("xintian_mall_add_on_order");
@@ -100,7 +101,7 @@ export default function MallCheckout() {
 
   function persistCart(nextCart: any[]) {
     setCart(nextCart);
-    localStorage.setItem("mall_cart", JSON.stringify(nextCart));
+    localStorage.setItem(MALL_CART_STORAGE_KEY, JSON.stringify(nextCart));
     window.dispatchEvent(new Event("cart-updated"));
   }
 

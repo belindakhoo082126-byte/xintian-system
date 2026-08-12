@@ -11,6 +11,7 @@ import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useI18n } from "@/contexts/I18nContext";
+import { MALL_CART_STORAGE_KEY, MALL_FAVORITES_STORAGE_KEY, getMallCartItemCount, readMallCartItems, readMallFavoriteIds } from "@/lib/mallInteractions";
 
 export default function MallHome() {
   const [search, setSearch] = useState("");
@@ -35,16 +36,24 @@ export default function MallHome() {
 
   // V2.0.93: Use state + event listener so cart count updates in real time when items are added
   const [cart, setCart] = useState<any[]>([]);
+  const [favoriteCount, setFavoriteCount] = useState(0);
   useEffect(() => {
     const loadCart = () => {
-      try { setCart(JSON.parse(localStorage.getItem("mall_cart") || "[]")); } catch { setCart([]); }
+      setCart(readMallCartItems(localStorage.getItem(MALL_CART_STORAGE_KEY)));
     };
     loadCart();
     window.addEventListener("cart-updated", loadCart);
     return () => window.removeEventListener("cart-updated", loadCart);
   }, []);
 
-  const cartCount = cart.reduce((sum: number, i: any) => sum + i.quantity, 0);
+  useEffect(() => {
+    const loadFavorites = () => setFavoriteCount(readMallFavoriteIds(localStorage.getItem(MALL_FAVORITES_STORAGE_KEY)).length);
+    loadFavorites();
+    window.addEventListener("mall-favorites-updated", loadFavorites);
+    return () => window.removeEventListener("mall-favorites-updated", loadFavorites);
+  }, []);
+
+  const cartCount = getMallCartItemCount(cart);
   const [addOnOrder, setAddOnOrder] = useState<any>(null);
   const [showAddOnBanner, setShowAddOnBanner] = useState(false);
   const [isPoliciesOpen, setIsPoliciesOpen] = useState(false);
@@ -128,7 +137,11 @@ export default function MallHome() {
             </Button>
           </Link>
           <Link href="/mall/favorites" className="shrink-0">
-            <Button variant="ghost" size="icon" aria-label={translate("我的收藏", "My favorites")}><Heart className="h-5 w-5" style={{ color: theme.primary }} /></Button>
+            <Button variant="ghost" size="sm" className="relative gap-1 px-2" aria-label={translate("已收藏", "Saved items")} title={translate("已收藏", "Saved items")}>
+              <Heart className="h-5 w-5" style={{ color: theme.primary }} />
+              <span className="hidden lg:inline">{translate("已收藏", "Saved")}</span>
+              {favoriteCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 min-w-5 rounded-full px-1 flex items-center justify-center text-xs" style={{ backgroundColor: theme.button }}>{favoriteCount}</Badge>}
+            </Button>
           </Link>
           {addOnOrder ? (
             <a href={`/order/${addOnOrder.orderNumber}/${addOnOrder.token}`} className="shrink-0">

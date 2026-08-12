@@ -1,4 +1,39 @@
 export const MALL_FAVORITES_STORAGE_KEY = "xintian_mall_favorites";
+export const MALL_CART_STORAGE_KEY = "mall_cart";
+
+export type MallCartItem = {
+  productId: number;
+  quantity: number;
+  productName?: string;
+  [key: string]: unknown;
+};
+
+/**
+ * Keeps the cart isolated from favorites and ignores any legacy or malformed
+ * browser data which cannot render as a purchasable item.
+ */
+export function readMallCartItems(rawValue: string | null): MallCartItem[] {
+  try {
+    const parsed = JSON.parse(rawValue || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is MallCartItem => (
+        Boolean(value)
+        && typeof value === "object"
+        && Number.isInteger(value.productId)
+        && value.productId > 0
+        && typeof value.productName === "string"
+        && Number.isFinite(Number(value.quantity))
+        && Number(value.quantity) > 0
+      ))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getMallCartItemCount(cart: MallCartItem[]): number {
+  return cart.reduce((total, item) => total + Math.max(0, Math.floor(Number(item.quantity) || 0)), 0);
+}
 
 export function readMallFavoriteIds(rawValue: string | null): number[] {
   try {

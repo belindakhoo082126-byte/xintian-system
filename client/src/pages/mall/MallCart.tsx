@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Trash2, Minus, Plus, ShoppingCart, ChevronLeft, Package } from "lucide-react";
+import { MALL_CART_STORAGE_KEY, readMallCartItems } from "@/lib/mallInteractions";
 
 export default function MallCart() {
   const [cart, setCart] = useState<any[]>([]);
@@ -13,7 +14,7 @@ export default function MallCart() {
 
   useEffect(() => {
     try {
-      setCart(JSON.parse(localStorage.getItem("mall_cart") || "[]"));
+      setCart(readMallCartItems(localStorage.getItem(MALL_CART_STORAGE_KEY)));
     } catch { setCart([]); }
     // V2.0.90: Read persistent order session
     try {
@@ -25,7 +26,7 @@ export default function MallCart() {
 
   function updateCart(newCart: any[]) {
     setCart(newCart);
-    localStorage.setItem("mall_cart", JSON.stringify(newCart));
+    localStorage.setItem(MALL_CART_STORAGE_KEY, JSON.stringify(newCart));
     window.dispatchEvent(new Event("cart-updated"));
   }
 

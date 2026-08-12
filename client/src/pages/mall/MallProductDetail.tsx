@@ -12,7 +12,7 @@ import { useI18n } from "@/contexts/I18nContext";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { MallCartFlyAnimation, type MallCartFlight } from "@/components/MallCartFlyAnimation";
-import { getMallShareLinks, MALL_FAVORITES_STORAGE_KEY, readMallFavoriteIds, toggleMallFavoriteId } from "@/lib/mallInteractions";
+import { getMallCartItemCount, getMallShareLinks, MALL_CART_STORAGE_KEY, MALL_FAVORITES_STORAGE_KEY, readMallCartItems, readMallFavoriteIds, toggleMallFavoriteId } from "@/lib/mallInteractions";
 
 export default function MallProductDetail() {
   const [location] = useLocation();
@@ -25,10 +25,7 @@ export default function MallProductDetail() {
 
   useEffect(() => {
     const loadCart = () => {
-      try {
-        const c = JSON.parse(localStorage.getItem("mall_cart") || "[]");
-        setCartCount(c.reduce((s: number, i: any) => s + i.quantity, 0));
-      } catch { setCartCount(0); }
+      setCartCount(getMallCartItemCount(readMallCartItems(localStorage.getItem(MALL_CART_STORAGE_KEY))));
     };
     loadCart();
     window.addEventListener("cart-updated", loadCart);
@@ -109,7 +106,7 @@ export default function MallProductDetail() {
       return false;
     }
     try {
-      const cart = JSON.parse(localStorage.getItem("mall_cart") || "[]");
+      const cart = readMallCartItems(localStorage.getItem(MALL_CART_STORAGE_KEY));
       const existing = cart.find((i: any) => i.productId === product!.id && i.variationId === selectedVariantId);
       if (existing) {
         if (!allowOversell && existing.quantity + quantity > availableStock) {
@@ -132,7 +129,7 @@ export default function MallProductDetail() {
           allowOversell,
         });
       }
-      localStorage.setItem("mall_cart", JSON.stringify(cart));
+      localStorage.setItem(MALL_CART_STORAGE_KEY, JSON.stringify(cart));
       launchCartFlight(origin);
       toast.success(t("已加入购物车", "Added to cart"));
       window.dispatchEvent(new Event("cart-updated"));
@@ -190,6 +187,13 @@ export default function MallProductDetail() {
           <Link href="/mall/checkout" className="ml-auto relative">
             <Button id="mall-cart-anchor" variant="ghost"><ShoppingCart className="h-5 w-5" /></Button>
             {cartCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">{cartCount}</Badge>}
+          </Link>
+          <Link href="/mall/favorites" className="relative">
+            <Button variant="ghost" size="sm" className="gap-1 px-2" aria-label={t("已收藏", "Saved items")} title={t("已收藏", "Saved items")}>
+              <Heart className="h-5 w-5" style={{ color: theme.primary }} />
+              <span>{t("已收藏", "Saved")}</span>
+            </Button>
+            {favoriteIds.length > 0 && <Badge className="absolute -top-1 -right-1 h-5 min-w-5 rounded-full px-1 flex items-center justify-center text-xs" style={{ backgroundColor: theme.primary }}>{favoriteIds.length}</Badge>}
           </Link>
         </div>
       </header>
