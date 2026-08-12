@@ -209,7 +209,7 @@ export default function MallHome() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {bundles.map((b: any) => (
               <Link key={b.id} href={`/mall/bundle/${b.id}`}>
-                <Card className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90" style={{ borderRadius: "16px" }}>
+                <Card className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white text-slate-900" style={{ borderRadius: "16px" }}>
                   <div className="aspect-square overflow-hidden bg-gray-50 relative">
                     {b.coverImage ? (
                       <img src={b.coverImage} alt={b.name} className="w-full h-full object-cover mall-img-zoom" />
@@ -276,7 +276,7 @@ export default function MallHome() {
           ))}
           {!isProductsLoading && products?.map((p: any) => (
             <Link key={p.id} href={`/mall/product/${p.id}`}>
-              <Card className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90" style={{ borderRadius: "16px" }}>
+              <Card className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white text-slate-900" style={{ borderRadius: "16px" }}>
                 <div className="aspect-square overflow-hidden bg-gray-50 relative">
                   {p.coverImageUrl ? (
                     <img src={p.coverImageUrl} alt={p.name} className="w-full h-full object-cover mall-img-zoom" />

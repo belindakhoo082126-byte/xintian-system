@@ -217,7 +217,7 @@ export default function MallProductDetail() {
           </div>
 
           {/* Product Info */}
-          <div className="space-y-4">
+          <div className="space-y-4 rounded-2xl border bg-white/95 p-4 text-slate-900 shadow-lg backdrop-blur-sm" style={{ borderColor: `${theme.secondary}b8`, boxShadow: `0 12px 30px ${theme.primary}1f` }}>
             <div>
               <h1 className="text-xl font-semibold mb-2">{product.name}</h1>
               {product.isSpecial && (
@@ -316,7 +316,7 @@ export default function MallProductDetail() {
             </div>
 
             {/* Trust badges */}
-            <div className="flex gap-4 pt-4 border-t">
+            <div className="grid grid-cols-1 gap-2 border-t pt-4 sm:grid-cols-2">
               <div className="flex items-center gap-2 text-sm text-muted-foreground"><Truck className="h-4 w-4" />{t("西马满RM150首10kg免邮，续重RM3/kg", "West Malaysia: Free 10kg over RM150, RM3/kg after")}</div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground"><Shield className="h-4 w-4" />{t("7天保留", "7-day reservation")}</div>
             </div>
@@ -385,7 +385,7 @@ export default function MallProductDetail() {
 
         {/* Detail Images */}
         {detailImages.length > 0 && (
-          <div className="mt-6 space-y-3">
+          <div className="mt-6 space-y-3 rounded-2xl border bg-white/95 p-4 text-slate-900 shadow-lg backdrop-blur-sm" style={{ borderColor: `${theme.secondary}a8`, boxShadow: `0 10px 28px ${theme.primary}10` }}>
             <h3 className="font-semibold">{t("商品详情", "Product Details")}</h3>
             {detailImages.map((img: any) => (
               <img key={img.id} src={img.imageUrl} alt="detail" className="w-full rounded-lg" />
