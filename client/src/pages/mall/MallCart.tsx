@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Trash2, Minus, Plus, ShoppingCart, ChevronLeft, Package } from "lucide-react";
-import { MALL_CART_STORAGE_KEY, readMallCartItems } from "@/lib/mallInteractions";
+import { MALL_CART_STORAGE_KEY, readAndRepairMallCart } from "@/lib/mallInteractions";
 
 export default function MallCart() {
   const [cart, setCart] = useState<any[]>([]);
@@ -13,15 +13,18 @@ export default function MallCart() {
   const [addOnOrder, setAddOnOrder] = useState<any>(null);
 
   useEffect(() => {
-    try {
-      setCart(readMallCartItems(localStorage.getItem(MALL_CART_STORAGE_KEY)));
-    } catch { setCart([]); }
+    const loadCart = () => {
+      try { setCart(readAndRepairMallCart(localStorage)); } catch { setCart([]); }
+    };
+    loadCart();
+    window.addEventListener("cart-updated", loadCart);
     // V2.0.90: Read persistent order session
     try {
       const saved = localStorage.getItem("xintian_mall_add_on_order");
       if (saved) setAddOnOrder(JSON.parse(saved));
     } catch { /* ignore */ }
     setLoaded(true);
+    return () => window.removeEventListener("cart-updated", loadCart);
   }, []);
 
   function updateCart(newCart: any[]) {

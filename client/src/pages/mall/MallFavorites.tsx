@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/contexts/I18nContext";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
-import { MALL_CART_STORAGE_KEY, MALL_FAVORITES_STORAGE_KEY, readMallCartItems, readMallFavoriteIds } from "@/lib/mallInteractions";
+import { MALL_CART_STORAGE_KEY, MALL_FAVORITES_STORAGE_KEY, readAndRepairMallCart, readMallFavoriteIds } from "@/lib/mallInteractions";
 import { toast } from "sonner";
 
 export default function MallFavorites() {
@@ -46,7 +46,7 @@ export default function MallFavorites() {
       return;
     }
     const unitPrice = String(product.isSpecial && product.specialPrice ? product.specialPrice : product.sellingPrice || "0");
-    const cart = readMallCartItems(localStorage.getItem(MALL_CART_STORAGE_KEY));
+    const cart = readAndRepairMallCart(localStorage);
     const existing = cart.find((item) => item.productId === product.id && !item.variationId);
     if (existing) {
       if (!allowOversell && existing.quantity + 1 > availableStock) {

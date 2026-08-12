@@ -11,7 +11,7 @@ import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useI18n } from "@/contexts/I18nContext";
-import { MALL_CART_STORAGE_KEY, MALL_FAVORITES_STORAGE_KEY, getMallCartItemCount, readMallCartItems, readMallFavoriteIds } from "@/lib/mallInteractions";
+import { MALL_FAVORITES_STORAGE_KEY, getMallCartItemCount, readAndRepairMallCart, readMallFavoriteIds } from "@/lib/mallInteractions";
 
 export default function MallHome() {
   const [search, setSearch] = useState("");
@@ -39,7 +39,7 @@ export default function MallHome() {
   const [favoriteCount, setFavoriteCount] = useState(0);
   useEffect(() => {
     const loadCart = () => {
-      setCart(readMallCartItems(localStorage.getItem(MALL_CART_STORAGE_KEY)));
+      setCart(readAndRepairMallCart(localStorage));
     };
     loadCart();
     window.addEventListener("cart-updated", loadCart);
@@ -130,7 +130,7 @@ export default function MallHome() {
               />
             </div>
           </div>
-          <Link href="/mall/checkout" className="shrink-0">
+          <Link href="/mall/cart" className="shrink-0">
             <Button id="mall-cart-anchor" variant="ghost" className="relative" size="icon">
               <ShoppingCart className="h-5 w-5" style={{ color: theme.primary }} />
               {cartCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs" style={{ backgroundColor: theme.button }}>{cartCount}</Badge>}

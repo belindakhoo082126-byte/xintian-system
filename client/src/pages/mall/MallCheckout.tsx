@@ -14,7 +14,7 @@ import { ChevronLeft, ClipboardPaste, Truck, Package, Merge, Plane, Minus, Plus,
 import { Checkbox } from "@/components/ui/checkbox";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
-import { MALL_CART_STORAGE_KEY, readMallCartItems } from "@/lib/mallInteractions";
+import { MALL_CART_STORAGE_KEY, readAndRepairMallCart } from "@/lib/mallInteractions";
 
 export default function MallCheckout() {
   const [cart, setCart] = useState<any[]>([]);
@@ -78,7 +78,7 @@ export default function MallCheckout() {
   });
 
   useEffect(() => {
-    try { setCart(readMallCartItems(localStorage.getItem(MALL_CART_STORAGE_KEY))); } catch { setCart([]); }
+    try { setCart(readAndRepairMallCart(localStorage)); } catch { setCart([]); }
     try {
       // V2.0.90: Use localStorage for persistent order session - survives across page navigations
       const saved = localStorage.getItem("xintian_mall_add_on_order");

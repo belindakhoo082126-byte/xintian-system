@@ -12,7 +12,7 @@ import { useI18n } from "@/contexts/I18nContext";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { MallCartFlyAnimation, type MallCartFlight } from "@/components/MallCartFlyAnimation";
-import { getMallCartItemCount, getMallShareLinks, MALL_CART_STORAGE_KEY, MALL_FAVORITES_STORAGE_KEY, readMallCartItems, readMallFavoriteIds, toggleMallFavoriteId } from "@/lib/mallInteractions";
+import { getMallCartItemCount, getMallShareLinks, MALL_CART_STORAGE_KEY, MALL_FAVORITES_STORAGE_KEY, readAndRepairMallCart, readMallCartItems, readMallFavoriteIds, toggleMallFavoriteId } from "@/lib/mallInteractions";
 import { resolveMallServiceBadges } from "@/lib/mallServiceBadges";
 
 export default function MallProductDetail() {
@@ -26,7 +26,7 @@ export default function MallProductDetail() {
 
   useEffect(() => {
     const loadCart = () => {
-      setCartCount(getMallCartItemCount(readMallCartItems(localStorage.getItem(MALL_CART_STORAGE_KEY))));
+      setCartCount(getMallCartItemCount(readAndRepairMallCart(localStorage)));
     };
     loadCart();
     window.addEventListener("cart-updated", loadCart);
@@ -186,7 +186,7 @@ export default function MallProductDetail() {
           <Link href="/mall" className="flex items-center gap-2">
             <span className="font-bold text-lg" style={{ color: theme.primary }}>{settings?.shopName || t("心田", "Xintian")}</span>
           </Link>
-          <Link href="/mall/checkout" className="ml-auto relative">
+          <Link href="/mall/cart" className="ml-auto relative">
             <Button id="mall-cart-anchor" variant="ghost"><ShoppingCart className="h-5 w-5" /></Button>
             {cartCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">{cartCount}</Badge>}
           </Link>

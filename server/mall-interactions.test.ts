@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getMallCartItemCount, getMallShareLinks, readMallCartItems, readMallFavoriteIds, toggleMallFavoriteId } from "../client/src/lib/mallInteractions";
+import { getMallCartItemCount, getMallShareLinks, readAndRepairMallCart, readMallCartItems, readMallFavoriteIds, toggleMallFavoriteId } from "../client/src/lib/mallInteractions";
 
 describe("商城商品互动工具", () => {
   it("会安全读取并切换浏览器本机收藏商品", () => {
@@ -14,6 +14,19 @@ describe("商城商品互动工具", () => {
       { productId: 8, productName: "ECO21", quantity: 2 },
     ]);
     expect(getMallCartItemCount(readMallCartItems("[{\"productId\": 8, \"productName\": \"ECO21\", \"quantity\": 2}]"))).toBe(2);
+  });
+
+  it("会清理无效旧购物车记录，使角标数量与可渲染商品一致", () => {
+    const values = new Map<string, string>([["mall_cart", "[3,{\"productId\":8,\"productName\":\"ECO21\",\"quantity\":2}]"]]);
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    };
+
+    const cart = readAndRepairMallCart(storage);
+    expect(cart).toEqual([{ productId: 8, productName: "ECO21", quantity: 2 }]);
+    expect(getMallCartItemCount(cart)).toBe(2);
+    expect(values.get("mall_cart")).toBe("[{\"productId\":8,\"productName\":\"ECO21\",\"quantity\":2}]");
   });
 
   it("会生成 WhatsApp 与 Facebook 的可分享链接", () => {

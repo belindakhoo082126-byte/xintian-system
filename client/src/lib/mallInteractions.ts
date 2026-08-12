@@ -31,6 +31,20 @@ export function readMallCartItems(rawValue: string | null): MallCartItem[] {
   }
 }
 
+/**
+ * Reads browser cart data and writes its valid normalized form back. This
+ * removes malformed legacy records so a cart badge cannot outlive its items.
+ */
+export function readAndRepairMallCart(storage: Pick<Storage, "getItem" | "setItem">): MallCartItem[] {
+  const rawValue = storage.getItem(MALL_CART_STORAGE_KEY);
+  const items = readMallCartItems(rawValue);
+  const cleanedValue = JSON.stringify(items);
+  if (rawValue !== null && rawValue !== cleanedValue) {
+    storage.setItem(MALL_CART_STORAGE_KEY, cleanedValue);
+  }
+  return items;
+}
+
 export function getMallCartItemCount(cart: MallCartItem[]): number {
   return cart.reduce((total, item) => total + Math.max(0, Math.floor(Number(item.quantity) || 0)), 0);
 }
