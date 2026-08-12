@@ -40,6 +40,7 @@ import OrderDetail from "@/pages/OrderDetail";
 import CustomerPayment from "@/pages/CustomerPayment";
 import MallSettings from "@/pages/MallSettings";
 import MallHome from "@/pages/mall/MallHome";
+import MallBundleDetail from "@/pages/mall/MallBundleDetail";
 import MallProductDetail from "@/pages/mall/MallProductDetail";
 import MallCart from "@/pages/mall/MallCart";
 import MallFavorites from "@/pages/mall/MallFavorites";
@@ -71,6 +72,7 @@ function PublicRoutes() {
       <Route path={"/product/:id"} component={({ params }: any) => <ProductPreview productId={parseInt(params.id)} />} />
       {/* Mall public routes */}
       <Route path={"/mall"} component={MallHome} />
+      <Route path={"/mall/bundle/:id"} component={MallBundleDetail} />
       <Route path={"/mall/product/:id"} component={(params: any) => <MallProductDetail />} />
       <Route path={"/mall/cart"} component={MallCart} />
       <Route path={"/mall/favorites"} component={MallFavorites} />
@@ -159,6 +161,7 @@ function App() {
             <Route path={"/mall/checkout"} component={MallCheckout} />
             <Route path={"/mall/cart"} component={MallCart} />
             <Route path={"/mall/favorites"} component={MallFavorites} />
+            <Route path={"/mall/bundle/:id"} component={MallBundleDetail} />
             <Route path={"/mall/product/:id"} component={MallProductDetail} />
             <Route path={"/mall"} component={MallHome} />
             <Route path={"/order-tracking"} component={CustomerOrderTracking} />

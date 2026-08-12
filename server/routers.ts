@@ -5836,6 +5836,17 @@ export const appRouter = router({
         return await db.getMallBundles();
       }),
 
+    mallDetail: publicProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .query(async ({ input }) => {
+        const bundle = await db.getBundleById(input.id);
+        // Public mall links may only expose active, visible, sellable bundles.
+        if (!bundle || bundle.status !== "active" || !bundle.showInMall || Number(bundle.bundleStock) <= 0) {
+          return null;
+        }
+        return bundle;
+      }),
+
     profitAnalysis: adminProcedure
       .input(z.object({
         startDate: z.string().optional(),

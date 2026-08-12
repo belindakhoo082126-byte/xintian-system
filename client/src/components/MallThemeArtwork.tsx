@@ -49,7 +49,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${NATURAL_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
@@ -64,7 +64,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${LAVENDER_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
@@ -79,7 +79,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${SAKURA_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
@@ -94,7 +94,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${NATURE_GREEN_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
@@ -109,7 +109,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${WARM_BROWN_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
@@ -124,7 +124,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${CHRISTMAS_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
@@ -139,7 +139,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${CNY_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
@@ -154,7 +154,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${HARI_RAYA_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
@@ -169,7 +169,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${MERDEKA_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
@@ -184,7 +184,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${MID_AUTUMN_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
@@ -199,7 +199,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.88]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${VALENTINE_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
@@ -214,7 +214,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.88]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${MOTHERS_DAY_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
@@ -229,7 +229,7 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.88]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.32]"
           style={{ backgroundImage: `url(${CUSTOM_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div

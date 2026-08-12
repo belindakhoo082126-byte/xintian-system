@@ -21,6 +21,14 @@ describe("商城主题完整视觉系统", () => {
     expect(customTheme.visual.mascot.name.zh).toBe("百花芽");
   });
 
+  it("十三个主题均保留可见插画，但以低透明度避免影响商城文字阅读", () => {
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+    expect((artwork.match(/opacity-\[0\.32\]/g) || [])).toHaveLength(13);
+    expect(artwork).not.toContain("bg-cover bg-center bg-no-repeat opacity-90");
+    expect(artwork).not.toContain("bg-cover bg-center bg-no-repeat opacity-[0.88]");
+  });
+
   it("心田自然使用暖米白、田园绿与陶土橙的植物画册配色，并有专属连续水彩背景", () => {
     const natureTheme = getMallTheme("xintian_nature");
     const root = path.resolve(__dirname, "..");
