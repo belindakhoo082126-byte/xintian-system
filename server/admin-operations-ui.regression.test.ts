@@ -38,6 +38,9 @@ describe("商品、订单与客服后台操作回归", () => {
     expect(dashboard).toContain('link: "/ai-handover"');
     expect(dashboard).not.toContain("AI 转人工通知");
     expect(dashboard).not.toContain("pendingNotifications");
+    expect(dashboard).toContain("最久等待");
+    expect(dashboard).toContain("最高优先级");
+    expect(dashboard).toContain("超 24 小时");
     expect(dashboard).toContain("ORDER_STATUS_LABELS");
     expect(dashboard).toContain("physicalStatus");
   });

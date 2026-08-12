@@ -11400,28 +11400,69 @@ export async function listHandoverRequests(status?: string): Promise<any[]> {
     .limit(100);
 }
 
+type PendingHandoverQueueItem = {
+  createdAt: Date | string;
+  priority?: "low" | "medium" | "high" | null;
+};
+
+/**
+ * Summarise the active human-handover queue from one shared source of truth.
+ * The wait is measured from the original handover request, not from the last
+ * customer message, so staff can see how long the request itself has remained
+ * unclaimed.
+ */
+export function summarizePendingHandoverQueue(
+  pending: PendingHandoverQueueItem[],
+  nowMs = Date.now(),
+) {
+  const priorityRank = { low: 1, medium: 2, high: 3 } as const;
+  let oldestWaitMinutes = 0;
+  let over24HoursCount = 0;
+  let highestPriority: "low" | "medium" | "high" | null = null;
+
+  for (const request of pending) {
+    const createdAtMs = new Date(request.createdAt).getTime();
+    const waitMinutes = Number.isFinite(createdAtMs)
+      ? Math.max(0, Math.floor((nowMs - createdAtMs) / 60_000))
+      : 0;
+    oldestWaitMinutes = Math.max(oldestWaitMinutes, waitMinutes);
+    if (waitMinutes >= 24 * 60) over24HoursCount += 1;
+
+    const priority = request.priority || "medium";
+    if (!highestPriority || priorityRank[priority] > priorityRank[highestPriority]) {
+      highestPriority = priority;
+    }
+  }
+
+  return {
+    pendingCount: pending.length,
+    oldestWaitMinutes,
+    over24HoursCount,
+    highestPriority,
+  };
+}
+
 // Get handover stats for Dashboard
 export async function getHandoverStats(): Promise<any> {
   const db = await getDb();
-  if (!db) return { pendingCount: 0, oldestWaitMinutes: 0, recentHandovers: [] };
+  if (!db) {
+    return {
+      pendingCount: 0,
+      oldestWaitMinutes: 0,
+      over24HoursCount: 0,
+      highestPriority: null,
+      recentHandovers: [],
+    };
+  }
   
   const pending = await db.select().from(aiHandoverRequests)
     .where(eq(aiHandoverRequests.status, "pending"))
     .orderBy(desc(aiHandoverRequests.createdAt));
   
-  const pendingCount = pending.length;
-  
-  // Calculate oldest wait time
-  let oldestWaitMinutes = 0;
-  if (pending.length > 0) {
-    const oldest = pending[pending.length - 1];
-    const diffMs = Date.now() - new Date(oldest.createdAt).getTime();
-    oldestWaitMinutes = Math.floor(diffMs / 60000);
-  }
+  const queueSummary = summarizePendingHandoverQueue(pending);
   
   return {
-    pendingCount,
-    oldestWaitMinutes,
+    ...queueSummary,
     recentHandovers: pending.slice(0, 5),
   };
 }

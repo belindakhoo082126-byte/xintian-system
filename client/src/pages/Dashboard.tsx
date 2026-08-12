@@ -9,6 +9,7 @@ import {
   Bot, ArrowRight, AlertTriangle,
   Plane, Eye, Home, FileText, MessageCircle, Send,
   Crown,
+  type LucideIcon,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useI18n } from "@/contexts/I18nContext";
@@ -50,6 +51,29 @@ export const SPECIAL_STATUS_LABELS: Record<string, { zh: string; en: string }> =
   amount_changed: { zh: "金额异常", en: "Amount Changed" },
   other: { zh: "其他", en: "Other" },
 };
+
+type WorkStatusCard = {
+  title: string;
+  value: number;
+  icon: LucideIcon;
+  color: string;
+  link: string;
+  detail?: string;
+  priorityLabel?: string;
+  isOverdue?: boolean;
+  overdueCount?: number;
+};
+
+function formatHandoverWait(minutes: number, lang: "zh" | "en") {
+  if (minutes < 60) return lang === "zh" ? `${minutes} 分钟` : `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return lang === "zh" ? `${hours} 小时` : `${hours} hr`;
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return lang === "zh"
+    ? `${days} 天${remainingHours ? ` ${remainingHours} 小时` : ""}`
+    : `${days}d${remainingHours ? ` ${remainingHours}h` : ""}`;
+}
 
 export default function Dashboard() {
   const { t, lang } = useI18n();
@@ -132,7 +156,18 @@ export default function Dashboard() {
 
   // V2.1: 9 fixed work status cards — always visible even at 0
   // Removed "订单备注" from work status (kept as independent section below)
-  const workCards = [
+  const handoverPendingCount = Number((handoverStats as any)?.pendingCount || 0);
+  const handoverOldestWaitMinutes = Number((handoverStats as any)?.oldestWaitMinutes || 0);
+  const handoverOver24HoursCount = Number((handoverStats as any)?.over24HoursCount || 0);
+  const handoverHighestPriority = (handoverStats as any)?.highestPriority as "low" | "medium" | "high" | null | undefined;
+  const handoverPriorityLabel = handoverHighestPriority
+    ? (lang === "zh"
+      ? ({ low: "低", medium: "中", high: "高" } as const)[handoverHighestPriority]
+      : ({ low: "Low", medium: "Medium", high: "High" } as const)[handoverHighestPriority])
+    : undefined;
+
+  // V2.1: fixed work status cards — always visible even at 0
+  const workCards: WorkStatusCard[] = [
     { title: lang === "zh" ? "待审核付款" : "Pending Payment Review", value: stats.row1.pendingPayment, icon: Clock, color: "text-orange-500", link: "/orders?status=receipt_uploaded" },
     { title: lang === "zh" ? "待包货" : "Pending Packing", value: stats.row1.pendingShipment, icon: Package, color: "text-blue-500", link: "/packing?tab=packing" },
     { title: lang === "zh" ? "今日已发货" : "Today Shipped", value: stats.row4.todayShipped, icon: Truck, color: "text-green-500", link: "/packing?tab=shipped" },
@@ -144,7 +179,23 @@ export default function Dashboard() {
     { title: lang === "zh" ? "库存预警" : "Stock Alert", value: stats.row3.lowStock + stats.row3.outOfStock, icon: Warehouse, color: "text-red-500", link: "/products?stock=low" },
     // V2.1.25: Membership manual follow-up (待人工发送)
     { title: lang === "zh" ? "会员待人工发送" : "Membership Manual Follow Up", value: (stats as any).membershipManualFollowUp || 0, icon: Crown, color: "text-amber-500", link: "/membership" },
-    { title: lang === "zh" ? "AI 转人工待处理" : "AI Handover Pending", value: (handoverStats as any)?.pendingCount || 0, icon: Bot, color: "text-violet-600", link: "/ai-handover" },
+    {
+      title: lang === "zh" ? "AI 转人工待处理" : "AI Handover Pending",
+      value: handoverPendingCount,
+      icon: Bot,
+      color: handoverOver24HoursCount > 0 ? "text-red-600" : "text-violet-600",
+      link: "/ai-handover",
+      detail: handoverPendingCount > 0
+        ? (lang === "zh"
+          ? `最久等待：${formatHandoverWait(handoverOldestWaitMinutes, lang)}`
+          : `Oldest: ${formatHandoverWait(handoverOldestWaitMinutes, lang)}`)
+        : undefined,
+      priorityLabel: handoverPriorityLabel
+        ? (lang === "zh" ? `最高优先级：${handoverPriorityLabel}` : `Top priority: ${handoverPriorityLabel}`)
+        : undefined,
+      isOverdue: handoverOver24HoursCount > 0,
+      overdueCount: handoverOver24HoursCount,
+    },
   ];
 
   return (
@@ -222,13 +273,22 @@ export default function Dashboard() {
         <div className="grid grid-cols-3 sm:grid-cols-9 gap-4">
           {workCards.map((card, i) => (
             <Link key={i} href={card.link}>
-              <Card className="h-[112px] flex flex-col hover:shadow-md transition-shadow cursor-pointer">
+              <Card className={`min-h-[112px] flex flex-col hover:shadow-md transition-shadow cursor-pointer ${card.isOverdue ? "border-red-300 bg-red-50/60 dark:border-red-900 dark:bg-red-950/20" : ""}`}>
                 <CardHeader className="flex flex-row items-start justify-between pb-1 pt-3 px-3">
                   <CardTitle className="text-xs font-medium text-muted-foreground leading-tight line-clamp-2 min-h-[2rem]">{card.title}</CardTitle>
                   <card.icon className={`h-4 w-4 shrink-0 ${card.color}`} />
                 </CardHeader>
                 <CardContent className="mt-auto px-3 pb-3">
                   <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
+                  {card.detail && (
+                    <p className="mt-1 text-[10px] leading-tight text-muted-foreground">{card.detail}</p>
+                  )}
+                  {card.priorityLabel && (
+                    <p className={`mt-0.5 flex items-center gap-1 text-[10px] leading-tight ${card.isOverdue ? "font-semibold text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>
+                      {card.isOverdue && <AlertTriangle className="h-3 w-3 shrink-0" />}
+                      <span>{card.isOverdue && card.overdueCount ? `${lang === "zh" ? "超 24 小时" : "Over 24h"} × ${card.overdueCount} · ` : ""}{card.priorityLabel}</span>
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </Link>
