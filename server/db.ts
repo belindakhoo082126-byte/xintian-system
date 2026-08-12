@@ -9608,6 +9608,13 @@ export async function getBundleById(id: number) {
   return { ...bundle, items };
 }
 
+// Public mall detail: never expose inactive or hidden bundles to shoppers.
+export async function getMallBundleById(id: number) {
+  const bundle = await getBundleById(id);
+  if (!bundle || bundle.status !== "active" || !bundle.showInMall) return undefined;
+  return bundle;
+}
+
 // Get bundle items only
 export async function getBundleItems(bundleId: number) {
   const db = await getDb();

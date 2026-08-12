@@ -5532,6 +5532,12 @@ export const appRouter = router({
         return await db.getMallBundles();
       }),
 
+    mallDetail: publicProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .query(async ({ input }) => {
+        return await db.getMallBundleById(input.id);
+      }),
+
     profitAnalysis: adminProcedure
       .input(z.object({
         startDate: z.string().optional(),
