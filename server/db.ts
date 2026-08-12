@@ -7263,6 +7263,36 @@ export async function getLiveOrderCaptures(limit = 50) {
 // V1.1: Dashboard Stats (仪表板统计)
 // ============================================================================
 
+type DashboardCashReceiptRow = {
+  orderCategory: string | null;
+  total: string | number | null;
+};
+
+/**
+ * Dashboard cash cards are cash-receipt indicators, not order-value indicators.
+ * They only aggregate payment rows that have completed review, grouped by the
+ * same local/import category used by the existing dashboard.
+ */
+export function summarizeDashboardCashReceipts(rows: DashboardCashReceiptRow[]) {
+  let localReceivedMonth = 0;
+  let importReceivedMonth = 0;
+
+  for (const row of rows) {
+    const amount = Number(row.total || 0);
+    if (row.orderCategory === "import") {
+      importReceivedMonth += amount;
+    } else if (row.orderCategory === "local") {
+      localReceivedMonth += amount;
+    }
+  }
+
+  return {
+    localReceivedMonth: localReceivedMonth.toFixed(2),
+    importReceivedMonth: importReceivedMonth.toFixed(2),
+    totalReceivedMonth: (localReceivedMonth + importReceivedMonth).toFixed(2),
+  };
+}
+
 export async function getDashboardV11Stats() {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -7272,6 +7302,7 @@ export async function getDashboardV11Stats() {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const firstOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
 
   // Row 1: Today's tasks
   const pendingPayment = await db.select({ count: sql`COUNT(*)` }).from(orders)
@@ -7305,22 +7336,21 @@ export async function getDashboardV11Stats() {
   const monthSales = await db.select({ total: sql`COALESCE(SUM(totalAmount), 0)` }).from(orders)
     .where(gte(orders.createdAt, firstOfMonth)) as any[];
 
-  // V2.3: Sales breakdown by order nature (local vs import pre-order)
-  // Only count paid/shipped/completed orders (exclude pending, hold_order, cancelled)
-  const paidStatuses = ['receipt_uploaded', 'packing', 'partial_shipped', 'shipped', 'completed'];
-  const localSalesMonth = await db.select({ total: sql`COALESCE(SUM(totalAmount), 0)` }).from(orders)
+  // Cash receipts: only approved payment records, allocated by payment date.
+  // This deliberately does not infer payment from an order status or totalAmount.
+  const monthlyApprovedPayments = await db.select({
+    orderCategory: (orders as any).orderCategory,
+    total: sql<string>`COALESCE(SUM(${orderPayments.amount}), 0)`,
+  }).from(orderPayments)
+    .innerJoin(orders, eq(orderPayments.orderId, orders.id))
     .where(and(
-      eq((orders as any).orderCategory, 'local'),
-      gte(orders.createdAt, firstOfMonth),
-      sql`${orders.physicalStatus} IN (${sql.join(paidStatuses.map(s => sql`${s}`), sql`,`)})`
-    )) as any[];
-  const importSalesMonth = await db.select({ total: sql`COALESCE(SUM(totalAmount), 0)` }).from(orders)
-    .where(and(
-      eq((orders as any).orderCategory, 'import'),
-      gte(orders.createdAt, firstOfMonth),
-      sql`${orders.physicalStatus} IN (${sql.join(paidStatuses.map(s => sql`${s}`), sql`,`)})`
-    )) as any[];
-  const totalMonthSales = (Number(localSalesMonth[0]?.total || 0)) + (Number(importSalesMonth[0]?.total || 0));
+      eq(orderPayments.reviewStatus, "approved"),
+      sql`COALESCE(${orderPayments.paymentDate}, ${orderPayments.createdAt}) >= ${firstOfMonth}`,
+      sql`COALESCE(${orderPayments.paymentDate}, ${orderPayments.createdAt}) < ${firstOfNextMonth}`,
+      sql`${(orders as any).orderCategory} IN ('local', 'import')`,
+    ))
+    .groupBy((orders as any).orderCategory) as DashboardCashReceiptRow[];
+  const cashReceiptBreakdown = summarizeDashboardCashReceipts(monthlyApprovedPayments);
 
   // V2.1.12: Row 5: Scheduled shipping today — unified query matching getScheduledShippingOrders
   const scheduledValidStatuses = ['pending', 'packing', 'hold_order', 'receipt_uploaded', 'partial_payment', 'waiting_stock', 'ready_to_ship', 'scheduled_ship'];
@@ -7370,12 +7400,8 @@ export async function getDashboardV11Stats() {
       todaySales: todaySales[0]?.total || "0.00",
       monthSales: monthSales[0]?.total || "0.00",
     },
-    // V2.3: Sales breakdown
-    salesBreakdown: {
-      localSalesMonth: Number(localSalesMonth[0]?.total || 0).toFixed(2),
-      importSalesMonth: Number(importSalesMonth[0]?.total || 0).toFixed(2),
-      totalMonthSales: totalMonthSales.toFixed(2),
-    },
+    // Dashboard cash view: confirmed payment rows in the selected calendar month.
+    cashReceiptBreakdown,
     row5: {
       scheduledToday: scheduledTodayTotal,
     },

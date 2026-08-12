@@ -45,6 +45,18 @@ describe("商品、订单与客服后台操作回归", () => {
     expect(dashboard).toContain("physicalStatus");
   });
 
+  it("Dashboard 明确显示已确认付款口径，经营总览菜单不再误标为 Payment Record", () => {
+    const dashboard = readClient("pages/Dashboard.tsx");
+    const layout = readClient("components/DashboardLayout.tsx");
+
+    expect(dashboard).toContain("本月实际确认付款");
+    expect(dashboard).toContain("本月总已收款");
+    expect(dashboard).toContain("cashReceiptBreakdown");
+    expect(layout).toContain('zh: "经营总览"');
+    expect(layout).toContain('en: "Business Overview"');
+    expect(layout).not.toContain('zh: "Payment Record"');
+  });
+
   it("Campaign 页面提供创建、绑定内容和启用活动的操作说明", () => {
     const campaigns = readClient("pages/Campaigns.tsx");
 

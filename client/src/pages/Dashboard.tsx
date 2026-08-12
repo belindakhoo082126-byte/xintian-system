@@ -123,30 +123,31 @@ export default function Dashboard() {
 
   if (!stats) return null;
 
-  // V2.3 Row 1: Sales (营业额) — 3 cards
+  // Dashboard Row 1: confirmed cash receipts, not order totals.
+  const cashReceiptBreakdown = (stats as any).cashReceiptBreakdown || {};
   const salesRow = [
     {
-      title: lang === "zh" ? "本地销售额" : "Local Sales",
-      subtitle: lang === "zh" ? "本月" : "This Month",
-      value: `RM ${Number((stats as any).salesBreakdown?.localSalesMonth || 0).toFixed(2)}`,
+      title: lang === "zh" ? "本地已收款" : "Local Receipts",
+      subtitle: lang === "zh" ? "本月实际确认付款" : "Confirmed This Month",
+      value: `RM ${Number(cashReceiptBreakdown.localReceivedMonth || 0).toFixed(2)}`,
       icon: Home,
       color: "text-green-600",
       bg: "border-green-200 bg-green-50 dark:bg-green-950/20",
       link: "/profit-report?nature=normal",
     },
     {
-      title: lang === "zh" ? "中国代购销售额" : "Import Pre-order Sales",
-      subtitle: lang === "zh" ? "本月销售额" : "Sales This Month",
-      value: `RM ${Number((stats as any).salesBreakdown?.importSalesMonth || 0).toFixed(2)}`,
+      title: lang === "zh" ? "中国代购已收款" : "Import Pre-order Receipts",
+      subtitle: lang === "zh" ? "本月实际确认付款" : "Confirmed This Month",
+      value: `RM ${Number(cashReceiptBreakdown.importReceivedMonth || 0).toFixed(2)}`,
       icon: Plane,
       color: "text-purple-600",
       bg: "border-purple-200 bg-purple-50 dark:bg-purple-950/20",
       link: "/profit-report?nature=import_preorder",
     },
     {
-      title: lang === "zh" ? "本月总销售额" : "Total Monthly Sales",
-      subtitle: lang === "zh" ? "本地 + 代购" : "Local + Import",
-      value: `RM ${Number((stats as any).salesBreakdown?.totalMonthSales || 0).toFixed(2)}`,
+      title: lang === "zh" ? "本月总已收款" : "Total Monthly Receipts",
+      subtitle: lang === "zh" ? "本地 + 代购，按付款日期" : "Local + Import, by payment date",
+      value: `RM ${Number(cashReceiptBreakdown.totalReceivedMonth || 0).toFixed(2)}`,
       icon: TrendingUp,
       color: "text-primary",
       bg: "border-primary/20 bg-primary/5",
