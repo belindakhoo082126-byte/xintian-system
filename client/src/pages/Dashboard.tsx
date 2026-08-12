@@ -44,7 +44,6 @@ export const SPECIAL_STATUS_LABELS: Record<string, { zh: string; en: string }> =
   company_bear: { zh: "公司承担", en: "Company Covered" },
   logistics_error: { zh: "物流异常", en: "Logistics Error" },
   incomplete_info: { zh: "资料异常", en: "Incomplete Information" },
-  notification_failed: { zh: "通知失败", en: "Notification Failed" },
   stock_exception: { zh: "库存异常", en: "Stock Exception" },
   partial_payment: { zh: "部分汇款", en: "Partial Payment" },
   over_payment: { zh: "多汇款", en: "Over Payment" },
@@ -83,7 +82,11 @@ export default function Dashboard() {
   const followUpDisplay = getFollowUpDisplayState(followUpStats, followUpList);
   const { data: ordersWithRemarks } = trpc.orderRemarks.ordersWithRemarks.useQuery();
   const { data: handoverStats } = trpc.aiHandover.getStats.useQuery();
+  const { data: aiNotificationCenter } = trpc.notifications.aiCenter.useQuery();
   const { data: pendingRefundRows } = trpc.refunds.list.useQuery({ status: "pending" });
+  const aiNotificationFailureCount = Array.isArray((aiNotificationCenter as any)?.failures)
+    ? (aiNotificationCenter as any).failures.length
+    : 0;
 
   // Group remarks by orderId so each order shows as one card with multiple tags
   const groupedRemarks = (() => {
@@ -310,6 +313,20 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <Link href="/ai-brain?tab=notifications">
+        <Card className="border-violet-200 bg-violet-50/50 transition-colors hover:bg-violet-100/60 dark:border-violet-900/60 dark:bg-violet-950/20 dark:hover:bg-violet-950/35">
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="rounded-xl bg-violet-100 p-3 text-violet-700 dark:bg-violet-900/60 dark:text-violet-200"><Send className="h-5 w-5" /></div>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">{lang === "zh" ? "AI 自动通知失败" : "AI Notification Failures"}</p>
+              <p className="text-sm text-muted-foreground">{lang === "zh" ? "独立于特别订单；点击查看失败内容、模板变量与人工处理记录。" : "Separate from special orders. Review failures, variables, and manual actions."}</p>
+            </div>
+            <span className="text-3xl font-bold text-violet-700 dark:text-violet-300">{aiNotificationFailureCount}</span>
+            <ArrowRight className="h-5 w-5 text-violet-500" />
+          </CardContent>
+        </Card>
+      </Link>
+
       {/* V3.0: Special-status Order Follow-up */}
       <Card className="border-orange-200 bg-orange-50/40 dark:border-orange-900/60 dark:bg-orange-950/10">
         <CardHeader className="flex flex-row items-center gap-2">
@@ -341,12 +358,6 @@ export default function Dashboard() {
               <div className="rounded-lg border border-blue-100 bg-background/70 p-3 dark:border-blue-900/50 hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "客户资料不完整" : "Incomplete Info"}</p>
                 <p className="mt-1 text-2xl font-bold text-blue-600">{followUpDisplay.incompleteInfoCount}</p>
-              </div>
-            </Link>
-            <Link href="/orders?special=1&type=notification_failed">
-              <div className="rounded-lg border border-purple-100 bg-background/70 p-3 dark:border-purple-900/50 hover:bg-purple-50 dark:hover:bg-purple-950/20 transition-colors cursor-pointer">
-                <p className="text-xs text-muted-foreground">{lang === "zh" ? "自动通知失败" : "Notification Failed"}</p>
-                <p className="mt-1 text-2xl font-bold text-purple-600">{followUpDisplay.notificationFailedCount}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=partial_payment">

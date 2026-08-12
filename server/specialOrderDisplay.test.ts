@@ -23,20 +23,20 @@ describe("特别订单列表显示", () => {
     expect(getSpecialOrderHandlingLabel(undefined, "resolved").zh).toBe("已处理");
   });
 
-  it("提供订单管理与包货工作台一致的七类分类筛选，且不包含已移除的超时分类", () => {
+  it("提供订单管理与包货工作台一致的六类分类筛选，且不包含已移除的超时与自动通知失败分类", () => {
     expect(SPECIAL_ORDER_FILTER_OPTIONS.map((option) => option.value)).toEqual([
       "pending_shipping",
       "pending_refund",
       "logistics_error",
       "incomplete_info",
-      "notification_failed",
       "over_payment",
       "amount_changed",
     ]);
     expect(SPECIAL_ORDER_FILTER_OPTIONS.some((option) => option.value === "overdue")).toBe(false);
+    expect(SPECIAL_ORDER_FILTER_OPTIONS.some((option) => option.value === "notification_failed")).toBe(false);
   });
 
-  it("为七类可筛选特别状态提供非空图标与彩色标签样式", () => {
+  it("为六类可筛选特别状态提供非空图标与彩色标签样式", () => {
     for (const option of SPECIAL_ORDER_FILTER_OPTIONS) {
       const label = SPECIAL_ORDER_REASON_LABELS[option.value];
       expect(label.icon).not.toBe("");

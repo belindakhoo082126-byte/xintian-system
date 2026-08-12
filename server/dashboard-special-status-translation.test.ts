@@ -15,7 +15,6 @@ describe("Dashboard 特别状态订单英文翻译", () => {
       "pending_refund",
       "logistics_error",
       "incomplete_info",
-      "notification_failed",
       "stock_exception",
       "partial_payment",
       "over_payment",

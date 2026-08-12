@@ -28,7 +28,6 @@ export const SPECIAL_ORDER_REASON_LABELS: Record<string, SpecialOrderDisplayLabe
   data_issue: { zh: "资料异常", en: "Data Issue", className: "bg-blue-100 text-blue-700 border-blue-300", icon: "i" },
   incomplete_info: { zh: "资料异常", en: "Incomplete Information", className: "bg-blue-100 text-blue-700 border-blue-300", icon: "i" },
   stock_exception: { zh: "库存异常", en: "Stock Exception", className: "bg-violet-100 text-violet-700 border-violet-300", icon: "#" },
-  notification_failed: { zh: "通知失败", en: "Notification Failed", className: "bg-purple-100 text-purple-700 border-purple-300", icon: "✉" },
   overdue: { zh: "超时未处理", en: "Overdue", className: "bg-red-100 text-red-700 border-red-300", icon: "!" },
   other: DEFAULT_REASON,
 };
@@ -42,7 +41,6 @@ export const SPECIAL_ORDER_FILTER_OPTIONS = [
   { value: "pending_refund", zh: "待退款", en: "Pending Refund" },
   { value: "logistics_error", zh: "物流异常", en: "Logistics Error" },
   { value: "incomplete_info", zh: "客户资料不完整", en: "Incomplete Customer Information" },
-  { value: "notification_failed", zh: "自动通知失败", en: "Automatic Notification Failed" },
   { value: "over_payment", zh: "多汇款", en: "Overpayment" },
   { value: "amount_changed", zh: "金额异常", en: "Amount Exception" },
 ] as const;

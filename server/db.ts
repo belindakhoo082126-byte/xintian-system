@@ -12,7 +12,7 @@ import {
   // System Settings & Shipping imports
   systemSettings, shippingRules, shippingProviders, shipments,
   // Payment & Order imports
-  paymentMethods, orderStatusLogs, holdOrderInfos, notificationLogs,
+  paymentMethods, orderStatusLogs, holdOrderInfos, notificationLogs, aiNotificationActions,
   // Mall imports
   mallSettings, mallBanners, mallQuickContacts, mallNotices, mallThemeSchedules, mallProductDetailImages,
   // Packing & Shipping imports
@@ -5250,6 +5250,63 @@ export async function updateNotificationLog(id: number, data: any) {
   if (!db) return null;
   await db.update(notificationLogs).set(data).where(eq(notificationLogs.id, id));
   return (await db.select().from(notificationLogs).where(eq(notificationLogs.id, id)).limit(1))[0];
+}
+
+const AI_NOTIFICATION_TYPE_LABELS: Record<string, string> = {
+  order_confirmation: "订单成立",
+  payment_pending: "待付款提醒",
+  payment_confirmed: "付款确认",
+  order_hold: "保留订单提醒",
+  shipment_reminder: "发货提醒",
+  shipped: "发货通知",
+};
+
+export async function getAiNotificationCenter() {
+  const db = await getDb();
+  if (!db) return { stats: [], failures: [], templates: [] };
+  const [logs, actions] = await Promise.all([
+    db.select({
+      id: notificationLogs.id, orderId: notificationLogs.orderId, customerId: notificationLogs.customerId,
+      type: notificationLogs.type, channel: notificationLogs.channel, message: notificationLogs.message,
+      status: notificationLogs.status, errorMessage: notificationLogs.errorMessage, createdAt: notificationLogs.createdAt,
+      sentAt: notificationLogs.sentAt, orderNumber: orders.orderNumber, customerName: customers.name,
+      customerPhone: customers.phoneNumber,
+    }).from(notificationLogs).leftJoin(orders, eq(notificationLogs.orderId, orders.id))
+      .leftJoin(customers, eq(notificationLogs.customerId, customers.id)).orderBy(desc(notificationLogs.createdAt)).limit(300),
+    db.select().from(aiNotificationActions).orderBy(desc(aiNotificationActions.createdAt)).limit(500),
+  ]);
+  const latestActionByLog = new Map<number, typeof actions[number]>();
+  for (const action of actions) if (!latestActionByLog.has(action.notificationLogId)) latestActionByLog.set(action.notificationLogId, action);
+  const statKeys = Object.keys(AI_NOTIFICATION_TYPE_LABELS);
+  const stats = statKeys.map(type => ({
+    type, label: AI_NOTIFICATION_TYPE_LABELS[type], total: logs.filter(log => log.type === type).length,
+    sent: logs.filter(log => log.type === type && log.status === "sent").length,
+    pending: logs.filter(log => log.type === type && log.status === "pending").length,
+    failed: logs.filter(log => log.type === type && log.status === "failed" && !latestActionByLog.has(log.id)).length,
+  }));
+  return {
+    stats,
+    failures: logs.filter(log => log.status === "failed" && !latestActionByLog.has(log.id)).map(log => ({ ...log, eventLabel: AI_NOTIFICATION_TYPE_LABELS[log.type] ?? log.type })),
+    templates: statKeys.map(type => ({ type, label: AI_NOTIFICATION_TYPE_LABELS[type], variables: ["{customer_name}", "{order_number}", "{amount}", "{checkout_link}"] })),
+  };
+}
+
+export async function handleAiNotificationFailure(input: { notificationLogId: number; action: "manual_sent" | "resolved" | "ignored"; note?: string; handledBy: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("数据库不可用");
+  const [log] = await db.select().from(notificationLogs).where(eq(notificationLogs.id, input.notificationLogId)).limit(1);
+  if (!log) throw new Error("通知记录不存在");
+  const [existingAction] = await db.select().from(aiNotificationActions).where(eq(aiNotificationActions.notificationLogId, input.notificationLogId)).limit(1);
+  if (existingAction) throw new Error("此通知已由管理员处理，系统不会重复发送");
+  try {
+    await db.insert(aiNotificationActions).values(input);
+    return { success: true, alreadyHandled: false };
+  } catch (error: any) {
+    if (error?.code === "ER_DUP_ENTRY" || String(error?.message ?? "").includes("Duplicate entry")) {
+      return { success: true, alreadyHandled: true, message: "此通知已由管理员处理，系统不会重复发送" };
+    }
+    throw error;
+  }
 }
 
 // ============================================================================
@@ -10491,6 +10548,7 @@ export async function getSpecialOrderFollowUpStats() {
     FROM order_special_statuses oss
     JOIN orders o ON o.id = oss.orderId
     WHERE oss.status = 'pending'
+      AND oss.type != 'notification_failed'
       AND o.physicalStatus NOT IN ('shipped', 'completed', 'cancelled')
     GROUP BY oss.type
   `);
@@ -10507,6 +10565,7 @@ export async function getSpecialOrderFollowUpStats() {
     FROM orders o
     WHERE o.isSpecialOrder = 1
       AND o.specialOrderStatus = 'pending'
+      AND COALESCE(o.specialOrderType, '') != 'notification_failed'
       AND o.physicalStatus != 'cancelled'
       AND NOT EXISTS (
         SELECT 1 FROM order_special_statuses oss 
@@ -10585,6 +10644,7 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
     WHERE o.physicalStatus != 'cancelled'
       AND o.isSpecialOrder = 1
       AND o.specialOrderStatus = 'pending'
+      AND COALESCE(o.specialOrderType, '') != 'notification_failed'
     ORDER BY o.createdAt ASC
     LIMIT ${limit}
   `);
@@ -10639,10 +10699,6 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
       case 'incomplete_info':
         specialTypeLabel = '资料异常';
         specialTypeColor = 'blue';
-        break;
-      case 'notification_failed':
-        specialTypeLabel = '通知失败';
-        specialTypeColor = 'purple';
         break;
       case 'stock_exception':
         specialTypeLabel = '库存异常';

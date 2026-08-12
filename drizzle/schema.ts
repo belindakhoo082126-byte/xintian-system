@@ -1341,6 +1341,17 @@ export const notificationLogs = mysqlTable("notification_logs", {
 export type NotificationLog = typeof notificationLogs.$inferSelect;
 export type InsertNotificationLog = typeof notificationLogs.$inferInsert;
 
+export const aiNotificationActions = mysqlTable("ai_notification_actions", {
+  id: int("id").autoincrement().primaryKey(),
+  notificationLogId: int("notificationLogId").notNull(),
+  action: mysqlEnum("action", ["manual_sent", "resolved", "ignored"]).notNull(),
+  note: text("note"),
+  handledBy: varchar("handledBy", { length: 255 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  notificationLogUnique: uniqueIndex("uq_ai_notification_actions_log").on(table.notificationLogId),
+}));
+
 // ============================================================================
 // Mall Module - Mall Settings (商城设置)
 // ============================================================================

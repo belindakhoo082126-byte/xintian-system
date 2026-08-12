@@ -3661,6 +3661,16 @@ export const appRouter = router({
     })).mutation(async ({ input }) => {
       return await db.createNotificationLog(input);
     }),
+    aiCenter: adminProcedure.query(async () => {
+      return await db.getAiNotificationCenter();
+    }),
+    handleAiFailure: adminProcedure.input(z.object({
+      notificationLogId: z.number().int().positive(),
+      action: z.enum(["manual_sent", "resolved", "ignored"]),
+      note: z.string().max(1000).optional(),
+    })).mutation(async ({ input, ctx }) => {
+      return await db.handleAiNotificationFailure({ ...input, handledBy: ctx.user.name || ctx.user.email || "Admin" });
+    }),
   }),
 
   // ===========================================================================
