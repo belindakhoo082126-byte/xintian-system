@@ -2449,17 +2449,64 @@ export type InsertOrderPayment = typeof orderPayments.$inferInsert;
 export const orderRefunds = mysqlTable("order_refunds", {
   id: int("id").autoincrement().primaryKey(),
   orderId: int("orderId").notNull(),
+  // 独立退款编号；旧记录允许为空，新的退款管理记录必须生成编号。
+  refundNumber: varchar("refundNumber", { length: 50 }).unique(),
+  // 未处理不影响库存及正式利润；待退货确认表示款项已完成但实物处理未完成。
+  status: mysqlEnum("status", ["pending", "processed", "awaiting_return", "rejected", "cancelled"]).default("processed").notNull(),
+  requestedAmount: decimal("requestedAmount", { precision: 10, scale: 2 }).default("0").notNull(),
+  // amount 保留为实际已完成退款金额，兼容既有退款流水与财务报表。
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   refundMethod: varchar("refundMethod", { length: 100 }).notNull(),
   refundDate: timestamp("refundDate"),
   receiptUrl: varchar("receiptUrl", { length: 500 }),
+  refundReason: varchar("refundReason", { length: 255 }),
+  issueDescription: text("issueDescription"),
+  customerRefundDetails: text("customerRefundDetails"), // JSON: QR / TNG / bank recipient data
+  attachmentUrls: text("attachmentUrls"), // JSON: customer issue photos / chat screenshots
+  internalNotes: text("internalNotes"),
   notes: text("notes"),
   operatorName: varchar("operatorName", { length: 255 }),
+  requestedBy: varchar("requestedBy", { length: 255 }),
+  processedBy: varchar("processedBy", { length: 255 }),
+  processedAt: timestamp("processedAt"),
+  rejectedBy: varchar("rejectedBy", { length: 255 }),
+  rejectedAt: timestamp("rejectedAt"),
+  cancelledBy: varchar("cancelledBy", { length: 255 }),
+  cancelledAt: timestamp("cancelledAt"),
+  creditLedgerId: int("creditLedgerId"),
+  inventoryFinalizedAt: timestamp("inventoryFinalizedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export type OrderRefund = typeof orderRefunds.$inferSelect;
 export type InsertOrderRefund = typeof orderRefunds.$inferInsert;
+
+// ============================================================================
+// Refund Items (退款商品逐项明细与库存处理审计)
+// ============================================================================
+
+export const orderRefundItems = mysqlTable("order_refund_items", {
+  id: int("id").autoincrement().primaryKey(),
+  refundId: int("refundId").notNull(),
+  orderItemId: int("orderItemId"),
+  productId: int("productId"),
+  productName: varchar("productName", { length: 255 }).notNull(),
+  productSku: varchar("productSku", { length: 100 }),
+  refundQuantity: int("refundQuantity").notNull(),
+  unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).default("0").notNull(),
+  unitCost: decimal("unitCost", { precision: 10, scale: 2 }).default("0").notNull(),
+  refundAmount: decimal("refundAmount", { precision: 10, scale: 2 }).default("0").notNull(),
+  inventoryTreatment: mysqlEnum("inventoryTreatment", ["return_to_sale", "write_off", "none", "pending_return"]).default("none").notNull(),
+  inventoryActionStatus: mysqlEnum("inventoryActionStatus", ["not_required", "pending", "returned", "written_off", "reversed"]).default("not_required").notNull(),
+  inventoryAdjustmentId: int("inventoryAdjustmentId"),
+  inventoryHandledBy: varchar("inventoryHandledBy", { length: 255 }),
+  inventoryHandledAt: timestamp("inventoryHandledAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OrderRefundItem = typeof orderRefundItems.$inferSelect;
+export type InsertOrderRefundItem = typeof orderRefundItems.$inferInsert;
 
 // ============================================================================
 // Order Operation Logs (订单操作日志 - 完整操作记录)

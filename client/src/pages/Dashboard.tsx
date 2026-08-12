@@ -83,6 +83,7 @@ export default function Dashboard() {
   const followUpDisplay = getFollowUpDisplayState(followUpStats, followUpList);
   const { data: ordersWithRemarks } = trpc.orderRemarks.ordersWithRemarks.useQuery();
   const { data: handoverStats } = trpc.aiHandover.getStats.useQuery();
+  const { data: pendingRefundRows } = trpc.refunds.list.useQuery({ status: "pending" });
 
   // Group remarks by orderId so each order shows as one card with multiple tags
   const groupedRemarks = (() => {
@@ -175,6 +176,8 @@ export default function Dashboard() {
       ? ({ low: "低", medium: "中", high: "高" } as const)[handoverHighestPriority]
       : ({ low: "Low", medium: "Medium", high: "High" } as const)[handoverHighestPriority])
     : undefined;
+  const pendingRefundCount = (pendingRefundRows as any[] | undefined)?.length || 0;
+  const pendingRefundAmount = ((pendingRefundRows as any[] | undefined) || []).reduce((sum, row) => sum + Number(row.refund?.requestedAmount || 0), 0);
 
   // V2.1: fixed work status cards — always visible even at 0
   const workCards: WorkStatusCard[] = [
@@ -187,6 +190,7 @@ export default function Dashboard() {
     { title: lang === "zh" ? "今日预约发货" : "Today Scheduled", value: stats.row5.scheduledToday, icon: Calendar, color: "text-purple-500", link: "/packing?tab=scheduled&date=today" },
     { title: lang === "zh" ? "未读 Messenger" : "Unread Messenger", value: 0, icon: MessageCircle, color: "text-pink-500", link: "/messenger" },
     { title: lang === "zh" ? "库存预警" : "Stock Alert", value: stats.row3.lowStock + stats.row3.outOfStock, icon: Warehouse, color: "text-red-500", link: "/products?stock=low" },
+    { title: lang === "zh" ? "待处理退款" : "Pending Refunds", value: pendingRefundCount, icon: AlertTriangle, color: "text-amber-600", link: "/admin/refunds", detail: pendingRefundCount > 0 ? `RM ${pendingRefundAmount.toFixed(2)}` : undefined },
     // V2.1.25: Membership manual follow-up (待人工发送)
     { title: lang === "zh" ? "会员待人工发送" : "Membership Manual Follow Up", value: (stats as any).membershipManualFollowUp || 0, icon: Crown, color: "text-amber-500", link: "/membership" },
     {

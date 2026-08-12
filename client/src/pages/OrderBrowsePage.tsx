@@ -453,6 +453,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const sourceCfg = SOURCE_LABELS[o.orderSource] || { zh: o.orderSource, en: o.orderSource };
   const shippingCfg = SHIPPING_LABELS[o.shippingMethod] || { zh: o.shippingMethod, en: o.shippingMethod };
   const orderTypeLabel = o.orderCategory === "import" ? translate("中国代购订单", "Import Order") : translate("本地订单", "Local Order");
+  const processedRefunds = ((o.refunds || []) as any[]).filter((refund) => refund.status === "processed" || refund.status === "awaiting_return");
 
   // Calculate amounts
   const physicalSubtotal = parseFloat(o.physicalSubtotal || "0");
@@ -487,6 +488,11 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={statusCfg.variant}>{translate(statusCfg.zh, statusCfg.en)}</Badge>
+          {processedRefunds.length > 0 && (
+            <Badge className="bg-rose-100 text-rose-700 hover:bg-rose-100 border border-rose-200">
+              {translate("部分退款", "Partially Refunded")} · {processedRefunds.map((refund) => refund.refundNumber).filter(Boolean).join("、")}
+            </Badge>
+          )}
           <Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
             <Eye className="h-3 w-3 mr-1" />{translate("Preview 单据", "Preview Document")}
           </Button>
@@ -569,6 +575,13 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           <div><span className="text-muted-foreground">{translate("订单来源", "Order Source")}:</span> {translate(sourceCfg.zh, sourceCfg.en)}</div>
           <div><span className="text-muted-foreground">{translate("建立日期", "Created Date")}:</span> {new Date(o.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</div>
           <div><span className="text-muted-foreground">{translate("当前状态", "Current Status")}:</span> <Badge variant={statusCfg.variant} className="text-xs">{translate(statusCfg.zh, statusCfg.en)}</Badge></div>
+          {processedRefunds.length > 0 && (
+            <>
+              <div className="md:col-span-2"><span className="text-muted-foreground">{translate("已处理退款", "Processed Refunds")}:</span> <span className="font-medium text-rose-700">{processedRefunds.map((refund) => `${refund.refundNumber || `RF-${refund.id}`}（RM${Number(refund.amount || refund.requestedAmount || 0).toFixed(2)}）`).join("、")}</span></div>
+              <div><span className="text-muted-foreground">{translate("售后退款损失", "After-sales refund loss")}:</span> <span className="font-medium text-rose-700">RM {Number(o.refundProfit?.actualRefundLoss || 0).toFixed(2)}</span></div>
+              <div className="md:col-span-2"><span className="text-muted-foreground">{translate("退款后商品利润（不含配送）", "Post-refund product profit (excl. delivery)")}:</span> <span className={`font-medium ${Number(o.refundProfit?.finalProductProfit || 0) >= 0 ? "text-emerald-700" : "text-rose-700"}`}>RM {Number(o.refundProfit?.finalProductProfit || 0).toFixed(2)}</span></div>
+            </>
+          )}
           {o.sourceName && <div><span className="text-muted-foreground">{translate("来源名称", "Source Name")}:</span> {o.sourceName}</div>}
         </CardContent>
       </Card>

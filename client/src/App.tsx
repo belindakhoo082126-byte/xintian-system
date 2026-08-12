@@ -63,6 +63,7 @@ import OrderCreatePage from "@/pages/OrderCreatePage";
 import OrderBrowsePage from "@/pages/OrderBrowsePage";
 import OrderEditPage from "@/pages/OrderEditPage";
 import MarketingCenter from "@/pages/MarketingCenter";
+import RefundManagement from "@/pages/RefundManagement";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -96,6 +97,8 @@ function DashboardRoutes() {
       <Route path={"/orders/local"} component={() => <Orders orderCategory="local" />} />
       <Route path={"/orders/import"} component={() => <Orders orderCategory="import" />} />
       <Route path={"/orders/search"} component={() => <Orders orderCategory="all" />} />
+      <Route path={"/refunds"} component={RefundManagement} />
+      <Route path={"/admin/refunds"} component={RefundManagement} />
       <Route path={"/orders/create"} component={() => <OrderCreatePage orderCategory="local" />} />
       <Route path={"/orders/create/local"} component={() => <OrderCreatePage orderCategory="local" />} />
       <Route path={"/orders/create/import"} component={() => <OrderCreatePage orderCategory="import" />} />

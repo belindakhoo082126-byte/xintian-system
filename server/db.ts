@@ -54,7 +54,7 @@ import {
   // V2.0.98 imports - CN/IB enhancements
   ibDifferences, stockAllocations, costAdjustmentLogs,
   // V2.1.15 imports - Order Refunds
-  orderRefunds,
+  orderRefunds, orderRefundItems,
   // V2.1.19 imports - Order Special Statuses
   orderSpecialStatuses,
   // V5.0 imports - Marketing Center
@@ -754,7 +754,26 @@ export async function getOrderById(id: number) {
       console.warn("[getOrderById] Failed to update secureToken/checkoutLink:", updateErr);
     }
   }
-  return { ...order, secureToken, checkoutLink };
+  const refunds = await db.select({
+    id: orderRefunds.id,
+    refundNumber: orderRefunds.refundNumber,
+    status: orderRefunds.status,
+    amount: orderRefunds.amount,
+    requestedAmount: orderRefunds.requestedAmount,
+    refundMethod: orderRefunds.refundMethod,
+    processedAt: orderRefunds.processedAt,
+  }).from(orderRefunds).where(eq(orderRefunds.orderId, id)).orderBy(desc(orderRefunds.createdAt));
+  const detailItems = await db.select({
+    id: orderItems.id,
+    quantity: orderItems.quantity,
+    unitPrice: orderItems.unitPrice,
+    unitCost: orderItems.unitCost,
+    subtotal: orderItems.subtotal,
+  }).from(orderItems).where(eq(orderItems.orderId, id));
+  const refundLineItems = refunds.length
+    ? await db.select().from(orderRefundItems).where(inArray(orderRefundItems.refundId, refunds.map((refund) => refund.id)))
+    : [];
+  return { ...order, secureToken, checkoutLink, refunds, refundProfit: buildRefundProfitSummary(detailItems, refunds, refundLineItems) };
 }
 
 export async function getOrderItems(orderId: number) {
@@ -1606,9 +1625,12 @@ export async function recalculateOrderBalance(orderId: number) {
   const approvedPayments = allPayments.filter((p: any) => p.reviewStatus === 'approved');
   const totalPaid = approvedPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
 
-  // Get all refunds
+  // 实际款项已退的记录影响正式实收；待退货确认只延后实物库存处理，
+  // 不应延后扣减客户实收。旧记录的 status 默认为 processed。
   const allRefunds = await db.select().from(orderRefunds).where(eq(orderRefunds.orderId, orderId));
-  const totalRefunded = allRefunds.reduce((sum, r) => sum + parseFloat(String(r.amount)), 0);
+  const totalRefunded = allRefunds
+    .filter((r: any) => r.status === 'processed' || r.status === 'awaiting_return')
+    .reduce((sum, r) => sum + parseFloat(String(r.amount)), 0);
 
   // Calculate balance: paid - total = positive means overpaid, negative means still owe
   const balance = totalPaid - totalAmount;
@@ -1900,6 +1922,311 @@ export async function getOrderRefunds(orderId: number) {
   const db = await getDb();
   if (!db) return [];
   return await db.select().from(orderRefunds).where(eq(orderRefunds.orderId, orderId)).orderBy(desc(orderRefunds.createdAt));
+}
+
+// ============================================================================
+// V5.1: Refund Management (退款管理)
+// ============================================================================
+
+export type RefundItemInput = {
+  orderItemId?: number; productId?: number; productName: string; productSku?: string | null;
+  refundQuantity: number; unitPrice: number; unitCost: number; refundAmount: number;
+  inventoryTreatment: 'return_to_sale' | 'write_off' | 'none' | 'pending_return';
+};
+
+/**
+ * 商品售后利润口径（不含配送收入／配送成本）：原订单商品销售额 - 原商品成本 - 实际退款 + 已退回可售库存的成本回收。
+ * awaiting_return 代表款项已实际退回、仅等待实物确认，因此计入退款损失；其商品成本需在确认回库后才回收。
+ */
+function buildRefundProfitSummary(orderItemRows: any[], refunds: any[], refundItems: any[]) {
+  const processedRefunds = refunds.filter((refund) => refund.status === 'processed' || refund.status === 'awaiting_return');
+  const processedIds = new Set(processedRefunds.map((refund) => refund.id));
+  const originalProductRevenue = orderItemRows.reduce((sum, item) => sum + Number(item.subtotal ?? (Number(item.unitPrice || 0) * Number(item.quantity || 0))), 0);
+  const originalProductCost = orderItemRows.reduce((sum, item) => sum + Number(item.unitCost || 0) * Number(item.quantity || 0), 0);
+  const actualRefundLoss = processedRefunds.reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
+  const returnedInventoryCostRecovery = refundItems
+    .filter((item) => processedIds.has(item.refundId) && item.inventoryTreatment === 'return_to_sale' && item.inventoryActionStatus === 'returned')
+    .reduce((sum, item) => sum + Number(item.unitCost || 0) * Number(item.refundQuantity || 0), 0);
+  const originalProductProfit = originalProductRevenue - originalProductCost;
+  return {
+    originalProductRevenue,
+    originalProductCost,
+    originalProductProfit,
+    actualRefundLoss,
+    returnedInventoryCostRecovery,
+    finalProductProfit: originalProductProfit - actualRefundLoss + returnedInventoryCostRecovery,
+  };
+}
+
+export async function searchRefundEligibleOrders(search?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const filters: any[] = [inArray(orders.physicalStatus, ['shipped', 'completed'] as any)];
+  if (search?.trim()) {
+    const pattern = `%${search.trim()}%`;
+    filters.push(or(like(orders.orderNumber, pattern), like(customers.name, pattern), like(customers.whatsappPhone, pattern), like(shipments.trackingNumber, pattern)));
+  }
+  return db.select({
+    id: orders.id, orderNumber: orders.orderNumber, customerName: customers.name, customerPhone: customers.whatsappPhone,
+    physicalStatus: orders.physicalStatus, totalAmount: orders.totalAmount, paidAmount: orders.paidAmount,
+    trackingNumber: shipments.trackingNumber, shippingMethod: orders.shippingMethod,
+  }).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).leftJoin(shipments, eq(shipments.orderId, orders.id))
+    .where(and(...filters)).orderBy(desc(orders.createdAt)).limit(30);
+}
+
+export async function getRefundOrderDetail(orderId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select({ order: orders, customer: customers, shipment: shipments }).from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id)).leftJoin(shipments, eq(shipments.orderId, orders.id))
+    .where(eq(orders.id, orderId)).limit(1);
+  if (!rows[0]) return null;
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const refunds = await db.select().from(orderRefunds).where(eq(orderRefunds.orderId, orderId)).orderBy(desc(orderRefunds.createdAt));
+  const refundItems = refunds.length ? await db.select().from(orderRefundItems).where(inArray(orderRefundItems.refundId, refunds.map(refund => refund.id))) : [];
+  const refundedByOrderItem = new Map<number, number>();
+  refundItems.filter(item => !['rejected', 'cancelled'].includes((refunds.find(refund => refund.id === item.refundId) as any)?.status || ''))
+    .forEach(item => refundedByOrderItem.set(item.orderItemId!, (refundedByOrderItem.get(item.orderItemId!) || 0) + item.refundQuantity));
+  return {
+    ...rows[0],
+    items: items.map(item => ({ ...item, refundedQuantity: refundedByOrderItem.get(item.id) || 0 })),
+    refunds: refunds.map(refund => ({ ...refund, items: refundItems.filter(item => item.refundId === refund.id) })),
+    refundProfit: buildRefundProfitSummary(items, refunds, refundItems),
+  };
+}
+
+export async function createRefundRequest(data: {
+  orderId: number; requestedAmount: number; refundMethod: string; refundReason?: string; issueDescription?: string;
+  customerRefundDetails?: string; attachmentUrls?: string; internalNotes?: string; requestedBy: string; items: RefundItemInput[];
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  if (data.requestedAmount <= 0) throw new Error('退款申请金额必须大于 RM0');
+  const detail = await getRefundOrderDetail(data.orderId);
+  if (!detail?.order) throw new Error('订单不存在');
+  if (!['shipped', 'completed'].includes(detail.order.physicalStatus || '')) throw new Error('仅已发货或已完成订单可建立退款');
+  for (const item of data.items) {
+    if (item.refundQuantity <= 0) throw new Error('退款商品数量必须大于 0');
+    const original = item.orderItemId ? detail.items.find((row: any) => row.id === item.orderItemId) : null;
+    if (item.orderItemId && (!original || item.refundQuantity > original.quantity - original.refundedQuantity)) {
+      throw new Error(`${item.productName} 可退款数量不足，不能重复退款`);
+    }
+  }
+  const refundNumber = `RF-${detail.order.orderNumber || data.orderId}-${Date.now().toString().slice(-6)}`;
+  const refundId = await db.transaction(async (tx: any) => {
+    const inserted = await tx.insert(orderRefunds).values({
+      orderId: data.orderId, refundNumber, status: 'pending', requestedAmount: data.requestedAmount.toFixed(2), amount: '0', refundMethod: data.refundMethod,
+      refundReason: data.refundReason || null, issueDescription: data.issueDescription || null, customerRefundDetails: data.customerRefundDetails || null,
+      attachmentUrls: data.attachmentUrls || null, internalNotes: data.internalNotes || null, requestedBy: data.requestedBy,
+    });
+    const id = Number((inserted as any)[0]?.insertId);
+    if (!id) throw new Error('无法建立退款记录');
+    if (data.items.length) await tx.insert(orderRefundItems).values(data.items.map(item => ({
+      refundId: id, orderItemId: item.orderItemId || null, productId: item.productId || null, productName: item.productName, productSku: item.productSku || null,
+      refundQuantity: item.refundQuantity, unitPrice: item.unitPrice.toFixed(2), unitCost: item.unitCost.toFixed(2), refundAmount: item.refundAmount.toFixed(2),
+      inventoryTreatment: item.inventoryTreatment, inventoryActionStatus: item.inventoryTreatment === 'pending_return' ? 'pending' : 'not_required',
+    })));
+    return id;
+  });
+  await logOrderOperation(data.orderId, 'refund_request', `建立退款申请 ${refundNumber}，申请金额 RM${data.requestedAmount.toFixed(2)}`, null, data.requestedBy);
+  broadcastChanges(['orders', 'dashboard']);
+  return { id: refundId, refundNumber };
+}
+
+const refundProofRequired = (method: string) => /tng|duitnow|bank|transfer|qr/i.test(method);
+
+export async function completeRefundRequest(data: { refundId: number; actualAmount: number; receiptUrl?: string; processedBy: string }) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  if (data.actualAmount <= 0) throw new Error('实际退款金额必须大于 RM0');
+  const refund = await db.select().from(orderRefunds).where(eq(orderRefunds.id, data.refundId)).limit(1);
+  if (!refund[0]) throw new Error('退款记录不存在');
+  if (refund[0].status !== 'pending') throw new Error('仅未处理退款可以完成');
+  if (refundProofRequired(refund[0].refundMethod) && !data.receiptUrl) throw new Error('TNG、DuitNow、银行转账与 QR 退款必须上传退款凭证');
+  const items = await db.select().from(orderRefundItems).where(eq(orderRefundItems.refundId, data.refundId));
+  const awaitingReturn = items.some(item => item.inventoryTreatment === 'pending_return');
+  await db.transaction(async (tx: any) => {
+    let creditLedgerId: number | null = null;
+    if (/credit/i.test(refund[0].refundMethod)) {
+      const order = await tx.select().from(orders).where(eq(orders.id, refund[0].orderId)).limit(1);
+      if (!order[0]?.customerId) throw new Error('无法将退款转入没有客户资料的订单 Credit');
+      const customer = await tx.select().from(customers).where(eq(customers.id, order[0].customerId)).limit(1);
+      const balanceAfter = Number(customer[0]?.creditBalance || 0) + data.actualAmount;
+      await tx.update(customers).set({ creditBalance: balanceAfter.toFixed(2) }).where(eq(customers.id, order[0].customerId));
+      const credit = await tx.insert(customerCreditLedger).values({ customerId: order[0].customerId, amount: data.actualAmount.toFixed(2), balanceAfter: balanceAfter.toFixed(2), type: 'order_refund', reason: `退款 ${refund[0].refundNumber || data.refundId}`, orderId: order[0].id, orderNumber: order[0].orderNumber, performedBy: data.processedBy });
+      creditLedgerId = Number((credit as any)[0]?.insertId) || null;
+      if (!creditLedgerId) throw new Error('Credit 退款入账失败');
+    }
+    for (const item of items) {
+      if (item.inventoryTreatment !== 'return_to_sale' || !item.productId) continue;
+      const product = await tx.select().from(products).where(eq(products.id, item.productId)).limit(1);
+      if (!product[0]) throw new Error(`商品 ${item.productName} 不存在，无法退回库存`);
+      await tx.update(products).set({ stockQuantity: (product[0].stockQuantity || 0) + item.refundQuantity }).where(eq(products.id, item.productId));
+      const adjustment = await tx.insert(inventoryAdjustments).values({
+        productId: item.productId, adjustmentType: 'other', quantityChange: item.refundQuantity, unitCost: item.unitCost,
+        totalCost: (Number(item.unitCost) * item.refundQuantity).toFixed(2), adjustedBy: data.processedBy,
+        reason: `退款退库｜订单 ${refund[0].orderId}｜退款 ${refund[0].refundNumber || data.refundId}`, remark: '退款退回可售库存',
+      });
+      await tx.update(orderRefundItems).set({ inventoryActionStatus: 'returned', inventoryAdjustmentId: Number((adjustment as any)[0]?.insertId) || null, inventoryHandledBy: data.processedBy, inventoryHandledAt: new Date() }).where(eq(orderRefundItems.id, item.id));
+    }
+    await tx.update(orderRefunds).set({ status: awaitingReturn ? 'awaiting_return' : 'processed', amount: data.actualAmount.toFixed(2), receiptUrl: data.receiptUrl || null, processedBy: data.processedBy, processedAt: new Date(), inventoryFinalizedAt: awaitingReturn ? null : new Date(), creditLedgerId }).where(eq(orderRefunds.id, data.refundId));
+  });
+  await recalculateOrderBalance(refund[0].orderId);
+  await logOrderOperation(refund[0].orderId, 'refund_processed', `完成退款 ${refund[0].refundNumber || data.refundId}，实际退款 RM${data.actualAmount.toFixed(2)}${awaitingReturn ? '；待确认退货' : ''}`, null, data.processedBy);
+  broadcastChanges(['orders', 'dashboard', 'inventory']);
+  return {
+    success: true,
+    awaitingReturn,
+    orderId: refund[0].orderId,
+    refundId: data.refundId,
+    refundNumber: refund[0].refundNumber || `RF-${data.refundId}`,
+    refundMethod: refund[0].refundMethod,
+  };
+}
+
+export async function finalizeRefundReturnItem(data: { refundItemId: number; inventoryTreatment: 'return_to_sale' | 'write_off'; processedBy: string }) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const rows = await db.select({ item: orderRefundItems, refund: orderRefunds }).from(orderRefundItems).innerJoin(orderRefunds, eq(orderRefundItems.refundId, orderRefunds.id)).where(eq(orderRefundItems.id, data.refundItemId)).limit(1);
+  if (!rows[0]) throw new Error('退款商品记录不存在');
+  const { item, refund } = rows[0];
+  if (refund.status !== 'awaiting_return' || item.inventoryTreatment !== 'pending_return' || item.inventoryActionStatus !== 'pending') throw new Error('此退款商品不处于待退货确认状态');
+  await db.transaction(async (tx: any) => {
+    let inventoryAdjustmentId: number | null = null;
+    if (data.inventoryTreatment === 'return_to_sale') {
+      if (!item.productId) throw new Error('此退款商品没有可退回的商品编号');
+      const product = await tx.select().from(products).where(eq(products.id, item.productId)).limit(1);
+      if (!product[0]) throw new Error('商品不存在，无法退回库存');
+      await tx.update(products).set({ stockQuantity: (product[0].stockQuantity || 0) + item.refundQuantity }).where(eq(products.id, item.productId));
+      const adjustment = await tx.insert(inventoryAdjustments).values({ productId: item.productId, adjustmentType: 'other', quantityChange: item.refundQuantity, unitCost: item.unitCost, totalCost: (Number(item.unitCost) * item.refundQuantity).toFixed(2), adjustedBy: data.processedBy, reason: `退款退货确认退库｜订单 ${refund.orderId}｜退款 ${refund.refundNumber || refund.id}`, remark: '客户退货确认后退回可售库存' });
+      inventoryAdjustmentId = Number((adjustment as any)[0]?.insertId) || null;
+    }
+    await tx.update(orderRefundItems).set({ inventoryTreatment: data.inventoryTreatment, inventoryActionStatus: data.inventoryTreatment === 'return_to_sale' ? 'returned' : 'written_off', inventoryAdjustmentId, inventoryHandledBy: data.processedBy, inventoryHandledAt: new Date() }).where(eq(orderRefundItems.id, item.id));
+    const remaining = await tx.select().from(orderRefundItems).where(eq(orderRefundItems.refundId, refund.id));
+    if (!remaining.some((row: typeof orderRefundItems.$inferSelect) => row.inventoryActionStatus === 'pending')) await tx.update(orderRefunds).set({ status: 'processed', inventoryFinalizedAt: new Date() }).where(eq(orderRefunds.id, refund.id));
+  });
+  await logOrderOperation(refund.orderId, 'refund_inventory_finalized', `退款 ${refund.refundNumber || refund.id} 已确认${data.inventoryTreatment === 'return_to_sale' ? '退回可售库存' : '报损不退库'}`, null, data.processedBy);
+  broadcastChanges(['orders', 'dashboard', 'inventory']);
+  return { success: true };
+}
+
+export async function getRefundManagementRecords(status?: 'pending' | 'processed' | 'awaiting_return' | 'rejected' | 'cancelled') {
+  const db = await getDb();
+  if (!db) return [];
+  const condition = status ? eq(orderRefunds.status, status as any) : undefined;
+  const rows = await db.select({
+    refund: orderRefunds,
+    orderNumber: orders.orderNumber,
+    customerName: customers.name,
+    customerPhone: customers.whatsappPhone,
+  }).from(orderRefunds)
+    .leftJoin(orders, eq(orderRefunds.orderId, orders.id))
+    .leftJoin(customers, eq(orders.customerId, customers.id))
+    .where(condition)
+    .orderBy(desc(orderRefunds.createdAt));
+  const refundIds = rows.map(row => row.refund.id);
+  const items = refundIds.length
+    ? await db.select().from(orderRefundItems).where(inArray(orderRefundItems.refundId, refundIds))
+    : [];
+  return rows.map(row => ({ ...row, items: items.filter(item => item.refundId === row.refund.id) }));
+}
+
+async function setPendingRefundStatus(data: { refundId: number; status: 'rejected' | 'cancelled'; reason?: string; processedBy: string }) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const refund = await db.select().from(orderRefunds).where(eq(orderRefunds.id, data.refundId)).limit(1);
+  if (!refund[0]) throw new Error('退款记录不存在');
+  if (refund[0].status !== 'pending') throw new Error('只有未处理退款可以拒绝或取消；已处理退款必须使用库存处理更正流程');
+  await db.update(orderRefunds).set({
+    status: data.status,
+    internalNotes: [refund[0].internalNotes, `${data.status === 'rejected' ? '已拒绝' : '已取消'}：${data.reason || '未说明原因'}`]
+      .filter(Boolean).join('\n'),
+    processedBy: data.processedBy,
+    processedAt: new Date(),
+  }).where(eq(orderRefunds.id, data.refundId));
+  await logOrderOperation(refund[0].orderId, 'refund_status', `${data.status === 'rejected' ? '拒绝' : '取消'}退款 ${refund[0].refundNumber || data.refundId}${data.reason ? `：${data.reason}` : ''}`, null, data.processedBy);
+  broadcastChanges(['orders', 'dashboard']);
+  return { success: true };
+}
+
+export async function rejectRefundRequest(data: { refundId: number; reason?: string; processedBy: string }) {
+  return setPendingRefundStatus({ ...data, status: 'rejected' });
+}
+
+export async function cancelRefundRequest(data: { refundId: number; reason?: string; processedBy: string }) {
+  return setPendingRefundStatus({ ...data, status: 'cancelled' });
+}
+
+export async function correctProcessedRefundInventoryTreatment(data: {
+  refundItemId: number;
+  inventoryTreatment: 'return_to_sale' | 'write_off';
+  processedBy: string;
+  reason: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  if (!data.reason.trim()) throw new Error('修改已处理退款的库存方式必须填写原因');
+  const rows = await db.select({ item: orderRefundItems, refund: orderRefunds }).from(orderRefundItems)
+    .innerJoin(orderRefunds, eq(orderRefundItems.refundId, orderRefunds.id))
+    .where(eq(orderRefundItems.id, data.refundItemId)).limit(1);
+  if (!rows[0]) throw new Error('退款商品记录不存在');
+  const { item, refund } = rows[0];
+  if (!['processed', 'awaiting_return'].includes(refund.status || '') || !['returned', 'written_off'].includes(item.inventoryActionStatus || '')) {
+    throw new Error('只有库存已确认的已处理退款可以更正库存方式');
+  }
+  const previousTreatment = item.inventoryTreatment;
+  if (previousTreatment === data.inventoryTreatment) throw new Error('库存处理方式没有变化');
+  if (!item.productId) throw new Error('与库存无关的退款商品不能更正库存方式');
+
+  await db.transaction(async (tx: any) => {
+    const product = await tx.select().from(products).where(eq(products.id, item.productId!)).limit(1);
+    if (!product[0]) throw new Error('商品不存在，无法更正库存处理');
+    let latestAdjustmentId: number | null = null;
+    if (previousTreatment === 'return_to_sale') {
+      if (!product[0].allowOversold && (product[0].stockQuantity || 0) < item.refundQuantity) {
+        throw new Error(`库存不足，无法撤销已退库的 ${item.productName} ${item.refundQuantity} 件`);
+      }
+      await tx.update(products).set({ stockQuantity: (product[0].stockQuantity || 0) - item.refundQuantity }).where(eq(products.id, item.productId!));
+      const reversal = await tx.insert(inventoryAdjustments).values({
+        productId: item.productId!, adjustmentType: 'other', quantityChange: -item.refundQuantity,
+        unitCost: item.unitCost, totalCost: (Number(item.unitCost) * item.refundQuantity * -1).toFixed(2),
+        adjustedBy: data.processedBy,
+        reason: `退款库存处理更正｜撤销退库｜订单 ${refund.orderId}｜退款 ${refund.refundNumber || refund.id}`,
+        remark: data.reason,
+      });
+      latestAdjustmentId = Number((reversal as any)[0]?.insertId) || null;
+    }
+    if (data.inventoryTreatment === 'return_to_sale') {
+      await tx.update(products).set({ stockQuantity: (product[0].stockQuantity || 0) + item.refundQuantity }).where(eq(products.id, item.productId!));
+      const returnAdjustment = await tx.insert(inventoryAdjustments).values({
+        productId: item.productId!, adjustmentType: 'other', quantityChange: item.refundQuantity,
+        unitCost: item.unitCost, totalCost: (Number(item.unitCost) * item.refundQuantity).toFixed(2),
+        adjustedBy: data.processedBy,
+        reason: `退款库存处理更正｜退回可售库存｜订单 ${refund.orderId}｜退款 ${refund.refundNumber || refund.id}`,
+        remark: data.reason,
+      });
+      latestAdjustmentId = Number((returnAdjustment as any)[0]?.insertId) || latestAdjustmentId;
+    } else {
+      const writeOff = await tx.insert(inventoryAdjustments).values({
+        productId: item.productId!, adjustmentType: 'other', quantityChange: 0,
+        unitCost: item.unitCost, totalCost: (Number(item.unitCost) * item.refundQuantity).toFixed(2),
+        adjustedBy: data.processedBy,
+        reason: `售后退款不退库／报损｜订单 ${refund.orderId}｜退款 ${refund.refundNumber || refund.id}`,
+        remark: data.reason,
+      });
+      latestAdjustmentId = Number((writeOff as any)[0]?.insertId) || latestAdjustmentId;
+    }
+    await tx.update(orderRefundItems).set({
+      inventoryTreatment: data.inventoryTreatment,
+      inventoryActionStatus: data.inventoryTreatment === 'return_to_sale' ? 'returned' : 'written_off',
+      inventoryAdjustmentId: latestAdjustmentId,
+      inventoryHandledBy: data.processedBy,
+      inventoryHandledAt: new Date(),
+    }).where(eq(orderRefundItems.id, item.id));
+  });
+  await logOrderOperation(refund.orderId, 'refund_inventory_corrected', `管理员更正退款 ${refund.refundNumber || refund.id} 的库存方式：${previousTreatment} → ${data.inventoryTreatment}；${data.reason}`, null, data.processedBy);
+  broadcastChanges(['orders', 'dashboard', 'inventory']);
+  return { success: true };
 }
 
 // ============================================================================
@@ -3286,14 +3613,17 @@ export async function getProductsEnhanced(params: {
       pendingMap[row.productId] = Number(row.pendingQty) || 0;
     }
     // 已完成：整单已发／已完成的全部数量，加上部分发货订单中已经进入包裹的数量。
+    // 已处理退款中「退回可售库存」的数量代表商品未最终成交，必须从已完成数量扣除；
+    // 报损／不退库不扣除，因为商品仍由客户持有，原订单成本也应继续保留。
     const completedItems = await db.execute(sql`
       SELECT
         oi.productId,
         COALESCE(SUM(
           CASE
-            WHEN o.physicalStatus IN ('shipped', 'completed') THEN oi.quantity
+            WHEN o.physicalStatus IN ('shipped', 'completed')
+              THEN GREATEST(oi.quantity - COALESCE(returned_items.returnedQty, 0), 0)
             WHEN o.physicalStatus = 'partial_shipped'
-              THEN LEAST(oi.quantity, COALESCE(shipped_items.shippedQty, 0))
+              THEN GREATEST(LEAST(oi.quantity, COALESCE(shipped_items.shippedQty, 0)) - COALESCE(returned_items.returnedQty, 0), 0)
             ELSE 0
           END
         ), 0) AS completedQty
@@ -3306,6 +3636,15 @@ export async function getProductsEnhanced(params: {
         WHERE pkg.status = 'shipped'
         GROUP BY pi.orderItemId
       ) shipped_items ON shipped_items.orderItemId = oi.id
+      LEFT JOIN (
+        SELECT ri.orderItemId, COALESCE(SUM(ri.refundQuantity), 0) AS returnedQty
+        FROM order_refund_items ri
+        JOIN order_refunds refund ON refund.id = ri.refundId
+        WHERE ri.inventoryTreatment = 'return_to_sale'
+          AND ri.inventoryActionStatus = 'returned'
+          AND refund.status IN ('processed', 'awaiting_return')
+        GROUP BY ri.orderItemId
+      ) returned_items ON returned_items.orderItemId = oi.id
       WHERE o.physicalStatus IN ('partial_shipped', 'shipped', 'completed')
       AND oi.productId IN (${sql.join(productIds, sql`, `)})
       GROUP BY oi.productId
@@ -3346,7 +3685,9 @@ export async function getProductOrderDetails(productId: number, type: 'ordered' 
       o.id AS orderId,
       o.orderNumber AS orderNumber,
       o.physicalStatus AS physicalStatus,
-      oi.quantity AS quantity,
+      ${type === 'completed'
+        ? sql`GREATEST(oi.quantity - COALESCE(returned_items.returnedQty, 0), 0)`
+        : sql`oi.quantity`} AS quantity,
       COALESCE(
         NULLIF(o.facebookName, ''),
         NULLIF(c.facebookName, ''),
@@ -3358,8 +3699,18 @@ export async function getProductOrderDetails(productId: number, type: 'ordered' 
     FROM order_items oi
     JOIN orders o ON o.id = oi.orderId
     LEFT JOIN customers c ON c.id = o.customerId
+    LEFT JOIN (
+      SELECT ri.orderItemId, COALESCE(SUM(ri.refundQuantity), 0) AS returnedQty
+      FROM order_refund_items ri
+      JOIN order_refunds refund ON refund.id = ri.refundId
+      WHERE ri.inventoryTreatment = 'return_to_sale'
+        AND ri.inventoryActionStatus = 'returned'
+        AND refund.status IN ('processed', 'awaiting_return')
+      GROUP BY ri.orderItemId
+    ) returned_items ON returned_items.orderItemId = oi.id
     WHERE oi.productId = ${productId}
       AND ${statusCondition}
+      AND ${type === 'completed' ? sql`GREATEST(oi.quantity - COALESCE(returned_items.returnedQty, 0), 0) > 0` : sql`1 = 1`}
     ORDER BY o.createdAt DESC, oi.id DESC
   `);
 
@@ -7392,6 +7743,7 @@ export async function getPaymentRecords(input: {
       .innerJoin(orders, eq(orderRefunds.orderId, orders.id))
       .leftJoin(customers, eq(orders.customerId, customers.id))
       .where(and(
+        sql`${orderRefunds.status} IN ('processed', 'awaiting_return')`,
         sql`COALESCE(${orderRefunds.refundDate}, ${orderRefunds.createdAt}) >= ${from}`,
         sql`COALESCE(${orderRefunds.refundDate}, ${orderRefunds.createdAt}) < ${to}`,
       ));
@@ -7468,6 +7820,7 @@ export async function getDashboardV11Stats() {
   }).from(orderRefunds)
     .innerJoin(orders, eq(orderRefunds.orderId, orders.id))
     .where(and(
+      sql`${orderRefunds.status} IN ('processed', 'awaiting_return')`,
       sql`COALESCE(${orderRefunds.refundDate}, ${orderRefunds.createdAt}) >= ${firstOfMonth}`,
       sql`COALESCE(${orderRefunds.refundDate}, ${orderRefunds.createdAt}) < ${firstOfNextMonth}`,
       sql`${(orders as any).orderCategory} IN ('local', 'import')`,
@@ -7502,6 +7855,13 @@ export async function getDashboardV11Stats() {
     .where(and(eq(notificationLogs.status, 'sent'), sql`${notificationLogs.createdAt} >= ${firstOfMonth}`)) as any[];
   const notifFailedCount = await db.select({ count: sql`COUNT(*)` }).from(notificationLogs)
     .where(and(eq(notificationLogs.status, 'failed'), sql`${notificationLogs.createdAt} >= ${firstOfMonth}`)) as any[];
+  const refundManagementPending = await db.select({
+    count: sql<string>`COUNT(*)`,
+    amount: sql<string>`COALESCE(SUM(${orderRefunds.requestedAmount}), 0)`,
+  }).from(orderRefunds)
+    .where(eq(orderRefunds.status, 'pending')) as any[];
+  const refundManagementAwaitingReturn = await db.select({ count: sql<string>`COUNT(*)` }).from(orderRefunds)
+    .where(eq(orderRefunds.status, 'awaiting_return')) as any[];
   return {
     row1: {
       pendingPayment: Number(pendingPayment[0]?.count || 0),
@@ -7525,6 +7885,11 @@ export async function getDashboardV11Stats() {
     },
     // Dashboard cash view: confirmed payment rows in the selected calendar month.
     cashReceiptBreakdown,
+    refundManagement: {
+      pendingCount: Number(refundManagementPending[0]?.count || 0),
+      pendingAmount: String(refundManagementPending[0]?.amount || "0.00"),
+      awaitingReturnCount: Number(refundManagementAwaitingReturn[0]?.count || 0),
+    },
     row5: {
       scheduledToday: scheduledTodayTotal,
     },

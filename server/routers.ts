@@ -1410,6 +1410,100 @@ export const appRouter = router({
   }),
 
   // ===========================================================================
+  // Refund Management（退款管理）
+  // ===========================================================================
+  refunds: router({
+    list: adminProcedure
+      .input(z.object({ status: z.enum(['pending', 'processed', 'awaiting_return', 'rejected', 'cancelled']).optional() }).optional())
+      .query(async ({ input }) => db.getRefundManagementRecords(input?.status)),
+    searchEligibleOrders: adminProcedure
+      .input(z.object({ search: z.string().trim().max(100).optional() }).optional())
+      .query(async ({ input }) => db.searchRefundEligibleOrders(input?.search)),
+    getOrderDetail: adminProcedure
+      .input(z.object({ orderId: z.number().int().positive() }))
+      .query(async ({ input }) => db.getRefundOrderDetail(input.orderId)),
+    create: adminProcedure
+      .input(z.object({
+        orderId: z.number().int().positive(),
+        requestedAmount: z.number().positive(),
+        refundMethod: z.enum(['credit', 'tng_qr', 'duitnow_qr', 'bank_transfer', 'cash', 'other']),
+        refundReason: z.string().trim().max(255).optional(),
+        issueDescription: z.string().trim().max(5000).optional(),
+        customerRefundDetails: z.string().trim().max(5000).optional(),
+        attachmentUrls: z.string().max(10000).optional(),
+        internalNotes: z.string().trim().max(5000).optional(),
+        items: z.array(z.object({
+          orderItemId: z.number().int().positive().optional(), productId: z.number().int().positive().optional(),
+          productName: z.string().trim().min(1).max(255), productSku: z.string().max(100).nullable().optional(),
+          refundQuantity: z.number().int().positive(), unitPrice: z.number().min(0), unitCost: z.number().min(0), refundAmount: z.number().min(0),
+          inventoryTreatment: z.enum(['return_to_sale', 'write_off', 'none', 'pending_return']),
+        })).max(100),
+      }))
+      .mutation(async ({ ctx, input }) => db.createRefundRequest({ ...input, requestedBy: ctx.user.name || ctx.user.openId })),
+    complete: adminProcedure
+      .input(z.object({ refundId: z.number().int().positive(), actualAmount: z.number().positive(), receiptUrl: z.string().max(1000).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        const result = await db.completeRefundRequest({ ...input, processedBy: ctx.user.name || ctx.user.openId });
+        // 退款主交易完成后才发送通知；通知失败绝不回滚已完成的退款。
+        let detail: Awaited<ReturnType<typeof db.getRefundOrderDetail>> | null = null;
+        let message = `您好，您的退款申请已处理完成。\n退款编号：${result.refundNumber}\n实际退款金额：RM${input.actualAmount.toFixed(2)}\n退款方式：${result.refundMethod}\n如有疑问请联系我们，谢谢。`;
+        try {
+          detail = await db.getRefundOrderDetail(result.orderId);
+          const orderNumber = detail?.order?.orderNumber || "-";
+          message = `您好，您的订单 ${orderNumber} 退款申请已处理完成。\n退款编号：${result.refundNumber}\n实际退款金额：RM${input.actualAmount.toFixed(2)}\n退款方式：${result.refundMethod}\n如有疑问请联系我们，谢谢。`;
+          const notice = await autoNotifyCustomer(
+            result.orderId,
+            message,
+            detail?.customer?.messengerId || undefined,
+            detail?.customer?.whatsappPhone || undefined,
+          );
+          await db.createNotificationLog({
+            orderId: result.orderId,
+            customerId: detail?.order?.customerId || null,
+            type: "refund_complete",
+            channel: notice.platform,
+            message,
+            status: notice.status,
+            errorMessage: notice.error || null,
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          try {
+            await db.createNotificationLog({
+              orderId: result.orderId,
+              customerId: detail?.order?.customerId || null,
+              type: "refund_complete",
+              channel: detail?.customer?.whatsappPhone ? "whatsapp" : "messenger",
+              message,
+              status: "failed",
+              errorMessage: `退款完成通知发送失败：${errorMessage}`,
+            });
+          } catch (logError) {
+            console.warn("[Refund] Customer completion notification failure audit could not be recorded:", logError);
+          }
+          console.warn("[Refund] Customer completion notification failed:", error);
+        }
+        return result;
+      }),
+    finalizeReturnItem: adminProcedure
+      .input(z.object({ refundItemId: z.number().int().positive(), inventoryTreatment: z.enum(['return_to_sale', 'write_off']) }))
+      .mutation(async ({ ctx, input }) => db.finalizeRefundReturnItem({ ...input, processedBy: ctx.user.name || ctx.user.openId })),
+    reject: adminProcedure
+      .input(z.object({ refundId: z.number().int().positive(), reason: z.string().trim().max(1000).optional() }))
+      .mutation(async ({ ctx, input }) => db.rejectRefundRequest({ ...input, processedBy: ctx.user.name || ctx.user.openId })),
+    cancel: adminProcedure
+      .input(z.object({ refundId: z.number().int().positive(), reason: z.string().trim().max(1000).optional() }))
+      .mutation(async ({ ctx, input }) => db.cancelRefundRequest({ ...input, processedBy: ctx.user.name || ctx.user.openId })),
+    correctInventoryTreatment: adminProcedure
+      .input(z.object({
+        refundItemId: z.number().int().positive(),
+        inventoryTreatment: z.enum(['return_to_sale', 'write_off']),
+        reason: z.string().trim().min(1).max(1000),
+      }))
+      .mutation(async ({ ctx, input }) => db.correctProcessedRefundInventoryTreatment({ ...input, processedBy: ctx.user.name || ctx.user.openId })),
+  }),
+
+  // ===========================================================================
   // Orders
   // ===========================================================================
   orders: router({
