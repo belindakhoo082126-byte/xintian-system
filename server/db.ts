@@ -9878,15 +9878,27 @@ export async function createChinaPreorderWithAutoIB(data: {
   await db.insert(importBatchItems).values(itemValues as any);
   await db.insert(importBatchItems).values(itemValues.map(item => ({ ...item, batchId: ibId })) as any);
   await db.update(importBatches).set({ autoIbId: ibId } as any).where(eq(importBatches.id, cnId));
+
+  // A CN is created from completed live-session selections. Bind only previously unbound,
+  // still-valid import orders so this CN's payment deadline can safely drive expiry checks
+  // without stealing orders that were already assigned to another CN.
+  const linkedOrdersResult = await db.update(orders).set({ importBatchId: cnId } as any).where(and(
+    eq(orders.orderCategory, 'import'),
+    inArray(orders.liveRoomId, data.liveSessionIds),
+    isNull(orders.importBatchId),
+    or(isNull(orders.physicalStatus), ne(orders.physicalStatus, 'cancelled')),
+    or(isNull(orders.importStatus), ne(orders.importStatus, 'cancelled')),
+  ));
+  const linkedOrderCount = Number((linkedOrdersResult as any)?.[0]?.affectedRows ?? (linkedOrdersResult as any)?.affectedRows ?? 0);
   await db.insert(cnChangeLogs).values({
     cnId,
     field: 'created',
     oldValue: null,
-    newValue: JSON.stringify({ startDate: data.startDate, endDate: data.endDate, paymentDeadline: deadline, liveSessionIds: data.liveSessionIds, itemCount: data.items.length, autoIbId: ibId }),
+    newValue: JSON.stringify({ startDate: data.startDate, endDate: data.endDate, paymentDeadline: deadline, liveSessionIds: data.liveSessionIds, itemCount: data.items.length, autoIbId: ibId, linkedOrderCount }),
     changedBy: data.operatorId ?? null,
   });
   broadcastChanges(['importBatches', 'inventory']);
-  return { cnId, cnNumber, ibId, ibNumber: `IB-${cnNumber}`, paymentDeadline: deadline };
+  return { cnId, cnNumber, ibId, ibNumber: `IB-${cnNumber}`, paymentDeadline: deadline, linkedOrderCount };
 }
 
 /** Creates an additional IB only when a CN has a genuine split arrival. The first IB is always automatic. */
@@ -15425,14 +15437,27 @@ export async function completeIbVerification(batchId: number) {
   return { success: true, totalActualCost: totalActualCost.toFixed(2), newStatus };
 }
 
+/**
+ * Orders are linked to their CN, not to its automatic or split-arrival IB.
+ * Legacy standalone IBs retain their own ID as the order-link target.
+ */
+async function getImportOrderLinkBatchId(batchId: number): Promise<number> {
+  const batch = await getImportBatchById(batchId);
+  if (!batch) throw new Error('Batch not found');
+  return (batch as any).documentType === 'ib' && (batch as any).cnId
+    ? Number((batch as any).cnId)
+    : batchId;
+}
+
 // Auto-match XTC orders after IB verification
 export async function autoMatchXtcOrders(batchId: number) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
 
-  // Get all import orders linked to this batch
+  // Automatic and split-arrival IBs must read the orders linked to their CN.
+  const orderLinkBatchId = await getImportOrderLinkBatchId(batchId);
   const batchOrders = await db.select().from(orders).where(
-    eq((orders as any).importBatchId, batchId as any)
+    eq((orders as any).importBatchId, orderLinkBatchId as any)
   );
 
   // Get batch items once for matching
@@ -15534,9 +15559,10 @@ export async function getCnIbBatchDetail(batchId: number) {
   if (!batch) return null;
   const items = await getImportBatchItems(batchId);
 
-  // Get linked orders
+  // CN owns the order relationship; automatic/split IBs inherit it through cnId.
+  const orderLinkBatchId = await getImportOrderLinkBatchId(batchId);
   const linkedOrders = await db.select().from(orders).where(
-    eq((orders as any).importBatchId, batchId as any)
+    eq((orders as any).importBatchId, orderLinkBatchId as any)
   );
 
   return {
@@ -15597,9 +15623,10 @@ export async function getCnIbCostProfit(batchId: number) {
     totalWrongItemQty += (item as any).wrongItemQty || 0;
   }
 
-  // Get linked XTC orders for revenue calculation
+  // CN owns the order relationship; automatic/split IBs inherit it through cnId.
+  const orderLinkBatchId = await getImportOrderLinkBatchId(batchId);
   const linkedOrders = await db.select().from(orders).where(
-    eq((orders as any).importBatchId, batchId as any)
+    eq((orders as any).importBatchId, orderLinkBatchId as any)
   );
 
   let totalRevenue = 0;
@@ -15680,9 +15707,10 @@ export async function allocateStockByPriority(batchId: number) {
 
   const batchItems = await getImportBatchItems(batchId);
 
-  // Get all linked XTC orders that are waiting for stock
+  // CN owns the order relationship; automatic/split IBs inherit it through cnId.
+  const orderLinkBatchId = await getImportOrderLinkBatchId(batchId);
   const linkedOrders = await db.select().from(orders).where(
-    eq((orders as any).importBatchId, batchId as any)
+    eq((orders as any).importBatchId, orderLinkBatchId as any)
   );
 
   // Filter orders that need stock (not cancelled/completed)
