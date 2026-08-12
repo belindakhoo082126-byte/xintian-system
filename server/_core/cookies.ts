@@ -9,6 +9,15 @@ function isIpAddress(host: string) {
 }
 
 function isSecureRequest(req: Request) {
+  const hostname = req.hostname?.toLowerCase();
+  // Public preview and custom-domain traffic is HTTPS at the browser edge.
+  // The Node process can still see HTTP after TLS terminates at the proxy. A
+  // SameSite=None cookie without Secure is rejected by browsers, which leaves
+  // users stuck on the sign-in screen after a successful OAuth callback.
+  if (hostname && !LOCAL_HOSTS.has(hostname) && !isIpAddress(hostname)) {
+    return true;
+  }
+
   if (req.protocol === "https") return true;
 
   const forwardedProto = req.headers["x-forwarded-proto"];

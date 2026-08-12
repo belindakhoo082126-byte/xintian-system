@@ -41,6 +41,9 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   const app = express();
+  // Respect the HTTPS scheme supplied by the managed reverse proxy. This keeps
+  // OAuth callback session cookies secure on preview and custom domains.
+  app.set("trust proxy", 1);
   const server = createServer(app);
   // Configure body parser with larger size limit for file uploads. Preserve the
   // exact Facebook webhook payload before JSON parsing so its HMAC can be checked.
