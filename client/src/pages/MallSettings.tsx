@@ -16,7 +16,6 @@ import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Upload, Image as ImageIcon, Palette, Bell, Phone, FileText, Settings, Calendar } from "lucide-react";
 import { MALL_THEMES } from "@/lib/mallTheme";
 import { MallThemePreview } from "@/components/MallThemeArtwork";
-import { resolveMallServiceBadges } from "@/lib/mallServiceBadges";
 
 export default function MallSettings() {
   const { translate, lang } = useI18n();
@@ -313,18 +312,6 @@ export default function MallSettings() {
           <Card>
             <CardHeader><CardTitle>{translate("条款与政策", "Terms and Policies")}</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
-                <div>
-                  <Label className="text-base">{translate("商品详情服务标签", "Product Detail Service Labels")}</Label>
-                  <p className="mt-1 text-xs text-muted-foreground">{translate("显示在每件商品详情的价格下方。可分别编辑中文与英文内容。", "Shown below the price on every product detail page. Edit Chinese and English separately.")}</p>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div><Label>{translate("配送标签（中文）", "Shipping Badge (Chinese)")}</Label><Input value={resolveMallServiceBadges(settingsForm.serviceBadges).shipping.zh} onChange={(e) => setSettingsForm((p: any) => ({ ...p, serviceBadges: { ...resolveMallServiceBadges(p.serviceBadges), shipping: { ...resolveMallServiceBadges(p.serviceBadges).shipping, zh: e.target.value } } }))} /></div>
-                  <div><Label>{translate("配送标签（English）", "Shipping Badge (English)")}</Label><Input value={resolveMallServiceBadges(settingsForm.serviceBadges).shipping.en} onChange={(e) => setSettingsForm((p: any) => ({ ...p, serviceBadges: { ...resolveMallServiceBadges(p.serviceBadges), shipping: { ...resolveMallServiceBadges(p.serviceBadges).shipping, en: e.target.value } } }))} /></div>
-                  <div><Label>{translate("保留标签（中文）", "Reservation Badge (Chinese)")}</Label><Input value={resolveMallServiceBadges(settingsForm.serviceBadges).reservation.zh} onChange={(e) => setSettingsForm((p: any) => ({ ...p, serviceBadges: { ...resolveMallServiceBadges(p.serviceBadges), reservation: { ...resolveMallServiceBadges(p.serviceBadges).reservation, zh: e.target.value } } }))} /></div>
-                  <div><Label>{translate("保留标签（English）", "Reservation Badge (English)")}</Label><Input value={resolveMallServiceBadges(settingsForm.serviceBadges).reservation.en} onChange={(e) => setSettingsForm((p: any) => ({ ...p, serviceBadges: { ...resolveMallServiceBadges(p.serviceBadges), reservation: { ...resolveMallServiceBadges(p.serviceBadges).reservation, en: e.target.value } } }))} /></div>
-                </div>
-              </div>
               <div><Label>{translate("配送说明", "Shipping Policy")}</Label><Textarea value={settingsForm.shippingPolicy || ""} onChange={(e) => setSettingsForm((p: any) => ({ ...p, shippingPolicy: e.target.value }))} rows={4} /></div>
               <div><Label>{translate("退款条例", "Refund Policy")}</Label><Textarea value={settingsForm.refundPolicy || ""} onChange={(e) => setSettingsForm((p: any) => ({ ...p, refundPolicy: e.target.value }))} rows={4} /></div>
               <div><Label>{translate("服务条款", "Terms of Service")}</Label><Textarea value={settingsForm.serviceTerms || ""} onChange={(e) => setSettingsForm((p: any) => ({ ...p, serviceTerms: e.target.value }))} rows={4} /></div>

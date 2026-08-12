@@ -1,7 +1,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useI18n } from "@/contexts/I18nContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { Languages, Leaf, Sun, Moon } from "lucide-react";
+import { Languages, Leaf, Sun, Moon, Sparkles } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,6 +67,7 @@ const MENU_ACCENTS = {
   dashboard: { iconClass: "text-rose-600", activeClass: "data-[active=true]:bg-rose-50 data-[active=true]:text-rose-900 dark:data-[active=true]:bg-rose-950/35 dark:data-[active=true]:text-rose-100" },
   live: { iconClass: "text-amber-600", activeClass: "data-[active=true]:bg-amber-50 data-[active=true]:text-amber-900 dark:data-[active=true]:bg-amber-950/35 dark:data-[active=true]:text-amber-100" },
   campaign: { iconClass: "text-blue-600", activeClass: "data-[active=true]:bg-blue-50 data-[active=true]:text-blue-900 dark:data-[active=true]:bg-blue-950/35 dark:data-[active=true]:text-blue-100" },
+  marketing: { iconClass: "text-rose-600", activeClass: "data-[active=true]:bg-rose-50 data-[active=true]:text-rose-900 dark:data-[active=true]:bg-rose-950/35 dark:data-[active=true]:text-rose-100" },
   orders: { iconClass: "text-orange-600", activeClass: "data-[active=true]:bg-orange-50 data-[active=true]:text-orange-900 dark:data-[active=true]:bg-orange-950/35 dark:data-[active=true]:text-orange-100" },
   packing: { iconClass: "text-[#7B3F00]", activeClass: "data-[active=true]:bg-[#FFF2E6] data-[active=true]:text-[#5A2D0C] dark:data-[active=true]:bg-[#5A2D0C]/35 dark:data-[active=true]:text-[#FFE4CC]" },
   products: { iconClass: "text-emerald-600", activeClass: "data-[active=true]:bg-emerald-50 data-[active=true]:text-emerald-900 dark:data-[active=true]:bg-emerald-950/35 dark:data-[active=true]:text-emerald-100" },
@@ -106,6 +107,14 @@ const menuStructure: MenuEntry[] = [
     label: { zh: "FB Campaign", en: "FB Campaign" },
     path: "/campaigns",
     accent: MENU_ACCENTS.campaign,
+  },
+
+  // 2c. 营销中心
+  {
+    icon: Sparkles,
+    label: { zh: "营销中心", en: "Marketing Center" },
+    path: "/marketing",
+    accent: MENU_ACCENTS.marketing,
   },
 
   // 3. 订单管理
@@ -153,7 +162,6 @@ const menuStructure: MenuEntry[] = [
       { icon: MessageSquare, label: { zh: "Chat 客服", en: "Chat" }, path: "/chat" },
       { icon: AlertCircle, label: { zh: "AI 转人工通知", en: "AI Handover" }, path: "/ai-handover" },
       { icon: Brain, label: { zh: "AI 大脑", en: "AI Brain" }, path: "/ai-brain" },
-      { icon: TrendingUp, label: { zh: "AI 销售中心", en: "AI Sales Center" }, path: "/ai-sales" },
       { icon: Bot, label: { zh: "Flow 管理", en: "Flow Management" }, path: "/flows" },
       { icon: Video, label: { zh: "直播AI", en: "Live AI" }, path: "/live-ai-flows" },
     ],

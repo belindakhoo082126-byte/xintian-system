@@ -1,5 +1,6 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { parse as parseCookie } from "cookie";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, adminProcedure, protectedProcedure, shippingProcedure, router } from "./_core/trpc";
 import { z } from "zod";
@@ -33,7 +34,9 @@ import * as parceldaily from "./parceldaily";
 import * as parcelking from "./parcelking";
 import { ParcelKingError } from "./parcelking";
 import * as shippingProvider from "./shippingProvider";
-import { createHeartbeatJob, updateHeartbeatJob } from "./_core/heartbeat";
+import { evaluateMarketingCampaign } from "./marketingEngine";
+import { runMarketingAutomationRule } from "./marketingAutomationService";
+import { createHeartbeatJob, deleteHeartbeatJob, updateHeartbeatJob } from "./_core/heartbeat";
 
 const PACKING_SHIPPING_ERROR_MESSAGES: Record<string, string> = {
   PACKING_ORDER_NOT_FOUND: "订单不存在或已被删除",
@@ -78,6 +81,313 @@ async function autoNotifyCustomer(orderId: number, message: string, psid?: strin
 
 export const appRouter = router({
   system: systemRouter,
+
+  // ===========================================================================
+  // Marketing Center (营销中心)
+  // Activities configure entitlement rules only. Actual order application must
+  // continue through the existing order and inventory services.
+  // ===========================================================================
+  marketing: router({
+    listCampaigns: adminProcedure.query(async () => db.listMarketingCampaigns()),
+    getCampaign: adminProcedure
+      .input(z.object({ campaignId: z.number().int().positive() }))
+      .query(async ({ input }) => db.getMarketingCampaign(input.campaignId)),
+    createCampaign: adminProcedure
+      .input(z.object({
+        campaignCode: z.string().trim().min(2).max(50),
+        name: z.string().trim().min(1).max(255),
+        description: z.string().max(5000).nullable().optional(),
+        status: z.enum(["draft", "scheduled", "active", "paused", "ended"]).optional(),
+        startAt: z.date().nullable().optional(),
+        endAt: z.date().nullable().optional(),
+        orderCategories: z.array(z.string().min(1).max(50)).max(20).optional(),
+        orderSources: z.array(z.string().min(1).max(50)).max(20).optional(),
+        customerAudience: z.enum(["all", "member", "non_member", "new_customer", "segment"]).optional(),
+        customerSegmentId: z.number().int().positive().nullable().optional(),
+        showInMall: z.boolean().optional(),
+        allowMemberPriceStack: z.boolean().optional(),
+        allowBundlePriceStack: z.boolean().optional(),
+        allowCouponStack: z.boolean().optional(),
+        allowPointsEarn: z.boolean().optional(),
+        perCustomerLimit: z.number().int().positive().nullable().optional(),
+        perOrderLimit: z.number().int().positive().nullable().optional(),
+        usageLimit: z.number().int().positive().nullable().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => ({ campaignId: await db.createMarketingCampaign({ ...input, createdBy: ctx.user.openId }) })),
+    updateCampaign: adminProcedure
+      .input(z.object({
+        campaignId: z.number().int().positive(),
+        campaignCode: z.string().trim().min(2).max(50).optional(),
+        name: z.string().trim().min(1).max(255).optional(),
+        description: z.string().max(5000).nullable().optional(),
+        status: z.enum(["draft", "scheduled", "active", "paused", "ended"]).optional(),
+        startAt: z.date().nullable().optional(),
+        endAt: z.date().nullable().optional(),
+        orderCategories: z.array(z.string().min(1).max(50)).max(20).optional(),
+        orderSources: z.array(z.string().min(1).max(50)).max(20).optional(),
+        customerAudience: z.enum(["all", "member", "non_member", "new_customer", "segment"]).optional(),
+        customerSegmentId: z.number().int().positive().nullable().optional(),
+        showInMall: z.boolean().optional(),
+        allowMemberPriceStack: z.boolean().optional(),
+        allowBundlePriceStack: z.boolean().optional(),
+        allowCouponStack: z.boolean().optional(),
+        allowPointsEarn: z.boolean().optional(),
+        perCustomerLimit: z.number().int().positive().nullable().optional(),
+        perOrderLimit: z.number().int().positive().nullable().optional(),
+        usageLimit: z.number().int().positive().nullable().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { campaignId, ...patch } = input;
+        await db.updateMarketingCampaign(campaignId, patch);
+        return { success: true } as const;
+      }),
+    createRule: adminProcedure
+      .input(z.object({
+        campaignId: z.number().int().positive(),
+        ruleType: z.enum(["quantity_gift", "nth_item_discount", "order_threshold", "spin_eligibility", "add_on", "product_discount", "category_discount", "clearance", "live_lottery", "member_offer"]),
+        name: z.string().trim().min(1).max(255),
+        description: z.string().max(5000).nullable().optional(),
+        status: z.enum(["draft", "active", "paused", "ended"]).optional(),
+        priority: z.number().int().min(0).max(10000).optional(),
+        stackable: z.boolean().optional(),
+        config: z.record(z.string(), z.unknown()),
+        usageLimit: z.number().int().positive().nullable().optional(),
+        scopes: z.array(z.object({
+          scopeType: z.enum(["trigger_product", "eligible_product", "eligible_category", "gift_product", "add_on_product"]),
+          productId: z.number().int().positive().nullable().optional(),
+          categoryId: z.number().int().positive().nullable().optional(),
+          quantity: z.number().int().positive().max(10000).optional(),
+        }).refine((scope) => scope.productId != null || scope.categoryId != null, "范围必须选择商品或分类")).max(200).optional(),
+      }))
+      .mutation(async ({ input }) => ({ ruleId: await db.createMarketingRule(input) })),
+    updateRule: adminProcedure
+      .input(z.object({
+        ruleId: z.number().int().positive(),
+        ruleType: z.enum(["quantity_gift", "nth_item_discount", "order_threshold", "spin_eligibility", "add_on", "product_discount", "category_discount", "clearance", "live_lottery", "member_offer"]).optional(),
+        name: z.string().trim().min(1).max(255).optional(),
+        description: z.string().max(5000).nullable().optional(),
+        status: z.enum(["draft", "active", "paused", "ended"]).optional(),
+        priority: z.number().int().min(0).max(10000).optional(),
+        stackable: z.boolean().optional(),
+        config: z.record(z.string(), z.unknown()).optional(),
+        usageLimit: z.number().int().positive().nullable().optional(),
+        scopes: z.array(z.object({
+          scopeType: z.enum(["trigger_product", "eligible_product", "eligible_category", "gift_product", "add_on_product"]),
+          productId: z.number().int().positive().nullable().optional(),
+          categoryId: z.number().int().positive().nullable().optional(),
+          quantity: z.number().int().positive().max(10000).optional(),
+        }).refine((scope) => scope.productId != null || scope.categoryId != null, "范围必须选择商品或分类")).max(200).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { ruleId, ...patch } = input;
+        await db.updateMarketingRule(ruleId, patch);
+        return { success: true } as const;
+      }),
+    deleteRule: adminProcedure
+      .input(z.object({ ruleId: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        await db.deleteMarketingRule(input.ruleId);
+        return { success: true } as const;
+      }),
+    preview: adminProcedure
+      .input(z.object({
+        campaignId: z.number().int().positive(),
+        cart: z.array(z.object({ productId: z.number().int().positive(), categoryId: z.number().int().positive().nullable().optional(), quantity: z.number().int().positive(), unitPrice: z.number().nonnegative(), unitCost: z.number().nonnegative().optional() })).min(1),
+        isMemberPriceApplied: z.boolean().optional(),
+        isBundlePriceApplied: z.boolean().optional(),
+        couponApplied: z.boolean().optional(),
+      }))
+      .query(async ({ input }) => {
+        const campaign = await db.getMarketingCampaign(input.campaignId);
+        if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "营销活动不存在" });
+        return evaluateMarketingCampaign(campaign as any, input.cart, input);
+      }),
+    mallPreview: publicProcedure
+      .input(z.object({
+        cart: z.array(z.object({ productId: z.number().int().positive(), categoryId: z.number().int().positive().nullable().optional(), quantity: z.number().int().positive(), unitPrice: z.number().nonnegative(), unitCost: z.number().nonnegative().optional() })).max(100),
+        isMemberPriceApplied: z.boolean().optional(),
+        isBundlePriceApplied: z.boolean().optional(),
+        couponApplied: z.boolean().optional(),
+      }))
+      .query(async ({ input }) => {
+        const campaigns = (await db.getActiveMarketingCampaigns())
+          .filter((campaign) => campaign.showInMall)
+          .map((campaign) => ({
+            id: campaign.id,
+            name: campaign.name,
+            description: campaign.description,
+            result: evaluateMarketingCampaign(campaign as any, input.cart, input),
+          }))
+          .filter((campaign) => campaign.result.eligible);
+        return campaigns;
+      }),
+    listLotteryEntries: adminProcedure
+      .input(z.object({ campaignId: z.number().int().positive(), limit: z.number().int().min(1).max(500).optional() }))
+      .query(async ({ input }) => db.listMarketingLotteryEntries(input.campaignId, input.limit)),
+    createLotteryPrize: adminProcedure
+      .input(z.object({
+        campaignId: z.number().int().positive(),
+        name: z.string().trim().min(1).max(255),
+        prizeType: z.enum(["physical_product", "coupon", "points", "membership_days", "free_shipping", "no_prize"]),
+        productId: z.number().int().positive().nullable().optional(),
+        productQuantity: z.number().int().positive().max(10000).optional(),
+        couponCode: z.string().trim().max(100).nullable().optional(),
+        pointsValue: z.number().int().min(0).max(1000000).optional(),
+        membershipDays: z.number().int().min(0).max(3650).optional(),
+        probabilityWeight: z.number().int().min(1).max(1000000).optional(),
+        quantityLimit: z.number().int().positive().max(1000000).nullable().optional(),
+      }).superRefine((value, context) => {
+        if (value.prizeType === "physical_product" && !value.productId) context.addIssue({ code: z.ZodIssueCode.custom, path: ["productId"], message: "实体奖品必须选择商品" });
+      }))
+      .mutation(async ({ input }) => ({ prizeId: await db.createMarketingLotteryPrize(input) })),
+    listAvailableLotteryPrizes: adminProcedure
+      .input(z.object({ campaignId: z.number().int().positive() }))
+      .query(async ({ input }) => db.listAvailableMarketingLotteryPrizes(input.campaignId)),
+    drawLotteryPrize: adminProcedure
+      .input(z.object({ entryId: z.number().int().positive() }))
+      .mutation(async ({ input }) => db.drawMarketingLotteryPrize(input)),
+    claimLotteryPhysicalPrize: adminProcedure
+      .input(z.object({ drawId: z.number().int().positive(), orderId: z.number().int().positive(), unitPrice: z.number().nonnegative().optional() }))
+      .mutation(async ({ input }) => db.claimMarketingLotteryPhysicalPrize(input)),
+    listSegments: adminProcedure.query(async () => db.listMarketingSegments()),
+    createSegment: adminProcedure
+      .input(z.object({
+        name: z.string().trim().min(1).max(255),
+        description: z.string().max(5000).nullable().optional(),
+        filterConfig: z.record(z.string(), z.unknown()),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => ({ segmentId: await db.createMarketingSegment({ ...input, createdBy: ctx.user.openId }) })),
+    updateSegment: adminProcedure
+      .input(z.object({
+        segmentId: z.number().int().positive(),
+        name: z.string().trim().min(1).max(255).optional(),
+        description: z.string().max(5000).nullable().optional(),
+        filterConfig: z.record(z.string(), z.unknown()).optional(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { segmentId, ...patch } = input;
+        await db.updateMarketingSegment(segmentId, patch);
+        return { success: true } as const;
+      }),
+    listMessageTemplates: adminProcedure.query(async () => db.listMarketingMessageTemplates()),
+    createMessageTemplate: adminProcedure
+      .input(z.object({
+        name: z.string().trim().min(1).max(255),
+        channel: z.enum(["messenger", "manual_copy"]).optional(),
+        subject: z.string().max(255).nullable().optional(),
+        content: z.string().trim().min(1).max(5000),
+        buttonLabel: z.string().max(100).nullable().optional(),
+        buttonUrl: z.string().url().max(500).nullable().optional(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => ({ templateId: await db.createMarketingMessageTemplate({ ...input, createdBy: ctx.user.openId }) })),
+    updateMessageTemplate: adminProcedure
+      .input(z.object({
+        templateId: z.number().int().positive(),
+        name: z.string().trim().min(1).max(255).optional(),
+        channel: z.enum(["messenger", "manual_copy"]).optional(),
+        subject: z.string().max(255).nullable().optional(),
+        content: z.string().trim().min(1).max(5000).optional(),
+        buttonLabel: z.string().max(100).nullable().optional(),
+        buttonUrl: z.string().url().max(500).nullable().optional(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { templateId, ...patch } = input;
+        await db.updateMarketingMessageTemplate(templateId, patch);
+        return { success: true } as const;
+      }),
+    listAutomationRules: adminProcedure.query(async () => db.listMarketingAutomationRules()),
+    createAutomationRule: adminProcedure
+      .input(z.object({
+        campaignId: z.number().int().positive().nullable().optional(),
+        name: z.string().trim().min(1).max(255),
+        triggerType: z.enum(["segment", "campaign_start", "campaign_ending", "restock", "lottery_eligible", "manual_batch"]),
+        segmentId: z.number().int().positive().nullable().optional(),
+        templateId: z.number().int().positive(),
+        scheduleType: z.enum(["once", "cron", "event"]).optional(),
+        scheduledAt: z.date().nullable().optional(),
+        filterConfig: z.record(z.string(), z.unknown()).nullable().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => ({ ruleId: await db.createMarketingAutomationRule({ ...input, createdBy: ctx.user.openId }) })),
+    updateAutomationRule: adminProcedure
+      .input(z.object({
+        ruleId: z.number().int().positive(),
+        campaignId: z.number().int().positive().nullable().optional(),
+        name: z.string().trim().min(1).max(255).optional(),
+        triggerType: z.enum(["segment", "campaign_start", "campaign_ending", "restock", "lottery_eligible", "manual_batch"]).optional(),
+        segmentId: z.number().int().positive().nullable().optional(),
+        templateId: z.number().int().positive().optional(),
+        status: z.enum(["paused", "active", "ended"]).optional(),
+        scheduleType: z.enum(["once", "cron", "event"]).optional(),
+        scheduledAt: z.date().nullable().optional(),
+        filterConfig: z.record(z.string(), z.unknown()).nullable().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { ruleId, ...patch } = input;
+        await db.updateMarketingAutomationRule(ruleId, patch);
+        return { success: true } as const;
+      }),
+    previewAutomationRun: adminProcedure
+      .input(z.object({ ruleId: z.number().int().positive(), customerIds: z.array(z.number().int().positive()).max(500).optional(), limit: z.number().int().min(1).max(500).optional() }))
+      .mutation(async ({ input }) => runMarketingAutomationRule({ ...input, dryRun: true })),
+    runAutomationNow: adminProcedure
+      .input(z.object({ ruleId: z.number().int().positive(), customerIds: z.array(z.number().int().positive()).max(500).optional(), limit: z.number().int().min(1).max(500).optional() }))
+      .mutation(async ({ input }) => runMarketingAutomationRule(input)),
+    scheduleAutomationRule: adminProcedure
+      .input(z.object({ ruleId: z.number().int().positive(), cron: z.string().trim().regex(/^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+$/, "排程必须使用 6 段 UTC cron 格式") }))
+      .mutation(async ({ ctx, input }) => {
+        const rule = await db.getMarketingAutomationRuleById(input.ruleId);
+        if (!rule) throw new TRPCError({ code: "NOT_FOUND", message: "营销自动规则不存在" });
+        const sessionToken = parseCookie(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+        const description = `营销自动规则：${rule.name}。仅规则处于启用状态时执行。`;
+        if (rule.scheduleCronTaskUid) {
+          const job = await updateHeartbeatJob(rule.scheduleCronTaskUid, { cron: input.cron, path: "/api/scheduled/marketing-automation", method: "POST", payload: {}, description, enable: true }, sessionToken);
+          await db.updateMarketingAutomationRule(rule.id, { status: "active", scheduleType: "cron" });
+          return { taskUid: rule.scheduleCronTaskUid, nextExecutionAt: job.nextExecutionAt ?? null };
+        }
+        const job = await createHeartbeatJob({
+          name: `marketing-automation-${rule.id}`,
+          cron: input.cron,
+          path: "/api/scheduled/marketing-automation",
+          method: "POST",
+          payload: {},
+          description,
+        }, sessionToken);
+        await db.updateMarketingAutomationRule(rule.id, { status: "active", scheduleType: "cron", scheduleCronTaskUid: job.taskUid });
+        return { taskUid: job.taskUid, nextExecutionAt: job.nextExecutionAt ?? null };
+      }),
+    pauseAutomationRule: adminProcedure
+      .input(z.object({ ruleId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const rule = await db.getMarketingAutomationRuleById(input.ruleId);
+        if (!rule) throw new TRPCError({ code: "NOT_FOUND", message: "营销自动规则不存在" });
+        if (rule.scheduleCronTaskUid) {
+          const sessionToken = parseCookie(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+          await updateHeartbeatJob(rule.scheduleCronTaskUid, { enable: false }, sessionToken);
+        }
+        await db.updateMarketingAutomationRule(rule.id, { status: "paused" });
+        return { success: true } as const;
+      }),
+    deleteAutomationSchedule: adminProcedure
+      .input(z.object({ ruleId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const rule = await db.getMarketingAutomationRuleById(input.ruleId);
+        if (!rule) throw new TRPCError({ code: "NOT_FOUND", message: "营销自动规则不存在" });
+        if (rule.scheduleCronTaskUid) {
+          const sessionToken = parseCookie(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+          await deleteHeartbeatJob(rule.scheduleCronTaskUid, sessionToken);
+        }
+        await db.updateMarketingAutomationRule(rule.id, { status: "paused", scheduleCronTaskUid: null });
+        return { success: true } as const;
+      }),
+    effectSummary: adminProcedure.query(async () => db.getMarketingEffectSummary()),
+    listMessageDeliveries: adminProcedure
+      .input(z.object({ limit: z.number().int().min(1).max(500).optional() }).optional())
+      .query(async ({ input }) => db.listMarketingMessageDeliveries(input?.limit || 100)),
+  }),
 
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
@@ -3271,10 +3581,6 @@ export const appRouter = router({
       shippingPolicy: z.string().nullable().optional(),
       refundPolicy: z.string().nullable().optional(),
       serviceTerms: z.string().nullable().optional(),
-      serviceBadges: z.object({
-        shipping: z.object({ zh: z.string().max(200), en: z.string().max(200) }),
-        reservation: z.object({ zh: z.string().max(200), en: z.string().max(200) }),
-      }).nullable().optional(),
       companyName: z.string().nullable().optional(),
       phone: z.string().nullable().optional(),
       whatsapp: z.string().nullable().optional(),
@@ -5150,8 +5456,7 @@ export const appRouter = router({
         preorderEndDate: z.coerce.date().optional(),
         shippingMethod: z.enum(['air', 'sea']).optional(),
         chinaShippingCost: z.string().optional(),
-        // IB 验货批次仅能在确认 CN 时自动建立，手动表单只能创建 CN 阶段。
-        status: z.enum(['draft', 'in_progress', 'closed']).optional(),
+        status: z.enum(['draft', 'in_progress', 'closed', 'purchased', 'preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed']).optional(),
         notes: z.string().optional(),
         supplierOrderNumber: z.string().optional(),
         chinaTrackingNumber: z.string().optional(),
@@ -5181,18 +5486,6 @@ export const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
-        const batch = await db.getImportBatchById(id);
-        if (!batch) throw new Error('采购批次不存在');
-        const cnStatuses = ['draft', 'in_progress', 'closed', 'purchased'];
-        const ibStatuses = ['preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed'];
-        if (data.status) {
-          if (batch.parentBatchId && !ibStatuses.includes(data.status)) {
-            throw new Error('IB 批次只能使用 IB 验货流程状态');
-          }
-          if (!batch.parentBatchId && !cnStatuses.includes(data.status)) {
-            throw new Error('CN 批次不能手动改为 IB 流程；请先确认采购以自动建立 IB');
-          }
-        }
         await db.updateImportBatch(id, data);
         return { success: true };
       }),
@@ -5533,12 +5826,6 @@ export const appRouter = router({
         return await db.getMallBundles();
       }),
 
-    mallDetail: publicProcedure
-      .input(z.object({ id: z.number().int().positive() }))
-      .query(async ({ input }) => {
-        return await db.getMallBundleById(input.id);
-      }),
-
     profitAnalysis: adminProcedure
       .input(z.object({
         startDate: z.string().optional(),
@@ -5758,175 +6045,6 @@ export const appRouter = router({
         }
         return { success: true };
       }),
-  }),
-
-  // =========================================================================
-  // V5.0: Unified AI customer-service orchestration, voice and sales center
-  // =========================================================================
-  aiOrchestration: router({
-    getSettings: adminProcedure.query(async () => {
-      return await db.getAiOrchestrationSettings();
-    }),
-    updateSettings: adminProcedure.input(z.object({
-      isEnabled: z.boolean().optional(),
-      voiceTranscriptionEnabled: z.boolean().optional(),
-      requireVoiceReviewBelow: z.string().optional(),
-      maxUnclearAttempts: z.number().int().min(1).max(10).optional(),
-    })).mutation(async ({ input, ctx }) => {
-      await db.updateAiOrchestrationSettings({ ...input, updatedBy: ctx.user?.name || "Staff" });
-      return { success: true };
-    }),
-    listVoiceTranscripts: adminProcedure.input(z.object({
-      conversationId: z.number().optional(),
-      status: z.enum(["all", "pending", "transcribed", "needs_review", "failed"]).optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    })).query(async ({ input }) => {
-      return await db.listAiVoiceTranscripts(input);
-    }),
-    reviseVoiceTranscript: adminProcedure.input(z.object({
-      id: z.number(),
-      correctedTranscript: z.string().min(1),
-    })).mutation(async ({ input, ctx }) => {
-      await db.updateAiVoiceTranscript(input.id, {
-        status: "transcribed",
-        correctedTranscript: input.correctedTranscript,
-        correctedBy: ctx.user?.name || "Staff",
-        correctedAt: new Date(),
-      });
-      return { success: true };
-    }),
-    getPendingAction: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-      return await db.getAiPendingAction(input.id);
-    }),
-    updatePendingAction: adminProcedure.input(z.object({
-      id: z.number(),
-      status: z.enum(["confirmed", "executed", "expired", "failed", "cancelled"]),
-      failureReason: z.string().max(500).optional(),
-    })).mutation(async ({ input, ctx }) => {
-      await db.updateAiPendingAction(input.id, {
-        status: input.status,
-        confirmedBy: ["confirmed", "executed"].includes(input.status) ? (ctx.user?.name || "Staff") : null,
-        confirmedAt: ["confirmed", "executed"].includes(input.status) ? new Date() : null,
-        failureReason: input.failureReason ?? null,
-      });
-      return { success: true };
-    }),
-  }),
-
-  aiSales: router({
-    getSettings: adminProcedure.query(async () => {
-      return await db.getAiSalesSettings();
-    }),
-    updateSettings: adminProcedure.input(z.object({
-      isEnabled: z.boolean().optional(),
-      proactiveRecommendationsEnabled: z.boolean().optional(),
-      maxRecommendationsPerConversation: z.number().int().min(1).max(10).optional(),
-      stopAfterCustomerDecline: z.boolean().optional(),
-      recommendationCooldownHours: z.number().int().min(0).max(720).optional(),
-      askEnvironmentFirst: z.boolean().optional(),
-      askBudgetFirst: z.boolean().optional(),
-      prioritizeEasyCare: z.boolean().optional(),
-      minimumGrossMarginPercent: z.string().optional(),
-    })).mutation(async ({ input, ctx }) => {
-      await db.updateAiSalesSettings({ ...input, updatedBy: ctx.user?.name || "Staff" });
-      return { success: true };
-    }),
-    listRecords: adminProcedure.input(z.object({
-      conversationId: z.number().optional(),
-      customerId: z.number().optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    })).query(async ({ input }) => {
-      return await db.listAiSalesRecords(input);
-    }),
-  }),
-
-  // =========================================================================
-  // AI Follow-up — explicitly activated Heartbeat jobs with delivery audit
-  // =========================================================================
-  aiFollowUp: router({
-    listPolicies: adminProcedure.query(async () => {
-      return await db.listAiFollowUpPolicies();
-    }),
-    listDeliveries: adminProcedure.input(z.object({
-      policyId: z.number().int().positive().optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    })).query(async ({ input }) => {
-      return await db.listAiFollowUpDeliveries(input);
-    }),
-    createPolicy: adminProcedure.input(z.object({
-      name: z.string().trim().min(1).max(120),
-      channel: z.enum(["messenger", "whatsapp"]).default("messenger"),
-      triggerType: z.enum(["unpaid_order", "quotation", "cart_abandoned", "membership_flow"]),
-      cronExpression: z.string().trim().min(9).max(100).default("0 0 9 * * *"),
-      delayHours: z.number().int().min(1).max(24 * 30).default(24),
-      maxAttempts: z.number().int().min(1).max(3).default(1),
-      respectHandover: z.boolean().default(true),
-      stopOnCustomerReply: z.boolean().default(true),
-      stopOnPurchase: z.boolean().default(true),
-      stopOnPayment: z.boolean().default(true),
-      messageTemplate: z.string().trim().min(1).max(2000),
-    })).mutation(async ({ input, ctx }) => {
-      // A saved policy never starts running automatically. The administrator
-      // must explicitly enable it after reviewing its template and safeguards.
-      const policy = await db.createAiFollowUpPolicy({
-        ...input,
-        createdBy: ctx.user?.name || "Staff",
-      });
-      try {
-        const scheduled = await createHeartbeatJob({
-          name: `ai-follow-up-${policy.id}`,
-          cron: input.cronExpression,
-          path: "/api/scheduled/ai-follow-up",
-          method: "POST",
-          payload: {},
-          description: `AI 自动跟进：${input.name}（创建后默认暂停）`,
-        }, "");
-        // Pause before returning so a newly saved policy cannot send without
-        // a later, explicit enable action.
-        await updateHeartbeatJob(scheduled.taskUid, { enable: false }, "");
-        const updated = await db.updateAiFollowUpPolicy(policy.id, {
-          scheduleCronTaskUid: scheduled.taskUid,
-          isEnabled: false,
-        });
-        return { policy: updated, taskUid: scheduled.taskUid, isEnabled: false };
-      } catch (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `已保存但无法建立计划任务：${error instanceof Error ? error.message : "未知错误"}`,
-        });
-      }
-    }),
-    updatePolicy: adminProcedure.input(z.object({
-      id: z.number().int().positive(),
-      cronExpression: z.string().trim().min(9).max(100).optional(),
-      delayHours: z.number().int().min(1).max(24 * 30).optional(),
-      maxAttempts: z.number().int().min(1).max(3).optional(),
-      respectHandover: z.boolean().optional(),
-      stopOnCustomerReply: z.boolean().optional(),
-      stopOnPurchase: z.boolean().optional(),
-      stopOnPayment: z.boolean().optional(),
-      messageTemplate: z.string().trim().min(1).max(2000).optional(),
-    })).mutation(async ({ input }) => {
-      const policy = await db.getAiFollowUpPolicy(input.id);
-      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "自动跟进策略不存在" });
-      if (input.cronExpression && policy.scheduleCronTaskUid) {
-        await updateHeartbeatJob(policy.scheduleCronTaskUid, { cron: input.cronExpression }, "");
-      }
-      const { id, ...changes } = input;
-      return await db.updateAiFollowUpPolicy(id, changes);
-    }),
-    setEnabled: adminProcedure.input(z.object({
-      id: z.number().int().positive(),
-      isEnabled: z.boolean(),
-    })).mutation(async ({ input }) => {
-      const policy = await db.getAiFollowUpPolicy(input.id);
-      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "自动跟进策略不存在" });
-      if (!policy.scheduleCronTaskUid) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "策略尚未绑定计划任务，不能启用" });
-      }
-      await updateHeartbeatJob(policy.scheduleCronTaskUid, { enable: input.isEnabled }, "");
-      return await db.updateAiFollowUpPolicy(policy.id, { isEnabled: input.isEnabled });
-    }),
   }),
 
   // =========================================================================

@@ -1496,21 +1496,31 @@ export default function PackingDetail() {
           </div>
         )}
 
-        {/* Keep the A5 detail printout identical to the Packing page printout: one canonical remark list only. */}
-        {data.remarks && data.remarks.length > 0 && (
+        {/* V2.1.26补充6: Customer Remark (Issue 4) */}
+        {data.customerRemark && (
+          <div style={{ marginBottom: "4px", border: "2px solid #000", padding: "4px" }}>
+            <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("客户备注", "Customer Remark")}</div>
+            <div style={{ fontSize: "11px", marginLeft: "8px" }}>{data.customerRemark}</div>
+          </div>
+        )}
+
+        {/* V2.1.26补充6: Admin Remarks (Issue 4) */}
+        {data.adminRemarks && data.adminRemarks.length > 0 && (
           <div style={{ marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
-            {data.remarks.map((r: any, i: number) => {
-              if (r.remarkCategory === "repotting") {
-                return <div key={i} style={{ marginBottom: "4px" }}><div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("换盆", "Repotting")}</div><div style={{ fontSize: "11px", marginLeft: "8px" }}>{r.content || ""}</div></div>;
-              }
-              if (r.remarkCategory === "desired_delivery_date") {
-                return <div key={i} style={{ marginBottom: "4px" }}><div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("希望收货日期", "Preferred Delivery Date")}</div><div style={{ fontSize: "11px", marginLeft: "8px" }}>{r.desiredDeliveryDate ? new Date(r.desiredDeliveryDate).toLocaleDateString() : ""}{r.desiredDeliveryReason ? ` — ${r.desiredDeliveryReason}` : ""}</div></div>;
-              }
-              if (r.remarkCategory === "other") {
-                return <div key={i} style={{ marginBottom: "4px" }}><div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("其他备注", "Other Remark")}</div><div style={{ fontSize: "11px", marginLeft: "8px" }}>{r.content || ""}</div></div>;
-              }
-              return null;
-            })}
+            <div style={{ fontWeight: "bold", fontSize: "12px", marginBottom: "4px" }}>📌 {translate("后台备注", "Admin Remarks")}</div>
+            {data.adminRemarks.map((r: any, i: number) => (
+              <div key={i} style={{ marginBottom: "4px" }}>
+                <div style={{ fontSize: "11px", marginLeft: "8px" }}>
+                  {r.remarkCategory === "repotting" ? translate("换盆", "Repotting") :
+                   r.remarkCategory === "desired_delivery_date" ? translate("发货日期", "Delivery Date") :
+                   r.remarkCategory === "select_tree" ? translate("选树身", "Select Tree") :
+                   r.remarkCategory === "other" ? translate("其他", "Other") : r.remarkCategory}
+                  {r.content && <span> — {r.content}</span>}
+                  {r.desiredDeliveryDate && <span> — {new Date(r.desiredDeliveryDate).toLocaleDateString()}</span>}
+                  {r.desiredDeliveryReason && <span> ({r.desiredDeliveryReason})</span>}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

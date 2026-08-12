@@ -8,11 +8,7 @@
 import { describe, it, expect } from "vitest";
 import { isParcelKingConfigured, isTestMode, getBalance } from "./parcelking";
 
-// Parcel King is intentionally not used in the current shipping configuration.
-// Set PARCELKING_LIVE_VALIDATION=true only when validating that external account.
-const describeLiveParcelKing = process.env.PARCELKING_LIVE_VALIDATION === "true" ? describe : describe.skip;
-
-describeLiveParcelKing("Parcel King — Live Key Validation", () => {
+describe("Parcel King — Live Key Validation", () => {
   it("should be configured with a valid API key", () => {
     expect(isParcelKingConfigured()).toBe(true);
   });

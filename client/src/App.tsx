@@ -23,7 +23,6 @@ import OrderChangeRequests from "@/pages/OrderChangeRequests";
 import ReplyRules from "@/pages/ReplyRules";
 import AiKnowledge from "@/pages/AiKnowledge";
 import AiBrain from "@/pages/AiBrain";
-import AiSalesCenter from "@/pages/AiSalesCenter";
 import Suppliers from "@/pages/Suppliers";
 import PurchaseOrders from "@/pages/PurchaseOrders";
 import BusinessReport from "@/pages/BusinessReport";
@@ -41,7 +40,6 @@ import CustomerPayment from "@/pages/CustomerPayment";
 import MallSettings from "@/pages/MallSettings";
 import MallHome from "@/pages/mall/MallHome";
 import MallProductDetail from "@/pages/mall/MallProductDetail";
-import MallBundleDetail from "@/pages/mall/MallBundleDetail";
 import MallCart from "@/pages/mall/MallCart";
 import MallFavorites from "@/pages/mall/MallFavorites";
 import MallCheckout from "@/pages/mall/MallCheckout";
@@ -62,6 +60,7 @@ import InventoryLog from "@/pages/InventoryLog";
 import OrderCreatePage from "@/pages/OrderCreatePage";
 import OrderBrowsePage from "@/pages/OrderBrowsePage";
 import OrderEditPage from "@/pages/OrderEditPage";
+import MarketingCenter from "@/pages/MarketingCenter";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -72,7 +71,6 @@ function PublicRoutes() {
       {/* Mall public routes */}
       <Route path={"/mall"} component={MallHome} />
       <Route path={"/mall/product/:id"} component={(params: any) => <MallProductDetail />} />
-      <Route path={"/mall/bundle/:id"} component={MallBundleDetail} />
       <Route path={"/mall/cart"} component={MallCart} />
       <Route path={"/mall/favorites"} component={MallFavorites} />
       <Route path={"/mall/checkout"} component={MallCheckout} />
@@ -105,7 +103,6 @@ function DashboardRoutes() {
       <Route path={"/draft-orders"} component={DraftOrders} />
       <Route path={"/order-change-requests"} component={OrderChangeRequests} />
       <Route path={"/ai-brain"} component={AiBrain} />
-      <Route path={"/ai-sales"} component={AiSalesCenter} />
       <Route path={"/reply-rules"} component={ReplyRules} />
       <Route path={"/ai-knowledge"} component={AiKnowledge} />
       <Route path={"/flows"} component={Flows} />
@@ -124,7 +121,8 @@ function DashboardRoutes() {
       <Route path="/live-room/:id" component={LiveRoomDetail} />
       <Route path="/live-ai-flows" component={LiveAiFlows} />
       <Route path="/import-batches" component={ImportBatches} />
-      <Route path="/campaigns" component={Campaigns} />
+      <Route path={"/campaigns"} component={Campaigns} />
+      <Route path={"/marketing"} component={MarketingCenter} />
       <Route path={"/facebook-settings"} component={FacebookSettings} />
       <Route path={"/system-settings"} component={SystemSettings} />
       <Route path={"/shipping-rules"} component={ShippingRules} />
@@ -160,7 +158,6 @@ function App() {
             <Route path={"/mall/cart"} component={MallCart} />
             <Route path={"/mall/favorites"} component={MallFavorites} />
             <Route path={"/mall/product/:id"} component={MallProductDetail} />
-            <Route path={"/mall/bundle/:id"} component={MallBundleDetail} />
             <Route path={"/mall"} component={MallHome} />
             <Route path={"/order-tracking"} component={CustomerOrderTracking} />
             <Route path={"/order/:orderNumber/:token"} component={({ params }: any) => <CustomerOrderPage orderNumber={params.orderNumber} token={params.token} />} />

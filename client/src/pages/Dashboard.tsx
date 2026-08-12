@@ -51,19 +51,6 @@ export const SPECIAL_STATUS_LABELS: Record<string, { zh: string; en: string }> =
   other: { zh: "其他", en: "Other" },
 };
 
-const SPECIAL_STATUS_EXPLANATIONS: Record<string, { zh: string; en: string }> = {
-  pending_shipping: { zh: "东马实际运费或 Lalamove 差额尚未收齐。", en: "East Malaysia actual shipping or Lalamove balance has not been collected." },
-  pending_refund: { zh: "已有获批退款申请，但退款尚未完成。", en: "An approved refund remains unprocessed." },
-  logistics_error: { zh: "包货或物流记录已标记为异常，需人工跟进。", en: "A packing or shipping record is marked as an exception and needs follow-up." },
-  incomplete_info: { zh: "收件地址或联系电话缺失，无法顺利安排配送。", en: "The delivery address or contact number is missing." },
-  notification_failed: { zh: "结单、追踪号码或自动通知发送失败；详情见订单通知栏。", en: "Checkout, tracking-number, or automated notification delivery failed; see the order notification column." },
-  partial_payment: { zh: "已确认付款金额低于订单应收金额。", en: "Approved payment is lower than the order amount due." },
-  over_payment: { zh: "已确认付款金额高于订单应收金额。", en: "Approved payment is higher than the order amount due." },
-  amount_changed: { zh: "订单金额与付款金额不一致，或订单金额曾被异常调整。", en: "The order and payment amounts do not match, or the order amount was adjusted unexpectedly." },
-  stock_exception: { zh: "订单商品的库存或配货记录需要人工核对。", en: "The order item's stock or allocation record needs manual review." },
-  other: { zh: "已被标记为其他特别情况，等待人工处理。", en: "Marked as another special condition pending manual handling." },
-};
-
 export default function Dashboard() {
   const { t, lang } = useI18n();
   const { data: stats, isLoading } = trpc.dashboardV11.stats.useQuery();
@@ -266,70 +253,60 @@ export default function Dashboard() {
               <div className="rounded-lg border border-orange-100 bg-background/70 p-3 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "待补运费" : "Pending Shipping"}</p>
                 <p className="mt-1 text-2xl font-bold text-orange-600">{followUpDisplay.pendingShippingCount}</p>
-                <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground" title={SPECIAL_STATUS_EXPLANATIONS.pending_shipping[lang]}>{SPECIAL_STATUS_EXPLANATIONS.pending_shipping[lang]}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=pending_refund">
               <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "待退款" : "Pending Refund"}</p>
                 <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.pendingRefundCount}</p>
-                <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground" title={SPECIAL_STATUS_EXPLANATIONS.pending_refund[lang]}>{SPECIAL_STATUS_EXPLANATIONS.pending_refund[lang]}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=logistics_error">
               <div className="rounded-lg border border-yellow-100 bg-background/70 p-3 dark:border-yellow-900/50 hover:bg-yellow-50 dark:hover:bg-yellow-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "物流异常" : "Logistics Error"}</p>
                 <p className="mt-1 text-2xl font-bold text-yellow-600">{followUpDisplay.logisticsErrorCount}</p>
-                <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground" title={SPECIAL_STATUS_EXPLANATIONS.logistics_error[lang]}>{SPECIAL_STATUS_EXPLANATIONS.logistics_error[lang]}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=incomplete_info">
               <div className="rounded-lg border border-blue-100 bg-background/70 p-3 dark:border-blue-900/50 hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "客户资料不完整" : "Incomplete Info"}</p>
                 <p className="mt-1 text-2xl font-bold text-blue-600">{followUpDisplay.incompleteInfoCount}</p>
-                <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground" title={SPECIAL_STATUS_EXPLANATIONS.incomplete_info[lang]}>{SPECIAL_STATUS_EXPLANATIONS.incomplete_info[lang]}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=notification_failed">
               <div className="rounded-lg border border-purple-100 bg-background/70 p-3 dark:border-purple-900/50 hover:bg-purple-50 dark:hover:bg-purple-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "自动通知失败" : "Notification Failed"}</p>
                 <p className="mt-1 text-2xl font-bold text-purple-600">{followUpDisplay.notificationFailedCount}</p>
-                <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground" title={SPECIAL_STATUS_EXPLANATIONS.notification_failed[lang]}>{SPECIAL_STATUS_EXPLANATIONS.notification_failed[lang]}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=partial_payment">
               <div className="rounded-lg border border-orange-100 bg-background/70 p-3 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "部分汇款" : "Partial Payment"}</p>
                 <p className="mt-1 text-2xl font-bold text-orange-600">{followUpDisplay.partialPaymentCount}</p>
-                <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground" title={SPECIAL_STATUS_EXPLANATIONS.partial_payment[lang]}>{SPECIAL_STATUS_EXPLANATIONS.partial_payment[lang]}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=over_payment">
               <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "多汇款" : "Over Payment"}</p>
                 <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.overPaymentCount}</p>
-                <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground" title={SPECIAL_STATUS_EXPLANATIONS.over_payment[lang]}>{SPECIAL_STATUS_EXPLANATIONS.over_payment[lang]}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=amount_changed">
               <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "金额异常" : "Amount Changed"}</p>
                 <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.amountChangedCount}</p>
-                <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground" title={SPECIAL_STATUS_EXPLANATIONS.amount_changed[lang]}>{SPECIAL_STATUS_EXPLANATIONS.amount_changed[lang]}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=stock_exception">
               <div className="rounded-lg border border-amber-100 bg-background/70 p-3 dark:border-amber-900/50 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "库存异常" : "Stock Exception"}</p>
                 <p className="mt-1 text-2xl font-bold text-amber-600">{followUpDisplay.stockExceptionCount}</p>
-                <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground" title={SPECIAL_STATUS_EXPLANATIONS.stock_exception[lang]}>{SPECIAL_STATUS_EXPLANATIONS.stock_exception[lang]}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=other">
               <div className="rounded-lg border border-gray-100 bg-background/70 p-3 dark:border-gray-900/50 hover:bg-gray-50 dark:hover:bg-gray-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "其他" : "Other"}</p>
                 <p className="mt-1 text-2xl font-bold text-gray-600">{followUpDisplay.otherCount}</p>
-                <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground" title={SPECIAL_STATUS_EXPLANATIONS.other[lang]}>{SPECIAL_STATUS_EXPLANATIONS.other[lang]}</p>
               </div>
             </Link>
           </div>

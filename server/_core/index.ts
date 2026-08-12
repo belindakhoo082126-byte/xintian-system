@@ -18,7 +18,7 @@ import { addSSEClient } from "./realtime";
 import { sdk } from "./sdk";
 import * as db from "../db";
 import { sendTextMessage } from "../messenger";
-import { runAiFollowUpPolicyTask } from "../aiFollowUpService";
+import { runMarketingAutomationHeartbeat } from "../marketingAutomationService";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -154,19 +154,6 @@ async function startServer() {
     }
   });
 
-  // Each Heartbeat task is bound to a stored policy UID. The identity comes only
-  // from authenticated cron context, never the request URL or body.
-  app.post("/api/scheduled/ai-follow-up", async (req, res) => {
-    try {
-      const user = await sdk.authenticateRequest(req);
-      if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
-      const result = await runAiFollowUpPolicyTask(user.taskUid);
-      res.json({ ok: true, ...result, timestamp: new Date().toISOString() });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message, timestamp: new Date().toISOString() });
-    }
-  });
-
   // AI Log auto-cleanup (daily cron)
   app.post("/api/scheduled/ai-log-cleanup", async (req, res) => {
     try {
@@ -188,6 +175,23 @@ async function startServer() {
       res.json({ ok: true, deleted, timestamp: new Date().toISOString() });
     } catch (err: any) {
       res.status(500).json({ error: err.message, timestamp: new Date().toISOString() });
+    }
+  });
+
+  // Marketing automation runs only for the stored rule bound to the
+  // authenticated Heartbeat task UID; request payloads are never trusted.
+  app.post("/api/scheduled/marketing-automation", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
+      res.json(await runMarketingAutomationHeartbeat(user.taskUid));
+    } catch (err: any) {
+      res.status(500).json({
+        error: err.message || "营销自动消息执行失败",
+        stack: err.stack,
+        context: { url: req.originalUrl },
+        timestamp: new Date().toISOString(),
+      });
     }
   });
 

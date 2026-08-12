@@ -49,12 +49,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
           style={{ backgroundImage: `url(${NATURAL_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(248,243,233,0.12) 0%, rgba(248,243,233,0.02) 42%, rgba(248,243,233,0.16) 100%)" }}
         />
       </div>
     );
@@ -64,12 +64,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
           style={{ backgroundImage: `url(${LAVENDER_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(253,250,255,0.1) 0%, rgba(250,247,255,0.02) 44%, rgba(244,237,255,0.16) 100%)" }}
         />
       </div>
     );
@@ -79,12 +79,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
           style={{ backgroundImage: `url(${SAKURA_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(255,251,246,0.1) 0%, rgba(255,249,245,0.02) 44%, rgba(255,247,241,0.15) 100%)" }}
         />
       </div>
     );
@@ -94,12 +94,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
           style={{ backgroundImage: `url(${NATURE_GREEN_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(250,252,246,0.1) 0%, rgba(248,251,244,0.02) 44%, rgba(243,248,237,0.16) 100%)" }}
         />
       </div>
     );
@@ -109,12 +109,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
           style={{ backgroundImage: `url(${WARM_BROWN_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(255,250,242,0.1) 0%, rgba(252,246,237,0.02) 44%, rgba(248,238,224,0.17) 100%)" }}
         />
       </div>
     );
@@ -124,12 +124,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
           style={{ backgroundImage: `url(${CHRISTMAS_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(255,252,244,0.1) 0%, rgba(253,249,239,0.02) 44%, rgba(248,241,225,0.17) 100%)" }}
         />
       </div>
     );
@@ -139,12 +139,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
           style={{ backgroundImage: `url(${CNY_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(255,251,239,0.10) 0%, rgba(255,247,229,0.02) 44%, rgba(247,232,204,0.17) 100%)" }}
         />
       </div>
     );
@@ -154,12 +154,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
           style={{ backgroundImage: `url(${HARI_RAYA_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(255,252,242,0.1) 0%, rgba(253,248,233,0.02) 44%, rgba(244,238,214,0.17) 100%)" }}
         />
       </div>
     );
@@ -169,12 +169,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
           style={{ backgroundImage: `url(${MERDEKA_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(255,252,245,0.1) 0%, rgba(255,249,240,0.02) 44%, rgba(249,241,226,0.17) 100%)" }}
         />
       </div>
     );
@@ -184,12 +184,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-90"
           style={{ backgroundImage: `url(${MID_AUTUMN_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(255,252,245,0.10) 0%, rgba(248,244,232,0.02) 44%, rgba(238,231,211,0.17) 100%)" }}
         />
       </div>
     );
@@ -199,12 +199,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.88]"
           style={{ backgroundImage: `url(${VALENTINE_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(255,252,247,0.08) 0%, rgba(255,248,243,0.01) 44%, rgba(246,230,224,0.14) 100%)" }}
         />
       </div>
     );
@@ -214,12 +214,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.88]"
           style={{ backgroundImage: `url(${MOTHERS_DAY_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(255,253,248,0.08) 0%, rgba(255,249,242,0.01) 44%, rgba(238,228,219,0.14) 100%)" }}
         />
       </div>
     );
@@ -229,12 +229,12 @@ export function MallThemeDecorations({ theme }: { theme: ResolvedMallTheme }) {
     return (
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.28]"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.88]"
           style={{ backgroundImage: `url(${CUSTOM_CONTINUOUS_BACKGROUND_URL})` }}
         />
         <div
           className="absolute inset-0"
-          style={{ background: "rgba(255,255,255,0.72)" }}
+          style={{ background: "linear-gradient(180deg, rgba(255,253,247,0.08) 0%, rgba(249,249,242,0.01) 44%, rgba(227,235,218,0.13) 100%)" }}
         />
       </div>
     );

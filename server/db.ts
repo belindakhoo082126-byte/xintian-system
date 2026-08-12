@@ -39,9 +39,6 @@ import {
   chatConversations, chatMessages, aiHandoverRequests,
   // V4.1 imports - AI Brain Phase 2 (AI Logs)
   aiLogs, aiLogDeliveryAttempts,
-  // V5.0 imports - Unified AI customer-service orchestration
-  aiOrchestrationSettings, aiMessageOrchestrations, aiPublicEventClaims, aiVoiceTranscripts, aiPendingActions, aiSalesSettings, aiSalesRecords,
-  aiFollowUpPolicies, aiFollowUpDeliveries,
   // V4.2 imports - AI Brain Phase 2 Task 2 (AI Test Center)
   aiTestRuns, aiKnowledge,
   // V4.3 imports - AI Brain Phase 2 Task 5 (Regression Test & AI Version)
@@ -60,9 +57,16 @@ import {
   orderRefunds,
   // V2.1.19 imports - Order Special Statuses
   orderSpecialStatuses,
+  // V5.0 imports - Marketing Center
+  marketingCampaigns, marketingRules, marketingRuleScopes,
+  marketingOrderApplications, marketingCampaignUsages,
+  marketingLotteryPrizes, marketingLotteryEntries, marketingLotteryDraws,
+  marketingSegments, marketingMessageTemplates, marketingAutomationRules,
+  marketingMessageDeliveries, marketingMessageEvents,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
+import { evaluateMarketingCampaign } from './marketingEngine';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -5259,9 +5263,7 @@ export async function updateProductMallSync(productId: number, syncToMall: boole
 export async function getMallCategories() {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(categories)
-    .where(and(eq(categories.status, "active"), eq(categories.showInStore, true)))
-    .orderBy(asc(categories.sortOrder));
+  return await db.select().from(categories).orderBy(asc(categories.sortOrder));
 }
 
 // --- Mall Checkout (Guest Checkout) ---
@@ -5351,7 +5353,25 @@ export async function mallCheckout(data: {
     shippingFee = thresholdSubtotal >= 150 ? 0 : 15;
   }
 
-  const totalAmount = subtotal + shippingFee;
+  // The mall preview is guidance only. Re-evaluate promotions on the server
+  // immediately before this new order is created.
+  const marketingCart = data.items.map((item) => ({
+    productId: item.productId,
+    quantity: item.quantity,
+    unitPrice: Math.max(0, parseFloat(item.unitPrice) || 0),
+  }));
+  const appliedMarketingCampaigns = (await getActiveMarketingCampaigns())
+    .filter((campaign) => Boolean((campaign as any).showInMall))
+    .map((campaign) => ({
+      campaign,
+      result: evaluateMarketingCampaign(campaign as any, marketingCart, { orderSource: "store" }),
+    }))
+    .filter(({ result }) => result.eligible);
+  const marketingDiscount = Math.min(subtotal, appliedMarketingCampaigns.reduce((sum, item) => sum + item.result.discountTotal, 0));
+  const freeShippingEntitlement = appliedMarketingCampaigns.some(({ result }) => result.entitlements.some((entitlement) => entitlement.type === "free_shipping"));
+  const marketingShippingSubsidy = freeShippingEntitlement ? shippingFee : 0;
+  if (freeShippingEntitlement) shippingFee = 0;
+  const totalAmount = subtotal - marketingDiscount + shippingFee;
 
   // If merging into an existing hold order, only allow the current customer's active, mergeable hold.
   if (data.mergeIntoOrderId) {
@@ -5444,7 +5464,7 @@ export async function mallCheckout(data: {
     orderType: "physical",
     orderCategory: resolvedCategory,
     importStatus: isImport ? "pending" : null,
-    physicalSubtotal: subtotal.toFixed(2),
+    physicalSubtotal: (subtotal - marketingDiscount).toFixed(2),
     membershipSubtotal: "0.00",
     shippingFee: shippingFee.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
@@ -5485,6 +5505,43 @@ export async function mallCheckout(data: {
       facebookKeyword: item.facebookKeyword || null,
       discount: item.discount || "0.00",
     });
+  }
+
+  // Save only auditable marketing results. Gifts and add-on products must still
+  // be explicitly selected and use the existing atomic stock reservation service.
+  for (const { campaign, result } of appliedMarketingCampaigns) {
+    const discountsByRule = new Map<number, { amount: number; reasons: string[] }>();
+    for (const discount of result.discounts) {
+      const current = discountsByRule.get(discount.ruleId) ?? { amount: 0, reasons: [] };
+      current.amount += discount.amount;
+      current.reasons.push(discount.reason);
+      discountsByRule.set(discount.ruleId, current);
+    }
+    for (const [ruleId, discount] of Array.from(discountsByRule.entries())) {
+      await recordMarketingOrderApplication({
+        orderId, campaignId: campaign.id, ruleId, customerId: customer.id,
+        applicationType: "discount", originalAmount: subtotal, discountAmount: discount.amount,
+        snapshot: { source: "mall_checkout", reasons: discount.reasons },
+      });
+    }
+    for (const entitlement of result.entitlements) {
+      const applicationType = entitlement.type === "free_shipping" ? "free_shipping"
+        : entitlement.type === "lottery_entry" ? "lottery"
+          : entitlement.type === "add_on_offer" ? "add_on" : "gift";
+      await recordMarketingOrderApplication({
+        orderId, campaignId: campaign.id, ruleId: entitlement.ruleId, customerId: customer.id,
+        applicationType,
+        shippingSubsidy: entitlement.type === "free_shipping" ? marketingShippingSubsidy : 0,
+        snapshot: { source: "mall_checkout", entitlement },
+      });
+      if (entitlement.type === "lottery_entry") {
+        await createMarketingLotteryEntry({
+          campaignId: campaign.id, ruleId: entitlement.ruleId, customerId: customer.id, orderId,
+          entrySource: "order_threshold", entryCount: entitlement.entryCount ?? 1,
+          status: "pending_payment", reason: entitlement.reason,
+        });
+      }
+    }
   }
 
   // Deduct stock for each item
@@ -8953,14 +9010,11 @@ export async function createImportBatch(data: {
   batchName: string;
   sourceCountry?: string;
   supplierName?: string;
-  supplierOrderNumber?: string;
-  chinaTrackingNumber?: string;
   liveRoomId?: number;
   preorderStartDate?: Date;
   preorderEndDate?: Date;
   shippingMethod?: string;
   chinaShippingCost?: string;
-  otherFees?: string;
   status?: string;
   notes?: string;
 }) {
@@ -8971,14 +9025,11 @@ export async function createImportBatch(data: {
     batchName: data.batchName,
     sourceCountry: data.sourceCountry || '中国',
     supplierName: data.supplierName,
-    supplierOrderNumber: data.supplierOrderNumber,
-    chinaTrackingNumber: data.chinaTrackingNumber,
     liveRoomId: data.liveRoomId,
     preorderStartDate: data.preorderStartDate,
     preorderEndDate: data.preorderEndDate,
     shippingMethod: (data.shippingMethod as any) || 'air',
     chinaShippingCost: data.chinaShippingCost || '0',
-    otherFees: data.otherFees || '0',
     status: (data.status as any) || 'in_progress',
     notes: data.notes,
   });
@@ -8995,9 +9046,6 @@ export async function updateImportBatch(id: number, data: Partial<{
   actualPurchaseDate: Date;
   shippingMethod: string;
   chinaShippingCost: string;
-  otherFees: string;
-  supplierOrderNumber: string;
-  chinaTrackingNumber: string;
   status: string;
   notes: string;
 }>) {
@@ -9609,13 +9657,6 @@ export async function getBundleById(id: number) {
   if (!bundle) return undefined;
   const items = await db.select().from(productBundleItems).where(eq(productBundleItems.bundleId, id));
   return { ...bundle, items };
-}
-
-// Public mall detail: never expose inactive or hidden bundles to shoppers.
-export async function getMallBundleById(id: number) {
-  const bundle = await getBundleById(id);
-  if (!bundle || bundle.status !== "active" || !bundle.showInMall) return undefined;
-  return bundle;
 }
 
 // Get bundle items only
@@ -11455,9 +11496,9 @@ export async function getChatCustomerInfo(customerId: number): Promise<any> {
 }
 
 // Store incoming Messenger message to chat
-export async function storeIncomingMessengerMessage(psid: string, text: string, attachments?: any[]): Promise<{ conversationId: number; customerMessageId: number | null; customerId: number | null; customerName: string | null; attachmentMessages: Array<{ messageId: number; type: string; mediaUrl: string | null }> }> {
+export async function storeIncomingMessengerMessage(psid: string, text: string, attachments?: any[]): Promise<{ conversationId: number; customerMessageId: number | null; customerId: number | null; customerName: string | null }> {
   const db = await getDb();
-  if (!db) return { conversationId: 0, customerMessageId: null, customerId: null, customerName: null, attachmentMessages: [] };
+  if (!db) return { conversationId: 0, customerMessageId: null, customerId: null, customerName: null };
   
   // Find or create customer by messengerId (PSID)
   // This ensures every Messenger user gets a customer record, even if they just say "Hi"
@@ -11485,7 +11526,6 @@ export async function storeIncomingMessengerMessage(psid: string, text: string, 
   const conversation = await getOrCreateConversation(customerId, "messenger", psid);
   
   let customerMessageId: number | null = null;
-  const attachmentMessages: Array<{ messageId: number; type: string; mediaUrl: string | null }> = [];
   // Add text message
   if (text) {
     const msgResult = await addChatMessage({
@@ -11505,21 +11545,14 @@ export async function storeIncomingMessengerMessage(psid: string, text: string, 
                      att.type === "audio" ? "audio" :
                      att.type === "video" ? "video" :
                      att.type === "file" ? "file" : "text";
-      const attachmentResult = await addChatMessage({
+      await addChatMessage({
         conversationId: conversation.id,
         senderType: "customer",
         messageType: msgType,
         content: att.title || att.type,
         mediaUrl: att.payload?.url,
         status: "delivered",
-      });
-      if (attachmentResult?.messageId) {
-        attachmentMessages.push({
-          messageId: attachmentResult.messageId,
-          type: msgType,
-          mediaUrl: att.payload?.url ?? null,
-        });
-      }
+            });
     }
   }
   // Broadcast chat change for real-time SSE push
@@ -11529,7 +11562,6 @@ export async function storeIncomingMessengerMessage(psid: string, text: string, 
     customerMessageId,
     customerId,
     customerName: customer.length > 0 ? (customer[0] as any).name ?? null : null,
-    attachmentMessages,
   };
 }
 // ===========================================================================
@@ -14230,91 +14262,36 @@ export async function generateCnNumber() {
   return `CN${String(nextNum).padStart(5, '0')}`;
 }
 
-// Confirm CN (change status to purchased and auto-generate a linked IB batch)
+// Confirm CN (change status from draft to purchased, auto-generate IB items)
 export async function confirmCn(batchId: number) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
-  return await db.transaction(async (tx: any) => {
-    const batches = await tx.select().from(importBatches).where(eq(importBatches.id, batchId));
-    const batch = batches[0];
-    if (!batch) throw new Error('采购 CN 批次不存在');
-    if (batch.parentBatchId) throw new Error('IB 批次不能再次确认采购');
+  const batch = await getImportBatchById(batchId);
+  if (!batch) throw new Error('Batch not found');
 
-    const existingIb = await tx.select().from(importBatches)
-      .where(eq(importBatches.parentBatchId, batchId));
-    if (existingIb.length > 0) {
-      return {
-        success: true,
-        alreadyGenerated: true,
-        ibBatchId: existingIb[0].id,
-        ibBatchNumber: existingIb[0].batchNumber,
-        totalEstimatedCost: batch.totalEstimatedCost?.toString() || '0.00',
-        estimatedCost: Number(batch.totalEstimatedCost?.toString() || '0'),
-      };
-    }
+  // Update batch status to purchased
+  await db.update(importBatches).set({
+    status: 'purchased' as any,
+    ibGenerated: true,
+    actualPurchaseDate: new Date(),
+  } as any).where(eq(importBatches.id, batchId));
 
-    const cnItems = await tx.select().from(importBatchItems).where(eq(importBatchItems.batchId, batchId));
-    let totalPurchaseCost = 0;
-    for (const item of cnItems) {
-      const qty = item.finalPurchaseQuantity || item.paidQuantity || 0;
-      totalPurchaseCost += Number(item.unitPurchaseCost?.toString() || 0) * qty;
-    }
-    const shippingCost = Number(batch.chinaShippingCost?.toString() || 0);
-    const otherFees = Number(batch.otherFees?.toString() || 0);
-    const totalEstimated = totalPurchaseCost + shippingCost + otherFees;
-    const ibBatchNumber = `${batch.batchNumber}-IB`;
+  // Auto-calculate total estimated cost
+  const items = await getImportBatchItems(batchId);
+  let totalPurchaseCost = 0;
+  for (const item of items) {
+    const qty = item.finalPurchaseQuantity || item.paidQuantity || 0;
+    const unitCost = parseFloat(item.unitPurchaseCost?.toString() || '0');
+    totalPurchaseCost += unitCost * qty;
+  }
+  const shippingCost = parseFloat(batch.chinaShippingCost?.toString() || '0');
+  const otherFees = parseFloat((batch as any).otherFees?.toString() || '0');
+  const totalEstimated = totalPurchaseCost + shippingCost + otherFees;
+  await db.update(importBatches).set({
+    totalEstimatedCost: totalEstimated.toFixed(2) as any,
+  } as any).where(eq(importBatches.id, batchId));
 
-    await tx.update(importBatches).set({
-      status: 'purchased' as any,
-      ibGenerated: true,
-      actualPurchaseDate: new Date(),
-      totalEstimatedCost: totalEstimated.toFixed(2) as any,
-    } as any).where(eq(importBatches.id, batchId));
-
-    const inserted = await tx.insert(importBatches).values({
-      batchNumber: ibBatchNumber,
-      batchName: `${batch.batchName}（IB验货）`,
-      sourceCountry: batch.sourceCountry,
-      supplierName: batch.supplierName,
-      supplierOrderNumber: batch.supplierOrderNumber,
-      chinaTrackingNumber: batch.chinaTrackingNumber,
-      liveRoomId: batch.liveRoomId,
-      preorderStartDate: batch.preorderStartDate,
-      preorderEndDate: batch.preorderEndDate,
-      actualPurchaseDate: batch.actualPurchaseDate || new Date(),
-      shippingMethod: batch.shippingMethod,
-      chinaShippingCost: batch.chinaShippingCost,
-      otherFees: batch.otherFees,
-      totalEstimatedCost: totalEstimated.toFixed(2),
-      status: 'preparing',
-      parentBatchId: batchId,
-      notes: batch.notes,
-    } as any);
-    const ibBatchId = Number(inserted[0].insertId);
-
-    if (cnItems.length > 0) {
-      await tx.insert(importBatchItems).values(cnItems.map((item: any) => ({
-        batchId: ibBatchId,
-        productId: item.productId,
-        productName: item.productName,
-        variantId: item.variantId,
-        variantName: item.variantName,
-        paidQuantity: item.paidQuantity,
-        finalPurchaseQuantity: item.finalPurchaseQuantity || item.paidQuantity || 0,
-        unitPurchaseCost: item.unitPurchaseCost,
-        notes: item.notes,
-        itemStatus: 'pending',
-      })) as any);
-    }
-
-    return {
-      success: true,
-      ibBatchId,
-      ibBatchNumber,
-      totalEstimatedCost: totalEstimated.toFixed(2),
-      estimatedCost: totalEstimated,
-    };
-  });
+  return { success: true, totalEstimatedCost: totalEstimated.toFixed(2) };
 }
 
 // Complete IB verification (after all items verified, update stock and auto-match XTC orders)
@@ -15023,531 +15000,694 @@ export async function getStockAllocationSummary(batchId: number) {
 }
 
 // ============================================================================
-// V5.0 — Unified AI customer-service orchestration
+// V5.0: Marketing Center (营销中心)
 // ============================================================================
 
-export async function getAiOrchestrationSettings() {
-  const db = await getDb();
-  if (!db) return null;
-  const [existing] = await db.select().from(aiOrchestrationSettings).limit(1);
-  if (existing) return existing;
-  await db.insert(aiOrchestrationSettings).values({});
-  const [created] = await db.select().from(aiOrchestrationSettings).limit(1);
-  return created ?? null;
+export type MarketingCampaignDraft = {
+  campaignCode: string;
+  name: string;
+  description?: string | null;
+  status?: "draft" | "scheduled" | "active" | "paused" | "ended";
+  startAt?: Date | null;
+  endAt?: Date | null;
+  orderCategories?: string[];
+  orderSources?: string[];
+  customerAudience?: "all" | "member" | "non_member" | "new_customer" | "segment";
+  customerSegmentId?: number | null;
+  showInMall?: boolean;
+  allowMemberPriceStack?: boolean;
+  allowBundlePriceStack?: boolean;
+  allowCouponStack?: boolean;
+  allowPointsEarn?: boolean;
+  perCustomerLimit?: number | null;
+  perOrderLimit?: number | null;
+  usageLimit?: number | null;
+  createdBy?: string | null;
+};
+
+export type MarketingRuleDraft = {
+  campaignId: number;
+  ruleType: "quantity_gift" | "nth_item_discount" | "order_threshold" | "spin_eligibility" | "add_on" | "product_discount" | "category_discount" | "clearance" | "live_lottery" | "member_offer";
+  name: string;
+  description?: string | null;
+  status?: "draft" | "active" | "paused" | "ended";
+  priority?: number;
+  stackable?: boolean;
+  config: Record<string, unknown>;
+  usageLimit?: number | null;
+  scopes?: Array<{
+    scopeType: "trigger_product" | "eligible_product" | "eligible_category" | "gift_product" | "add_on_product";
+    productId?: number | null;
+    categoryId?: number | null;
+    quantity?: number;
+  }>;
+};
+
+function serializeMarketingArray(value: string[] | undefined): string | null {
+  return value?.length ? JSON.stringify(value) : null;
 }
 
-export async function getAiSalesSettings() {
-  const db = await getDb();
-  if (!db) return null;
-  const [existing] = await db.select().from(aiSalesSettings).limit(1);
-  if (existing) return existing;
-  await db.insert(aiSalesSettings).values({});
-  const [created] = await db.select().from(aiSalesSettings).limit(1);
-  return created ?? null;
+export async function listMarketingCampaigns() {
+  const database = await getDb();
+  if (!database) return [];
+  const campaigns = await database.select().from(marketingCampaigns).orderBy(desc(marketingCampaigns.createdAt));
+  if (!campaigns.length) return [];
+  const campaignIds = campaigns.map((campaign) => campaign.id);
+  const rules = await database.select().from(marketingRules).where(inArray(marketingRules.campaignId, campaignIds)).orderBy(asc(marketingRules.priority), asc(marketingRules.id));
+  const ruleIds = rules.map((rule) => rule.id);
+  const scopes = ruleIds.length
+    ? await database.select().from(marketingRuleScopes).where(inArray(marketingRuleScopes.ruleId, ruleIds))
+    : [];
+  return campaigns.map((campaign) => ({
+    ...campaign,
+    rules: rules.filter((rule) => rule.campaignId === campaign.id).map((rule) => ({
+      ...rule,
+      scopes: scopes.filter((scope) => scope.ruleId === rule.id),
+    })),
+  }));
 }
 
-export async function updateAiOrchestrationSettings(data: {
-  isEnabled?: boolean;
-  voiceTranscriptionEnabled?: boolean;
-  requireVoiceReviewBelow?: string;
-  maxUnclearAttempts?: number;
-  updatedBy: string;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const current = await getAiOrchestrationSettings();
-  if (!current) throw new Error("Unable to initialize AI orchestration settings");
-  await db.update(aiOrchestrationSettings).set({
-    ...data,
-    updatedAt: new Date(),
-  }).where(eq(aiOrchestrationSettings.id, current.id));
-  broadcastChange("chat" as any);
+export async function getMarketingCampaign(campaignId: number) {
+  const campaigns = await listMarketingCampaigns();
+  return campaigns.find((campaign) => campaign.id === campaignId) ?? null;
 }
 
-export async function updateAiSalesSettings(data: {
-  isEnabled?: boolean;
-  proactiveRecommendationsEnabled?: boolean;
-  maxRecommendationsPerConversation?: number;
-  stopAfterCustomerDecline?: boolean;
-  recommendationCooldownHours?: number;
-  askEnvironmentFirst?: boolean;
-  askBudgetFirst?: boolean;
-  prioritizeEasyCare?: boolean;
-  minimumGrossMarginPercent?: string;
-  updatedBy: string;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const current = await getAiSalesSettings();
-  if (!current) throw new Error("Unable to initialize AI sales settings");
-  await db.update(aiSalesSettings).set({
-    ...data,
-    updatedAt: new Date(),
-  }).where(eq(aiSalesSettings.id, current.id));
-  broadcastChange("chat" as any);
+export async function getActiveMarketingCampaigns(now = new Date()) {
+  const database = await getDb();
+  if (!database) return [];
+  const campaignRows = await database.select().from(marketingCampaigns).where(and(
+    eq(marketingCampaigns.status, "active"),
+    or(isNull(marketingCampaigns.startAt), lte(marketingCampaigns.startAt, now)),
+    or(isNull(marketingCampaigns.endAt), gte(marketingCampaigns.endAt, now)),
+  ));
+  if (!campaignRows.length) return [];
+  const allCampaigns = await listMarketingCampaigns();
+  return allCampaigns.filter((campaign) => campaignRows.some((row) => row.id === campaign.id));
 }
 
-export async function beginAiMessageOrchestration(data: {
-  conversationId: number;
-  customerId: number | null;
-  customerMessageId: number;
-  channel: "messenger" | "whatsapp";
-  inputType: "text" | "image" | "audio" | "video" | "file";
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const [existing] = await db.select().from(aiMessageOrchestrations)
-    .where(eq(aiMessageOrchestrations.customerMessageId, data.customerMessageId))
-    .limit(1);
-  if (existing) return { record: existing, isNew: false };
+export async function createMarketingCampaign(input: MarketingCampaignDraft) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const result = await database.insert(marketingCampaigns).values({
+    campaignCode: input.campaignCode.trim().toUpperCase(),
+    name: input.name.trim(),
+    description: input.description?.trim() || null,
+    status: input.status ?? "draft",
+    startAt: input.startAt ?? null,
+    endAt: input.endAt ?? null,
+    orderCategories: serializeMarketingArray(input.orderCategories),
+    orderSources: serializeMarketingArray(input.orderSources),
+    customerAudience: input.customerAudience ?? "all",
+    customerSegmentId: input.customerSegmentId ?? null,
+    showInMall: input.showInMall ?? false,
+    allowMemberPriceStack: input.allowMemberPriceStack ?? false,
+    allowBundlePriceStack: input.allowBundlePriceStack ?? false,
+    allowCouponStack: input.allowCouponStack ?? false,
+    allowPointsEarn: input.allowPointsEarn ?? true,
+    perCustomerLimit: input.perCustomerLimit ?? null,
+    perOrderLimit: input.perOrderLimit ?? null,
+    usageLimit: input.usageLimit ?? null,
+    createdBy: input.createdBy ?? null,
+  });
+  return Number(result[0].insertId);
+}
 
-  try {
-    const [inserted] = await db.insert(aiMessageOrchestrations).values({
-      ...data,
-      status: "processing",
-      primaryOutcome: "no_reply",
-      handledBy: "system",
-    });
-    const id = (inserted as any).insertId;
-    const [record] = await db.select().from(aiMessageOrchestrations)
-      .where(eq(aiMessageOrchestrations.id, id))
-      .limit(1);
-    return { record: record!, isNew: true };
-  } catch (error) {
-    const [raceWinner] = await db.select().from(aiMessageOrchestrations)
-      .where(eq(aiMessageOrchestrations.customerMessageId, data.customerMessageId))
-      .limit(1);
-    if (raceWinner) return { record: raceWinner, isNew: false };
-    throw error;
+export async function updateMarketingCampaign(campaignId: number, input: Partial<MarketingCampaignDraft>) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const patch: Record<string, unknown> = {};
+  if (input.campaignCode !== undefined) patch.campaignCode = input.campaignCode.trim().toUpperCase();
+  if (input.name !== undefined) patch.name = input.name.trim();
+  if (input.description !== undefined) patch.description = input.description?.trim() || null;
+  for (const key of ["status", "startAt", "endAt", "customerAudience", "customerSegmentId", "showInMall", "allowMemberPriceStack", "allowBundlePriceStack", "allowCouponStack", "allowPointsEarn", "perCustomerLimit", "perOrderLimit", "usageLimit"] as const) {
+    if (input[key] !== undefined) patch[key] = input[key];
   }
+  if (input.orderCategories !== undefined) patch.orderCategories = serializeMarketingArray(input.orderCategories);
+  if (input.orderSources !== undefined) patch.orderSources = serializeMarketingArray(input.orderSources);
+  if (!Object.keys(patch).length) return;
+  await database.update(marketingCampaigns).set(patch as any).where(eq(marketingCampaigns.id, campaignId));
 }
 
-export async function finalizeAiMessageOrchestration(
-  orchestrationId: number,
-  data: {
-    status: "completed" | "handover" | "skipped" | "failed";
-    primaryOutcome: "reply" | "flow" | "confirmation" | "handover" | "no_reply";
-    handledBy: "ai" | "flow" | "human" | "system";
-    detectedIntent?: string | null;
-    replyMessageId?: number | null;
-    handoverRequestId?: number | null;
-    pendingActionId?: number | null;
-    processingTrace?: unknown;
-    errorCode?: string | null;
-    errorMessage?: string | null;
-  },
-) {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(aiMessageOrchestrations).set({
-    ...data,
-    processingTrace: data.processingTrace ?? null,
-    completedAt: new Date(),
-    updatedAt: new Date(),
-  }).where(eq(aiMessageOrchestrations.id, orchestrationId));
-  broadcastChange("chat" as any);
+export async function createMarketingRule(input: MarketingRuleDraft) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  return await database.transaction(async (tx) => {
+    const result = await tx.insert(marketingRules).values({
+      campaignId: input.campaignId,
+      ruleType: input.ruleType,
+      name: input.name.trim(),
+      description: input.description?.trim() || null,
+      status: input.status ?? "draft",
+      priority: input.priority ?? 100,
+      stackable: input.stackable ?? false,
+      config: input.config as any,
+      usageLimit: input.usageLimit ?? null,
+    });
+    const ruleId = Number(result[0].insertId);
+    if (input.scopes?.length) {
+      await tx.insert(marketingRuleScopes).values(input.scopes.map((scope) => ({
+        ruleId,
+        scopeType: scope.scopeType,
+        productId: scope.productId ?? null,
+        categoryId: scope.categoryId ?? null,
+        quantity: scope.quantity ?? 1,
+      })) as any);
+    }
+    return ruleId;
+  });
 }
 
-/**
- * Public comments have no private chat-message record to reserve. Claim the
- * platform event itself before a Flow, live-order capture, or generic reply is
- * evaluated. The database unique key is the final safeguard against webhook
- * retries and concurrent workers sending duplicate customer-facing replies.
- */
-export async function claimPublicFlowEvent(data: {
-  platform: "facebook" | "instagram";
-  eventType: "comment" | "mention" | "live_comment";
-  sourceEventId: string;
+export async function updateMarketingRule(ruleId: number, input: Partial<Omit<MarketingRuleDraft, "campaignId">>) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  await database.transaction(async (tx) => {
+    const patch: Record<string, unknown> = {};
+    for (const key of ["ruleType", "status", "priority", "stackable", "config", "usageLimit"] as const) {
+      if (input[key] !== undefined) patch[key] = input[key];
+    }
+    if (input.name !== undefined) patch.name = input.name.trim();
+    if (input.description !== undefined) patch.description = input.description?.trim() || null;
+    if (Object.keys(patch).length) await tx.update(marketingRules).set(patch as any).where(eq(marketingRules.id, ruleId));
+    if (input.scopes !== undefined) {
+      await tx.delete(marketingRuleScopes).where(eq(marketingRuleScopes.ruleId, ruleId));
+      if (input.scopes.length) {
+        await tx.insert(marketingRuleScopes).values(input.scopes.map((scope) => ({
+          ruleId,
+          scopeType: scope.scopeType,
+          productId: scope.productId ?? null,
+          categoryId: scope.categoryId ?? null,
+          quantity: scope.quantity ?? 1,
+        })) as any);
+      }
+    }
+  });
+}
+
+export async function deleteMarketingRule(ruleId: number) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  await database.transaction(async (tx) => {
+    await tx.delete(marketingRuleScopes).where(eq(marketingRuleScopes.ruleId, ruleId));
+    await tx.delete(marketingRules).where(eq(marketingRules.id, ruleId));
+  });
+}
+
+export async function recordMarketingOrderApplication(input: {
+  orderId: number;
+  campaignId: number;
+  ruleId?: number | null;
+  customerId: number;
+  applicationType: "discount" | "gift" | "add_on" | "free_shipping" | "points" | "lottery" | "coupon";
+  originalAmount?: number;
+  discountAmount?: number;
+  shippingSubsidy?: number;
+  pointsGranted?: number;
+  snapshot: Record<string, unknown>;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  // The unique key makes repeated checkout/webhook processing idempotent per rule.
+  await database.insert(marketingOrderApplications).values({
+    ...input,
+    ruleId: input.ruleId ?? null,
+    originalAmount: (input.originalAmount ?? 0).toFixed(2),
+    discountAmount: (input.discountAmount ?? 0).toFixed(2),
+    shippingSubsidy: (input.shippingSubsidy ?? 0).toFixed(2),
+    pointsGranted: input.pointsGranted ?? 0,
+    snapshot: input.snapshot as any,
+  } as any).onDuplicateKeyUpdate({ set: { status: "applied", snapshot: input.snapshot as any } });
+}
+
+export async function recordMarketingCampaignUsage(input: {
+  campaignId: number;
+  ruleId?: number | null;
+  customerId: number;
+  orderId: number;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  // A customer may not consume the same campaign twice through a duplicate order callback.
+  await database.insert(marketingCampaignUsages).values({
+    ...input,
+    ruleId: input.ruleId ?? null,
+  } as any).onDuplicateKeyUpdate({ set: { status: "used", reversedAt: null } });
+}
+
+export async function createMarketingLotteryEntry(input: {
+  campaignId: number;
+  ruleId?: number | null;
+  customerId: number;
+  orderId?: number | null;
   liveRoomId?: number | null;
-  handledBy?: "flow" | "live_order" | "system";
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const conditions = and(
-    eq(aiPublicEventClaims.platform, data.platform),
-    eq(aiPublicEventClaims.eventType, data.eventType),
-    eq(aiPublicEventClaims.sourceEventId, data.sourceEventId),
-  );
-  const [existing] = await db.select().from(aiPublicEventClaims).where(conditions).limit(1);
-  if (existing) return { claim: existing, isNew: false };
-
-  try {
-    const [result] = await db.insert(aiPublicEventClaims).values({
-      ...data,
-      handledBy: data.handledBy ?? "system",
-      outcome: "processing",
-    });
-    const [claim] = await db.select().from(aiPublicEventClaims)
-      .where(eq(aiPublicEventClaims.id, (result as any).insertId))
-      .limit(1);
-    return { claim: claim!, isNew: true };
-  } catch (error) {
-    const [raceWinner] = await db.select().from(aiPublicEventClaims).where(conditions).limit(1);
-    if (raceWinner) return { claim: raceWinner, isNew: false };
-    throw error;
-  }
-}
-
-export async function completePublicFlowEvent(
-  claimId: number,
-  data: {
-    outcome: "flow" | "live_order" | "no_reply" | "failed";
-    handledBy: "flow" | "live_order" | "system";
-    liveRoomId?: number | null;
-    responseSummary?: string | null;
-    errorMessage?: string | null;
-  },
-) {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(aiPublicEventClaims).set({
-    ...data,
-    completedAt: new Date(),
-    updatedAt: new Date(),
-  }).where(eq(aiPublicEventClaims.id, claimId));
-}
-
-export async function createAiVoiceTranscript(data: {
-  conversationId: number;
-  customerId: number | null;
-  chatMessageId: number;
-  mediaUrl: string;
-  durationMs?: number | null;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const [existing] = await db.select().from(aiVoiceTranscripts)
-    .where(eq(aiVoiceTranscripts.chatMessageId, data.chatMessageId))
-    .limit(1);
-  if (existing) return existing;
-  const [result] = await db.insert(aiVoiceTranscripts).values({ ...data, status: "pending" });
-  const [record] = await db.select().from(aiVoiceTranscripts)
-    .where(eq(aiVoiceTranscripts.id, (result as any).insertId))
-    .limit(1);
-  broadcastChange("chat" as any);
-  return record ?? null;
-}
-
-export async function updateAiVoiceTranscript(
-  transcriptId: number,
-  data: {
-    status?: "pending" | "transcribed" | "needs_review" | "failed";
-    transcript?: string | null;
-    correctedTranscript?: string | null;
-    detectedLanguage?: string | null;
-    confidence?: string | null;
-    warning?: string | null;
-    failureReason?: string | null;
-    correctedBy?: string | null;
-    correctedAt?: Date | null;
-    aiActionSummary?: string | null;
-    transcribedAt?: Date | null;
-  },
-) {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(aiVoiceTranscripts).set({ ...data, updatedAt: new Date() })
-    .where(eq(aiVoiceTranscripts.id, transcriptId));
-  broadcastChange("chat" as any);
-}
-
-export async function createAiPendingAction(data: {
-  conversationId: number;
-  customerId: number | null;
-  sourceMessageId: number;
-  actionType: "create_order" | "add_to_order" | "update_line_quantity" | "remove_line" | "cancel_order" | "update_recipient" | "update_shipping" | "use_credit" | "apply_promotion" | "merge_order";
-  payload: unknown;
-  pricingSnapshot?: unknown;
-  inventorySnapshot?: unknown;
-  targetOrderId?: number | null;
-  confirmationReply: string;
+  entrySource: "order_threshold" | "live_keyword" | "live_answer" | "live_interaction" | "admin" | "live_order";
+  reason?: string | null;
+  entryCount?: number;
+  status?: "pending_payment" | "eligible" | "drawn" | "expired" | "cancelled";
   expiresAt?: Date | null;
 }) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const [result] = await db.insert(aiPendingActions).values({
-    ...data,
-    payload: data.payload as any,
-    pricingSnapshot: data.pricingSnapshot as any,
-    inventorySnapshot: data.inventorySnapshot as any,
-    status: "pending_confirmation",
-  });
-  const [record] = await db.select().from(aiPendingActions)
-    .where(eq(aiPendingActions.id, (result as any).insertId))
-    .limit(1);
-  broadcastChange("chat" as any);
-  return record ?? null;
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const result = await database.insert(marketingLotteryEntries).values({
+    ...input,
+    ruleId: input.ruleId ?? null,
+    orderId: input.orderId ?? null,
+    liveRoomId: input.liveRoomId ?? null,
+    reason: input.reason ?? null,
+    entryCount: input.entryCount ?? 1,
+    status: input.status ?? "pending_payment",
+    expiresAt: input.expiresAt ?? null,
+    eligibleAt: input.status === "eligible" ? new Date() : null,
+  } as any);
+  return Number(result[0].insertId);
 }
 
-export async function createAiSalesRecord(data: {
-  conversationId?: number | null;
-  customerId?: number | null;
-  sourceMessageId?: number | null;
-  channel: "messenger" | "whatsapp" | "live";
-  customerRequest?: string | null;
-  recommendationType: "product" | "cross_sell" | "upsell" | "free_shipping_gap" | "promotion" | "replenishment";
-  recommendedProductIds?: unknown;
-  recommendationReason?: string | null;
-  suggestedAmount?: string | null;
-  pricingSnapshot?: unknown;
-  estimatedGrossProfit?: string | null;
-  estimatedGrossMarginPercent?: string | null;
-  customerResponse?: "pending" | "accepted" | "declined" | "no_response";
-  outcome?: "recommended" | "pending_confirmation" | "added" | "ordered" | "handover" | "lost";
-  orderId?: number | null;
-  orderNumber?: string | null;
-  pendingActionId?: number | null;
-  wasHandover?: boolean;
-}) {
-  const db = await getDb();
-  if (!db) return null;
-  const [result] = await db.insert(aiSalesRecords).values({
-    ...data,
-    recommendedProductIds: data.recommendedProductIds as any,
-    pricingSnapshot: data.pricingSnapshot as any,
-  });
-  const [record] = await db.select().from(aiSalesRecords)
-    .where(eq(aiSalesRecords.id, (result as any).insertId))
-    .limit(1);
-  broadcastChange("chat" as any);
-  return record ?? null;
+export async function listAvailableMarketingLotteryPrizes(campaignId: number) {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(marketingLotteryPrizes).where(and(
+    eq(marketingLotteryPrizes.campaignId, campaignId),
+    eq(marketingLotteryPrizes.status, "active"),
+    or(isNull(marketingLotteryPrizes.quantityLimit), sql`${marketingLotteryPrizes.quantityAwarded} < ${marketingLotteryPrizes.quantityLimit}`),
+  ));
 }
 
-export async function listAiSalesRecords(filters: { conversationId?: number; customerId?: number; limit?: number }) {
-  const db = await getDb();
-  if (!db) return [];
-  const conditions = [] as any[];
-  if (filters.conversationId) conditions.push(eq(aiSalesRecords.conversationId, filters.conversationId));
-  if (filters.customerId) conditions.push(eq(aiSalesRecords.customerId, filters.customerId));
-  let query = db.select().from(aiSalesRecords).$dynamic();
-  if (conditions.length > 0) query = query.where(and(...conditions));
-  return query.orderBy(desc(aiSalesRecords.createdAt)).limit(filters.limit ?? 50);
-}
-
-export async function listAiVoiceTranscripts(filters: { conversationId?: number; status?: string; limit?: number }) {
-  const db = await getDb();
-  if (!db) return [];
-  const conditions = [] as any[];
-  if (filters.conversationId) conditions.push(eq(aiVoiceTranscripts.conversationId, filters.conversationId));
-  if (filters.status && filters.status !== "all") conditions.push(eq(aiVoiceTranscripts.status, filters.status as any));
-  let query = db.select().from(aiVoiceTranscripts).$dynamic();
-  if (conditions.length > 0) query = query.where(and(...conditions));
-  return query.orderBy(desc(aiVoiceTranscripts.createdAt)).limit(filters.limit ?? 100);
-}
-
-export async function getAiPendingAction(actionId: number) {
-  const db = await getDb();
-  if (!db) return null;
-  const [record] = await db.select().from(aiPendingActions)
-    .where(eq(aiPendingActions.id, actionId))
-    .limit(1);
-  return record ?? null;
-}
-
-export async function updateAiPendingAction(
-  actionId: number,
-  data: {
-    status: "pending_confirmation" | "confirmed" | "executed" | "expired" | "failed" | "cancelled";
-    confirmedBy?: string | null;
-    confirmedAt?: Date | null;
-    failureReason?: string | null;
-  },
-) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(aiPendingActions).set({
-    ...data,
-    updatedAt: new Date(),
-  }).where(eq(aiPendingActions.id, actionId));
-  broadcastChange("chat" as any);
-}
-
-export async function listAiFollowUpPolicies() {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(aiFollowUpPolicies).orderBy(desc(aiFollowUpPolicies.updatedAt));
-}
-
-export async function getAiFollowUpPolicy(policyId: number) {
-  const db = await getDb();
-  if (!db) return null;
-  const [policy] = await db.select().from(aiFollowUpPolicies)
-    .where(eq(aiFollowUpPolicies.id, policyId))
-    .limit(1);
-  return policy ?? null;
-}
-
-export async function getAiFollowUpPolicyByTaskUid(taskUid: string) {
-  const db = await getDb();
-  if (!db) return null;
-  const [policy] = await db.select().from(aiFollowUpPolicies)
-    .where(eq(aiFollowUpPolicies.scheduleCronTaskUid, taskUid))
-    .limit(1);
-  return policy ?? null;
-}
-
-export async function createAiFollowUpPolicy(data: {
+export async function createMarketingLotteryPrize(input: {
+  campaignId: number;
   name: string;
-  channel: "messenger" | "whatsapp";
-  triggerType: "unpaid_order" | "quotation" | "cart_abandoned" | "membership_flow";
-  cronExpression?: string;
-  delayHours?: number;
-  maxAttempts?: number;
-  respectHandover?: boolean;
-  stopOnCustomerReply?: boolean;
-  stopOnPurchase?: boolean;
-  stopOnPayment?: boolean;
-  messageTemplate: string;
-  createdBy?: string | null;
+  prizeType: "physical_product" | "coupon" | "points" | "membership_days" | "free_shipping" | "no_prize";
+  productId?: number | null;
+  productQuantity?: number;
+  couponCode?: string | null;
+  pointsValue?: number;
+  membershipDays?: number;
+  probabilityWeight?: number;
+  quantityLimit?: number | null;
 }) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const [result] = await db.insert(aiFollowUpPolicies).values({ ...data, isEnabled: false });
-  const [policy] = await db.select().from(aiFollowUpPolicies)
-    .where(eq(aiFollowUpPolicies.id, (result as any).insertId))
-    .limit(1);
-  broadcastChange("chat" as any);
-  return policy ?? null;
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  if (input.prizeType === "physical_product" && !input.productId) throw new Error("实体奖品必须选择商品");
+  const result = await database.insert(marketingLotteryPrizes).values({
+    ...input,
+    productId: input.productId ?? null,
+    productQuantity: input.productQuantity ?? 1,
+    couponCode: input.couponCode ?? null,
+    pointsValue: input.pointsValue ?? 0,
+    membershipDays: input.membershipDays ?? 0,
+    probabilityWeight: Math.max(1, input.probabilityWeight ?? 1),
+    quantityLimit: input.quantityLimit ?? null,
+  } as any);
+  return Number(result[0].insertId);
 }
 
-export async function updateAiFollowUpPolicy(
-  policyId: number,
-  data: Partial<{
-    name: string;
-    channel: "messenger" | "whatsapp";
-    triggerType: "unpaid_order" | "quotation" | "cart_abandoned" | "membership_flow";
-    isEnabled: boolean;
-    cronExpression: string;
-    delayHours: number;
-    maxAttempts: number;
-    respectHandover: boolean;
-    stopOnCustomerReply: boolean;
-    stopOnPurchase: boolean;
-    stopOnPayment: boolean;
-    messageTemplate: string;
-    scheduleCronTaskUid: string | null;
-    lastRunAt: Date | null;
-  }>,
-) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(aiFollowUpPolicies).set({ ...data, updatedAt: new Date() })
-    .where(eq(aiFollowUpPolicies.id, policyId));
-  broadcastChange("chat" as any);
+export async function listMarketingLotteryEntries(campaignId: number, limit = 200) {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(marketingLotteryEntries)
+    .where(eq(marketingLotteryEntries.campaignId, campaignId))
+    .orderBy(desc(marketingLotteryEntries.createdAt))
+    .limit(Math.min(Math.max(limit, 1), 500));
 }
 
-export async function listAiFollowUpDeliveries(filters: { policyId?: number; limit?: number }) {
-  const db = await getDb();
-  if (!db) return [];
-  let query = db.select().from(aiFollowUpDeliveries).$dynamic();
-  if (filters.policyId) query = query.where(eq(aiFollowUpDeliveries.policyId, filters.policyId));
-  return query.orderBy(desc(aiFollowUpDeliveries.createdAt)).limit(filters.limit ?? 100);
+/** Draws one available prize for one usable entry. It records an unclaimed draw;
+ * physical stock is not touched until the administrator/customer merges it into an order. */
+export async function drawMarketingLotteryPrize(input: { entryId: number; randomValue?: number }) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  return database.transaction(async (tx) => {
+    const [entry] = await tx.select().from(marketingLotteryEntries).where(eq(marketingLotteryEntries.id, input.entryId)).limit(1);
+    if (!entry || entry.status !== "eligible" || entry.usedCount >= entry.entryCount) throw new Error("抽奖资格不存在、尚未生效或已使用");
+    const consumption = await tx.update(marketingLotteryEntries)
+      .set({ usedCount: sql`${marketingLotteryEntries.usedCount} + 1`, status: "drawn" })
+      .where(and(eq(marketingLotteryEntries.id, entry.id), eq(marketingLotteryEntries.status, "eligible"), sql`${marketingLotteryEntries.usedCount} < ${marketingLotteryEntries.entryCount}`));
+    if (!Number((consumption as any)[0]?.affectedRows ?? 0)) throw new Error("抽奖资格已被其他操作使用，请重新刷新");
+
+    const prizes = await tx.select().from(marketingLotteryPrizes).where(and(
+      eq(marketingLotteryPrizes.campaignId, entry.campaignId),
+      eq(marketingLotteryPrizes.status, "active"),
+      or(isNull(marketingLotteryPrizes.quantityLimit), sql`${marketingLotteryPrizes.quantityAwarded} < ${marketingLotteryPrizes.quantityLimit}`),
+    ));
+    if (!prizes.length) throw new Error("目前没有可用奖品");
+    const totalWeight = prizes.reduce((sum, prize) => sum + Math.max(1, prize.probabilityWeight), 0);
+    let cursor = Math.min(Math.max(input.randomValue ?? Math.random(), 0), 0.999999) * totalWeight;
+    let prize = prizes[prizes.length - 1];
+    for (const candidate of prizes) {
+      cursor -= Math.max(1, candidate.probabilityWeight);
+      if (cursor < 0) { prize = candidate; break; }
+    }
+    const award = await tx.update(marketingLotteryPrizes)
+      .set({ quantityAwarded: sql`${marketingLotteryPrizes.quantityAwarded} + 1` })
+      .where(and(eq(marketingLotteryPrizes.id, prize.id), or(isNull(marketingLotteryPrizes.quantityLimit), sql`${marketingLotteryPrizes.quantityAwarded} < ${marketingLotteryPrizes.quantityLimit}`)));
+    if (!Number((award as any)[0]?.affectedRows ?? 0)) throw new Error("该奖品刚刚派完，请重新抽取");
+    const drawResult = await tx.insert(marketingLotteryDraws).values({
+      entryId: entry.id,
+      prizeId: prize.id,
+      customerId: entry.customerId,
+      sourceOrderId: entry.orderId ?? null,
+      status: prize.prizeType === "no_prize" ? "forfeited" : "pending_claim",
+      prizeSnapshot: JSON.stringify({ ...prize, quantityAwarded: prize.quantityAwarded + 1 }),
+    } as any);
+    return { drawId: Number(drawResult[0].insertId), prize, entry };
+  });
+}
+
+export async function claimMarketingLotteryPhysicalPrize(input: { drawId: number; orderId: number; unitPrice?: number }) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const [draw] = await database.select().from(marketingLotteryDraws).where(eq(marketingLotteryDraws.id, input.drawId)).limit(1);
+  if (!draw || draw.status !== "pending_claim" || !draw.prizeId) throw new Error("奖品不存在、不可领取或已领取");
+  const [prize] = await database.select().from(marketingLotteryPrizes).where(eq(marketingLotteryPrizes.id, draw.prizeId)).limit(1);
+  if (!prize || prize.prizeType !== "physical_product" || !prize.productId) throw new Error("此奖品不是可加入订单的实体商品");
+  const orderItemId = await addMarketingPhysicalItemToOrder({
+    orderId: input.orderId,
+    productId: prize.productId,
+    quantity: prize.productQuantity,
+    unitPrice: input.unitPrice ?? 0,
+    campaignId: prize.campaignId,
+    source: "lottery_prize",
+    snapshot: { drawId: draw.id, prizeId: prize.id, prizeName: prize.name },
+  });
+  await database.update(marketingLotteryDraws).set({ status: "merged", mergedOrderId: input.orderId, orderItemId, claimedAt: new Date() }).where(and(eq(marketingLotteryDraws.id, draw.id), eq(marketingLotteryDraws.status, "pending_claim")));
+  return { orderItemId, drawId: draw.id };
 }
 
 /**
- * A policy may send only one message per order. The unique database key is the
- * final duplicate-delivery protection when two scheduled runs overlap.
+ * Appends a physical marketing item to the original order only after the same
+ * atomic stock reservation used by every other sale channel has succeeded.
  */
-export async function reserveAiFollowUpDelivery(data: {
-  policyId: number;
-  customerId: number | null;
-  conversationId: number | null;
+export async function addMarketingPhysicalItemToOrder(input: {
   orderId: number;
-  channel: "messenger" | "whatsapp";
-  status: "skipped" | "pending" | "sent" | "failed" | "stopped";
-  skipReason?: string | null;
-  message?: string | null;
+  productId: number;
+  quantity: number;
+  unitPrice: number;
+  campaignId: number;
+  ruleId?: number | null;
+  source: "campaign_gift" | "add_on" | "lottery_prize";
+  snapshot: Record<string, unknown>;
 }) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const [existing] = await db.select().from(aiFollowUpDeliveries)
-    .where(and(
-      eq(aiFollowUpDeliveries.policyId, data.policyId),
-      eq(aiFollowUpDeliveries.orderId, data.orderId),
-    ))
-    .limit(1);
-  if (existing) return { delivery: existing, isNew: false };
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const [order] = await database.select().from(orders).where(eq(orders.id, input.orderId)).limit(1);
+  if (!order || order.physicalStatus === "cancelled") throw new Error("订单不存在或已取消，不能加入营销商品");
+  const [product] = await database.select().from(products).where(eq(products.id, input.productId)).limit(1);
+  if (!product) throw new Error("营销商品不存在");
+  if (!Number.isInteger(input.quantity) || input.quantity <= 0) throw new Error("营销商品数量必须大于 0");
+  await reserveProductStocksForOrder([{ productId: input.productId, quantity: input.quantity }]);
   try {
-    const [result] = await db.insert(aiFollowUpDeliveries).values(data);
-    const [delivery] = await db.select().from(aiFollowUpDeliveries)
-      .where(eq(aiFollowUpDeliveries.id, (result as any).insertId))
-      .limit(1);
-    broadcastChange("chat" as any);
-    return { delivery: delivery!, isNew: true };
+    const unitPrice = Math.max(0, input.unitPrice);
+    const result = await database.insert(orderItems).values({
+      orderId: input.orderId,
+      productId: product.id,
+      productName: product.name,
+      productSku: product.sku || null,
+      productType: input.source === "campaign_gift" ? "gift" : "physical",
+      quantity: input.quantity,
+      unitPrice: unitPrice.toFixed(2),
+      subtotal: (unitPrice * input.quantity).toFixed(2),
+      unitWeight: String((product as any).weight ?? 0),
+      itemSource: "admin",
+      priceType: "special",
+      unitCost: String((product as any).costPrice ?? 0),
+      originalUnitPrice: String((product as any).price ?? unitPrice),
+      marketingCampaignId: input.campaignId,
+      marketingRuleId: input.ruleId ?? null,
+      marketingSource: input.source,
+      marketingDiscount: Math.max(0, Number((product as any).price ?? unitPrice) - unitPrice).toFixed(2),
+      marketingSnapshot: JSON.stringify(input.snapshot),
+    } as any);
+    await recalculateOrderTotals(input.orderId);
+    return Number(result[0].insertId);
   } catch (error) {
-    const [raceWinner] = await db.select().from(aiFollowUpDeliveries)
-      .where(and(
-        eq(aiFollowUpDeliveries.policyId, data.policyId),
-        eq(aiFollowUpDeliveries.orderId, data.orderId),
-      ))
-      .limit(1);
-    if (raceWinner) return { delivery: raceWinner, isNew: false };
+    // Do not leave a stock hold behind when the order-item write fails.
+    await database.update(products).set({ stockQuantity: sql`${products.stockQuantity} + ${input.quantity}` }).where(eq(products.id, input.productId));
     throw error;
   }
 }
 
-export async function finalizeAiFollowUpDelivery(
-  deliveryId: number,
-  data: {
-    status: "skipped" | "pending" | "sent" | "failed" | "stopped";
-    skipReason?: string | null;
-    platformMessageId?: string | null;
-    errorMessage?: string | null;
-    sentAt?: Date | null;
-  },
-) {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(aiFollowUpDeliveries).set({ ...data, updatedAt: new Date() })
-    .where(eq(aiFollowUpDeliveries.id, deliveryId));
-  broadcastChange("chat" as any);
+export async function getMarketingAutomationRuleById(ruleId: number) {
+  const database = await getDb();
+  if (!database) return null;
+  const rows = await database.select().from(marketingAutomationRules).where(eq(marketingAutomationRules.id, ruleId)).limit(1);
+  return rows[0] ?? null;
 }
 
-/** Safe candidate list: only physical orders still pending and still unpaid. */
-export async function listEligibleAiFollowUpOrders(policy: {
-  channel: "messenger" | "whatsapp";
-  triggerType: "unpaid_order" | "quotation" | "cart_abandoned" | "membership_flow";
-  delayHours: number;
-  respectHandover: boolean;
-}) {
-  const db = await getDb();
-  if (!db || policy.triggerType !== "unpaid_order") return [];
-  const cutoff = new Date(Date.now() - Math.max(1, policy.delayHours) * 60 * 60 * 1000);
-  const rows = await db.select({
-    orderId: orders.id,
-    orderNumber: orders.orderNumber,
-    totalAmount: orders.totalAmount,
-    paidAmount: orders.paidAmount,
-    orderCreatedAt: orders.createdAt,
-    customerId: customers.id,
-    customerName: customers.name,
-    messengerId: customers.messengerId,
-  })
-    .from(orders)
-    .innerJoin(customers, eq(orders.customerId, customers.id))
-    .where(and(
-      eq(orders.physicalStatus, "pending"),
-      lte(orders.createdAt, cutoff),
-      sql`${orders.paidAmount} < ${orders.totalAmount}`,
-    ))
-    .orderBy(asc(orders.createdAt))
-    .limit(100);
+export async function getMarketingAutomationRuleByScheduleTaskUid(taskUid: string) {
+  const database = await getDb();
+  if (!database) return null;
+  const rows = await database.select().from(marketingAutomationRules).where(eq(marketingAutomationRules.scheduleCronTaskUid, taskUid)).limit(1);
+  return rows[0] ?? null;
+}
 
-  const candidates: Array<typeof rows[number] & { conversationId: number | null; skipReason: string | null }> = [];
-  for (const row of rows) {
-    const [conversation] = await db.select().from(chatConversations)
-      .where(and(
-        eq(chatConversations.customerId, row.customerId),
-        eq(chatConversations.platform, policy.channel),
-      ))
-      .orderBy(desc(chatConversations.lastMessageAt))
-      .limit(1);
-    const skipReason = !row.messengerId && policy.channel === "messenger"
-      ? "missing_channel_identity"
-      : policy.respectHandover && conversation && conversation.handoverStatus !== "none"
-        ? "human_handover_active"
-        : null;
-    candidates.push({ ...row, conversationId: conversation?.id ?? null, skipReason });
+export async function getMarketingMessageTemplateById(templateId: number) {
+  const database = await getDb();
+  if (!database) return null;
+  const [template] = await database.select().from(marketingMessageTemplates).where(eq(marketingMessageTemplates.id, templateId)).limit(1);
+  return template || null;
+}
+
+export async function getMarketingSegmentById(segmentId: number) {
+  const database = await getDb();
+  if (!database) return null;
+  const [segment] = await database.select().from(marketingSegments).where(eq(marketingSegments.id, segmentId)).limit(1);
+  return segment || null;
+}
+
+/**
+ * Resolve a marketing segment from customer data only. A Messenger recipient is
+ * eligible for automatic delivery only with a PSID, no blacklist, and a recent
+ * customer interaction. Older recipients remain available as manual-copy rows.
+ */
+export async function resolveMarketingSegmentCustomers(input: {
+  segmentId?: number | null;
+  customerIds?: number[];
+  limit?: number;
+}) {
+  const database = await getDb();
+  if (!database) return [];
+  let filter: Record<string, unknown> = {};
+  if (input.segmentId) {
+    const segment = await getMarketingSegmentById(input.segmentId);
+    if (!segment?.isActive) return [];
+    filter = (segment.filterConfig || {}) as Record<string, unknown>;
   }
-  return candidates;
+  const sourceCustomers = input.customerIds?.length
+    ? await database.select().from(customers).where(inArray(customers.id, input.customerIds)).limit(input.limit || 500)
+    : await database.select().from(customers).limit(input.limit || 500);
+  const inactiveDays = Number(filter.inactiveDays || 0);
+  const minSpent = Number(filter.minSpent || 0);
+  const membershipLevels = Array.isArray(filter.membershipLevels) ? filter.membershipLevels.map(String) : null;
+  const cutoff = inactiveDays > 0 ? new Date(Date.now() - inactiveDays * 24 * 60 * 60 * 1000) : null;
+  return sourceCustomers.filter((customer) => {
+    if (customer.isBlacklisted || customer.mergedIntoCustomerId) return false;
+    if (minSpent > 0 && Number(customer.totalSpent || 0) < minSpent) return false;
+    if (membershipLevels?.length && !membershipLevels.includes(String(customer.membershipLevel))) return false;
+    if (cutoff && (!customer.lastOrderAt || customer.lastOrderAt > cutoff)) return false;
+    return true;
+  });
+}
+
+export async function createMarketingMessageDelivery(input: {
+  automationRuleId?: number | null;
+  campaignId?: number | null;
+  templateId?: number | null;
+  customerId: number;
+  orderId?: number | null;
+  channel: "messenger" | "manual_copy";
+  status: "queued" | "sent" | "failed" | "skipped";
+  renderedContent: string;
+  trackingToken: string;
+  errorMessage?: string | null;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const result = await database.insert(marketingMessageDeliveries).values({
+    ...input,
+    automationRuleId: input.automationRuleId ?? null,
+    campaignId: input.campaignId ?? null,
+    templateId: input.templateId ?? null,
+    orderId: input.orderId ?? null,
+    errorMessage: input.errorMessage ?? null,
+  } as any);
+  return Number(result[0].insertId);
+}
+
+export async function claimMarketingMessageDelivery(input: Parameters<typeof createMarketingMessageDelivery>[0]) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  if (!input.automationRuleId) {
+    const deliveryId = await createMarketingMessageDelivery(input);
+    return { claimed: true, deliveryId };
+  }
+  const existing = await database.select({ id: marketingMessageDeliveries.id })
+    .from(marketingMessageDeliveries)
+    .where(and(eq(marketingMessageDeliveries.automationRuleId, input.automationRuleId), eq(marketingMessageDeliveries.customerId, input.customerId)))
+    .limit(1);
+  if (existing[0]) return { claimed: false, deliveryId: existing[0].id };
+  try {
+    const deliveryId = await createMarketingMessageDelivery(input);
+    return { claimed: true, deliveryId };
+  } catch (error) {
+    const afterRace = await database.select({ id: marketingMessageDeliveries.id })
+      .from(marketingMessageDeliveries)
+      .where(and(eq(marketingMessageDeliveries.automationRuleId, input.automationRuleId), eq(marketingMessageDeliveries.customerId, input.customerId)))
+      .limit(1);
+    if (afterRace[0]) return { claimed: false, deliveryId: afterRace[0].id };
+    throw error;
+  }
+}
+
+export async function updateMarketingMessageDelivery(input: {
+  deliveryId: number;
+  status: "sent" | "failed" | "skipped";
+  providerMessageId?: string | null;
+  errorMessage?: string | null;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  await database.update(marketingMessageDeliveries).set({
+    status: input.status,
+    providerMessageId: input.providerMessageId ?? null,
+    errorMessage: input.errorMessage ?? null,
+    sentAt: input.status === "sent" ? new Date() : null,
+  } as any).where(eq(marketingMessageDeliveries.id, input.deliveryId));
+}
+
+export async function listMarketingMessageDeliveries(limit = 100) {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(marketingMessageDeliveries).orderBy(desc(marketingMessageDeliveries.createdAt)).limit(limit);
+}
+
+export async function listMarketingSegments() {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(marketingSegments).orderBy(desc(marketingSegments.updatedAt));
+}
+
+export async function createMarketingSegment(input: {
+  name: string; description?: string | null; filterConfig: Record<string, unknown>; isActive?: boolean; createdBy?: string | null;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const result = await database.insert(marketingSegments).values({ ...input, description: input.description ?? null, createdBy: input.createdBy ?? null } as any);
+  return Number(result[0].insertId);
+}
+
+export async function updateMarketingSegment(segmentId: number, input: Partial<{ name: string; description: string | null; filterConfig: Record<string, unknown>; isActive: boolean; }>) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  await database.update(marketingSegments).set(input as any).where(eq(marketingSegments.id, segmentId));
+}
+
+export async function listMarketingMessageTemplates() {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(marketingMessageTemplates).orderBy(desc(marketingMessageTemplates.updatedAt));
+}
+
+export async function createMarketingMessageTemplate(input: {
+  name: string; channel?: "messenger" | "manual_copy"; subject?: string | null; content: string; buttonLabel?: string | null; buttonUrl?: string | null; isActive?: boolean; createdBy?: string | null;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const result = await database.insert(marketingMessageTemplates).values({
+    ...input, channel: input.channel ?? "messenger", subject: input.subject ?? null, buttonLabel: input.buttonLabel ?? null, buttonUrl: input.buttonUrl ?? null, createdBy: input.createdBy ?? null,
+  } as any);
+  return Number(result[0].insertId);
+}
+
+export async function updateMarketingMessageTemplate(templateId: number, input: Partial<{ name: string; channel: "messenger" | "manual_copy"; subject: string | null; content: string; buttonLabel: string | null; buttonUrl: string | null; isActive: boolean; }>) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  await database.update(marketingMessageTemplates).set(input as any).where(eq(marketingMessageTemplates.id, templateId));
+}
+
+export async function listMarketingAutomationRules() {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(marketingAutomationRules).orderBy(desc(marketingAutomationRules.updatedAt));
+}
+
+export async function createMarketingAutomationRule(input: {
+  campaignId?: number | null; name: string; triggerType: "segment" | "campaign_start" | "campaign_ending" | "restock" | "lottery_eligible" | "manual_batch"; segmentId?: number | null; templateId: number; scheduleType?: "once" | "cron" | "event"; scheduledAt?: Date | null; filterConfig?: Record<string, unknown> | null; createdBy?: string | null;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const result = await database.insert(marketingAutomationRules).values({
+    ...input, campaignId: input.campaignId ?? null, segmentId: input.segmentId ?? null, status: "paused", scheduleType: input.scheduleType ?? "event", scheduledAt: input.scheduledAt ?? null, filterConfig: input.filterConfig ?? null, createdBy: input.createdBy ?? null,
+  } as any);
+  return Number(result[0].insertId);
+}
+
+export async function updateMarketingAutomationRule(ruleId: number, input: Partial<{ campaignId: number | null; name: string; triggerType: "segment" | "campaign_start" | "campaign_ending" | "restock" | "lottery_eligible" | "manual_batch"; segmentId: number | null; templateId: number; status: "paused" | "active" | "ended"; scheduleType: "once" | "cron" | "event"; scheduledAt: Date | null; filterConfig: Record<string, unknown> | null; lastRunAt: Date | null; heartbeatJobId: string | null; scheduleCronTaskUid: string | null; }>) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  await database.update(marketingAutomationRules).set(input as any).where(eq(marketingAutomationRules.id, ruleId));
+}
+
+/**
+ * Marketing reporting is deliberately derived from immutable campaign applications,
+ * actual orders and delivery audits only. Credit balances never enter this calculation
+ * as a discount or revenue source.
+ */
+export async function getMarketingEffectSummary() {
+  const database = await getDb();
+  if (!database) return { campaigns: [], totals: { attributedOrders: 0, revenue: 0, discount: 0, shippingSubsidy: 0, messagesSent: 0, clicks: 0, conversions: 0 } };
+
+  const [campaignRows, applicationRows, deliveryRows, eventRows] = await Promise.all([
+    database.select().from(marketingCampaigns).orderBy(desc(marketingCampaigns.updatedAt)),
+    database.select().from(marketingOrderApplications),
+    database.select().from(marketingMessageDeliveries),
+    database.select().from(marketingMessageEvents),
+  ]);
+
+  const appliedByCampaign = new Map<number, typeof applicationRows>();
+  applicationRows.filter((row) => row.status === "applied").forEach((row) => {
+    const entries = appliedByCampaign.get(row.campaignId) || [];
+    entries.push(row);
+    appliedByCampaign.set(row.campaignId, entries);
+  });
+  const deliveriesByCampaign = new Map<number, typeof deliveryRows>();
+  deliveryRows.forEach((row) => {
+    if (!row.campaignId) return;
+    const entries = deliveriesByCampaign.get(row.campaignId) || [];
+    entries.push(row);
+    deliveriesByCampaign.set(row.campaignId, entries);
+  });
+  const deliveryEvents = new Map<number, typeof eventRows>();
+  eventRows.forEach((row) => {
+    const entries = deliveryEvents.get(row.deliveryId) || [];
+    entries.push(row);
+    deliveryEvents.set(row.deliveryId, entries);
+  });
+
+  const campaigns = campaignRows.map((campaign) => {
+    const applications = appliedByCampaign.get(campaign.id) || [];
+    const orderIds = applications
+      .map((row) => row.orderId)
+      .filter((orderId, index, values) => values.indexOf(orderId) === index);
+    const deliveries = deliveriesByCampaign.get(campaign.id) || [];
+    const campaignEvents = deliveries.flatMap((delivery) => deliveryEvents.get(delivery.id) || []);
+    return {
+      campaignId: campaign.id,
+      campaignName: campaign.name,
+      status: campaign.status,
+      attributedOrders: orderIds.length,
+      revenue: applications.reduce((sum, row) => sum + Number(row.originalAmount || 0), 0),
+      discount: applications.reduce((sum, row) => sum + Number(row.discountAmount || 0), 0),
+      shippingSubsidy: applications.reduce((sum, row) => sum + Number(row.shippingSubsidy || 0), 0),
+      messagesSent: deliveries.filter((row) => row.status === "sent").length,
+      clicks: campaignEvents.filter((row) => row.eventType === "clicked").length,
+      conversions: campaignEvents.filter((row) => row.eventType === "ordered" || row.eventType === "paid").length,
+    };
+  });
+  const totals = campaigns.reduce((total, row) => ({
+    attributedOrders: total.attributedOrders + row.attributedOrders,
+    revenue: total.revenue + row.revenue,
+    discount: total.discount + row.discount,
+    shippingSubsidy: total.shippingSubsidy + row.shippingSubsidy,
+    messagesSent: total.messagesSent + row.messagesSent,
+    clicks: total.clicks + row.clicks,
+    conversions: total.conversions + row.conversions,
+  }), { attributedOrders: 0, revenue: 0, discount: 0, shippingSubsidy: 0, messagesSent: 0, clicks: 0, conversions: 0 });
+  return { campaigns, totals };
 }

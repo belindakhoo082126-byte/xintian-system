@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Trash2, Minus, Plus, ShoppingCart, ChevronLeft, Package } from "lucide-react";
-import { MALL_CART_STORAGE_KEY, readAndRepairMallCart } from "@/lib/mallInteractions";
+import { Trash2, Minus, Plus, ShoppingCart, ChevronLeft, Package, Sparkles, Gift, Target } from "lucide-react";
+import { trpc } from "@/lib/trpc";
 
 export default function MallCart() {
   const [cart, setCart] = useState<any[]>([]);
@@ -13,23 +13,20 @@ export default function MallCart() {
   const [addOnOrder, setAddOnOrder] = useState<any>(null);
 
   useEffect(() => {
-    const loadCart = () => {
-      try { setCart(readAndRepairMallCart(localStorage)); } catch { setCart([]); }
-    };
-    loadCart();
-    window.addEventListener("cart-updated", loadCart);
+    try {
+      setCart(JSON.parse(localStorage.getItem("mall_cart") || "[]"));
+    } catch { setCart([]); }
     // V2.0.90: Read persistent order session
     try {
       const saved = localStorage.getItem("xintian_mall_add_on_order");
       if (saved) setAddOnOrder(JSON.parse(saved));
     } catch { /* ignore */ }
     setLoaded(true);
-    return () => window.removeEventListener("cart-updated", loadCart);
   }, []);
 
   function updateCart(newCart: any[]) {
     setCart(newCart);
-    localStorage.setItem(MALL_CART_STORAGE_KEY, JSON.stringify(newCart));
+    localStorage.setItem("mall_cart", JSON.stringify(newCart));
     window.dispatchEvent(new Event("cart-updated"));
   }
 
@@ -46,6 +43,20 @@ export default function MallCart() {
   }
 
   const subtotal = cart.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+  const marketingInput = useMemo(() => ({
+    cart: cart
+      .map((item) => ({
+        productId: Number(item.productId ?? item.id),
+        categoryId: item.categoryId != null ? Number(item.categoryId) : null,
+        quantity: Math.max(1, Number(item.quantity) || 1),
+        unitPrice: Math.max(0, Number(item.unitPrice) || 0),
+      }))
+      .filter((item) => Number.isInteger(item.productId) && item.productId > 0),
+  }), [cart]);
+  const { data: marketingCampaigns = [] } = trpc.marketing.mallPreview.useQuery(marketingInput, {
+    enabled: loaded && marketingInput.cart.length > 0,
+    staleTime: 15_000,
+  });
 
   if (!loaded) return null;
 
@@ -87,6 +98,38 @@ export default function MallCart() {
                 </CardContent>
               </Card>
             ))}
+
+            {marketingCampaigns.map((campaign) => {
+              const { result } = campaign;
+              const discounts = result.discounts || [];
+              const entitlements = result.entitlements || [];
+              const totalDiscount = result.discountTotal || 0;
+              return (
+                <Card key={campaign.id} className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50">
+                  <CardContent className="p-4 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                      <div className="min-w-0">
+                        <p className="font-semibold text-amber-900">{campaign.name}</p>
+                        {campaign.description && <p className="mt-0.5 text-xs text-amber-800">{campaign.description}</p>}
+                      </div>
+                    </div>
+                    {totalDiscount > 0 && (
+                      <p className="text-sm font-medium text-emerald-700">本活动可优惠 RM {totalDiscount.toFixed(2)}，最终结账时将由系统再次确认。</p>
+                    )}
+                    {discounts.map((discount, index) => (
+                      <p key={`${discount.ruleId}-${index}`} className="text-xs text-amber-900">{discount.reason}：省 RM {discount.amount.toFixed(2)}</p>
+                    ))}
+                    {entitlements.map((item, index) => (
+                      <div key={`${item.ruleId}-${index}`} className="flex gap-2 text-xs text-amber-900">
+                        {item.type === "add_on_offer" ? <Target className="h-4 w-4 shrink-0 text-orange-600" /> : <Gift className="h-4 w-4 shrink-0 text-rose-600" />}
+                        <span>{item.reason}{item.type === "add_on_offer" && item.unitPrice != null ? `（加价 RM ${item.unitPrice.toFixed(2)}，结账前仍须通过库存确认）` : ""}</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
 
             <Card className="mt-4">
               <CardContent className="p-4 space-y-3">

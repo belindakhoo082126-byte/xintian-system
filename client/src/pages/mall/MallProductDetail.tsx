@@ -12,8 +12,7 @@ import { useI18n } from "@/contexts/I18nContext";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { MallCartFlyAnimation, type MallCartFlight } from "@/components/MallCartFlyAnimation";
-import { getMallCartItemCount, getMallShareLinks, MALL_CART_STORAGE_KEY, MALL_FAVORITES_STORAGE_KEY, readAndRepairMallCart, readMallCartItems, readMallFavoriteIds, toggleMallFavoriteId } from "@/lib/mallInteractions";
-import { resolveMallServiceBadges } from "@/lib/mallServiceBadges";
+import { getMallShareLinks, MALL_FAVORITES_STORAGE_KEY, readMallFavoriteIds, toggleMallFavoriteId } from "@/lib/mallInteractions";
 
 export default function MallProductDetail() {
   const [location] = useLocation();
@@ -26,7 +25,10 @@ export default function MallProductDetail() {
 
   useEffect(() => {
     const loadCart = () => {
-      setCartCount(getMallCartItemCount(readAndRepairMallCart(localStorage)));
+      try {
+        const c = JSON.parse(localStorage.getItem("mall_cart") || "[]");
+        setCartCount(c.reduce((s: number, i: any) => s + i.quantity, 0));
+      } catch { setCartCount(0); }
     };
     loadCart();
     window.addEventListener("cart-updated", loadCart);
@@ -45,7 +47,6 @@ export default function MallProductDetail() {
   const { lang, translate } = useI18n();
   const t = (zh: string, en: string) => translate(zh, en);
   const theme = getMallTheme(settings?.activeTheme, settings?.customThemeColors);
-  const serviceBadges = resolveMallServiceBadges(settings?.serviceBadges);
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
@@ -108,7 +109,7 @@ export default function MallProductDetail() {
       return false;
     }
     try {
-      const cart = readMallCartItems(localStorage.getItem(MALL_CART_STORAGE_KEY));
+      const cart = JSON.parse(localStorage.getItem("mall_cart") || "[]");
       const existing = cart.find((i: any) => i.productId === product!.id && i.variationId === selectedVariantId);
       if (existing) {
         if (!allowOversell && existing.quantity + quantity > availableStock) {
@@ -131,7 +132,7 @@ export default function MallProductDetail() {
           allowOversell,
         });
       }
-      localStorage.setItem(MALL_CART_STORAGE_KEY, JSON.stringify(cart));
+      localStorage.setItem("mall_cart", JSON.stringify(cart));
       launchCartFlight(origin);
       toast.success(t("已加入购物车", "Added to cart"));
       window.dispatchEvent(new Event("cart-updated"));
@@ -186,16 +187,9 @@ export default function MallProductDetail() {
           <Link href="/mall" className="flex items-center gap-2">
             <span className="font-bold text-lg" style={{ color: theme.primary }}>{settings?.shopName || t("心田", "Xintian")}</span>
           </Link>
-          <Link href="/mall/cart" className="ml-auto relative">
+          <Link href="/mall/checkout" className="ml-auto relative">
             <Button id="mall-cart-anchor" variant="ghost"><ShoppingCart className="h-5 w-5" /></Button>
             {cartCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">{cartCount}</Badge>}
-          </Link>
-          <Link href="/mall/favorites" className="relative">
-            <Button variant="ghost" size="sm" className="gap-1 px-2" aria-label={t("已收藏", "Saved items")} title={t("已收藏", "Saved items")}>
-              <Heart className="h-5 w-5" style={{ color: theme.primary }} />
-              <span>{t("已收藏", "Saved")}</span>
-            </Button>
-            {favoriteIds.length > 0 && <Badge className="absolute -top-1 -right-1 h-5 min-w-5 rounded-full px-1 flex items-center justify-center text-xs" style={{ backgroundColor: theme.primary }}>{favoriteIds.length}</Badge>}
           </Link>
         </div>
       </header>
@@ -223,7 +217,7 @@ export default function MallProductDetail() {
           </div>
 
           {/* Product Info */}
-          <div className="space-y-4 rounded-2xl border bg-white/95 p-4 text-slate-900 shadow-lg backdrop-blur-sm" style={{ borderColor: `${theme.secondary}b8`, boxShadow: `0 12px 30px ${theme.primary}1f` }}>
+          <div className="space-y-4">
             <div>
               <h1 className="text-xl font-semibold mb-2">{product.name}</h1>
               {product.isSpecial && (
@@ -322,9 +316,9 @@ export default function MallProductDetail() {
             </div>
 
             {/* Trust badges */}
-            <div className="grid grid-cols-1 gap-2 border-t pt-4 sm:grid-cols-2">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Truck className="h-4 w-4" />{lang === "zh" ? serviceBadges.shipping.zh : serviceBadges.shipping.en}</div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Shield className="h-4 w-4" />{lang === "zh" ? serviceBadges.reservation.zh : serviceBadges.reservation.en}</div>
+            <div className="flex gap-4 pt-4 border-t">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Truck className="h-4 w-4" />{t("西马满RM150首10kg免邮，续重RM3/kg", "West Malaysia: Free 10kg over RM150, RM3/kg after")}</div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Shield className="h-4 w-4" />{t("7天保留", "7-day reservation")}</div>
             </div>
           </div>
         </div>
@@ -391,7 +385,7 @@ export default function MallProductDetail() {
 
         {/* Detail Images */}
         {detailImages.length > 0 && (
-          <div className="mt-6 space-y-3 rounded-2xl border bg-white/95 p-4 text-slate-900 shadow-lg backdrop-blur-sm" style={{ borderColor: `${theme.secondary}a8`, boxShadow: `0 10px 28px ${theme.primary}10` }}>
+          <div className="mt-6 space-y-3">
             <h3 className="font-semibold">{t("商品详情", "Product Details")}</h3>
             {detailImages.map((img: any) => (
               <img key={img.id} src={img.imageUrl} alt="detail" className="w-full rounded-lg" />
