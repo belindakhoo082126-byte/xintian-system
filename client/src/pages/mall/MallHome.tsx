@@ -29,7 +29,7 @@ function translateMallNotice(notice: string, translate: (zh: string, en: string)
 export default function MallHome() {
   const [search, setSearch] = useState("");
   const [location, setLocation] = useLocation();
-  const { translate } = useI18n();
+  const { translate, lang } = useI18n();
   const searchParams = new URLSearchParams(location.split("?")[1] || "");
   const categoryId = searchParams.get("categoryId") ? parseInt(searchParams.get("categoryId")!) : undefined;
   const searchQuery = searchParams.get("q") || search;
@@ -192,7 +192,7 @@ export default function MallHome() {
                   {notices.map((n: any, index: number) => (
                     <span key={n.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm leading-5" style={{ backgroundColor: `${theme.background}cc`, borderColor: `${theme.secondary}8a`, color: theme.font }}>
                       <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: theme.primary }}>{index + 1}</span>
-                      <span className="break-words">{translateMallNotice(n.announcement, translate)}</span>
+                      <span className="break-words">{lang === "en" && n.announcementEn?.trim() ? n.announcementEn : translateMallNotice(n.announcement, translate)}</span>
                     </span>
                   ))}
                 </div>

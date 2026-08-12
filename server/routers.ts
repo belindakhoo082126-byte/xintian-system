@@ -3777,6 +3777,7 @@ export const appRouter = router({
     }),
     createNotice: adminProcedure.input(z.object({
       announcement: z.string(),
+      announcementEn: z.string().max(500).optional(),
       isEnabled: z.boolean().default(true),
       displayOrder: z.number().default(0),
     })).mutation(async ({ input }) => {
@@ -3785,6 +3786,7 @@ export const appRouter = router({
     updateNotice: adminProcedure.input(z.object({
       id: z.number(),
       announcement: z.string().optional(),
+      announcementEn: z.string().max(500).nullable().optional(),
       isEnabled: z.boolean().optional(),
       displayOrder: z.number().optional(),
     })).mutation(async ({ input }) => {

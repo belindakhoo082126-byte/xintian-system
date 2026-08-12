@@ -1429,6 +1429,7 @@ export type InsertMallQuickContact = typeof mallQuickContacts.$inferInsert;
 export const mallNotices = mysqlTable("mall_notices", {
   id: int("id").autoincrement().primaryKey(),
   announcement: varchar("announcement", { length: 500 }).notNull(),
+  announcementEn: varchar("announcementEn", { length: 500 }),
   isEnabled: boolean("isEnabled").default(true).notNull(),
   displayOrder: int("displayOrder").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

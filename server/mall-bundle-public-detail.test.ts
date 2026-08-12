@@ -50,17 +50,22 @@ describe("商城公开组合商品详情", () => {
 
   it("商品服务公告以同一完整卡片显示换盆、运费和订单保留，并在英文下有对应文案", () => {
     expect(productDetail).toContain('aria-label={t("购物服务公告", "Shopping information")}');
-    expect(productDetail).toContain("免费换盆服务");
-    expect(productDetail).toContain("Free Repotting Service");
-    expect(productDetail).toContain("消费满 RM150 首 10kg 免邮，续重 RM3/kg；不含特价商品及会员费用。");
-    expect(productDetail).toContain("Spend RM150 for free delivery on the first 10kg; RM3/kg thereafter.");
-    expect(productDetail).toContain("本地订单可保留 7 天，逾期系统将自动取消。");
-    expect(productDetail).toContain("Local orders are reserved for 7 days and will be cancelled automatically after expiry.");
+    expect(productDetail).toContain("trpc.mall.notices.useQuery()");
+    expect(productDetail).toContain('notice.announcementEn?.trim() ? notice.announcementEn : notice.announcement');
+    expect(productDetail).not.toContain("心田贴心服务");
   });
 
   it("商城公告与购物条款入口可在中英文间切换，且条款入口不隐藏于移动端", () => {
     expect(mallHome).toContain("translateMallNotice(n.announcement, translate)");
+    expect(mallHome).toContain('n.announcementEn?.trim() ? n.announcementEn');
     expect(mallHome).toContain('translate("购物条款与政策", "Policies")');
     expect(mallHome).not.toContain('hidden shrink-0 text-xs sm:inline-flex');
+  });
+
+  it("商城分类只显示可上架分类，商品详情提供继续购物入口", () => {
+    expect(db).toContain('eq(categories.status, "active")');
+    expect(db).toContain('eq(categories.showInStore, true)');
+    expect(productDetail).toContain('返回商城继续选购');
+    expect(productDetail).toContain('Back to mall & continue shopping');
   });
 });

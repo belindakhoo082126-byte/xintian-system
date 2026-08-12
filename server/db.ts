@@ -5649,7 +5649,10 @@ export async function updateProductMallSync(productId: number, syncToMall: boole
 export async function getMallCategories() {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(categories).orderBy(asc(categories.sortOrder));
+  return db.select()
+    .from(categories)
+    .where(and(eq(categories.status, "active"), eq(categories.showInStore, true)))
+    .orderBy(asc(categories.sortOrder));
 }
 
 // --- Mall Checkout (Guest Checkout) ---

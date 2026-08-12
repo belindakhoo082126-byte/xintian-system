@@ -85,8 +85,10 @@ export default function MallSettings() {
   }
 
   const [newNotice, setNewNotice] = useState("");
+  const [newNoticeEn, setNewNoticeEn] = useState("");
   const [editingNoticeId, setEditingNoticeId] = useState<number | null>(null);
   const [editingNoticeText, setEditingNoticeText] = useState("");
+  const [editingNoticeTextEn, setEditingNoticeTextEn] = useState("");
   const [newSchedule, setNewSchedule] = useState<any>({ themeKey: "christmas", startDate: "", endDate: "" });
 
   function handleSaveSettings() {
@@ -141,13 +143,15 @@ export default function MallSettings() {
 
   function handleAddNotice() {
     if (!newNotice.trim()) return;
-    createNoticeMutation.mutate({ announcement: newNotice, displayOrder: (notices?.length || 0) + 1 });
+    createNoticeMutation.mutate({ announcement: newNotice.trim(), announcementEn: newNoticeEn.trim() || undefined, displayOrder: (notices?.length || 0) + 1 });
     setNewNotice("");
+    setNewNoticeEn("");
   }
 
   function beginEditNotice(notice: any) {
     setEditingNoticeId(notice.id);
     setEditingNoticeText(notice.announcement || "");
+    setEditingNoticeTextEn(notice.announcementEn || "");
   }
 
   function saveEditedNotice(notice: any) {
@@ -156,10 +160,11 @@ export default function MallSettings() {
       toast.error(translate("请输入公告内容", "Please enter announcement content"));
       return;
     }
-    updateNoticeMutation.mutate({ id: notice.id, announcement }, {
+    updateNoticeMutation.mutate({ id: notice.id, announcement, announcementEn: editingNoticeTextEn.trim() || null }, {
       onSuccess: () => {
         setEditingNoticeId(null);
         setEditingNoticeText("");
+        setEditingNoticeTextEn("");
       },
     });
   }
@@ -279,23 +284,28 @@ export default function MallSettings() {
           <Card>
             <CardHeader><CardTitle>{translate("首页公告", "Homepage Announcements")}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex gap-2">
-                <Input value={newNotice} onChange={(e) => setNewNotice(e.target.value)} placeholder={translate("输入公告内容...", "Enter announcement content...")} onKeyDown={(e) => e.key === "Enter" && handleAddNotice()} />
-                <Button onClick={handleAddNotice}><Plus className="h-4 w-4" />{translate("添加", "Add")}</Button>
+              <p className="text-sm text-muted-foreground">{translate("公告会同时显示在商城首页与每个商品详情。中文为必填；填写英文后，英文商城会优先显示英文内容。", "Notices appear on the storefront and every product detail page. Chinese is required; English storefronts use the English text when provided.")}</p>
+              <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                <Textarea value={newNotice} onChange={(e) => setNewNotice(e.target.value)} placeholder={translate("中文公告（必填）", "Chinese notice (required)")} rows={2} />
+                <Textarea value={newNoticeEn} onChange={(e) => setNewNoticeEn(e.target.value)} placeholder={translate("English announcement（可选）", "English announcement (optional)")} rows={2} />
+                <Button className="self-end" onClick={handleAddNotice}><Plus className="h-4 w-4" />{translate("添加", "Add")}</Button>
               </div>
               {notices?.map((n: any) => (
                 <div key={n.id} className="flex items-center gap-3 p-3 border rounded-lg">
                   <Switch checked={n.isEnabled} onCheckedChange={(v) => updateNoticeMutation.mutate({ id: n.id, isEnabled: v })} />
                   {editingNoticeId === n.id ? (
-                    <Input className="flex-1" value={editingNoticeText} onChange={(event) => setEditingNoticeText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && saveEditedNotice(n)} autoFocus />
+                    <div className="grid flex-1 gap-2 sm:grid-cols-2">
+                      <Textarea value={editingNoticeText} onChange={(event) => setEditingNoticeText(event.target.value)} placeholder={translate("中文公告", "Chinese notice")} rows={2} autoFocus />
+                      <Textarea value={editingNoticeTextEn} onChange={(event) => setEditingNoticeTextEn(event.target.value)} placeholder={translate("English announcement（可选）", "English announcement (optional)")} rows={2} />
+                    </div>
                   ) : (
-                    <span className="flex-1">{n.announcement}</span>
+                    <div className="flex-1 space-y-1"><p>{n.announcement}</p>{n.announcementEn && <p className="text-xs text-muted-foreground">EN: {n.announcementEn}</p>}</div>
                   )}
                   <Badge variant="outline">{translate("#{order}", "#{order}", { order: n.displayOrder })}</Badge>
                   {editingNoticeId === n.id ? (
                     <>
                       <Button variant="outline" size="sm" onClick={() => saveEditedNotice(n)} disabled={updateNoticeMutation.isPending}>{translate("保存", "Save")}</Button>
-                      <Button variant="ghost" size="sm" onClick={() => { setEditingNoticeId(null); setEditingNoticeText(""); }}>{translate("取消", "Cancel")}</Button>
+                      <Button variant="ghost" size="sm" onClick={() => { setEditingNoticeId(null); setEditingNoticeText(""); setEditingNoticeTextEn(""); }}>{translate("取消", "Cancel")}</Button>
                     </>
                   ) : (
                     <Button variant="ghost" size="icon" onClick={() => beginEditNotice(n)} title={translate("编辑公告", "Edit notice")}><Pencil className="h-4 w-4" /></Button>
