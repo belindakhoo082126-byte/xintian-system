@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Upload, Bot, Loader2 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
 
 const RAW_PRODUCT_TYPES = [
   { value: "physical", zh: "实体商品", en: "Physical Product" },
@@ -649,11 +650,16 @@ export default function ProductsV2() {
               ) : products.length === 0 ? (
                 <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
               ) : products.map(p => (
-                <TableRow key={p.id}>
+                <TableRow key={p.id} className="[&>td]:py-3 [&>td]:text-sm">
                   <TableCell className="font-medium">
-                    <div className="flex items-center gap-2">
-                      {p.coverImageUrl && <img src={p.coverImageUrl} alt="" className="h-8 w-8 rounded object-cover" />}
-                      {p.name}
+                    <div className="flex items-center gap-3">
+                      <ProductImagePreview
+                        src={p.coverImageUrl}
+                        alt={p.name}
+                        className="h-14 w-14"
+                        label={translate("预览商品图片", "Preview product image")}
+                      />
+                      <span className="text-base font-semibold leading-snug">{p.name}</span>
                     </div>
                   </TableCell>
                   <TableCell>

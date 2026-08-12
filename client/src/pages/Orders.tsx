@@ -19,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useSearch, useLocation } from "wouter";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
 import { getSpecialOrderHandlingLabel, getSpecialOrderReasonLabel, SPECIAL_ORDER_FILTER_OPTIONS } from "@shared/specialOrderDisplay";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
 
 const PHYSICAL_STATUS = {
   pending: { label: "未汇款订单", enLabel: "Unpaid Order", variant: "outline" },
@@ -1262,11 +1263,12 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                     {orderDetail.items?.map((item: any) => (
                       <TableRow key={item.id}>
                         <TableCell>
-                          {item.productImage ? (
-                            <img src={item.productImage} alt={item.productName} className="h-20 w-20 rounded-lg object-cover border" />
-                          ) : (
-                            <div className="h-20 w-20 rounded-lg bg-muted flex items-center justify-center text-xs text-muted-foreground">{translate("无图", "No Img")}</div>
-                          )}
+                          <ProductImagePreview
+                            src={item.productImage}
+                            alt={item.productName}
+                            className="h-20 w-20"
+                            label={translate("预览商品图片", "Preview product image")}
+                          />
                         </TableCell>
                         <TableCell className="font-medium" style={{ whiteSpace: "normal", wordBreak: "break-word", maxWidth: "300px" }}>{item.productName}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || "-"}</TableCell>

@@ -5,15 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search, ShoppingCart, MessageCircle, MapPin, Package, Boxes, Facebook, Navigation, X, Star, TrendingDown, Sparkles, Megaphone } from "lucide-react";
+import { Search, ShoppingCart, MessageCircle, MapPin, Package, Boxes, Facebook, Navigation, X, Star, TrendingDown, Sparkles, Megaphone, Heart } from "lucide-react";
 import { MallLangToggle } from "@/components/MallLangToggle";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useI18n } from "@/contexts/I18nContext";
 
 export default function MallHome() {
   const [search, setSearch] = useState("");
   const [location, setLocation] = useLocation();
+  const { translate } = useI18n();
   const searchParams = new URLSearchParams(location.split("?")[1] || "");
   const categoryId = searchParams.get("categoryId") ? parseInt(searchParams.get("categoryId")!) : undefined;
   const searchQuery = searchParams.get("q") || search;
@@ -47,9 +49,9 @@ export default function MallHome() {
   const [showAddOnBanner, setShowAddOnBanner] = useState(false);
   const [isPoliciesOpen, setIsPoliciesOpen] = useState(false);
   const policySections = [
-    { title: "配送说明", content: settings?.shippingPolicy },
-    { title: "退款条例", content: settings?.refundPolicy },
-    { title: "服务条款", content: settings?.serviceTerms },
+    { title: translate("配送说明", "Shipping information"), content: settings?.shippingPolicy },
+    { title: translate("退款条例", "Refund policy"), content: settings?.refundPolicy },
+    { title: translate("服务条款", "Terms of service"), content: settings?.serviceTerms },
   ].filter((section) => Boolean(section.content?.trim()));
   useEffect(() => {
     try {
@@ -110,7 +112,7 @@ export default function MallHome() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="搜索植物..."
+                placeholder={translate("搜索植物...", "Search plants...")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
@@ -125,9 +127,12 @@ export default function MallHome() {
               {cartCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs" style={{ backgroundColor: theme.button }}>{cartCount}</Badge>}
             </Button>
           </Link>
+          <Link href="/mall/favorites" className="shrink-0">
+            <Button variant="ghost" size="icon" aria-label={translate("我的收藏", "My favorites")}><Heart className="h-5 w-5" style={{ color: theme.primary }} /></Button>
+          </Link>
           {addOnOrder ? (
             <a href={`/order/${addOnOrder.orderNumber}/${addOnOrder.token}`} className="shrink-0">
-              <Button variant="ghost" size="sm" className="mall-theme-primary">返回原订单</Button>
+              <Button variant="ghost" size="sm" className="mall-theme-primary">{translate("返回原订单", "Back to original order")}</Button>
             </a>
           ) : null}
           <MallLangToggle />
@@ -141,7 +146,7 @@ export default function MallHome() {
                 className="px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all"
                 style={categoryId ? { color: theme.font } : { backgroundColor: theme.primary, color: "#fff" }}
               >
-                全部
+                {translate("全部", "All")}
               </button>
               {categories.map((c: any) => (
                 <button
@@ -150,7 +155,7 @@ export default function MallHome() {
                   className="px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all"
                   style={categoryId === c.id ? { backgroundColor: theme.primary, color: "#fff" } : { color: theme.font, backgroundColor: theme.secondary + "20" }}
                 >
-                  {c.nameZh}
+                  {translate(c.nameZh, c.nameEn || c.nameZh)}
                 </button>
               ))}
             </div>
@@ -160,12 +165,12 @@ export default function MallHome() {
 
       {/* Notices */}
       {notices && notices.length > 0 && (
-        <section className="relative z-10 border-y" style={{ backgroundColor: `${theme.secondary}1c`, borderColor: `${theme.secondary}74` }} aria-label="商城公告">
+        <section className="relative z-10 border-y" style={{ backgroundColor: `${theme.secondary}1c`, borderColor: `${theme.secondary}74` }} aria-label={translate("商城公告", "Store announcements")}>
           <div className="max-w-6xl mx-auto px-4 py-3">
             <div className="flex items-start gap-3 rounded-2xl border bg-white/80 px-3 py-3 shadow-sm backdrop-blur-sm sm:px-4" style={{ borderColor: `${theme.secondary}92`, boxShadow: `0 8px 22px ${theme.primary}0d` }}>
               <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white" style={{ background: theme.visual.edge }}><Megaphone className="h-4 w-4" /></div>
               <div className="min-w-0 flex-1">
-                <p className="mb-1 text-xs font-bold tracking-[0.16em]" style={{ color: theme.primary }}>商城公告</p>
+                <p className="mb-1 text-xs font-bold tracking-[0.16em]" style={{ color: theme.primary }}>{translate("商城公告", "Store announcements")}</p>
                 <div className="flex flex-wrap gap-2">
                   {notices.map((n: any, index: number) => (
                     <span key={n.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm leading-5" style={{ backgroundColor: `${theme.background}cc`, borderColor: `${theme.secondary}8a`, color: theme.font }}>
@@ -199,7 +204,7 @@ export default function MallHome() {
           <div className="flex items-center gap-2 mb-4">
             <div className="h-7 w-1.5 rounded-full" style={{ backgroundColor: theme.primary }} />
             <Sparkles className="h-5 w-5" style={{ color: theme.primary }} />
-            <h2 className="text-xl font-bold" style={{ color: theme.font }}>组合优惠</h2>
+            <h2 className="text-xl font-bold" style={{ color: theme.font }}>{translate("组合优惠", "Bundle offers")}</h2>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {bundles.map((b: any) => (
@@ -212,11 +217,11 @@ export default function MallHome() {
                       <div className="w-full h-full flex items-center justify-center text-gray-300"><Boxes className="h-12 w-12" /></div>
                     )}
                     <div className="absolute top-2 left-2">
-                      <Badge className="shadow-sm" style={{ backgroundColor: theme.primary, color: "#fff" }}>组合包</Badge>
+                      <Badge className="shadow-sm" style={{ backgroundColor: theme.primary, color: "#fff" }}>{translate("组合包", "Bundle")}</Badge>
                     </div>
                     {b.bundleStock <= 0 && (
                       <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                        <Badge variant="destructive" className="text-base px-4 py-1">售罄</Badge>
+                        <Badge variant="destructive" className="text-base px-4 py-1">{translate("售罄", "Sold out")}</Badge>
                       </div>
                     )}
                   </div>
@@ -237,7 +242,7 @@ export default function MallHome() {
                     </div>
                     {b.items && b.items.length > 0 && (
                       <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                        包含: {b.items.map((i: any) => i.productName).join('、')}
+                        {translate("包含", "Includes")}: {b.items.map((i: any) => i.productName).join('、')}
                       </p>
                     )}
                   </CardContent>
@@ -254,10 +259,10 @@ export default function MallHome() {
           <div className="flex items-center gap-2">
             <div className="h-7 w-1.5 rounded-full" style={{ backgroundColor: theme.primary }} />
             <h2 className="text-xl font-bold" style={{ color: theme.font }}>
-              {searchQuery ? `搜索: "${searchQuery}"` : categoryId ? "分类商品" : "全部商品"}
+              {searchQuery ? `${translate("搜索", "Search")}: "${searchQuery}"` : categoryId ? translate("分类商品", "Category products") : translate("全部商品", "All products")}
             </h2>
           </div>
-          <span className="text-sm text-muted-foreground">{isProductsLoading ? "商品加载中…" : `${products?.length ?? 0} 件商品`}</span>
+          <span className="text-sm text-muted-foreground">{isProductsLoading ? translate("商品加载中…", "Loading products…") : translate("{count} 件商品", "{count} products", { count: products?.length ?? 0 })}</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
           {isProductsLoading && Array.from({ length: 4 }).map((_, index) => (
@@ -283,14 +288,14 @@ export default function MallHome() {
                   {p.isFeatured && (
                     <div className="absolute top-2 left-2">
                       <Badge className="shadow-sm flex items-center gap-0.5" style={{ backgroundColor: theme.primary, color: "#fff" }}>
-                        <Star className="h-3 w-3" /> 推荐
+                        <Star className="h-3 w-3" /> {translate("推荐", "Featured")}
                       </Badge>
                     </div>
                   )}
                   {p.isSpecial && (
                     <div className="absolute top-2 right-2">
                       <Badge className="shadow-sm flex items-center gap-0.5" style={{ backgroundColor: "#ea580c", color: "#fff" }}>
-                        <TrendingDown className="h-3 w-3" /> 特价
+                        <TrendingDown className="h-3 w-3" /> {translate("特价", "Special")}
                       </Badge>
                     </div>
                   )}
@@ -310,8 +315,8 @@ export default function MallHome() {
                       <span className="text-xs text-muted-foreground line-through">RM {p.compareAtPrice}</span>
                     )}
                   </div>
-                  {p.shortDescZh && (
-                    <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{p.shortDescZh}</p>
+                  {(p.shortDescEn || p.shortDescZh) && (
+                    <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{translate(p.shortDescZh || p.shortDescEn, p.shortDescEn || p.shortDescZh)}</p>
                   )}
                 </CardContent>
               </Card>
@@ -321,7 +326,7 @@ export default function MallHome() {
         {!isProductsLoading && products?.length === 0 && (
           <div className="text-center py-20 text-muted-foreground">
             <Package className="h-16 w-16 mx-auto mb-4 opacity-30" />
-            <p className="text-lg">暂无商品</p>
+            <p className="text-lg">{translate("暂无商品", "No products available")}</p>
           </div>
         )}
       </main>
@@ -332,18 +337,18 @@ export default function MallHome() {
           <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm">
               <Package className="h-4 w-4 shrink-0" />
-              <span>正在为订单 <strong>{addOnOrder.orderNumber}</strong> 加单 — 选购完成后前往结算</span>
+              <span>{translate("正在为订单 {orderNumber} 加单 — 选购完成后前往结算", "Adding to order {orderNumber} — proceed to checkout when you are ready", { orderNumber: addOnOrder.orderNumber })}</span>
             </div>
             <div className="flex items-center gap-2">
               {cartCount > 0 && (
                 <Link href="/mall/checkout">
-                  <Button size="sm" variant="secondary" className="bg-white" style={{ color: theme.primary }}>去结算 ({cartCount})</Button>
+                  <Button size="sm" variant="secondary" className="bg-white" style={{ color: theme.primary }}>{translate("去结算", "Checkout")} ({cartCount})</Button>
                 </Link>
               )}
               <button
                 onClick={() => { setShowAddOnBanner(false); }}
                 className="text-white/80 hover:text-white p-1"
-                title="隐藏提示"
+                title={translate("隐藏提示", "Hide notice")}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -398,7 +403,7 @@ export default function MallHome() {
           {settings?.phone && <p className="mb-1">📞 {settings.phone}</p>}
           {policySections.length > 0 && (
             <button type="button" onClick={() => setIsPoliciesOpen(true)} className="mt-3 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-white/80" style={{ borderColor: `${theme.secondary}b0`, color: theme.primary }}>
-              购物条款与政策
+              {translate("购物条款与政策", "Shopping terms & policies")}
             </button>
           )}
           <p>© {new Date().getFullYear()} {settings?.shopName || "心田 Xintian"}. All rights reserved.</p>
@@ -406,7 +411,7 @@ export default function MallHome() {
       </footer>
       <Dialog open={isPoliciesOpen} onOpenChange={setIsPoliciesOpen}>
         <DialogContent className="max-h-[80vh] max-w-lg overflow-y-auto rounded-2xl border-white/80 bg-white/95" style={{ borderColor: `${theme.secondary}b8`, boxShadow: `0 18px 48px ${theme.primary}22` }}>
-          <DialogHeader><DialogTitle style={{ color: theme.font }}>购物条款与政策</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle style={{ color: theme.font }}>{translate("购物条款与政策", "Shopping terms & policies")}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             {policySections.map((section) => (
               <section key={section.title} className="rounded-xl border p-4" style={{ backgroundColor: `${theme.background}b8`, borderColor: `${theme.secondary}85` }}>

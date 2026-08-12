@@ -82,7 +82,7 @@ export default function ImportBatches() {
   }, []);
 
   // CN tab: batches in purchasing phase; IB tab: batches in import/arrival phase
-  const cnStatuses = ['in_progress', 'closed', 'purchased'];
+  const cnStatuses = ['draft', 'in_progress', 'closed', 'purchased'];
   const ibStatuses = ['preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed'];
   const filteredBatches = (batches || []).filter((batch: any) => {
     if (urlTab === 'cn') return cnStatuses.includes(batch.status);
@@ -112,6 +112,9 @@ export default function ImportBatches() {
 
   const liveRoomsQuery = trpc.liveRooms.list.useQuery({});
   const liveRooms = liveRoomsQuery.data as any[] | undefined;
+  const productsQuery = trpc.products.list.useQuery({ type: "physical" });
+  const products = productsQuery.data as any[] | undefined;
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
 
   const batchItemsQuery = trpc.importBatches.items.useQuery(
     { batchId: selectedBatchId! },
@@ -190,6 +193,23 @@ export default function ImportBatches() {
     onError: (e: any) => toast.error("更新失败: " + e.message),
   });
 
+  function addSelectedCnProduct() {
+    if (!selectedBatchId || !selectedProductId) return;
+    const product = (products || []).find((entry: any) => entry.id === Number(selectedProductId));
+    if (!product) {
+      toast.error("找不到所选商品，请重新选择");
+      return;
+    }
+    upsertItemMutation.mutate({
+      batchId: selectedBatchId,
+      productId: product.id,
+      productName: product.name,
+      paidQuantity: 0,
+      finalPurchaseQuantity: 1,
+      unitPurchaseCost: product.cost?.toString() || undefined,
+    }, { onSuccess: () => setSelectedProductId("") });
+  }
+
   function resetForm() {
     setFormData({
       batchNumber: "", batchName: "", sourceCountry: "中国", supplierName: "",
@@ -256,7 +276,7 @@ export default function ImportBatches() {
           <h1 className="text-2xl font-bold tracking-tight">采购批次管理</h1>
           <p className="text-sm text-muted-foreground mt-1">管理中国进口代购采购批次，含采购汇总、到货验收、运输费用分摊</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        {urlTab === 'cn' ? <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={resetForm} className="gap-2">
               <Plus className="h-4 w-4" />
@@ -322,7 +342,7 @@ export default function ImportBatches() {
                 <Select value={formData.status} onValueChange={v => setFormData({ ...formData, status: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(statusLabels).map(([k, v]) => (
+                    {Object.entries(statusLabels).filter(([key]) => ['draft', 'in_progress', 'closed'].includes(key)).map(([k, v]) => (
                       <SelectItem key={k} value={k}>{v}</SelectItem>
                     )) as any}
                   </SelectContent>
@@ -352,7 +372,9 @@ export default function ImportBatches() {
               </Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+        </Dialog> : (
+          <p className="max-w-sm text-right text-sm text-muted-foreground">IB 验货批次会在确认 CN 后自动建立，不能手动新增。</p>
+        )}
       </div>
 
       <Tabs value={selectedBatchId ? "detail" : "list"} className="w-full">
@@ -469,6 +491,29 @@ export default function ImportBatches() {
                   </Button>
                 </div>
               </div>
+
+              {urlTab === 'cn' && (
+                <Card className="border-dashed">
+                  <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
+                    <div className="min-w-0 flex-1">
+                      <Label>选择商品加入 CN 采购单</Label>
+                      <Select value={selectedProductId} onValueChange={setSelectedProductId}>
+                        <SelectTrigger className="mt-1"><SelectValue placeholder={productsQuery.isLoading ? "商品加载中…" : "请选择商品"} /></SelectTrigger>
+                        <SelectContent>
+                          {(products || []).map((product: any) => (
+                            <SelectItem key={product.id} value={String(product.id)}>
+                              {product.name}{product.sku ? ` · ${product.sku}` : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button type="button" onClick={addSelectedCnProduct} disabled={!selectedProductId || upsertItemMutation.isPending} className="gap-2">
+                      <Plus className="h-4 w-4" />加入商品
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
 
               <Card>
                 <CardContent className="p-0">

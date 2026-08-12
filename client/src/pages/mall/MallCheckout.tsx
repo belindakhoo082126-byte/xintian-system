@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ChevronLeft, ClipboardPaste, Truck, Package, Merge, Plane } from "lucide-react";
+import { ChevronLeft, ClipboardPaste, Truck, Package, Merge, Plane, Minus, Plus, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
@@ -97,6 +97,34 @@ export default function MallCheckout() {
       localStorage.removeItem("xintian_mall_add_on_order");
     }
   }, []);
+
+  function persistCart(nextCart: any[]) {
+    setCart(nextCart);
+    localStorage.setItem("mall_cart", JSON.stringify(nextCart));
+    window.dispatchEvent(new Event("cart-updated"));
+  }
+
+  function updateCartQuantity(itemIndex: number, requestedQuantity: number) {
+    const item = cart[itemIndex];
+    if (!item) return;
+    const requested = Math.max(1, Number.isFinite(requestedQuantity) ? requestedQuantity : 1);
+    const availableStock = Number(item.availableStock ?? item.stockQuantity ?? Number.POSITIVE_INFINITY);
+    const allowOversell = Boolean(item.allowOversell);
+    if (!allowOversell && requested > availableStock) {
+      toast.error(`库存不足，目前最多可购买 ${Math.max(availableStock, 0)} 件。`);
+    }
+    const quantity = !allowOversell && Number.isFinite(availableStock) ? Math.max(1, Math.min(requested, availableStock)) : requested;
+    const nextCart = cart.map((cartItem, index) => index === itemIndex
+      ? { ...cartItem, quantity, subtotal: (parseFloat(cartItem.unitPrice) * quantity).toFixed(2) }
+      : cartItem,
+    );
+    persistCart(nextCart);
+  }
+
+  function removeCartItem(itemIndex: number) {
+    persistCart(cart.filter((_, index) => index !== itemIndex));
+    toast.success("商品已从购物车移除");
+  }
 
   const subtotal = cart.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
   
@@ -488,9 +516,15 @@ export default function MallCheckout() {
           <CardHeader><CardTitle>订单摘要</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             {cart.map((item, i) => (
-              <div key={i} className="flex justify-between text-sm">
-                <span className="flex-1">{item.productName} {item.variationName ? `(${item.variationName})` : ""} x{item.quantity}</span>
-                <span>RM {item.subtotal}</span>
+              <div key={`${item.productId}-${item.variationId ?? "default"}-${i}`} className="flex items-center gap-2 rounded-lg border border-transparent py-1 text-sm">
+                <span className="min-w-0 flex-1 truncate">{item.productName} {item.variationName ? `(${item.variationName})` : ""}</span>
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(i, item.quantity - 1)} disabled={item.quantity <= 1} aria-label="减少数量"><Minus className="h-3.5 w-3.5" /></Button>
+                  <Input className="h-7 w-11 px-1 text-center text-xs" inputMode="numeric" value={item.quantity} onChange={(event) => updateCartQuantity(i, parseInt(event.target.value) || 1)} aria-label={`${item.productName} 数量`} />
+                  <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(i, item.quantity + 1)} disabled={!item.allowOversell && Number.isFinite(Number(item.availableStock ?? item.stockQuantity)) && item.quantity >= Number(item.availableStock ?? item.stockQuantity)} aria-label="增加数量"><Plus className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-600" onClick={() => removeCartItem(i)} aria-label="移除商品"><Trash2 className="h-3.5 w-3.5" /></Button>
+                </div>
+                <span className="w-20 text-right font-medium">RM {item.subtotal}</span>
               </div>
             ))}
             {specialSubtotal > 0 && (

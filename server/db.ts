@@ -865,17 +865,19 @@ export async function reserveProductStocksForOrder(items: Array<{ productId: num
           eq(products.allowOversold, true),
           and(
             or(eq(products.allowOversold, false), isNull(products.allowOversold)),
-            gte(products.stockQuantity, quantity),
+            // 未转换的 AI 草稿也已经占用可售数，正式订单不可绕过它们。
+            // 该条件位于同一条 UPDATE 内，避免直播／商城并发请求穿透库存。
+            sql`${products.stockQuantity} - COALESCE(${products.reservedQuantity}, 0) >= ${quantity}`,
           ),
         ),
       ));
 
       const affectedRows = Number((result as any)?.[0]?.affectedRows ?? (result as any)?.affectedRows ?? 0);
       if (affectedRows < 1) {
-        const current = await db.select({ name: products.name, stockQuantity: products.stockQuantity })
+        const current = await db.select({ name: products.name, stockQuantity: products.stockQuantity, reservedQuantity: products.reservedQuantity })
           .from(products).where(eq(products.id, productId)).limit(1);
         const productName = current[0]?.name || `商品 #${productId}`;
-        const available = Math.max(0, Number(current[0]?.stockQuantity ?? 0));
+        const available = Math.max(0, Number(current[0]?.stockQuantity ?? 0) - Number(current[0]?.reservedQuantity ?? 0));
         throw new Error(`STOCK_INSUFFICIENT: ${productName} 库存不足，目前最多可下单 ${available} 件`);
       }
       reserved.push({ productId, quantity });
@@ -3241,30 +3243,63 @@ export async function getProductsEnhanced(params: {
   const countResult = await db.select({ count: sql`count(*)` }).from(products).where(where);
   const total = Number(countResult[0]?.count) || 0;
 
-  // V2.1.30补充3: Calculate orderedCount (pending/hold/checkout) and completedCount (shipped) for each product
+  // 库存的唯一事实来源是 products.stockQuantity：订单成立时已原子扣减。
+  // 已下单／已完成仅用于解释该原始库存如何被占用，绝不再从 stockQuantity 二次扣除。
+  // 对部分发货订单，必须按 package_items 的实际已发数量逐项拆分，不能将整张订单全部转为已完成。
   const productIds = items.map((p: any) => p.id);
   let pendingMap: Record<number, number> = {};
   let completedMap: Record<number, number> = {};
   if (productIds.length > 0) {
-    // V2.1.30补充4: 已下单 = all statuses where stock is reserved (not shipped/completed/cancelled)
-    // Includes: pending, hold_order, partial_payment, receipt_uploaded, packing, partial_shipped
+    // 已下单：所有已经占用库存、但尚未实际发出的数量。
+    // partial_shipped 仅计算尚未放入已发包裹的余量。
     const pendingItems = await db.execute(sql`
-      SELECT oi.productId, COALESCE(SUM(oi.quantity), 0) as pendingQty
+      SELECT
+        oi.productId,
+        COALESCE(SUM(
+          CASE
+            WHEN o.physicalStatus = 'partial_shipped'
+              THEN GREATEST(oi.quantity - COALESCE(shipped_items.shippedQty, 0), 0)
+            ELSE oi.quantity
+          END
+        ), 0) AS pendingQty
       FROM order_items oi
       JOIN orders o ON o.id = oi.orderId
-      WHERE o.physicalStatus IN ('pending', 'hold_order', 'partial_payment', 'receipt_uploaded', 'packing', 'partial_shipped')
+      LEFT JOIN (
+        SELECT pi.orderItemId, COALESCE(SUM(pi.quantity), 0) AS shippedQty
+        FROM package_items pi
+        JOIN packages pkg ON pkg.id = pi.packageId
+        WHERE pkg.status = 'shipped'
+        GROUP BY pi.orderItemId
+      ) shipped_items ON shipped_items.orderItemId = oi.id
+      WHERE o.physicalStatus IN ('pending', 'hold_order', 'partial_payment', 'receipt_uploaded', 'packing', 'partial_shipped', 'scheduled', 'special')
       AND oi.productId IN (${sql.join(productIds, sql`, `)})
       GROUP BY oi.productId
     `);
     for (const row of pendingItems as any[]) {
       pendingMap[row.productId] = Number(row.pendingQty) || 0;
     }
-    // 已完成: orders in shipped status
+    // 已完成：整单已发／已完成的全部数量，加上部分发货订单中已经进入包裹的数量。
     const completedItems = await db.execute(sql`
-      SELECT oi.productId, COALESCE(SUM(oi.quantity), 0) as completedQty
+      SELECT
+        oi.productId,
+        COALESCE(SUM(
+          CASE
+            WHEN o.physicalStatus IN ('shipped', 'completed') THEN oi.quantity
+            WHEN o.physicalStatus = 'partial_shipped'
+              THEN LEAST(oi.quantity, COALESCE(shipped_items.shippedQty, 0))
+            ELSE 0
+          END
+        ), 0) AS completedQty
       FROM order_items oi
       JOIN orders o ON o.id = oi.orderId
-      WHERE o.physicalStatus IN ('shipped', 'completed')
+      LEFT JOIN (
+        SELECT pi.orderItemId, COALESCE(SUM(pi.quantity), 0) AS shippedQty
+        FROM package_items pi
+        JOIN packages pkg ON pkg.id = pi.packageId
+        WHERE pkg.status = 'shipped'
+        GROUP BY pi.orderItemId
+      ) shipped_items ON shipped_items.orderItemId = oi.id
+      WHERE o.physicalStatus IN ('partial_shipped', 'shipped', 'completed')
       AND oi.productId IN (${sql.join(productIds, sql`, `)})
       GROUP BY oi.productId
     `);
@@ -3277,7 +3312,10 @@ export async function getProductsEnhanced(params: {
     pendingQuantity: pendingMap[p.id] || 0,
     orderedCount: pendingMap[p.id] || 0,
     completedCount: completedMap[p.id] || 0,
-    availableQuantity: (p.stockQuantity || 0) - (pendingMap[p.id] || 0),
+    // 正式订单已在下单时写入 stockQuantity；尚未转正式订单的 AI 草稿
+    // 记录在 reservedQuantity，因此前端可售数只需额外扣除这一类临时预留。
+    // 不得再从这里扣 pendingMap，否则会对正式订单发生二次扣减。
+    availableQuantity: Math.max(0, Number(p.stockQuantity || 0) - Number(p.reservedQuantity || 0)),
   }));
 
   return { items: itemsWithPending, total };
@@ -4027,6 +4065,11 @@ export interface DateRange {
   end: Date;
 }
 
+/** 将 JavaScript 日期转为可与 TiDB timestamp 字段比较的 UTC 边界。 */
+function toReportTimestamp(value: Date): string {
+  return value.toISOString().slice(0, 19).replace("T", " ");
+}
+
 export function getDateRange(preset: string, customStart?: string, customEnd?: string): DateRange {
   const now = new Date();
   const end = new Date(now);
@@ -4089,8 +4132,8 @@ export async function getBusinessOverview(dateRange: DateRange) {
   if (!db) return null;
 
   const { start, end } = dateRange;
-  const startMs = start.getTime();
-  const endMs = end.getTime();
+  const startTimestamp = toReportTimestamp(start);
+  const endTimestamp = toReportTimestamp(end);
 
   // 1. Total revenue (product subtotal only, no shipping, no cancelled, no test)
   const [revenueRows] = await db.execute(sql`
@@ -4104,7 +4147,7 @@ export async function getBusinessOverview(dateRange: DateRange) {
       SUM(CASE WHEN o.physicalStatus = 'shipped' OR o.physicalStatus = 'completed' THEN 1 ELSE 0 END) as shipped_packages,
       COALESCE(SUM(o.shippingFee), 0) as shipping_income
     FROM orders o
-    WHERE o.createdAt >= ${startMs} AND o.createdAt <= ${endMs}
+    WHERE o.createdAt >= ${startTimestamp} AND o.createdAt <= ${endTimestamp}
       AND o.physicalStatus != 'cancelled'
       AND o.orderType != 'membership'
   `);
@@ -4113,7 +4156,7 @@ export async function getBusinessOverview(dateRange: DateRange) {
   const [refundRows] = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) as total_refunds, COUNT(*) as refund_count
     FROM customer_refunds
-    WHERE refundDate >= ${startMs} AND refundDate <= ${endMs}
+    WHERE refundDate >= ${startTimestamp} AND refundDate <= ${endTimestamp}
   `);
 
   // 3. Order statistics
@@ -4126,7 +4169,7 @@ export async function getBusinessOverview(dateRange: DateRange) {
       SUM(CASE WHEN paidAmount = 0 THEN 1 ELSE 0 END) as unpaid,
       SUM(CASE WHEN physicalStatus = 'shipped' THEN 1 ELSE 0 END) as shipped
     FROM orders
-    WHERE createdAt >= ${startMs} AND createdAt <= ${endMs}
+    WHERE createdAt >= ${startTimestamp} AND createdAt <= ${endTimestamp}
       AND orderType != 'membership'
   `);
 
@@ -4135,7 +4178,7 @@ export async function getBusinessOverview(dateRange: DateRange) {
     SELECT COALESCE(SUM(ABS(quantity_change) * unit_cost), 0) as total_fifo_cost
     FROM inventory_ledger
     WHERE transaction_type = 'sale'
-      AND created_at >= ${startMs} AND created_at <= ${endMs}
+      AND created_at >= ${startTimestamp} AND created_at <= ${endTimestamp}
   `);
 
   const revenueData = revenueRows as unknown as any[];
@@ -4198,7 +4241,7 @@ export async function getTopProductsByQuantity(dateRange: DateRange, limit = 10)
       SUM(oi.subtotal) as total_sales
     FROM order_items oi
     INNER JOIN orders o ON oi.orderId = o.id
-    WHERE o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+    WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
       AND o.physicalStatus != 'cancelled'
       AND oi.productType = 'physical'
     GROUP BY oi.productId, oi.variationId
@@ -4229,7 +4272,7 @@ export async function getTopProductsByRevenue(dateRange: DateRange, limit = 10) 
       SUM(oi.subtotal) as total_sales
     FROM order_items oi
     INNER JOIN orders o ON oi.orderId = o.id
-    WHERE o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+    WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
       AND o.physicalStatus != 'cancelled'
       AND oi.productType = 'physical'
     GROUP BY oi.productId, oi.variationId
@@ -4264,13 +4307,13 @@ export async function getTopProductsByProfit(dateRange: DateRange, limit = 10) {
       SELECT oi.productId, SUM(oi.subtotal) as total_sales
       FROM order_items oi
       INNER JOIN orders o ON oi.orderId = o.id
-      WHERE o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+      WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
         AND o.physicalStatus != 'cancelled'
         AND oi.productType = 'physical'
       GROUP BY oi.productId
     ) oi_sum ON il.product_id = oi_sum.productId
     WHERE il.transaction_type = 'sale'
-      AND il.created_at >= ${start.getTime()} AND il.created_at <= ${end.getTime()}
+      AND il.created_at >= ${toReportTimestamp(start)} AND il.created_at <= ${toReportTimestamp(end)}
     GROUP BY il.product_id
     ORDER BY gross_profit DESC
     LIMIT ${limit}
@@ -4303,7 +4346,7 @@ export async function getTopCustomersBySpending(dateRange: DateRange, limit = 10
       MAX(o.createdAt) as last_order_date
     FROM orders o
     INNER JOIN customers c ON o.customerId = c.id
-    WHERE o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+    WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
       AND o.physicalStatus != 'cancelled'
       AND o.orderType != 'membership'
     GROUP BY c.id
@@ -4343,7 +4386,7 @@ export async function getSalesPaymentReport(dateRange: DateRange) {
       o.shippedAt,
       o.completedAt
     FROM orders o
-    WHERE o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+    WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
       AND o.orderType != 'membership'
     ORDER BY o.createdAt DESC
   `);
@@ -4387,10 +4430,10 @@ export async function getProductSalesReport(dateRange: DateRange) {
       SELECT product_id, SUM(ABS(quantity_change) * unit_cost) as fifo_cost
       FROM inventory_ledger
       WHERE transaction_type = 'sale'
-        AND created_at >= ${start.getTime()} AND created_at <= ${end.getTime()}
+        AND created_at >= ${toReportTimestamp(start)} AND created_at <= ${toReportTimestamp(end)}
       GROUP BY product_id
     ) il_sum ON oi.productId = il_sum.product_id
-    WHERE o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+    WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
       AND o.physicalStatus != 'cancelled'
       AND oi.productType = 'physical'
     GROUP BY oi.productId, oi.variationId
@@ -4431,7 +4474,7 @@ export async function getCustomerSpendingReport(dateRange: DateRange) {
       MAX(o.createdAt) as last_order_date
     FROM customers c
     LEFT JOIN orders o ON c.id = o.customerId
-      AND o.createdAt >= ${start.getTime()} AND o.createdAt <= ${end.getTime()}
+      AND o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
       AND o.physicalStatus != 'cancelled'
       AND o.orderType != 'membership'
     GROUP BY c.id
@@ -4468,7 +4511,7 @@ export async function getPurchaseInventoryReport(dateRange: DateRange) {
       SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmed_count,
       SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as draft_count
     FROM purchase_orders
-    WHERE purchase_date >= ${start.getTime()} AND purchase_date <= ${end.getTime()}
+    WHERE purchase_date >= ${toReportTimestamp(start)} AND purchase_date <= ${toReportTimestamp(end)}
   `);
 
   // Inventory summary
@@ -4544,7 +4587,7 @@ export async function getRefundRecords(dateRange: DateRange) {
     FROM customer_refunds cr
     LEFT JOIN orders o ON cr.orderId = o.id
     LEFT JOIN customers c ON cr.customerId = c.id
-    WHERE cr.refundDate >= ${start.getTime()} AND cr.refundDate <= ${end.getTime()}
+    WHERE cr.refundDate >= ${toReportTimestamp(start)} AND cr.refundDate <= ${toReportTimestamp(end)}
     ORDER BY cr.refundDate DESC
   `);
 
@@ -5213,7 +5256,9 @@ export async function updateProductMallSync(productId: number, syncToMall: boole
 export async function getMallCategories() {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(categories).orderBy(asc(categories.sortOrder));
+  return await db.select().from(categories)
+    .where(and(eq(categories.status, "active"), eq(categories.showInStore, true)))
+    .orderBy(asc(categories.sortOrder));
 }
 
 // --- Mall Checkout (Guest Checkout) ---
@@ -6226,6 +6271,8 @@ export async function getPackingDetail(orderId: number) {
     discountAmount: orders.discountAmount,
     totalWeight: orders.totalWeight,
     physicalStatus: orders.physicalStatus,
+    shippedAt: orders.shippedAt,
+    notificationStatus: orders.notificationStatus,
     // V2.1.26: Add orderCategory, importStatus, physicalSubtotal
     orderCategory: orders.orderCategory,
     importStatus: orders.importStatus,
@@ -7834,6 +7881,38 @@ export async function createOrderException(data: {
   return rows[0];
 }
 
+/**
+ * Updates a pending exception's descriptive fields only. Inventory, order-line and
+ * credit mutations remain exclusively in resolveOrderException, so editing a record
+ * cannot accidentally create a duplicate exception or settle it for a second time.
+ */
+export async function updateOrderException(
+  exceptionId: number,
+  data: {
+    orderItemId?: number | null;
+    exceptionType?: 'out_of_stock' | 'quality_issue' | 'overcharged_shipping' | 'other';
+    description?: string;
+    quantity?: number;
+    customerAction?: 'replace_product' | 'wait_restock' | 'refund' | 'pending';
+  },
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const updateData: Record<string, unknown> = {};
+  if (data.orderItemId !== undefined) updateData.orderItemId = data.orderItemId;
+  if (data.exceptionType !== undefined) updateData.exceptionType = data.exceptionType;
+  if (data.description !== undefined) updateData.description = data.description;
+  if (data.quantity !== undefined) updateData.quantity = data.quantity;
+  if (data.customerAction !== undefined) updateData.customerAction = data.customerAction;
+  if (Object.keys(updateData).length === 0) throw new Error("No exception fields to update");
+
+  await db.update(orderExceptions).set(updateData as any).where(eq(orderExceptions.id, exceptionId));
+  const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1);
+  if (!rows[0]) throw new Error("Exception record not found");
+  broadcastChanges(["orders", "dashboard"]);
+  return rows[0];
+}
+
 export async function resolveOrderException(
   exceptionId: number,
   resolutionType: 'replace' | 'wait_restock' | 'refund',
@@ -7889,6 +7968,18 @@ export async function resolveOrderException(
     const orderId = exception[0].orderId;
     const excQuantity = options?.quantity || exception[0].quantity || 0;
     const customerAction = options?.customerAction || exception[0].customerAction || 'pending';
+
+    // Shipping overcharge has no product line. Settle its stated refund amount directly
+    // instead of entering the product-quantity refund branch below.
+    if (exception[0].exceptionType === 'overcharged_shipping' && customerAction === 'refund') {
+      const refundAmount = Number(options?.refundAmount ?? exception[0].refundAmount ?? 0);
+      if (refundAmount <= 0) throw new Error('运费退款金额必须大于 0');
+      if (options?.refundMethod === 'credit') {
+        const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+        if (!order[0]?.customerId) throw new Error('订单未关联客户，无法退款至 Credit');
+        await refundCustomerCredit(order[0].customerId, refundAmount, orderId, order[0].orderNumber || undefined);
+      }
+    }
 
     // Issue 3: For refund - reduce order item quantity by exception quantity
     if (customerAction === 'refund' && excQuantity > 0 && exception[0].orderItemId) {
@@ -8181,14 +8272,28 @@ export async function getInventoryAdjustments(filters?: { productId?: number; ad
   const conditions: any[] = [];
   if (filters?.productId) conditions.push(eq(inventoryAdjustments.productId, filters.productId));
   if (filters?.adjustmentType) conditions.push(eq(inventoryAdjustments.adjustmentType, filters.adjustmentType as any));
+  let adjustments: any[];
   if (conditions.length > 0) {
-    return await db.select().from(inventoryAdjustments).where(and(...conditions));
+    adjustments = await db.select().from(inventoryAdjustments).where(and(...conditions));
+  } else {
+    adjustments = await db.select().from(inventoryAdjustments);
   }
-  return await db.select().from(inventoryAdjustments);
+  if (adjustments.length === 0) return [];
+
+  const productRows = await db.select({ id: products.id, name: products.name })
+    .from(products)
+    .where(inArray(products.id, Array.from(new Set(adjustments.map((item) => item.productId)))));
+  const productNameById = new Map(productRows.map((product) => [product.id, product.name]));
+  return adjustments.map((adjustment) => ({
+    ...adjustment,
+    productName: productNameById.get(adjustment.productId) || `商品 #${adjustment.productId}`,
+  }));
 }
 
 export async function createInventoryAdjustment(data: {
   productId: number;
+  supplierId?: number;
+  supplierName?: string;
   adjustmentType: 'quality_issue' | 'plant_death' | 'pest_disease' | 'human_damage' | 'unhealthy' | 'lost' | 'other';
   quantityChange: number;
   unitCost?: number;
@@ -8201,9 +8306,33 @@ export async function createInventoryAdjustment(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // 1. Create the adjustment log
+  // 1. 原子更新商品库存。扣减不允许穿透正式库存或 AI 草稿预留，
+  //    以免人工操作再次造成负库存／超卖。
+  const quantityChange = Math.trunc(Number(data.quantityChange));
+  if (!Number.isFinite(quantityChange) || quantityChange === 0) {
+    throw new Error("库存变动数量必须非 0");
+  }
+  const stockUpdate = await db.update(products).set({
+    stockQuantity: sql`${products.stockQuantity} + ${quantityChange}`,
+  }).where(and(
+    eq(products.id, data.productId),
+    quantityChange < 0
+      ? sql`${products.stockQuantity} - COALESCE(${products.reservedQuantity}, 0) >= ${Math.abs(quantityChange)}`
+      : sql`1 = 1`,
+  ));
+  const affectedRows = Number((stockUpdate as any)?.[0]?.affectedRows ?? (stockUpdate as any)?.affectedRows ?? 0);
+  if (affectedRows < 1) {
+    const [product] = await db.select({ name: products.name, stockQuantity: products.stockQuantity, reservedQuantity: products.reservedQuantity })
+      .from(products).where(eq(products.id, data.productId)).limit(1);
+    const available = Math.max(0, Number(product?.stockQuantity ?? 0) - Number(product?.reservedQuantity ?? 0));
+    throw new Error(`STOCK_INSUFFICIENT: ${product?.name || `商品 #${data.productId}`} 库存不足，目前最多可扣减 ${available} 件`);
+  }
+
+  // 2. 写入成本与厂家快照；利润报告会使用该日志的 totalCost 汇总损耗。
   const result = await db.insert(inventoryAdjustments).values({
     productId: data.productId,
+    supplierId: data.supplierId ?? null,
+    supplierName: data.supplierName ?? null,
     adjustmentType: data.adjustmentType,
     quantityChange: data.quantityChange,
     unitCost: (data.unitCost ?? 0).toString(),
@@ -8215,16 +8344,9 @@ export async function createInventoryAdjustment(data: {
   });
   const id = (result as any).insertId;
 
-  // 2. Update product stock
-  const productRows = await db.select().from(products).where(eq(products.id, data.productId)).limit(1);
-  if (productRows[0]) {
-    const currentStock = Number(productRows[0].stockQuantity ?? 0);
-    const newStock = currentStock + data.quantityChange; // quantityChange is negative for reductions
-    await db.update(products).set({ stockQuantity: newStock }).where(eq(products.id, data.productId));
-  }
-
   const rows = await db.select().from(inventoryAdjustments).where(eq(inventoryAdjustments.id, Number(id))).limit(1);
-  return rows[0];
+  const [product] = await db.select({ name: products.name }).from(products).where(eq(products.id, data.productId)).limit(1);
+  return { ...rows[0], productName: product?.name || `商品 #${data.productId}` };
 }
 
 // ============================================================================
@@ -8828,11 +8950,14 @@ export async function createImportBatch(data: {
   batchName: string;
   sourceCountry?: string;
   supplierName?: string;
+  supplierOrderNumber?: string;
+  chinaTrackingNumber?: string;
   liveRoomId?: number;
   preorderStartDate?: Date;
   preorderEndDate?: Date;
   shippingMethod?: string;
   chinaShippingCost?: string;
+  otherFees?: string;
   status?: string;
   notes?: string;
 }) {
@@ -8843,11 +8968,14 @@ export async function createImportBatch(data: {
     batchName: data.batchName,
     sourceCountry: data.sourceCountry || '中国',
     supplierName: data.supplierName,
+    supplierOrderNumber: data.supplierOrderNumber,
+    chinaTrackingNumber: data.chinaTrackingNumber,
     liveRoomId: data.liveRoomId,
     preorderStartDate: data.preorderStartDate,
     preorderEndDate: data.preorderEndDate,
     shippingMethod: (data.shippingMethod as any) || 'air',
     chinaShippingCost: data.chinaShippingCost || '0',
+    otherFees: data.otherFees || '0',
     status: (data.status as any) || 'in_progress',
     notes: data.notes,
   });
@@ -8864,6 +8992,9 @@ export async function updateImportBatch(id: number, data: Partial<{
   actualPurchaseDate: Date;
   shippingMethod: string;
   chinaShippingCost: string;
+  otherFees: string;
+  supplierOrderNumber: string;
+  chinaTrackingNumber: string;
   status: string;
   notes: string;
 }>) {
@@ -11271,6 +11402,7 @@ export async function getChatCustomerInfo(customerId: number): Promise<any> {
   const recentOrders = await db.select({
     id: orders.id,
     orderNumber: orders.orderNumber,
+    secureToken: orders.secureToken,
     totalAmount: orders.totalAmount,
     customerStatus: orders.physicalStatus,
     createdAt: orders.createdAt,
@@ -14079,36 +14211,91 @@ export async function generateCnNumber() {
   return `CN${String(nextNum).padStart(5, '0')}`;
 }
 
-// Confirm CN (change status from draft to purchased, auto-generate IB items)
+// Confirm CN (change status to purchased and auto-generate a linked IB batch)
 export async function confirmCn(batchId: number) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
-  const batch = await getImportBatchById(batchId);
-  if (!batch) throw new Error('Batch not found');
+  return await db.transaction(async (tx: any) => {
+    const batches = await tx.select().from(importBatches).where(eq(importBatches.id, batchId));
+    const batch = batches[0];
+    if (!batch) throw new Error('采购 CN 批次不存在');
+    if (batch.parentBatchId) throw new Error('IB 批次不能再次确认采购');
 
-  // Update batch status to purchased
-  await db.update(importBatches).set({
-    status: 'purchased' as any,
-    ibGenerated: true,
-    actualPurchaseDate: new Date(),
-  } as any).where(eq(importBatches.id, batchId));
+    const existingIb = await tx.select().from(importBatches)
+      .where(eq(importBatches.parentBatchId, batchId));
+    if (existingIb.length > 0) {
+      return {
+        success: true,
+        alreadyGenerated: true,
+        ibBatchId: existingIb[0].id,
+        ibBatchNumber: existingIb[0].batchNumber,
+        totalEstimatedCost: batch.totalEstimatedCost?.toString() || '0.00',
+        estimatedCost: Number(batch.totalEstimatedCost?.toString() || '0'),
+      };
+    }
 
-  // Auto-calculate total estimated cost
-  const items = await getImportBatchItems(batchId);
-  let totalPurchaseCost = 0;
-  for (const item of items) {
-    const qty = item.finalPurchaseQuantity || item.paidQuantity || 0;
-    const unitCost = parseFloat(item.unitPurchaseCost?.toString() || '0');
-    totalPurchaseCost += unitCost * qty;
-  }
-  const shippingCost = parseFloat(batch.chinaShippingCost?.toString() || '0');
-  const otherFees = parseFloat((batch as any).otherFees?.toString() || '0');
-  const totalEstimated = totalPurchaseCost + shippingCost + otherFees;
-  await db.update(importBatches).set({
-    totalEstimatedCost: totalEstimated.toFixed(2) as any,
-  } as any).where(eq(importBatches.id, batchId));
+    const cnItems = await tx.select().from(importBatchItems).where(eq(importBatchItems.batchId, batchId));
+    let totalPurchaseCost = 0;
+    for (const item of cnItems) {
+      const qty = item.finalPurchaseQuantity || item.paidQuantity || 0;
+      totalPurchaseCost += Number(item.unitPurchaseCost?.toString() || 0) * qty;
+    }
+    const shippingCost = Number(batch.chinaShippingCost?.toString() || 0);
+    const otherFees = Number(batch.otherFees?.toString() || 0);
+    const totalEstimated = totalPurchaseCost + shippingCost + otherFees;
+    const ibBatchNumber = `${batch.batchNumber}-IB`;
 
-  return { success: true, totalEstimatedCost: totalEstimated.toFixed(2) };
+    await tx.update(importBatches).set({
+      status: 'purchased' as any,
+      ibGenerated: true,
+      actualPurchaseDate: new Date(),
+      totalEstimatedCost: totalEstimated.toFixed(2) as any,
+    } as any).where(eq(importBatches.id, batchId));
+
+    const inserted = await tx.insert(importBatches).values({
+      batchNumber: ibBatchNumber,
+      batchName: `${batch.batchName}（IB验货）`,
+      sourceCountry: batch.sourceCountry,
+      supplierName: batch.supplierName,
+      supplierOrderNumber: batch.supplierOrderNumber,
+      chinaTrackingNumber: batch.chinaTrackingNumber,
+      liveRoomId: batch.liveRoomId,
+      preorderStartDate: batch.preorderStartDate,
+      preorderEndDate: batch.preorderEndDate,
+      actualPurchaseDate: batch.actualPurchaseDate || new Date(),
+      shippingMethod: batch.shippingMethod,
+      chinaShippingCost: batch.chinaShippingCost,
+      otherFees: batch.otherFees,
+      totalEstimatedCost: totalEstimated.toFixed(2),
+      status: 'preparing',
+      parentBatchId: batchId,
+      notes: batch.notes,
+    } as any);
+    const ibBatchId = Number(inserted[0].insertId);
+
+    if (cnItems.length > 0) {
+      await tx.insert(importBatchItems).values(cnItems.map((item: any) => ({
+        batchId: ibBatchId,
+        productId: item.productId,
+        productName: item.productName,
+        variantId: item.variantId,
+        variantName: item.variantName,
+        paidQuantity: item.paidQuantity,
+        finalPurchaseQuantity: item.finalPurchaseQuantity || item.paidQuantity || 0,
+        unitPurchaseCost: item.unitPurchaseCost,
+        notes: item.notes,
+        itemStatus: 'pending',
+      })) as any);
+    }
+
+    return {
+      success: true,
+      ibBatchId,
+      ibBatchNumber,
+      totalEstimatedCost: totalEstimated.toFixed(2),
+      estimatedCost: totalEstimated,
+    };
+  });
 }
 
 // Complete IB verification (after all items verified, update stock and auto-match XTC orders)

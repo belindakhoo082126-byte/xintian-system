@@ -307,29 +307,31 @@ export default function Packing() {
         </TabsList>
 
         <TabsContent value={activeTab} className="mt-4">
-          {isScheduledTab && (
+          {(isScheduledTab || isSpecialTab) && (
             <Card className="mb-4"><CardContent className="py-3">
               <div className="flex items-end gap-4">
-                <div>
-                  <Label className="text-xs">{translate("开始日期", "Start Date")}</Label>
-                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-40" />
-                </div>
-                <div>
-                  <Label className="text-xs">{translate("结束日期", "End Date")}</Label>
-                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-40" />
-                </div>
-                <div>
-                  <Label className="text-xs">{translate("状态筛选", "Status Filter")}</Label>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-40"><SelectValue placeholder={translate("全部状态", "All Status")} /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{translate("全部状态", "All Status")}</SelectItem>
-                      {Object.entries(SCHEDULED_STATUS_CONFIG).map(([key, cfg]) => (
-                        <SelectItem key={key} value={key}>{lang === "zh" ? cfg.label.zh : cfg.label.en}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {isScheduledTab && <>
+                  <div>
+                    <Label className="text-xs">{translate("开始日期", "Start Date")}</Label>
+                    <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-40" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">{translate("结束日期", "End Date")}</Label>
+                    <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-40" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">{translate("状态筛选", "Status Filter")}</Label>
+                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                      <SelectTrigger className="w-40"><SelectValue placeholder={translate("全部状态", "All Status")} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{translate("全部状态", "All Status")}</SelectItem>
+                        {Object.entries(SCHEDULED_STATUS_CONFIG).map(([key, cfg]) => (
+                          <SelectItem key={key} value={key}>{lang === "zh" ? cfg.label.zh : cfg.label.en}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>}
                 {isSpecialTab && (
                   <div>
                     <Label className="text-xs">{translate("异常原因", "Special Reason")}</Label>
@@ -346,7 +348,7 @@ export default function Packing() {
                     </Select>
                   </div>
                 )}
-                {(dateFrom || dateTo || statusFilter !== "all" || specialTypeFilter !== "all") && (
+                {((isScheduledTab && (dateFrom || dateTo || statusFilter !== "all")) || (isSpecialTab && specialTypeFilter !== "all")) && (
                   <Button variant="outline" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setStatusFilter("all"); setSpecialTypeFilter("all"); }}>{translate("清除筛选", "Clear Filters")}</Button>
                 )}
                 <div className="ml-auto text-sm text-muted-foreground">{translate("共 {count} 单", "Total {count} orders", { count: orderList.length })}</div>

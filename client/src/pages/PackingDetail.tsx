@@ -12,9 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare, RefreshCw, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare, RefreshCw, AlertTriangle, Copy } from "lucide-react";
 import { useEffect } from "react";
-import { ITEM_SOURCE_LABELS } from "@shared/const";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
 
 // V2.1.30: Only show Parcel Daily services (Poslaju for east Malaysia, Line Clear for west Malaysia)
 const COURIERS = [
@@ -50,6 +50,7 @@ export default function PackingDetail() {
 
   const [shippingMode, setShippingMode] = useState<"full" | "partial">("full");
   const [exceptionDialogOpen, setExceptionDialogOpen] = useState(false);
+  const [editingExceptionId, setEditingExceptionId] = useState<number | null>(null);
   const [exceptionType, setExceptionType] = useState<"out_of_stock" | "quality_issue" | "overcharged_shipping" | "other">("quality_issue");
   const [exceptionDesc, setExceptionDesc] = useState("");
   const [resolutionType, setResolutionType] = useState<"replace" | "wait_restock" | "refund">("replace");
@@ -86,6 +87,7 @@ export default function PackingDetail() {
       setPackages((prev) => prev.map((p) => ({
         ...p,
         courier: autoCourier,
+        shippingType: shippingMethod === "west_malaysia" || shippingMethod === "east_malaysia_poslaju" ? "auto" : p.shippingType,
       })));
     }
   }, [detail]);
@@ -130,6 +132,24 @@ export default function PackingDetail() {
     onError: (err) => toast.error(translate(`Parcel King 发货失败: ${err.message}`, `Parcel King Shipping Failed: ${err.message}`)),
   });
 
+  const autoShipParcelDailyMutation = trpc.shipping.autoShipParcelDaily.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(translate(
+        `已自动生成 ${data.courier} 运单，追踪号：${data.trackingNumber}`,
+        `${data.courier} shipment created automatically. Tracking No: ${data.trackingNumber}`,
+      ));
+      if (data.shippingLabelUrl) window.open(data.shippingLabelUrl, "_blank", "noopener,noreferrer");
+      if (data.notificationStatus !== "sent") {
+        toast.warning(translate("运单已生成，但客户通知未自动发送，请在通知记录中处理。", "The shipment was created, but the customer notice was not sent automatically. Please handle it in notification records."));
+      }
+      utils.packing.list.invalidate();
+      utils.packing.detail.invalidate({ orderId });
+      utils.shipping.packages.invalidate({ orderId });
+      setSelectedItems([]);
+    },
+    onError: (err: any) => toast.error(translate("自动生成运单失败：", "Automatic shipment creation failed: ") + err.message),
+  });
+
   const createExceptionMutation = trpc.orderException.create.useMutation({
     onSuccess: () => {
       // V2.1.26补充4: Don't close dialog here - the inline onSuccess in save handler decides whether to close
@@ -138,6 +158,17 @@ export default function PackingDetail() {
       utils.orderException.list.invalidate({ orderId });
     },
     onError: (err) => toast.error("创建异常失败: " + err.message),
+  });
+
+  const updateExceptionMutation = trpc.orderException.update.useMutation({
+    onSuccess: () => {
+      toast.success(translate("异常已更新", "Exception updated"));
+      setExceptionDialogOpen(false);
+      setEditingExceptionId(null);
+      utils.packing.detail.invalidate({ orderId });
+      utils.orderException.list.invalidate({ orderId });
+    },
+    onError: (err) => toast.error(translate("更新异常失败: ", "Failed to update exception: ") + err.message),
   });
 
   // V2.1.26补充6: Delete exception mutation (Issue 2)
@@ -235,6 +266,30 @@ export default function PackingDetail() {
   });
 
   const handleShip = (mode: "full" | "partial") => {
+    const shippingMethod = (detail as any)?.shippingMethod || "west_malaysia";
+    const requiresParcelDaily = shippingMethod === "west_malaysia" || shippingMethod === "east_malaysia_poslaju";
+    const actualWeight = Number((detail as any)?.actualWeight || 0);
+    if (requiresParcelDaily) {
+      if (!actualWeight || actualWeight <= 0) {
+        toast.error(translate("请先在上方确认实际重量，系统才可生成追踪号码与 AWB。", "Please confirm the actual weight above before generating the tracking number and AWB."));
+        return;
+      }
+      if (mode === "partial" && selectedItems.length === 0) {
+        toast.error(translate("请选择本次发出的商品", "Please select items for this shipment"));
+        return;
+      }
+      const itemQuantities = selectedItems
+        .filter((itemId) => shipQuantities[itemId] !== undefined)
+        .map((itemId) => ({ itemId: String(itemId), quantity: shipQuantities[itemId] }));
+      autoShipParcelDailyMutation.mutate({
+        orderId,
+        actualWeight,
+        mode,
+        itemIds: mode === "partial" ? selectedItems : undefined,
+        itemQuantities: itemQuantities.length > 0 ? itemQuantities : undefined,
+      });
+      return;
+    }
     if (mode === "full") {
       if (packages.length === 0) {
                 toast.error(translate("请至少添加一个包裹", "Please add at least one package"));
@@ -251,7 +306,7 @@ export default function PackingDetail() {
           courier: p.courier,
           shippingType: p.shippingType as "auto" | "manual",
           trackingNumber: p.trackingNumber || undefined,
-          weight: p.weight || undefined,
+          weight: String(actualWeight || p.weight || "") || undefined,
         })),
       });
     } else {
@@ -279,7 +334,7 @@ export default function PackingDetail() {
           courier: pkg.courier,
           shippingType: pkg.shippingType as "auto" | "manual",
           trackingNumber: pkg.trackingNumber || undefined,
-          weight: pkg.weight || undefined,
+          weight: String(actualWeight || pkg.weight || "") || undefined,
         },
         itemQuantities: itemQuantities.length > 0 ? itemQuantities : undefined,
       });
@@ -334,6 +389,18 @@ export default function PackingDetail() {
     )
   );
   const shippableItems = (d.items as any[]).filter((item) => !shippedItemIds.has(Number(item.id)));
+  const trackedPackageNumbers = ((existingPackages || []) as any[])
+    .map((pkg) => String(pkg.trackingNumber || "").trim())
+    .filter(Boolean);
+  const courierForNotice = ((existingPackages || []) as any[])
+    .map((pkg) => pkg.courier || pkg.courierCompany)
+    .find(Boolean) || getAutoCourier(d.shippingMethod || "west_malaysia");
+  const copyPendingShippingNotice = async () => {
+    const trackingNumbers = trackedPackageNumbers.join("、") || translate("请填写追踪号码", "please enter tracking number");
+    const message = `老板娘/老板您好，我们已为您发货啦，收到包裹如有问题记得48小时内发图/视频给我们哦，追踪号码：${trackingNumbers}，快递公司：${courierForNotice}`;
+    await navigator.clipboard.writeText(message);
+    toast.success(translate("发货通知已复制，可手动发送给客户", "Shipping notice copied for manual sending"));
+  };
 
   return (
     <div className="space-y-6">
@@ -349,7 +416,33 @@ export default function PackingDetail() {
               {/* V2.1.26: Move A5 print button next to order number */}
               <Button variant="outline" size="sm" onClick={handlePrint}><Printer className="h-4 w-4 mr-1" />{translate("A5打印", "A5 Print")}</Button>
             </div>
-            {specialLabel && <Badge variant="destructive" className="mt-1">{specialLabel}</Badge>}
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              {specialLabel && <Badge variant="destructive">{specialLabel}</Badge>}
+              {d.shippedAt && (
+                <span className="text-xs text-muted-foreground">
+                  {translate("发货日期", "Shipped at")}: {new Date(d.shippedAt).toLocaleString()}
+                </span>
+              )}
+              {d.notificationStatus && (
+                <>
+                  <Badge variant={d.notificationStatus === "sent" ? "secondary" : "destructive"}>
+                    {d.notificationStatus === "sent"
+                      ? translate("追踪通知已发送", "Tracking notice sent")
+                      : translate("追踪通知未自动发送", "Tracking notice not sent automatically")}
+                  </Badge>
+                  {d.notificationStatus !== "sent" && trackedPackageNumbers.length > 0 && (
+                    <span className="text-xs font-medium text-destructive">
+                      {translate("待补发追踪号", "Tracking number to send")}: {trackedPackageNumbers.join("、")}
+                    </span>
+                  )}
+                  {d.notificationStatus !== "sent" && trackedPackageNumbers.length > 0 && (
+                    <Button variant="outline" size="sm" onClick={() => void copyPendingShippingNotice()}>
+                      <Copy className="h-3.5 w-3.5 mr-1" />{translate("复制通知", "Copy notice")}
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -372,19 +465,23 @@ export default function PackingDetail() {
             {(d.items as any[]).map((item) => (
               <div key={item.id} className="flex gap-4 items-start border rounded-lg p-3">
                 {/* Product Image */}
-                <div className="w-24 h-24 rounded-lg overflow-hidden border flex-shrink-0 bg-muted">
-                  {item.coverImageUrl ? (
-                    <img src={item.coverImageUrl} alt={item.productName} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">{translate("无图", "No Image")}</div>
-                  )}
-                </div>
+                <ProductImagePreview
+                  src={item.coverImageUrl}
+                  alt={item.productName}
+                  className="h-24 w-24"
+                  label={translate("预览商品图片", "Preview product image")}
+                />
                 {/* Product Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-sm">{item.productName}</div>
+                    <div className="font-semibold text-base">{item.productName}</div>
                     {item.variationName && <div className="text-sm text-muted-foreground">{item.variationName}</div>}
-                    <div className="text-xs text-muted-foreground">{translate("来源:", "Source:")} {ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || "-"}</div>
                     {item.keyword && <div className="text-xs text-muted-foreground">{translate("关键词:", "Keyword:")} {item.keyword}</div>}
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      {translate("单价", "Unit price")}: RM {Number(item.unitPrice || 0).toFixed(2)} × {item.quantity}
+                    </div>
+                    <div className="text-sm font-semibold text-foreground">
+                      {translate("总价", "Total")}: RM {Number(item.subtotal || Number(item.unitPrice || 0) * Number(item.quantity || 0)).toFixed(2)}
+                    </div>
                   </div>
                 {/* Large Quantity */}
                 <div className="flex flex-col items-center justify-center">
@@ -414,16 +511,23 @@ export default function PackingDetail() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {/* Download label button for Parcel King packages */}
+                  {pkg.shippingLabelUrl && (
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={pkg.shippingLabelUrl} target="_blank" rel="noreferrer">
+                        <Printer className="h-4 w-4 mr-1" />{translate("打开 AWB", "Open AWB")}
+                      </a>
+                    </Button>
+                  )}
+                  {/* Fallback only for packages without a saved label URL. */}
                   {pkg.providerOrderId && pkg.trackingNumber && (
                     <>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => redownloadLabelMutation.mutate({ trackingNo: pkg.trackingNumber })}
-                        disabled={redownloadLabelMutation.isPending}
+                        disabled={redownloadLabelMutation.isPending || !!pkg.shippingLabelUrl}
                       >
-                        <Printer className="h-4 w-4 mr-1" />{translate("下载标签", "Download Label")}
+                        <Printer className="h-4 w-4 mr-1" />{translate("重新获取 AWB", "Refresh AWB")}
                       </Button>
                     </>
                   )}
@@ -502,6 +606,7 @@ export default function PackingDetail() {
                             size="sm"
                             variant="outline"
                             onClick={() => {
+                              setEditingExceptionId(exc.id);
                               setExceptionType(exc.exceptionType);
                               setExceptionDesc(exc.description || "");
                               setExceptionItemId(exc.orderItemId ? Number(exc.orderItemId) : "");
@@ -534,7 +639,10 @@ export default function PackingDetail() {
               </div>
             )}
 
-            <Dialog open={exceptionDialogOpen} onOpenChange={setExceptionDialogOpen}>
+            <Dialog open={exceptionDialogOpen} onOpenChange={(open) => {
+              setExceptionDialogOpen(open);
+              if (!open) setEditingExceptionId(null);
+            }}>
               <DialogTrigger asChild>
                 <Button variant="outline" className="border-orange-300 text-orange-600">
                   <AlertTriangle className="h-4 w-4 mr-2" />
@@ -543,13 +651,17 @@ export default function PackingDetail() {
               </DialogTrigger>
               <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>{translate("异常处理", "Exception Handling")}</DialogTitle>
+                  <DialogTitle>{editingExceptionId ? translate("修改异常处理", "Edit Exception") : translate("异常处理", "Exception Handling")}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4">
                   {/* Step 1: Exception Type */}
                   <div className="space-y-2">
                     <Label>{translate("异常类型", "Exception Type")}</Label>
-                    <Select value={exceptionType} onValueChange={(v: any) => { setExceptionType(v); setCustomerAction("pending"); }}>
+                    <Select value={exceptionType} onValueChange={(v: any) => {
+                      setExceptionType(v);
+                      setCustomerAction(v === "overcharged_shipping" ? "refund" : "pending");
+                      if (v === "overcharged_shipping") setExceptionItemId("");
+                    }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="out_of_stock">{translate("商品缺货", "Out of Stock")}</SelectItem>
@@ -712,6 +824,29 @@ export default function PackingDetail() {
                     </Button>
                     <Button
                       onClick={() => {
+                        if (editingExceptionId) {
+                          updateExceptionMutation.mutate({
+                            exceptionId: editingExceptionId,
+                            orderItemId: exceptionType === "overcharged_shipping" ? null : (exceptionItemId || null),
+                            exceptionType,
+                            description: exceptionDesc,
+                            quantity: exceptionQuantity,
+                            customerAction,
+                          });
+                          return;
+                        }
+                        if (exceptionType !== "overcharged_shipping" && exceptionItemId === "") {
+                          toast.error(translate("请选择涉及商品", "Please select the affected product"));
+                          return;
+                        }
+                        if (exceptionType === "overcharged_shipping" && exceptionQuantity <= 0) {
+                          toast.error(translate("请输入大于 0 的退款金额", "Enter a refund amount greater than 0"));
+                          return;
+                        }
+                        if (customerAction === "replace_product" && replacementProductId === "") {
+                          toast.error(translate("请选择更换商品", "Please select a replacement product"));
+                          return;
+                        }
                         const actionMap: Record<string, string> = { replace_product: "replace", wait_restock: "wait_restock", refund: "refund" };
                         const needsResolve = customerAction !== "pending" && customerAction !== "wait_restock";
                         if (needsResolve) {
@@ -733,6 +868,7 @@ export default function PackingDetail() {
                                 orderId,
                                 quantity: exceptionQuantity,
                                 customerAction,
+                                refundAmount: exceptionType === "overcharged_shipping" ? exceptionQuantity : undefined,
                                 replacementProductId: customerAction === "replace_product" && replacementProductId !== "" ? Number(replacementProductId) : undefined,
                                 replacementProductName: customerAction === "replace_product" ? replacementProductName : undefined,
                                 replacementQuantity: customerAction === "replace_product" ? replacementQty : undefined,
@@ -785,9 +921,9 @@ export default function PackingDetail() {
                           });
                         }
                       }}
-                      disabled={createExceptionMutation.isPending || resolveExceptionMutation.isPending}
+                      disabled={createExceptionMutation.isPending || updateExceptionMutation.isPending || resolveExceptionMutation.isPending}
                     >
-                      {translate("确认", "Confirm")}
+                      {editingExceptionId ? translate("保存修改", "Save changes") : translate("确认", "Confirm")}
                     </Button>
                   </div>
                 </div>
@@ -1108,14 +1244,19 @@ export default function PackingDetail() {
             <div className="space-y-3">
               {packages.map((pkg, index) => {
                 const fixedCourier = isFixedCourier(d.shippingMethod || "west_malaysia");
+                const automaticParcelDaily = d.shippingMethod === "west_malaysia" || d.shippingMethod === "east_malaysia_poslaju";
+                const lockedCourier = fixedCourier || automaticParcelDaily;
                 return (
                 <div key={index} className="flex items-end gap-2 border p-3 rounded-md relative">
                   <div className="grid grid-cols-2 gap-2 flex-grow">
-                    {/* V2.1.30: For lalamove/shopee, show courier as read-only text */}
-                    {fixedCourier ? (
+                    {/* Fixed methods and Parcel Daily shipments do not allow a courier override. */}
+                    {lockedCourier ? (
                       <div className="space-y-1 col-span-2">
                         <Label>{translate("快递公司", "Courier")}</Label>
-                        <div className="border rounded-md px-3 py-2 bg-muted/50 text-sm font-medium">{pkg.courier}</div>
+                        <div className="border rounded-md px-3 py-2 bg-muted/50 text-sm font-medium">
+                          {pkg.courier}
+                          {automaticParcelDaily && <span className="ml-2 text-xs font-normal text-muted-foreground">· {translate("Parcel Daily 自动生成追踪号与 AWB", "Parcel Daily generates the tracking number and AWB automatically")}</span>}
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-1">
@@ -1135,8 +1276,8 @@ export default function PackingDetail() {
                         </Select>
                       </div>
                     )}
-                    {/* V2.1.30: Hide shipping type for fixed courier methods */}
-                    {!fixedCourier && (
+                    {/* Parcel Daily and fixed methods must not expose a second shipping setup. */}
+                    {!lockedCourier && (
                       <div className="space-y-1">
                         <Label htmlFor={`shipping-type-${index}`}>{translate("发货类型", "Shipping Type")}</Label>
                         <Select
@@ -1153,7 +1294,7 @@ export default function PackingDetail() {
                         </Select>
                       </div>
                     )}
-                    {/* V2.1.30: For lalamove/shopee, always show tracking number input */}
+                    {/* Lalamove and Shopee use manually supplied tracking references only. */}
                     {(pkg.shippingType === "manual" || fixedCourier) && (
                       <div className="space-y-1 col-span-2">
                         <Label htmlFor={`tracking-number-${index}`}>{translate("追踪号", "Tracking Number")}</Label>
@@ -1162,18 +1303,6 @@ export default function PackingDetail() {
                           value={pkg.trackingNumber}
                           onChange={(e) => updatePackage(index, "trackingNumber", e.target.value)}
                           placeholder={translate("输入追踪号", "Enter tracking number")}
-                        />
-                      </div>
-                    )}
-                    {!fixedCourier && (
-                      <div className="space-y-1">
-                        <Label htmlFor={`weight-${index}`}>{translate("重量 (kg)", "Weight (kg)")}</Label>
-                        <Input
-                          id={`weight-${index}`}
-                          type="number"
-                          value={pkg.weight}
-                          onChange={(e) => updatePackage(index, "weight", e.target.value)}
-                          placeholder={translate("输入重量", "Enter weight")}
                         />
                       </div>
                     )}

@@ -94,6 +94,7 @@ export default function PurchaseOrders() {
 
   // Stock adjustment state
   const [adjProductId, setAdjProductId] = useState<string>("none");
+  const [adjSupplierId, setAdjSupplierId] = useState<string>("none");
   const [adjType, setAdjType] = useState<string>("plant_death");
   const [adjQty, setAdjQty] = useState(1);
   const [adjReason, setAdjReason] = useState("");
@@ -108,6 +109,10 @@ export default function PurchaseOrders() {
   const { data: purchaseOrders, isLoading } = trpc.purchaseOrders.list.useQuery();
   const { data: suppliers } = trpc.suppliers.list.useQuery({ activeOnly: true });
   const { data: products } = trpc.products.list.useQuery({});
+  const { data: adjustmentSupplierCost, isFetching: isLoadingAdjustmentSupplierCost } = trpc.purchaseOrders.lastProductCost.useQuery(
+    { productId: adjProductId === "none" ? 0 : parseInt(adjProductId), supplierId: adjSupplierId === "none" ? 0 : parseInt(adjSupplierId) },
+    { enabled: adjProductId !== "none" && adjSupplierId !== "none" },
+  );
 
   const createMutation = trpc.purchaseOrders.create.useMutation({
     onSuccess: (r: any) => {
@@ -135,6 +140,7 @@ export default function PurchaseOrders() {
       utils.products.invalidate();
       toast.success(translate("库存扣减已记录", "Stock adjustment recorded"));
       setAdjProductId("none");
+      setAdjSupplierId("none");
       setAdjQty(1);
       setAdjReason("");
     },
@@ -189,9 +195,12 @@ export default function PurchaseOrders() {
 
   function handleAdjustStock() {
     if (adjProductId === "none") { toast.error(translate("请选择商品", "Please select a product")); return; }
+    if (adjSupplierId === "none") { toast.error(translate("请选择厂家", "Please select a supplier")); return; }
+    if (!adjustmentSupplierCost) { toast.error(translate("该厂家尚无此商品的已收货成本", "This supplier has no received cost for this product")); return; }
     if (adjQty <= 0) { toast.error(translate("扣减数量必须大于0", "Quantity must be greater than 0")); return; }
     adjustStockMutation.mutate({
       productId: parseInt(adjProductId),
+      supplierId: parseInt(adjSupplierId),
       adjustmentType: adjType as any,
       quantityChange: -adjQty,
       reason: adjReason || undefined,
@@ -309,6 +318,26 @@ export default function PurchaseOrders() {
               </div>
 
               <div>
+                <Label>{translate("选择厂家 *", "Select Supplier *")}</Label>
+                <Select value={adjSupplierId} onValueChange={setAdjSupplierId}>
+                  <SelectTrigger><SelectValue placeholder={translate("选择厂家", "Select Supplier")} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{translate("请选择...", "Please select...")}</SelectItem>
+                    {suppliers?.map((supplier) => <SelectItem key={supplier.id} value={supplier.id.toString()}>{supplier.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                {adjProductId !== "none" && adjSupplierId !== "none" && !isLoadingAdjustmentSupplierCost && !adjustmentSupplierCost && (
+                  <p className="mt-1 text-xs text-destructive">{translate("该厂家尚无此商品的已收货成本，请先完成进货单收货。", "This supplier has no received cost for this product. Receive a purchase order first.")}</p>
+                )}
+              </div>
+
+              <div>
+                <Label>{translate("单位成本 (RM)", "Unit Cost (RM)")}</Label>
+                <Input value={adjustmentSupplierCost ? Number(adjustmentSupplierCost.unitCost).toFixed(2) : "-"} readOnly className="bg-muted" />
+                <p className="mt-1 text-xs text-muted-foreground">{translate("按所选厂家最近一次已收货进货单自动带入", "Automatically from this supplier's latest received purchase order")}</p>
+              </div>
+
+              <div>
                 <Label>{translate("扣减原因 *", "Adjustment Reason *")}</Label>
                 <Select value={adjType} onValueChange={setAdjType}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -333,7 +362,7 @@ export default function PurchaseOrders() {
                   placeholder={translate("可选：填写详细原因...", "Optional: Enter detailed reason...")} />
               </div>
 
-              <Button onClick={handleAdjustStock} disabled={adjustStockMutation.isPending} variant="destructive">
+              <Button onClick={handleAdjustStock} disabled={adjustStockMutation.isPending || isLoadingAdjustmentSupplierCost} variant="destructive">
                 <MinusCircle className="h-4 w-4 mr-2" />
                 {translate("确认扣减库存", "Confirm Stock Adjustment")}
               </Button>

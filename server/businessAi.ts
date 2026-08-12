@@ -146,19 +146,25 @@ export async function reserveInventory(
   const database = await getDb();
   if (!database) throw new Error("Database not available");
 
-  // Check available stock
+  // 先读取商品资料供错误与记录使用；真正的库存校验在下面的 UPDATE 条件中完成。
+  // 不能依赖这一次读取决定是否可预留，否则两位客户同时私聊时会超卖。
   const [product] = await database.select().from(products).where(eq(products.id, productId)).limit(1);
   if (!product) throw new Error(`Product ${productId} not found`);
 
-  const available = (product.stockQuantity || 0) - (product.reservedQuantity || 0);
-  if (available < quantity) {
-    throw new Error(`Insufficient stock for ${product.name}: available ${available}, requested ${quantity}`);
+  // 预留数量和正式库存占用共同决定可售数；允许超卖的商品保留原有例外逻辑。
+  const updateResult = await database.update(products)
+    .set({ reservedQuantity: sql`COALESCE(${products.reservedQuantity}, 0) + ${quantity}` })
+    .where(and(
+      eq(products.id, productId),
+      sql`(${products.allowOversold} = true OR (COALESCE(${products.stockQuantity}, 0) - COALESCE(${products.reservedQuantity}, 0)) >= ${quantity})`,
+    ));
+  const affectedRows = Number((updateResult as any)?.[0]?.affectedRows ?? (updateResult as any)?.affectedRows ?? 0);
+  if (affectedRows < 1) {
+    const [current] = await database.select({ stockQuantity: products.stockQuantity, reservedQuantity: products.reservedQuantity })
+      .from(products).where(eq(products.id, productId)).limit(1);
+    const available = Math.max(0, Number(current?.stockQuantity ?? 0) - Number(current?.reservedQuantity ?? 0));
+    throw new Error(`STOCK_INSUFFICIENT: ${product.name} 库存不足，目前最多可下单 ${available} 件`);
   }
-
-  // Increase reserved quantity
-  await database.update(products)
-    .set({ reservedQuantity: (product.reservedQuantity || 0) + quantity })
-    .where(eq(products.id, productId));
 
   // Create reservation record
   const [result] = await database.insert(reservationRecords).values({
@@ -193,9 +199,8 @@ export async function releaseInventory(referenceId: number, source: "draft_order
     // Decrease product reserved quantity
     const [product] = await database.select().from(products).where(eq(products.id, record.productId)).limit(1);
     if (product) {
-      const newReserved = Math.max(0, (product.reservedQuantity || 0) - record.quantity);
       await database.update(products)
-        .set({ reservedQuantity: newReserved })
+        .set({ reservedQuantity: sql`GREATEST(COALESCE(${products.reservedQuantity}, 0) - ${record.quantity}, 0)` })
         .where(eq(products.id, record.productId));
     }
 
@@ -224,11 +229,13 @@ export async function convertInventory(referenceId: number, source: "draft_order
   for (const record of records) {
     const [product] = await database.select().from(products).where(eq(products.id, record.productId)).limit(1);
     if (product) {
-      // Decrease stock (official allocation) and reserved
-      const newStock = Math.max(0, (product.stockQuantity || 0) - record.quantity);
-      const newReserved = Math.max(0, (product.reservedQuantity || 0) - record.quantity);
+      // 将已预留数量转为正式订单占用；转换时同时减少库存与预留，
+      // 后续“已发货”只转换统计，不可再次扣库存。
       await database.update(products)
-        .set({ stockQuantity: newStock, reservedQuantity: newReserved })
+        .set({
+          stockQuantity: sql`GREATEST(COALESCE(${products.stockQuantity}, 0) - ${record.quantity}, 0)`,
+          reservedQuantity: sql`GREATEST(COALESCE(${products.reservedQuantity}, 0) - ${record.quantity}, 0)`,
+        })
         .where(eq(products.id, record.productId));
     }
 

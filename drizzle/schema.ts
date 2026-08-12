@@ -1465,6 +1465,9 @@ export type InsertOrderExceptionReplacement = typeof orderExceptionReplacements.
 export const inventoryAdjustments = mysqlTable("inventory_adjustments", {
   id: int("id").autoincrement().primaryKey(),
   productId: int("productId").notNull(),
+  // 发生调整时对应的厂家与名称快照，用于追溯成本来源。
+  supplierId: int("supplierId"),
+  supplierName: varchar("supplierName", { length: 255 }),
   // Adjustment type
   adjustmentType: mysqlEnum("adjustmentType", [
     "quality_issue",    // 植物品质异常
@@ -2940,4 +2943,3 @@ export const customerCreditLedger = mysqlTable("customer_credit_ledger", {
 
 export type CustomerCreditLedger = typeof customerCreditLedger.$inferSelect;
 export type InsertCustomerCreditLedger = typeof customerCreditLedger.$inferInsert;
-

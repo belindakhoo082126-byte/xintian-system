@@ -3770,6 +3770,112 @@ export const appRouter = router({
         return rethrowPackingShippingError(error);
       }
     }),
+
+    // Parcel Daily automatic shipment: create order, checkout, retrieve AWB,
+    // persist package/order data, and record the customer shipping notification.
+    // This is intentionally the only automatic shipping path used by packing.
+    autoShipParcelDaily: shippingProcedure.input(z.object({
+      orderId: z.number(),
+      actualWeight: z.number().positive(),
+      mode: z.enum(["full", "partial"]),
+      itemIds: z.array(z.number()).optional(),
+      itemQuantities: z.array(z.object({ itemId: z.string(), quantity: z.number().positive() })).optional(),
+    })).mutation(async ({ input }) => {
+      if (!shippingProvider.parcelDailyProvider.isConfigured) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Parcel Daily API 尚未配置，无法自动生成追踪号码和 AWB" });
+      }
+
+      const order = await db.getOrderById(input.orderId);
+      if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "订单不存在" });
+      const customer = await db.getCustomerById(order.customerId);
+      const settings = await db.getSystemSettings();
+      if (!customer || !settings?.defaultShipFromPostcode) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "请先完成寄件人及客户收件资料，才可自动生成运单" });
+      }
+      if (!customer.postalCode || !(customer.address || order.shippingAddress)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "客户收件地址或邮编不完整，无法自动生成运单" });
+      }
+
+      const isEastMalaysia = order.shippingMethod === "east_malaysia_poslaju";
+      const courier = isEastMalaysia ? "poslaju" : "line_clear";
+      const pickupAddress = {
+        fullName: settings.defaultShipFromName || settings.companyName || "Xintian Nursery",
+        phone: settings.defaultShipFromPhone || settings.companyPhone || "",
+        line1: settings.defaultShipFromAddress || settings.companyAddress || "",
+        city: settings.defaultShipFromCity || "",
+        postcode: settings.defaultShipFromPostcode,
+        state: settings.defaultShipFromState || "",
+        country: "Malaysia",
+      };
+      const deliveryAddress = {
+        fullName: customer.name || customer.facebookName || order.facebookName || "Customer",
+        phone: customer.phoneNumber || "",
+        line1: customer.address || order.shippingAddress || "",
+        city: customer.city || "",
+        postcode: customer.postalCode,
+        state: customer.state || "",
+        country: customer.country || "Malaysia",
+      };
+
+      try {
+        const created = await shippingProvider.parcelDailyProvider.createShipment({
+          courier,
+          pickupAddress,
+          deliveryAddress,
+          weightKg: input.actualWeight,
+          price: Number((order as any).actualShippingFee || 0),
+          content: "Plants and garden goods",
+          contentValue: Number(order.totalAmount || 0),
+          reference: order.orderNumber,
+        });
+        const checkedOut = await shippingProvider.parcelDailyProvider.checkoutShipment(created.providerOrderId);
+        const awb = await shippingProvider.parcelDailyProvider.getConsignmentNote?.(created.providerOrderId);
+        const courierLabel = isEastMalaysia ? "Poslaju" : "Line Clear";
+        const packageData = {
+          courier: courierLabel,
+          shippingType: "auto" as const,
+          trackingNumber: checkedOut.trackingNumber,
+          shippingLabelUrl: awb?.url || checkedOut.consignmentNoteUrl || undefined,
+          providerOrderId: created.providerOrderId,
+          weight: String(input.actualWeight),
+          shippingCost: String((order as any).actualShippingFee || checkedOut.shippingCost || 0),
+        };
+
+        if (input.mode === "partial") {
+          if (!input.itemIds?.length) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "部分发货必须选择商品" });
+          }
+          await db.partialShipping(input.orderId, input.itemIds, packageData, input.itemQuantities);
+        } else {
+          await db.fullShipping(input.orderId, [packageData]);
+        }
+
+        const shippingMessage = `老板娘/老板您好，我们已为您发货啦，收到包裹如有问题记得48小时内发图/视频给我们哦，追踪号码：${checkedOut.trackingNumber}，快递公司：${courierLabel}`;
+        const notice = await autoNotifyCustomer(input.orderId, shippingMessage, customer.messengerId || undefined, customer.phoneNumber || undefined);
+        const noticeStatus = notice.status === "sent" ? "sent" : notice.status === "pending" ? "pending" : "failed";
+        await db.updateOrderNotificationStatus(input.orderId, noticeStatus, notice.error || null);
+        await db.createNotificationLog({
+          orderId: input.orderId,
+          customerId: order.customerId,
+          type: "shipping_notification",
+          channel: notice.platform,
+          message: shippingMessage,
+          status: noticeStatus,
+          errorMessage: notice.error || null,
+        });
+
+        return {
+          success: true,
+          courier: courierLabel,
+          trackingNumber: checkedOut.trackingNumber,
+          shippingLabelUrl: packageData.shippingLabelUrl || null,
+          notificationStatus: noticeStatus,
+          notificationError: notice.error || null,
+        };
+      } catch (error) {
+        return rethrowPackingShippingError(error);
+      }
+    }),
     
     // Get packages for an order
     packages: shippingProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
@@ -4202,6 +4308,24 @@ export const appRouter = router({
       });
     }),
 
+    // Edit a pending exception without invoking settlement side effects.
+    update: protectedProcedure.input(z.object({
+      exceptionId: z.number(),
+      orderItemId: z.number().nullable().optional(),
+      exceptionType: z.enum(["out_of_stock", "quality_issue", "overcharged_shipping", "other"]).optional(),
+      description: z.string().optional(),
+      quantity: z.number().min(0).optional(),
+      customerAction: z.enum(["replace_product", "wait_restock", "refund", "pending"]).optional(),
+    })).mutation(async ({ input }) => {
+      return await db.updateOrderException(input.exceptionId, {
+        orderItemId: input.orderItemId,
+        exceptionType: input.exceptionType,
+        description: input.description,
+        quantity: input.quantity,
+        customerAction: input.customerAction,
+      });
+    }),
+
     // Resolve an exception with a chosen resolution type
     resolve: protectedProcedure.input(z.object({
       exceptionId: z.number(),
@@ -4284,8 +4408,11 @@ export const appRouter = router({
         }
       }
 
-      // 3. Handle replacement items (add new order items, deduct stock)
-      if (input.replacementItems && input.replacementItems.length > 0) {
+      // 3. Legacy replacement-items support.
+      // New packing flow already performs all order-item, stock and price-difference work
+      // atomically inside resolveOrderException via replacementProductId. Repeating it here
+      // caused duplicate replacement lines and double inventory deductions.
+      if (!input.replacementProductId && input.replacementItems && input.replacementItems.length > 0) {
         for (const item of input.replacementItems) {
           // Add new order item
           const dbAny = db as any;
@@ -4366,20 +4493,26 @@ export const appRouter = router({
     // Create a manual stock adjustment
     create: protectedProcedure.input(z.object({
       productId: z.number(),
+      supplierId: z.number().int().positive(),
       adjustmentType: z.enum(["quality_issue", "plant_death", "pest_disease", "human_damage", "unhealthy", "lost", "other"]),
       quantityChange: z.number(),
-      unitCost: z.number().optional(),
-      totalCost: z.number().optional(),
       reason: z.string().optional(),
       remark: z.string().optional(),
     })).mutation(async ({ input, ctx }) => {
       const userName = ctx.user?.name || ctx.user?.email || 'Unknown';
+      const supplier = await db.getSupplierById(input.supplierId);
+      if (!supplier?.isActive) throw new Error("厂家不存在或已停用");
+      const latestCost = await db.getLatestSupplierProductCost(input.productId, input.supplierId);
+      if (!latestCost) throw new Error("此厂家尚无该商品的已收货成本，无法自动计算损耗成本");
+      const unitCost = latestCost.unitCost;
       return await db.createInventoryAdjustment({
         productId: input.productId,
+        supplierId: input.supplierId,
+        supplierName: supplier.name,
         adjustmentType: input.adjustmentType,
         quantityChange: input.quantityChange,
-        unitCost: input.unitCost,
-        totalCost: input.totalCost,
+        unitCost,
+        totalCost: Math.abs(input.quantityChange) * unitCost,
         adjustedBy: userName,
         reason: input.reason,
         remark: input.remark,
@@ -5012,7 +5145,8 @@ export const appRouter = router({
         preorderEndDate: z.coerce.date().optional(),
         shippingMethod: z.enum(['air', 'sea']).optional(),
         chinaShippingCost: z.string().optional(),
-        status: z.enum(['draft', 'in_progress', 'closed', 'purchased', 'preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed']).optional(),
+        // IB 验货批次仅能在确认 CN 时自动建立，手动表单只能创建 CN 阶段。
+        status: z.enum(['draft', 'in_progress', 'closed']).optional(),
         notes: z.string().optional(),
         supplierOrderNumber: z.string().optional(),
         chinaTrackingNumber: z.string().optional(),
@@ -5042,6 +5176,18 @@ export const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
+        const batch = await db.getImportBatchById(id);
+        if (!batch) throw new Error('采购批次不存在');
+        const cnStatuses = ['draft', 'in_progress', 'closed', 'purchased'];
+        const ibStatuses = ['preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed'];
+        if (data.status) {
+          if (batch.parentBatchId && !ibStatuses.includes(data.status)) {
+            throw new Error('IB 批次只能使用 IB 验货流程状态');
+          }
+          if (!batch.parentBatchId && !cnStatuses.includes(data.status)) {
+            throw new Error('CN 批次不能手动改为 IB 流程；请先确认采购以自动建立 IB');
+          }
+        }
         await db.updateImportBatch(id, data);
         return { success: true };
       }),

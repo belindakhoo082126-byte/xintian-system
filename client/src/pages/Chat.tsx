@@ -14,7 +14,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   MessageSquare, Send, Bot, User, Phone, Facebook,
   ShoppingBag, AlertCircle, CheckCircle2, Clock, Zap, Search,
-  Package, MapPin, CreditCard, FileText, ArrowRight
+  Package, MapPin, CreditCard, FileText, ArrowRight, Copy, Eye
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
@@ -31,6 +31,7 @@ export default function Chat() {
   const [searchDebounced, setSearchDebounced] = useState("");
   const [sseConnected, setSseConnected] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [copiedCheckoutOrderId, setCopiedCheckoutOrderId] = useState<number | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sseRef = useRef<EventSource | null>(null);
@@ -202,6 +203,25 @@ export default function Chat() {
   const handleResumeAI = () => {
     if (!selectedConvId) return;
     resumeAIMut.mutate({ conversationId: selectedConvId });
+  };
+
+  const handleCopyCheckoutLink = async (order: { id: number; orderNumber: string; secureToken?: string | null }) => {
+    if (!order.secureToken) return;
+    const checkoutLink = `${window.location.origin}/order/${order.orderNumber}/${order.secureToken}`;
+    try {
+      await navigator.clipboard.writeText(checkoutLink);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = checkoutLink;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    setCopiedCheckoutOrderId(order.id);
+    window.setTimeout(() => setCopiedCheckoutOrderId((current) => current === order.id ? null : current), 2000);
   };
 
   const getSenderIcon = (senderType: string) => {
@@ -550,8 +570,7 @@ export default function Chat() {
               {customerInfo?.recentOrders && customerInfo.recentOrders.length > 0 ? (
                 <div className="space-y-2">
                   {customerInfo.recentOrders.map((order: any) => (
-                    <Link key={order.id} href={`/orders/${order.id}`}>
-                      <div className="p-2 rounded hover:bg-muted/50 cursor-pointer text-sm space-y-1">
+                      <div key={order.id} className="p-2 rounded border border-transparent hover:border-border hover:bg-muted/50 text-sm space-y-1">
                         <div className="flex items-center justify-between">
                           <p className="font-medium">{order.orderNumber}</p>
                           <Badge variant="outline" className="text-xs">{order.customerStatus}</Badge>
@@ -581,8 +600,26 @@ export default function Chat() {
                             ))}
                           </div>
                         )}
+                        <div className="flex items-center gap-1 pt-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-1.5 text-xs"
+                            disabled={!order.secureToken}
+                            onClick={() => void handleCopyCheckoutLink(order)}
+                            title={order.secureToken ? "复制客户结账链接" : "此订单尚未建立安全结账链接"}
+                          >
+                            <Copy className="mr-1 h-3 w-3" />
+                            {copiedCheckoutOrderId === order.id ? "已复制" : "复制结账链接"}
+                          </Button>
+                          <Link href={`/orders/${order.id}`}>
+                            <Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs">
+                              <Eye className="mr-1 h-3 w-3" />预览
+                            </Button>
+                          </Link>
+                        </div>
                       </div>
-                    </Link>
                   ))}
                 </div>
               ) : (

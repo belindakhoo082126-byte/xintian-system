@@ -36,7 +36,7 @@ const FLOW_TYPES = [
 ];
 
 export default function Campaigns() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [editingCampaign, setEditingCampaign] = useState<any>(null);
@@ -139,6 +139,29 @@ export default function Campaigns() {
           {t("campaigns.create")}
         </Button>
       </div>
+
+      <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-900/70 dark:bg-blue-950/20">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base text-blue-900 dark:text-blue-100">
+            <Megaphone className="h-4 w-4" />
+            {lang === "zh" ? "Campaign 是什么？如何使用？" : "What is a Campaign and how do I use it?"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm text-blue-950/85 dark:text-blue-100/90 md:grid-cols-3">
+          <div>
+            <p className="font-medium">{lang === "zh" ? "1. 建立活动" : "1. Create a campaign"}</p>
+            <p className="mt-1 text-xs leading-5">{lang === "zh" ? "一个 Campaign 用来集中管理同一推广主题的 Facebook 内容、自动回复、商品介绍与统计。" : "Use one Campaign to manage Facebook content, auto replies, product introductions, and performance for one promotion."}</p>
+          </div>
+          <div>
+            <p className="font-medium">{lang === "zh" ? "2. 绑定 Facebook 内容" : "2. Attach Facebook content"}</p>
+            <p className="mt-1 text-xs leading-5">{lang === "zh" ? "先储存活动，再于“内容 ID”分页加入同一活动的 Post、Reel 或 Video；这些内容会共用活动的设置与统计。" : "Save first, then add the related Post, Reel, or Video in the Content IDs tab. Attached content shares the campaign settings and statistics."}</p>
+          </div>
+          <div>
+            <p className="font-medium">{lang === "zh" ? "3. 配置并启用" : "3. Configure and activate"}</p>
+            <p className="mt-1 text-xs leading-5">{lang === "zh" ? "在“流程”和“按钮”设置自动回复内容与引导动作；确认后由草稿切换为启用。结束或封存后将停止新自动流程，但保留历史统计。" : "Configure automated replies and customer actions in Flows and Buttons, then change Draft to Active. Ending or archiving stops new automation while retaining history."}</p>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Status Filter Tabs */}
       <div className="flex gap-2">

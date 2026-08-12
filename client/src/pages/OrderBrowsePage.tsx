@@ -25,6 +25,7 @@ import html2canvas from "html2canvas";
 import { createRoot } from "react-dom/client";
 import { OrderDocument } from "@/components/OrderDocument";
 import { prepareOrderDocumentExportHost } from "@/lib/orderDocumentExport";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
 
 const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
   pending: { zh: "未汇款订单", en: "Unpaid Order", variant: "outline" },
@@ -642,13 +643,14 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
               <tbody>
                 {(o.items || []).map((item: any, idx: number) => (
                   <tr key={idx} className="border-b last:border-0">
-                    <td className="p-3">
-                      {item.productImage ? (
-                        <img src={item.productImage} alt={item.productName} className="w-16 h-16 rounded object-cover" />
-                      ) : (
-                        <div className="w-16 h-16 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground">{translate("无图", "No img")}</div>
-                      )}
-                    </td>
+                      <td className="p-3">
+                        <ProductImagePreview
+                          src={item.productImage}
+                          alt={item.productName}
+                          className="h-16 w-16"
+                          label={translate("预览商品图片", "Preview product image")}
+                        />
+                      </td>
                     <td className="p-3 font-medium">{item.productName}</td>
                     <td className="p-3 text-muted-foreground">{ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || "-"}</td>
                     <td className="p-3 text-muted-foreground">{item.facebookKeyword || "-"}</td>

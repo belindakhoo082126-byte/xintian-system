@@ -82,6 +82,12 @@ function isGroup(item: MenuEntry): item is MenuGroup {
   return (item as MenuGroup).children !== undefined;
 }
 
+function isMenuPathActive(location: string, path?: string) {
+  if (!path || path === '/') return location === '/';
+  if (path.includes('?')) return location === path;
+  return location === path || location.startsWith(`${path}/`);
+}
+
 const menuStructure: MenuEntry[] = [
   // 1. Dashboard
   { icon: LayoutDashboard, label: "nav.dashboard", path: "/", accent: MENU_ACCENTS.dashboard },
@@ -319,7 +325,7 @@ function DashboardLayoutContent({
   for (const item of visibleMenu) {
     if (isGroup(item)) {
       for (const child of item.children) {
-        if (child.path && location.startsWith(child.path.split('?')[0]) && child.path !== '/') {
+        if (isMenuPathActive(location, child.path)) {
           activeLabel = resolveLabel(child.label);
           break;
         }
@@ -615,8 +621,7 @@ function CollapsibleMenuGroup({
       {open && (
         <SidebarMenuSub className="ml-4">
           {children.map((child, ci) => {
-            const childPath = (child.path || '').split('?')[0];
-            const childActive = childPath !== '/' && childPath !== '' && location.startsWith(childPath);
+            const childActive = isMenuPathActive(location, child.path);
             // If this child has its own children (nested submenu like AI大脑)
             if (child.children && child.children.length > 0) {
               return (
@@ -624,10 +629,7 @@ function CollapsibleMenuGroup({
                   <CollapsibleMenuGroup
                     icon={child.icon}
                     label={resolveLabel(child.label)}
-                    isActive={child.children.some(sub => {
-                      const subPath = (sub.path || '').split('?')[0];
-                      return subPath !== '/' && subPath !== '' && location.startsWith(subPath);
-                    })}
+                    isActive={child.children.some(sub => isMenuPathActive(location, sub.path))}
                     isCollapsed={false}
                     children={child.children}
                     location={location}

@@ -28,6 +28,7 @@ import {
 import {
   Tabs, TabsContent, TabsList, TabsTrigger,
 } from "@/components/ui/tabs";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
 
 type BundleItem = {
   productId: number;
@@ -376,10 +377,11 @@ export default function ProductBundles() {
                 </div>
               </div>
               {selectedBundle && (selectedBundle as any).coverImage && (
-                <img
+                <ProductImagePreview
                   src={(selectedBundle as any).coverImage}
                   alt={(selectedBundle as any).name}
-                  className="w-full h-48 object-cover rounded-lg"
+                  className="h-48 w-full"
+                  label="预览组合商品图片"
                 />
               )}
               {selectedBundle && (selectedBundle as any).description && (

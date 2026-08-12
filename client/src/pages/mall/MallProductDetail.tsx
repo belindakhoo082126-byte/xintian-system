@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ShoppingCart, Minus, Plus, ChevronLeft, Package, Truck, Shield, Sun, Droplets, Sparkles, Scissors, Plane, Heart, Share2, Facebook, MessageCircle, Link2 } from "lucide-react";
+import { ShoppingCart, Minus, Plus, ChevronLeft, Package, Truck, Shield, Sun, Droplets, Sparkles, Scissors, Plane, Heart, MessageCircle, Link2 } from "lucide-react";
 import { useI18n } from "@/contexts/I18nContext";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
@@ -68,6 +68,21 @@ export default function MallProductDetail() {
   const selectedVariant = variants.find((v: any) => v.id === selectedVariantId);
   const unitPrice = selectedVariant?.sellingPrice || product!.sellingPrice || "0";
   const subtotal = (parseFloat(unitPrice) * quantity).toFixed(2);
+  const selectedVariantStock = selectedVariant as (typeof selectedVariant & { availableStock?: number; allowOversold?: boolean }) | undefined;
+  const productStock = product as typeof product & { availableStock?: number; allowOversold?: boolean };
+  const allowOversell = Boolean(selectedVariantStock?.allowOversold ?? productStock.allowOversold);
+  const availableStock = Number(selectedVariantStock?.availableStock ?? selectedVariantStock?.stockQuantity ?? productStock.availableStock ?? productStock.stockQuantity ?? 0);
+  const isSoldOut = !allowOversell && availableStock <= 0;
+
+  function setSafeQuantity(nextQuantity: number) {
+    const requested = Math.max(1, Number.isFinite(nextQuantity) ? nextQuantity : 1);
+    if (!allowOversell && requested > availableStock) {
+      toast.error(t(`库存不足，目前最多可购买 ${Math.max(availableStock, 0)} 件。`, `Insufficient stock. You can purchase up to ${Math.max(availableStock, 0)} item(s).`));
+      setQuantity(Math.max(1, availableStock));
+      return;
+    }
+    setQuantity(requested);
+  }
 
   function launchCartFlight(origin?: HTMLElement) {
     const originRect = origin?.getBoundingClientRect();
@@ -89,11 +104,20 @@ export default function MallProductDetail() {
       toast.error(t("请选择规格", "Please select a variant"));
       return false;
     }
+    if (isSoldOut) {
+      toast.error(t("商品已售罄", "This product is sold out"));
+      return false;
+    }
     try {
       const cart = JSON.parse(localStorage.getItem("mall_cart") || "[]");
       const existing = cart.find((i: any) => i.productId === product!.id && i.variationId === selectedVariantId);
       if (existing) {
+        if (!allowOversell && existing.quantity + quantity > availableStock) {
+          toast.error(t(`库存不足，目前最多可购买 ${availableStock} 件。`, `Insufficient stock. You can purchase up to ${availableStock} item(s).`));
+          return false;
+        }
         existing.quantity += quantity;
+        existing.subtotal = (parseFloat(unitPrice) * existing.quantity).toFixed(2);
       } else {
         cart.push({
           productId: product!.id,
@@ -104,6 +128,8 @@ export default function MallProductDetail() {
           quantity,
           unitPrice,
           subtotal,
+          availableStock,
+          allowOversell,
         });
       }
       localStorage.setItem("mall_cart", JSON.stringify(cart));
@@ -133,18 +159,10 @@ export default function MallProductDetail() {
     toast.success(nextFavoriteIds.includes(product!.id) ? t("已加入收藏", "Saved to favorites") : t("已取消收藏", "Removed from favorites"));
   }
 
-  async function shareProduct(channel: "native" | "whatsapp" | "facebook" | "copy") {
+  async function shareProduct(channel: "whatsapp" | "copy") {
     const url = window.location.href;
     const shareText = `${product!.name} · RM ${product!.isSpecial && product!.specialPrice ? product!.specialPrice : unitPrice}`;
-    if (channel === "native" && navigator.share) {
-      try {
-        await navigator.share({ title: product!.name, text: shareText, url });
-      } catch {
-        // The share sheet can be dismissed without being an error visible to the customer.
-      }
-      return;
-    }
-    if (channel === "copy" || (channel === "native" && !navigator.share)) {
+    if (channel === "copy") {
       try {
         await navigator.clipboard.writeText(url);
         toast.success(t("商品链接已复制", "Product link copied"));
@@ -154,7 +172,7 @@ export default function MallProductDetail() {
       return;
     }
     const links = getMallShareLinks({ url, text: shareText });
-    window.open(channel === "whatsapp" ? links.whatsapp : links.facebook, "_blank", "noopener,noreferrer");
+    window.open(links.whatsapp, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -277,14 +295,15 @@ export default function MallProductDetail() {
               <div className="flex items-center gap-3">
                 <Button variant="outline" size="icon" onClick={() => setQuantity(Math.max(1, quantity - 1))}><Minus className="h-4 w-4" /></Button>
                 <Input className="w-20 text-center" value={quantity} onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))} />
-                <Button variant="outline" size="icon" onClick={() => setQuantity(quantity + 1)}><Plus className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" onClick={() => setSafeQuantity(quantity + 1)} disabled={isSoldOut || (!allowOversell && quantity >= availableStock)}><Plus className="h-4 w-4" /></Button>
               </div>
+              {isSoldOut && <p className="mt-2 text-sm font-medium text-red-600">{t("商品已售罄", "Sold out")}</p>}
             </div>
 
             {/* Actions */}
             <div className="flex gap-3 pt-2">
-              <Button variant="outline" className="flex-1" onClick={(event) => addToCart(event.currentTarget)}><ShoppingCart className="h-4 w-4 mr-2" />{t("加入购物车", "Add to Cart")}</Button>
-              <Button className="flex-1 hover:opacity-90" style={{ backgroundColor: theme.button }} onClick={buyNow}>{t("立即购买", "Buy Now")}</Button>
+              <Button variant="outline" className="flex-1" onClick={(event) => addToCart(event.currentTarget)} disabled={isSoldOut}><ShoppingCart className="h-4 w-4 mr-2" />{t("加入购物车", "Add to Cart")}</Button>
+              <Button className="flex-1 hover:opacity-90" style={{ backgroundColor: theme.button }} onClick={buyNow} disabled={isSoldOut}>{t("立即购买", "Buy Now")}</Button>
             </div>
 
             <div className="flex flex-wrap gap-2" aria-label={t("商品互动", "Product actions")}>
@@ -292,10 +311,8 @@ export default function MallProductDetail() {
                 <Heart className="mr-1.5 h-4 w-4" fill={favoriteIds.includes(product.id) ? "currentColor" : "none"} />
                 {favoriteIds.includes(product.id) ? t("已收藏", "Saved") : t("加入收藏", "Favorite")}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => void shareProduct("native")}><Share2 className="mr-1.5 h-4 w-4" />{t("分享", "Share")}</Button>
+              <Button variant="outline" size="sm" onClick={() => void shareProduct("copy")}><Link2 className="mr-1.5 h-4 w-4" />{t("分享链接", "Share link")}</Button>
               <Button variant="outline" size="icon" onClick={() => void shareProduct("whatsapp")} title="WhatsApp"><MessageCircle className="h-4 w-4 text-[#25D366]" /></Button>
-              <Button variant="outline" size="icon" onClick={() => void shareProduct("facebook")} title="Facebook"><Facebook className="h-4 w-4 text-[#1877F2]" /></Button>
-              <Button variant="outline" size="icon" onClick={() => void shareProduct("copy")} title={t("复制链接", "Copy link")}><Link2 className="h-4 w-4" /></Button>
             </div>
 
             {/* Trust badges */}

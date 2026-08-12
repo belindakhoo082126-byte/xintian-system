@@ -85,6 +85,8 @@ export default function MallSettings() {
   }
 
   const [newNotice, setNewNotice] = useState("");
+  const [editingNoticeId, setEditingNoticeId] = useState<number | null>(null);
+  const [editingNoticeText, setEditingNoticeText] = useState("");
   const [newSchedule, setNewSchedule] = useState<any>({ themeKey: "christmas", startDate: "", endDate: "" });
 
   function handleSaveSettings() {
@@ -141,6 +143,25 @@ export default function MallSettings() {
     if (!newNotice.trim()) return;
     createNoticeMutation.mutate({ announcement: newNotice, displayOrder: (notices?.length || 0) + 1 });
     setNewNotice("");
+  }
+
+  function beginEditNotice(notice: any) {
+    setEditingNoticeId(notice.id);
+    setEditingNoticeText(notice.announcement || "");
+  }
+
+  function saveEditedNotice(notice: any) {
+    const announcement = editingNoticeText.trim();
+    if (!announcement) {
+      toast.error(translate("请输入公告内容", "Please enter announcement content"));
+      return;
+    }
+    updateNoticeMutation.mutate({ id: notice.id, announcement }, {
+      onSuccess: () => {
+        setEditingNoticeId(null);
+        setEditingNoticeText("");
+      },
+    });
   }
 
   function handleAddSchedule() {
@@ -265,8 +286,20 @@ export default function MallSettings() {
               {notices?.map((n: any) => (
                 <div key={n.id} className="flex items-center gap-3 p-3 border rounded-lg">
                   <Switch checked={n.isEnabled} onCheckedChange={(v) => updateNoticeMutation.mutate({ id: n.id, isEnabled: v })} />
-                  <span className="flex-1">{n.announcement}</span>
+                  {editingNoticeId === n.id ? (
+                    <Input className="flex-1" value={editingNoticeText} onChange={(event) => setEditingNoticeText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && saveEditedNotice(n)} autoFocus />
+                  ) : (
+                    <span className="flex-1">{n.announcement}</span>
+                  )}
                   <Badge variant="outline">{translate("#{order}", "#{order}", { order: n.displayOrder })}</Badge>
+                  {editingNoticeId === n.id ? (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => saveEditedNotice(n)} disabled={updateNoticeMutation.isPending}>{translate("保存", "Save")}</Button>
+                      <Button variant="ghost" size="sm" onClick={() => { setEditingNoticeId(null); setEditingNoticeText(""); }}>{translate("取消", "Cancel")}</Button>
+                    </>
+                  ) : (
+                    <Button variant="ghost" size="icon" onClick={() => beginEditNotice(n)} title={translate("编辑公告", "Edit notice")}><Pencil className="h-4 w-4" /></Button>
+                  )}
                   <Button variant="ghost" size="icon" onClick={() => deleteNoticeMutation.mutate({ id: n.id })} title={translate("删除公告", "Delete Notice")}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               ))}
