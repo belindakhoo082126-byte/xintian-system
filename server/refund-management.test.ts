@@ -98,7 +98,8 @@ describe("退款管理业务规则", () => {
     expect(productStats).toContain("ri.inventoryActionStatus = 'returned'");
     expect(productStats).toContain("refund.status IN ('processed', 'awaiting_return')");
     expect(productStats).toContain("GREATEST(oi.quantity - COALESCE(returned_items.returnedQty, 0), 0)");
-    expect(productOrderDetails).toContain("GREATEST(oi.quantity - COALESCE(returned_items.returnedQty, 0), 0) > 0");
+    expect(productOrderDetails).toContain("${type === 'completed' || type === 'paid' ? sql`${stageQuantity} > 0` : sql`1 = 1`}");
+    expect(productOrderDetails).toContain("GREATEST(oi.quantity - COALESCE(returned_items.returnedQty, 0), 0)");
   });
 
   it("订单详情与退款追溯会展示实际退款损失、退库成本回收及退款后商品利润", () => {

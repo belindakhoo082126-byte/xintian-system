@@ -4,13 +4,16 @@ import { describe, expect, it } from "vitest";
 describe("product source-of-truth safeguards", () => {
   const source = readFileSync(new URL("./db.ts", import.meta.url), "utf8");
 
-  it("uses the physical order status column when calculating reserved quantity", () => {
+  it("uses the physical order status column with mutually exclusive ordered and paid stages", () => {
     const queryBlock = source.slice(
       source.indexOf("export async function getProductsEnhanced"),
       source.indexOf("export async function getProductByIdEnhanced"),
     );
 
-    expect(queryBlock).toContain("o.physicalStatus IN ('pending', 'hold_order', 'partial_payment', 'receipt_uploaded', 'packing', 'partial_shipped')");
+    expect(queryBlock).toContain("o.physicalStatus IN ('pending', 'hold_order', 'partial_payment', 'receipt_uploaded')");
+    expect(queryBlock).toContain("o.physicalStatus IN ('packing', 'scheduled', 'partial_shipped')");
+    expect(queryBlock).toContain("AS paidQty");
+    expect(queryBlock).toContain("GREATEST(oi.quantity - COALESCE(shipped_items.shippedQty, 0), 0)");
     expect(queryBlock).not.toContain("o.status IN ('pending', 'checkout', 'confirmed')");
   });
 
@@ -61,14 +64,16 @@ describe("product source-of-truth safeguards", () => {
     expect(createOrderBlock).toContain("await allocateFifoCostForSale({ orderId, productId: item.productId, quantity: item.quantity");
   });
 
-  it("uses the same order state groups when exposing product order details", () => {
+  it("uses the same mutually exclusive order stage groups when exposing product order details", () => {
     const detailBlock = source.slice(
       source.indexOf("export async function getProductOrderDetails"),
       source.indexOf("export async function getProductByIdEnhanced"),
     );
 
-    expect(detailBlock).toContain("'pending', 'hold_order', 'partial_payment', 'receipt_uploaded', 'packing', 'partial_shipped'");
+    expect(detailBlock).toContain("'pending', 'hold_order', 'partial_payment', 'receipt_uploaded'");
+    expect(detailBlock).toContain("'packing', 'scheduled', 'partial_shipped'");
     expect(detailBlock).toContain("'shipped', 'completed'");
+    expect(detailBlock).toContain("GREATEST(oi.quantity - COALESCE(shipped_items.shippedQty, 0), 0)");
     expect(detailBlock).toContain("o.orderNumber AS orderNumber");
     expect(detailBlock).toContain("customerName");
   });

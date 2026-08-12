@@ -23,7 +23,7 @@ import {
   orderExceptions, orderExceptionItems, orderExceptionReplacements, inventoryAdjustments,
   orderSubOrders, specialOrderActions,
   // V2.0 imports
-  liveRooms, importBatches, importBatchItems,
+  liveRooms, importBatches, importBatchItems, cnChangeLogs, importBatchChangeLogs,
   // V2.0 Phase 2 imports - Live Room Products
   liveRoomProducts,
   // V2.0 Phase 2.5 imports - Live AI Flows
@@ -3581,12 +3581,30 @@ export async function getProductsEnhanced(params: {
   // 已下单／已完成仅用于解释该原始库存如何被占用，绝不再从 stockQuantity 二次扣除。
   // 对部分发货订单，必须按 package_items 的实际已发数量逐项拆分，不能将整张订单全部转为已完成。
   const productIds = items.map((p: any) => p.id);
-  let pendingMap: Record<number, number> = {};
+  let orderedMap: Record<number, number> = {};
+  let paidMap: Record<number, number> = {};
   let completedMap: Record<number, number> = {};
   if (productIds.length > 0) {
-    // 已下单：所有已经占用库存、但尚未实际发出的数量。
-    // partial_shipped 仅计算尚未放入已发包裹的余量。
-    const pendingItems = await db.execute(sql`
+    // 三阶段必须互斥：未完成汇款的订单计入已下单；已确认全额汇款的待包货
+    // 订单计入已汇款；已实际进入 shipped 包裹的数量计入已完成。
+    // legacy special 订单依已付款金额分流，避免该历史状态造成数量遗失或重复。
+    const orderedItems = await db.execute(sql`
+      SELECT
+        oi.productId,
+        COALESCE(SUM(oi.quantity), 0) AS orderedQty
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.orderId
+      WHERE (
+        o.physicalStatus IN ('pending', 'hold_order', 'partial_payment', 'receipt_uploaded')
+        OR (o.physicalStatus = 'special' AND COALESCE(o.paidAmount, 0) < COALESCE(o.totalAmount, 0))
+      )
+      AND oi.productId IN (${sql.join(productIds, sql`, `)})
+      GROUP BY oi.productId
+    `);
+    for (const row of orderedItems as any[]) {
+      orderedMap[row.productId] = Number(row.orderedQty) || 0;
+    }
+    const paidItems = await db.execute(sql`
       SELECT
         oi.productId,
         COALESCE(SUM(
@@ -3595,7 +3613,7 @@ export async function getProductsEnhanced(params: {
               THEN GREATEST(oi.quantity - COALESCE(shipped_items.shippedQty, 0), 0)
             ELSE oi.quantity
           END
-        ), 0) AS pendingQty
+        ), 0) AS paidQty
       FROM order_items oi
       JOIN orders o ON o.id = oi.orderId
       LEFT JOIN (
@@ -3605,12 +3623,15 @@ export async function getProductsEnhanced(params: {
         WHERE pkg.status = 'shipped'
         GROUP BY pi.orderItemId
       ) shipped_items ON shipped_items.orderItemId = oi.id
-      WHERE o.physicalStatus IN ('pending', 'hold_order', 'partial_payment', 'receipt_uploaded', 'packing', 'partial_shipped', 'scheduled', 'special')
+      WHERE (
+        o.physicalStatus IN ('packing', 'scheduled', 'partial_shipped')
+        OR (o.physicalStatus = 'special' AND COALESCE(o.totalAmount, 0) > 0 AND COALESCE(o.paidAmount, 0) >= COALESCE(o.totalAmount, 0))
+      )
       AND oi.productId IN (${sql.join(productIds, sql`, `)})
       GROUP BY oi.productId
     `);
-    for (const row of pendingItems as any[]) {
-      pendingMap[row.productId] = Number(row.pendingQty) || 0;
+    for (const row of paidItems as any[]) {
+      paidMap[row.productId] = Number(row.paidQty) || 0;
     }
     // 已完成：整单已发／已完成的全部数量，加上部分发货订单中已经进入包裹的数量。
     // 已处理退款中「退回可售库存」的数量代表商品未最终成交，必须从已完成数量扣除；
@@ -3653,10 +3674,12 @@ export async function getProductsEnhanced(params: {
       completedMap[row.productId] = Number(row.completedQty) || 0;
     }
   }
-  const itemsWithPending = items.map((p: any) => ({
+  const itemsWithStageQuantities = items.map((p: any) => ({
     ...p,
-    pendingQuantity: pendingMap[p.id] || 0,
-    orderedCount: pendingMap[p.id] || 0,
+    // pendingQuantity retained only as a compatibility alias for historical callers.
+    pendingQuantity: orderedMap[p.id] || 0,
+    orderedCount: orderedMap[p.id] || 0,
+    paidCount: paidMap[p.id] || 0,
     completedCount: completedMap[p.id] || 0,
     // 正式订单已在下单时写入 stockQuantity；尚未转正式订单的 AI 草稿
     // 记录在 reservedQuantity，因此前端可售数只需额外扣除这一类临时预留。
@@ -3664,30 +3687,35 @@ export async function getProductsEnhanced(params: {
     availableQuantity: Math.max(0, Number(p.stockQuantity || 0) - Number(p.reservedQuantity || 0)),
   }));
 
-  return { items: itemsWithPending, total };
+  return { items: itemsWithStageQuantities, total };
 }
 
 /**
- * Returns the concrete orders behind a product's ordered/completed counters.
+ * Returns the concrete orders behind a product's mutually exclusive order-stage counters.
  * The status groups intentionally mirror getProductsEnhanced so the dialog
  * always explains the exact number displayed in Products V2.
  */
-export async function getProductOrderDetails(productId: number, type: 'ordered' | 'completed') {
+export async function getProductOrderDetails(productId: number, type: 'ordered' | 'paid' | 'completed') {
   const db = await getDb();
   if (!db) return [];
 
   const statusCondition = type === 'ordered'
-    ? sql`o.physicalStatus IN ('pending', 'hold_order', 'partial_payment', 'receipt_uploaded', 'packing', 'partial_shipped')`
-    : sql`o.physicalStatus IN ('shipped', 'completed')`;
+    ? sql`(o.physicalStatus IN ('pending', 'hold_order', 'partial_payment', 'receipt_uploaded') OR (o.physicalStatus = 'special' AND COALESCE(o.paidAmount, 0) < COALESCE(o.totalAmount, 0)))`
+    : type === 'paid'
+      ? sql`(o.physicalStatus IN ('packing', 'scheduled', 'partial_shipped') OR (o.physicalStatus = 'special' AND COALESCE(o.totalAmount, 0) > 0 AND COALESCE(o.paidAmount, 0) >= COALESCE(o.totalAmount, 0)))`
+      : sql`o.physicalStatus IN ('shipped', 'completed', 'partial_shipped')`;
+  const stageQuantity = type === 'completed'
+    ? sql`CASE WHEN o.physicalStatus = 'partial_shipped' THEN GREATEST(LEAST(oi.quantity, COALESCE(shipped_items.shippedQty, 0)) - COALESCE(returned_items.returnedQty, 0), 0) ELSE GREATEST(oi.quantity - COALESCE(returned_items.returnedQty, 0), 0) END`
+    : type === 'paid'
+      ? sql`CASE WHEN o.physicalStatus = 'partial_shipped' THEN GREATEST(oi.quantity - COALESCE(shipped_items.shippedQty, 0), 0) ELSE oi.quantity END`
+      : sql`oi.quantity`;
 
   const rows = await db.execute(sql`
     SELECT
       o.id AS orderId,
       o.orderNumber AS orderNumber,
       o.physicalStatus AS physicalStatus,
-      ${type === 'completed'
-        ? sql`GREATEST(oi.quantity - COALESCE(returned_items.returnedQty, 0), 0)`
-        : sql`oi.quantity`} AS quantity,
+      ${stageQuantity} AS quantity,
       COALESCE(
         NULLIF(o.facebookName, ''),
         NULLIF(c.facebookName, ''),
@@ -3700,6 +3728,13 @@ export async function getProductOrderDetails(productId: number, type: 'ordered' 
     JOIN orders o ON o.id = oi.orderId
     LEFT JOIN customers c ON c.id = o.customerId
     LEFT JOIN (
+      SELECT pi.orderItemId, COALESCE(SUM(pi.quantity), 0) AS shippedQty
+      FROM package_items pi
+      JOIN packages pkg ON pkg.id = pi.packageId
+      WHERE pkg.status = 'shipped'
+      GROUP BY pi.orderItemId
+    ) shipped_items ON shipped_items.orderItemId = oi.id
+    LEFT JOIN (
       SELECT ri.orderItemId, COALESCE(SUM(ri.refundQuantity), 0) AS returnedQty
       FROM order_refund_items ri
       JOIN order_refunds refund ON refund.id = ri.refundId
@@ -3710,7 +3745,7 @@ export async function getProductOrderDetails(productId: number, type: 'ordered' 
     ) returned_items ON returned_items.orderItemId = oi.id
     WHERE oi.productId = ${productId}
       AND ${statusCondition}
-      AND ${type === 'completed' ? sql`GREATEST(oi.quantity - COALESCE(returned_items.returnedQty, 0), 0) > 0` : sql`1 = 1`}
+      AND ${type === 'completed' || type === 'paid' ? sql`${stageQuantity} > 0` : sql`1 = 1`}
     ORDER BY o.createdAt DESC, oi.id DESC
   `);
 
@@ -9584,19 +9619,426 @@ export async function updateImportBatch(id: number, data: Partial<{
   batchName: string;
   sourceCountry: string;
   supplierName: string;
+  supplierOrderNumber: string | null;
+  chinaTrackingNumber: string | null;
   liveRoomId: number;
   preorderStartDate: Date;
   preorderEndDate: Date;
   actualPurchaseDate: Date;
   shippingMethod: string;
   chinaShippingCost: string;
+  otherFees: string;
   status: string;
-  notes: string;
-}>) {
+  notes: string | null;
+}>, operatorId?: number) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
-  await db.update(importBatches).set(data as any).where(eq(importBatches.id, id));
+  const batch = await getImportBatchById(id);
+  if (!batch) throw new Error('采购单不存在');
+  if ((batch as any).documentType === 'ib' && (batch as any).isLocked) {
+    throw new Error('IB 已锁定；请先填写解锁原因后再修改。');
+  }
+  const allowedFields = ['batchName', 'sourceCountry', 'supplierName', 'supplierOrderNumber', 'chinaTrackingNumber', 'liveRoomId', 'preorderStartDate', 'preorderEndDate', 'actualPurchaseDate', 'shippingMethod', 'chinaShippingCost', 'otherFees', 'status', 'notes'];
+  const values: Record<string, unknown> = {};
+  const auditRows: Array<{ ibId: number; field: string; oldValue: string | null; newValue: string | null; changedBy: number | null }> = [];
+  for (const field of allowedFields) {
+    if (!(field in data)) continue;
+    const oldValue = (batch as any)[field];
+    const newValue = (data as any)[field];
+    const normalizedOld = oldValue instanceof Date ? oldValue.toISOString() : String(oldValue ?? '');
+    const normalizedNew = newValue instanceof Date ? newValue.toISOString() : String(newValue ?? '');
+    if (normalizedOld === normalizedNew) continue;
+    values[field] = newValue;
+    if ((batch as any).documentType === 'ib') {
+      auditRows.push({ ibId: id, field, oldValue: oldValue == null ? null : normalizedOld, newValue: newValue == null ? null : normalizedNew, changedBy: operatorId ?? null });
+    }
+  }
+  if (Object.keys(values).length === 0) return { success: true, changes: 0 };
+  await db.update(importBatches).set(values as any).where(eq(importBatches.id, id));
+  if (auditRows.length) await db.insert(importBatchChangeLogs).values(auditRows);
+  broadcastChange('importBatches');
+  return { success: true, changes: auditRows.length };
+}
+
+type CNStage = 'ordered' | 'paid' | 'completed';
+
+function toDateOnly(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function calculateCnPaymentDeadline(endDate: string) {
+  const deadline = new Date(`${endDate}T00:00:00.000Z`);
+  deadline.setUTCDate(deadline.getUTCDate() + 2);
+  return toDateOnly(deadline);
+}
+
+/** Returns eligible China-preorder live sessions within the administrator's selected inclusive date range. */
+export async function getCNEligibleLiveSessions(startDate: string, endDate: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const end = new Date(`${endDate}T23:59:59.999Z`);
+  const sessions = await db.select().from(liveRooms).where(and(
+    eq(liveRooms.liveType, 'import_preorder'),
+    gte(liveRooms.liveDate, start),
+    lte(liveRooms.liveDate, end),
+  )).orderBy(desc(liveRooms.liveDate));
+  const ids = sessions.map(session => session.id);
+  if (ids.length === 0) return sessions.map(session => ({ ...session, productCount: 0 }));
+  const productRows = await db.select({ liveRoomId: liveRoomProducts.liveRoomId })
+    .from(liveRoomProducts).where(inArray(liveRoomProducts.liveRoomId, ids));
+  const counts = new Map<number, number>();
+  for (const row of productRows) counts.set(row.liveRoomId, (counts.get(row.liveRoomId) || 0) + 1);
+  return sessions.map(session => ({ ...session, productCount: counts.get(session.id) || 0 }));
+}
+
+/**
+ * Merges products from selected China-preorder live sessions. Stage counts are calculated from
+ * the selected sessions' import orders and are mutually exclusive, including partial shipments.
+ */
+export async function getCNMergedProducts(liveSessionIds: number[]) {
+  const db = await getDb();
+  if (!db || liveSessionIds.length === 0) return [];
+  const selectedProducts = await db.select({
+    liveRoomId: liveRoomProducts.liveRoomId,
+    liveRoomName: liveRooms.name,
+    productId: liveRoomProducts.productId,
+    variantId: liveRoomProducts.variationId,
+    displayName: liveRoomProducts.displayName,
+    productName: products.name,
+    coverImageUrl: products.coverImageUrl,
+  }).from(liveRoomProducts)
+    .innerJoin(liveRooms, eq(liveRoomProducts.liveRoomId, liveRooms.id))
+    .innerJoin(products, eq(liveRoomProducts.productId, products.id))
+    .where(inArray(liveRoomProducts.liveRoomId, liveSessionIds));
+
+  const merged = new Map<string, any>();
+  for (const row of selectedProducts) {
+    const key = `${row.productId}:${row.variantId ?? 'base'}`;
+    const existing = merged.get(key) || {
+      productId: row.productId,
+      variantId: row.variantId,
+      productName: row.productName || row.displayName,
+      coverImageUrl: row.coverImageUrl,
+      liveSessionCount: 0,
+      orderedQuantity: 0,
+      paidQuantity: 0,
+      completedQuantity: 0,
+      sessions: [],
+    };
+    if (!existing.sessions.some((session: any) => session.liveRoomId === row.liveRoomId)) {
+      existing.liveSessionCount += 1;
+      existing.sessions.push({
+        liveRoomId: row.liveRoomId,
+        liveRoomName: row.liveRoomName,
+        orderedQuantity: 0,
+        paidQuantity: 0,
+        completedQuantity: 0,
+      });
+    }
+    merged.set(key, existing);
+  }
+
+  const orderRows = unwrapMySqlRows<any>(await db.execute(sql`
+    SELECT oi.productId, oi.variationId, oi.quantity, o.liveRoomId, o.importStatus,
+      o.physicalStatus, COALESCE(shipped_items.shippedQty, 0) AS shippedQty
+    FROM order_items oi
+    JOIN orders o ON o.id = oi.orderId
+    LEFT JOIN (
+      SELECT pi.orderItemId, COALESCE(SUM(pi.quantity), 0) AS shippedQty
+      FROM package_items pi
+      JOIN packages pkg ON pkg.id = pi.packageId
+      WHERE pkg.status = 'shipped'
+      GROUP BY pi.orderItemId
+    ) shipped_items ON shipped_items.orderItemId = oi.id
+    WHERE o.orderCategory = 'import'
+      AND o.physicalStatus <> 'cancelled'
+      AND o.importStatus <> 'cancelled'
+      AND o.liveRoomId IN (${sql.join(liveSessionIds, sql`, `)})
+  `));
+
+  for (const row of orderRows) {
+    const key = `${row.productId}:${row.variationId ?? 'base'}`;
+    const product = merged.get(key);
+    if (!product) continue;
+    const session = product.sessions.find((item: any) => item.liveRoomId === Number(row.liveRoomId));
+    if (!session) continue;
+    const quantity = Number(row.quantity) || 0;
+    const shippedQuantity = Math.max(0, Math.min(quantity, Number(row.shippedQty) || 0));
+    const status = String(row.importStatus || row.physicalStatus || 'pending');
+    let stage: CNStage | null = null;
+    let stageQuantity = quantity;
+    if (['pending', 'receipt_uploaded', 'partial_payment'].includes(status)) stage = 'ordered';
+    else if (['waiting_stock', 'ready_to_ship', 'scheduled_ship'].includes(status)) stage = 'paid';
+    else if (status === 'partial_shipped') {
+      stage = 'paid';
+      stageQuantity = quantity - shippedQuantity;
+      session.completedQuantity += shippedQuantity;
+      product.completedQuantity += shippedQuantity;
+    } else if (['shipped', 'completed'].includes(status)) stage = 'completed';
+    if (!stage || stageQuantity <= 0) continue;
+    if (stage === 'ordered') {
+      session.orderedQuantity += stageQuantity;
+      product.orderedQuantity += stageQuantity;
+    } else if (stage === 'paid') {
+      session.paidQuantity += stageQuantity;
+      product.paidQuantity += stageQuantity;
+    } else {
+      session.completedQuantity += stageQuantity;
+      product.completedQuantity += stageQuantity;
+    }
+  }
+  return Array.from(merged.values()).sort((a, b) => a.productName.localeCompare(b.productName, 'zh'));
+}
+
+/** Creates one CN and its initial linked IB. Additional IBs are only created for split arrivals. */
+export async function createChinaPreorderWithAutoIB(data: {
+  startDate: string;
+  endDate: string;
+  paymentDeadline?: string;
+  batchName?: string;
+  supplierName?: string;
+  supplierOrderNumber?: string;
+  chinaTrackingNumber?: string;
+  chinaShippingCost?: string;
+  otherFees?: string;
+  notes?: string;
+  liveSessionIds: number[];
+  items: Array<{
+    productId: number;
+    productName: string;
+    variantId?: number | null;
+    variantName?: string | null;
+    paidQuantity: number;
+    finalPurchaseQuantity: number;
+    unitPurchaseCost?: string;
+    notes?: string;
+  }>;
+  operatorId?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  if (data.liveSessionIds.length === 0) throw new Error('请至少选择一场中国代购直播。');
+  if (data.items.length === 0) throw new Error('请至少选择一个要采购的商品。');
+  if (data.items.some(item => item.finalPurchaseQuantity < 0)) throw new Error('采购数量不可小于零。');
+  const cnNumber = await generateCnNumber();
+  const deadline = data.paymentDeadline || calculateCnPaymentDeadline(data.endDate);
+  const firstLiveRoomId = data.liveSessionIds[0];
+  const cnInsert = await db.insert(importBatches).values({
+    documentType: 'cn',
+    batchNumber: cnNumber,
+    batchName: data.batchName || `${cnNumber} 中国代购`,
+    sourceCountry: '中国',
+    supplierName: data.supplierName,
+    supplierOrderNumber: data.supplierOrderNumber,
+    chinaTrackingNumber: data.chinaTrackingNumber,
+    liveRoomId: firstLiveRoomId,
+    startDate: data.startDate,
+    endDate: data.endDate,
+    paymentDeadline: deadline,
+    preorderStartDate: new Date(`${data.startDate}T00:00:00.000Z`),
+    preorderEndDate: new Date(`${data.endDate}T23:59:59.999Z`),
+    chinaShippingCost: data.chinaShippingCost || '0',
+    otherFees: data.otherFees || '0',
+    status: 'purchased',
+    ibGenerated: true,
+    notes: data.notes,
+  } as any);
+  const cnId = Number(cnInsert[0].insertId);
+  const ibInsert = await db.insert(importBatches).values({
+    documentType: 'ib',
+    cnId,
+    batchNumber: `IB-${cnNumber}`,
+    batchName: `${cnNumber} · 等待到货`,
+    sourceCountry: '中国',
+    supplierName: data.supplierName,
+    supplierOrderNumber: data.supplierOrderNumber,
+    chinaTrackingNumber: data.chinaTrackingNumber,
+    liveRoomId: firstLiveRoomId,
+    startDate: data.startDate,
+    endDate: data.endDate,
+    paymentDeadline: deadline,
+    chinaShippingCost: data.chinaShippingCost || '0',
+    otherFees: data.otherFees || '0',
+    status: 'in_progress',
+    notes: `自动关联 ${cnNumber}${data.notes ? `\n${data.notes}` : ''}`,
+  } as any);
+  const ibId = Number(ibInsert[0].insertId);
+  const itemValues = data.items.map(item => ({
+    batchId: cnId,
+    productId: item.productId,
+    productName: item.productName,
+    variantId: item.variantId ?? null,
+    variantName: item.variantName ?? null,
+    paidQuantity: item.paidQuantity,
+    finalPurchaseQuantity: item.finalPurchaseQuantity,
+    unitPurchaseCost: item.unitPurchaseCost,
+    notes: item.notes,
+  }));
+  await db.insert(importBatchItems).values(itemValues as any);
+  await db.insert(importBatchItems).values(itemValues.map(item => ({ ...item, batchId: ibId })) as any);
+  await db.update(importBatches).set({ autoIbId: ibId } as any).where(eq(importBatches.id, cnId));
+  await db.insert(cnChangeLogs).values({
+    cnId,
+    field: 'created',
+    oldValue: null,
+    newValue: JSON.stringify({ startDate: data.startDate, endDate: data.endDate, paymentDeadline: deadline, liveSessionIds: data.liveSessionIds, itemCount: data.items.length, autoIbId: ibId }),
+    changedBy: data.operatorId ?? null,
+  });
+  broadcastChanges(['importBatches', 'inventory']);
+  return { cnId, cnNumber, ibId, ibNumber: `IB-${cnNumber}`, paymentDeadline: deadline };
+}
+
+/** Creates an additional IB only when a CN has a genuine split arrival. The first IB is always automatic. */
+export async function createSplitArrivalImportBatch(cnId: number, operatorId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const cn = await getImportBatchById(cnId);
+  if (!cn || (cn as any).documentType !== 'cn') throw new Error('CN 单据不存在。');
+  const existingIbs = await db.select().from(importBatches).where(eq(importBatches.cnId, cnId));
+  const sequence = existingIbs.length + 1;
+  const batchNumber = `IB-${(cn as any).batchNumber}-${sequence}`;
+  const inserted = await db.insert(importBatches).values({
+    documentType: 'ib',
+    cnId,
+    batchNumber,
+    batchName: `${(cn as any).batchNumber} · 分批到货 ${sequence}`,
+    sourceCountry: (cn as any).sourceCountry || '中国',
+    supplierName: (cn as any).supplierName,
+    supplierOrderNumber: (cn as any).supplierOrderNumber,
+    chinaTrackingNumber: (cn as any).chinaTrackingNumber,
+    liveRoomId: (cn as any).liveRoomId,
+    startDate: (cn as any).startDate,
+    endDate: (cn as any).endDate,
+    paymentDeadline: (cn as any).paymentDeadline,
+    shippingMethod: (cn as any).shippingMethod || 'air',
+    chinaShippingCost: '0',
+    otherFees: '0',
+    status: 'in_progress',
+    notes: `分批到货 IB，关联 ${(cn as any).batchNumber}`,
+  } as any);
+  const ibId = Number(inserted[0].insertId);
+  const cnItems = await getImportBatchItems(cnId);
+  if (cnItems.length > 0) {
+    await db.insert(importBatchItems).values(cnItems.map((item: any) => ({
+      batchId: ibId,
+      productId: item.productId,
+      productName: item.productName,
+      variantId: item.variantId,
+      variantName: item.variantName,
+      paidQuantity: item.paidQuantity,
+      finalPurchaseQuantity: 0,
+      unitPurchaseCost: item.unitPurchaseCost,
+      notes: `来自 ${String((cn as any).batchNumber)} 的分批到货项目`,
+    })) as any);
+  }
+  await db.insert(cnChangeLogs).values({
+    cnId,
+    field: 'splitArrivalIB.created',
+    oldValue: null,
+    newValue: JSON.stringify({ ibId, batchNumber, itemCount: cnItems.length }),
+    changedBy: operatorId ?? null,
+  });
+  broadcastChange('importBatches');
+  return { ibId, batchNumber };
+}
+
+/** Updates a CN while preserving one audit row per changed field. */
+export async function updateCNWithAudit(cnId: number, changes: Record<string, unknown>, operatorId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const current = await getImportBatchById(cnId);
+  if (!current || (current as any).documentType !== 'cn') throw new Error('CN 单据不存在。');
+  const allowedFields = ['batchName', 'supplierName', 'supplierOrderNumber', 'chinaTrackingNumber', 'startDate', 'endDate', 'paymentDeadline', 'chinaShippingCost', 'otherFees', 'notes', 'status'];
+  const updateValues: Record<string, unknown> = {};
+  const auditRows: Array<{ cnId: number; field: string; oldValue: string | null; newValue: string | null; changedBy: number | null }> = [];
+  for (const field of allowedFields) {
+    if (!(field in changes)) continue;
+    const oldValue = (current as any)[field];
+    const newValue = changes[field];
+    if (String(oldValue ?? '') === String(newValue ?? '')) continue;
+    updateValues[field] = newValue;
+    auditRows.push({ cnId, field, oldValue: oldValue == null ? null : String(oldValue), newValue: newValue == null ? null : String(newValue), changedBy: operatorId ?? null });
+  }
+  if (Object.keys(updateValues).length === 0) return { success: true, changes: 0 };
+  await db.update(importBatches).set(updateValues as any).where(eq(importBatches.id, cnId));
+  await db.insert(cnChangeLogs).values(auditRows);
+  broadcastChange('importBatches');
+  return { success: true, changes: auditRows.length };
+}
+
+export async function getCNChangeLogs(cnId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(cnChangeLogs).where(eq(cnChangeLogs.cnId, cnId)).orderBy(desc(cnChangeLogs.changedAt));
+}
+
+export async function lockImportBatch(ibId: number, operatorId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const batch = await getImportBatchById(ibId);
+  if (!batch || (batch as any).documentType !== 'ib') throw new Error('IB 单据不存在。');
+  await db.update(importBatches).set({ isLocked: true, lockedAt: new Date(), lockedBy: operatorId ?? null, unlockReason: null } as any).where(eq(importBatches.id, ibId));
+  await db.insert(cnChangeLogs).values({ cnId: (batch as any).cnId || ibId, field: `IB#${ibId}.lock`, oldValue: String((batch as any).isLocked), newValue: 'true', changedBy: operatorId ?? null });
+  broadcastChange('importBatches');
   return { success: true };
+}
+
+export async function unlockImportBatch(ibId: number, operatorId: number | undefined, reason: string) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  if (!reason.trim()) throw new Error('解锁 IB 必须填写原因。');
+  const batch = await getImportBatchById(ibId);
+  if (!batch || (batch as any).documentType !== 'ib') throw new Error('IB 单据不存在。');
+  await db.update(importBatches).set({ isLocked: false, lockedAt: null, lockedBy: null, unlockReason: reason.trim() } as any).where(eq(importBatches.id, ibId));
+  await db.insert(cnChangeLogs).values({ cnId: (batch as any).cnId || ibId, field: `IB#${ibId}.unlock`, oldValue: 'true', newValue: reason.trim(), changedBy: operatorId ?? null });
+  await db.insert(importBatchChangeLogs).values({ ibId, field: 'lock', oldValue: 'true', newValue: 'false', changedBy: operatorId ?? null });
+  await db.insert(importBatchChangeLogs).values({ ibId, field: 'unlockReason', oldValue: null, newValue: reason.trim(), changedBy: operatorId ?? null });
+  broadcastChange('importBatches');
+  return { success: true };
+}
+
+/** Idempotent expiry sweep: cancel only overdue import orders without a pending proof review. */
+export async function processExpiredCNOrders() {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const candidates = unwrapMySqlRows<{ id: number; orderNumber: string }>(await db.execute(sql`
+    SELECT o.id, o.orderNumber
+    FROM orders o
+    JOIN import_batches cn ON cn.id = o.importBatchId
+    WHERE cn.documentType = 'cn'
+      AND cn.paymentDeadline IS NOT NULL
+      AND cn.paymentDeadline < CURDATE()
+      AND o.orderCategory = 'import'
+      AND o.physicalStatus <> 'cancelled'
+      AND o.importStatus IN ('pending', 'receipt_uploaded')
+      AND NOT EXISTS (
+        SELECT 1 FROM order_payments pending_proof
+        WHERE pending_proof.orderId = o.id
+          AND pending_proof.receiptUrl IS NOT NULL
+          AND TRIM(pending_proof.receiptUrl) <> ''
+          AND pending_proof.reviewStatus = 'pending'
+      )
+      AND (
+        (COALESCE(o.receiptUrl, '') = '' AND o.paymentUploadedAt IS NULL)
+        OR EXISTS (
+          SELECT 1 FROM order_payments rejected_proof
+          WHERE rejected_proof.orderId = o.id
+            AND rejected_proof.reviewStatus = 'rejected'
+        )
+      )
+  `));
+  const cancelled: Array<{ id: number; orderNumber: string }> = [];
+  for (const order of candidates) {
+    try {
+      await cancelOrderWithReason(order.id, '超过中国代购汇款期限且未有有效付款凭证，系统自动取消', '系统自动');
+      await db.update(orders).set({ importStatus: 'cancelled' as any }).where(eq(orders.id, order.id));
+      cancelled.push(order);
+    } catch (error) {
+      console.error('[CN expiry] unable to cancel order', order.id, error);
+    }
+  }
+  return { inspected: candidates.length, cancelledCount: cancelled.length, cancelled };
 }
 
 export async function deleteImportBatch(id: number) {
@@ -9635,15 +10077,18 @@ export async function upsertImportBatchItem(data: {
   spotSaleEnabled?: boolean;
   spotSaleQty?: number;
   notes?: string;
-}) {
+}, operatorId?: number) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
+  const batch = await getImportBatchById(data.batchId);
+  if (!batch) throw new Error('采购单不存在');
+  if ((batch as any).documentType === 'ib' && (batch as any).isLocked) throw new Error('IB 已锁定；请先填写解锁原因后再修改。');
   // Check if item already exists
   const existing = await db.select().from(importBatchItems)
     .where(eq(importBatchItems.batchId, data.batchId));
   const found = existing.find(i => i.productId === data.productId && i.variantId === data.variantId);
   if (found) {
-    await db.update(importBatchItems).set({
+    const updateValues = {
       paidQuantity: data.paidQuantity ?? found.paidQuantity,
       finalPurchaseQuantity: data.finalPurchaseQuantity ?? found.finalPurchaseQuantity,
       actualReceivedQty: data.actualReceivedQty ?? found.actualReceivedQty,
@@ -9656,7 +10101,24 @@ export async function upsertImportBatchItem(data: {
       spotSaleEnabled: data.spotSaleEnabled ?? found.spotSaleEnabled,
       spotSaleQty: data.spotSaleQty ?? found.spotSaleQty,
       notes: data.notes ?? found.notes,
-    }).where(eq(importBatchItems.id, found.id));
+    };
+    await db.update(importBatchItems).set(updateValues).where(eq(importBatchItems.id, found.id));
+    if ((batch as any).documentType === 'ib') {
+      const editableFields = Object.keys(updateValues) as Array<keyof typeof updateValues>;
+      const auditRows = editableFields.filter((field) => {
+        const oldValue = (found as any)[field];
+        const newValue = updateValues[field];
+        return String(oldValue ?? '') !== String(newValue ?? '');
+      }).map((field) => ({
+        ibId: data.batchId,
+        field: `item#${found.id}.${field}`,
+        oldValue: (found as any)[field] == null ? null : String((found as any)[field]),
+        newValue: updateValues[field] == null ? null : String(updateValues[field]),
+        changedBy: operatorId ?? null,
+      }));
+      if (auditRows.length) await db.insert(importBatchChangeLogs).values(auditRows);
+    }
+    broadcastChange('importBatches');
     return { id: found.id };
   }
   const result = await db.insert(importBatchItems).values({
@@ -9678,14 +10140,39 @@ export async function upsertImportBatchItem(data: {
     spotSaleQty: data.spotSaleQty || 0,
     notes: data.notes,
   });
-  return { id: result[0].insertId };
+  const itemId = Number(result[0].insertId);
+  if ((batch as any).documentType === 'ib') {
+    await db.insert(importBatchChangeLogs).values({
+      ibId: data.batchId,
+      field: `item#${itemId}.created`,
+      oldValue: null,
+      newValue: JSON.stringify({ productId: data.productId, variantId: data.variantId ?? null, productName: data.productName, finalPurchaseQuantity: data.finalPurchaseQuantity ?? 0 }),
+      changedBy: operatorId ?? null,
+    });
+  }
+  broadcastChange('importBatches');
+  return { id: itemId };
 }
 
-export async function deleteImportBatchItem(id: number) {
+export async function deleteImportBatchItem(id: number, operatorId?: number) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
+  const item = (await db.select().from(importBatchItems).where(eq(importBatchItems.id, id)))[0];
+  if (!item) throw new Error('采购商品不存在');
+  const batch = await getImportBatchById(item.batchId);
+  if ((batch as any)?.documentType === 'ib' && (batch as any).isLocked) throw new Error('IB 已锁定；请先填写解锁原因后再修改。');
   await db.delete(importBatchItems).where(eq(importBatchItems.id, id));
+  if ((batch as any)?.documentType === 'ib') {
+    await db.insert(importBatchChangeLogs).values({ ibId: item.batchId, field: `item#${id}.deleted`, oldValue: JSON.stringify(item), newValue: null, changedBy: operatorId ?? null });
+  }
+  broadcastChange('importBatches');
   return { success: true };
+}
+
+export async function getImportBatchChangeLogs(ibId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(importBatchChangeLogs).where(eq(importBatchChangeLogs.ibId, ibId)).orderBy(desc(importBatchChangeLogs.changedAt));
 }
 
 // ============================================================================
@@ -14842,7 +15329,9 @@ export async function deleteCampaignButton(id: number) {
 export async function generateCnNumber() {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
-  const batches = await db.select().from(importBatches).orderBy(importBatches.id);
+  const batches = await db.select().from(importBatches)
+    .where(eq(importBatches.documentType, 'cn'))
+    .orderBy(importBatches.id);
   const nextNum = batches.length + 1;
   return `CN${String(nextNum).padStart(5, '0')}`;
 }
@@ -15403,8 +15892,21 @@ export async function completeStockIn(batchId: number, operatorName?: string) {
   await db.update(importBatches).set({
     costLocked: true,
     costLockedAt: new Date(),
+    isLocked: true,
+    lockedAt: new Date(),
+    lockedBy: null,
     status: 'all_arrived',
   } as any).where(eq(importBatches.id, batchId));
+
+  if ((batch as any).documentType === 'ib') {
+    await db.insert(cnChangeLogs).values({
+      cnId: (batch as any).cnId || batchId,
+      field: `IB#${batchId}.stock_in_lock`,
+      oldValue: String((batch as any).isLocked),
+      newValue: 'true',
+      changedBy: null,
+    });
+  }
 
   // Run priority-based stock allocation
   const allocations = await allocateStockByPriority(batchId);
@@ -15452,7 +15954,21 @@ export async function unlockCosts(batchId: number, reason: string, operatorName:
   await db.update(importBatches).set({
     costLocked: false,
     costLockedAt: null,
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    unlockReason: reason,
   } as any).where(eq(importBatches.id, batchId));
+
+  if ((batch as any).documentType === 'ib') {
+    await db.insert(cnChangeLogs).values({
+      cnId: (batch as any).cnId || batchId,
+      field: `IB#${batchId}.unlock`,
+      oldValue: 'true',
+      newValue: reason,
+      changedBy: null,
+    });
+  }
 
   return { success: true, unlocked: true };
 }
@@ -15461,11 +15977,26 @@ export async function unlockCosts(batchId: number, reason: string, operatorName:
 export async function relockCosts(batchId: number, operatorName: string) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
+  const batch = await getImportBatchById(batchId);
+  if (!batch) throw new Error('Batch not found');
 
   await db.update(importBatches).set({
     costLocked: true,
     costLockedAt: new Date(),
+    isLocked: true,
+    lockedAt: new Date(),
+    unlockReason: null,
   } as any).where(eq(importBatches.id, batchId));
+
+  if ((batch as any).documentType === 'ib') {
+    await db.insert(cnChangeLogs).values({
+      cnId: (batch as any).cnId || batchId,
+      field: `IB#${batchId}.relock`,
+      oldValue: 'false',
+      newValue: 'true',
+      changedBy: null,
+    });
+  }
 
   return { success: true, locked: true };
 }

@@ -195,6 +195,24 @@ async function startServer() {
     }
   });
 
+  // CN 汇款期限巡检：由项目级计划任务触发。业务处理本身可重复执行，
+  // 因此平台重试不会造成重复取消或重复释放库存。
+  app.post("/api/scheduled/cn-payment-expiry", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
+      const result = await db.processExpiredCNOrders();
+      res.json({ ok: true, taskUid: user.taskUid, ...result, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(500).json({
+        error: err.message || "CN 汇款期限巡检失败",
+        stack: err.stack,
+        context: { url: req.originalUrl },
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
   // Real-time sync: Server-Sent Events endpoint
   app.get("/api/sync", (req, res) => {
     const cleanup = addSSEClient(res);

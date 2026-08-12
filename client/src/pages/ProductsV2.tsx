@@ -201,7 +201,7 @@ export default function ProductsV2() {
   const [orderDetailsTarget, setOrderDetailsTarget] = useState<{
     productId: number;
     productName: string;
-    type: "ordered" | "completed";
+    type: "ordered" | "paid" | "completed";
   } | null>(null);
   const hydratedEditingIdRef = useRef<number | null>(null);
   const utils = trpc.useUtils();
@@ -707,8 +707,25 @@ export default function ProductsV2() {
                                 <div>• {translate("保留订单 / Reserved", "Reserved")}</div>
                                 <div>• {translate("待审核付款凭证 / Receipt Uploaded", "Receipt Uploaded")}</div>
                                 <div>• {translate("部分汇款 / Partial Payment", "Partial Payment")}</div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="cursor-pointer text-amber-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type: "paid" })}
+                              >
+                                {translate("已汇款", "Paid")}: <span className="font-medium">{p.paidCount ?? 0}</span>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <div className="text-xs space-y-0.5">
+                                <div className="font-medium">{translate("已汇款包含以下订单状态", "Paid includes these order statuses")}:</div>
                                 <div>• {translate("待备货 / Packing", "Packing")}</div>
-                                <div>• {translate("部分发货 / Partial Shipped", "Partial Shipped")}</div>
+                                <div>• {translate("预约发货 / Scheduled", "Scheduled")}</div>
+                                <div>• {translate("部分发货中尚未发出的数量", "Unshipped quantities in partial shipments")}</div>
                               </div>
                             </TooltipContent>
                           </Tooltip>
@@ -725,6 +742,7 @@ export default function ProductsV2() {
                             <TooltipContent className="max-w-xs">
                               <div className="text-xs space-y-0.5">
                                 <div className="font-medium">{translate("已完成包含以下订单状态", "Completed includes these order statuses")}:</div>
+                                <div>• {translate("部分发货中已发出的数量", "Shipped quantities in partial shipments")}</div>
                                 <div>• {translate("已发货 / Shipped", "Shipped")}</div>
                                 <div>• {translate("已完成 / Completed", "Completed")}</div>
                               </div>
@@ -800,7 +818,11 @@ export default function ProductsV2() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {orderDetailsTarget?.productName} · {orderDetailsTarget?.type === "ordered" ? translate("已下单订单明细", "Ordered Details") : translate("已完成订单明细", "Completed Details")}
+              {orderDetailsTarget?.productName} · {orderDetailsTarget?.type === "ordered"
+                ? translate("已下单订单明细", "Ordered Details")
+                : orderDetailsTarget?.type === "paid"
+                  ? translate("已汇款订单明细", "Paid Details")
+                  : translate("已完成订单明细", "Completed Details")}
             </DialogTitle>
           </DialogHeader>
           {orderDetailsQuery.isLoading ? (

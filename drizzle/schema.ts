@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, json, uniqueIndex, date, bigint } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, json, uniqueIndex, index, date, bigint } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -2057,6 +2057,11 @@ export type InsertLiveCommentNote = typeof liveCommentNotes.$inferInsert;
 
 export const importBatches = mysqlTable("import_batches", {
   id: int("id").autoincrement().primaryKey(),
+  // CN is the procurement document; IB is its linked arrival-inspection document.
+  // Existing historical rows are treated as CN documents by the database default.
+  documentType: mysqlEnum("documentType", ["cn", "ib"]).default("cn").notNull(),
+  // For an IB, the parent CN. For a CN, autoIbId points at its first auto-created IB.
+  cnId: int("cnId"),
   // CN number (e.g. CN00001)
   batchNumber: varchar("batchNumber", { length: 50 }).notNull().unique(),
   // Batch name
@@ -2074,6 +2079,11 @@ export const importBatches = mysqlTable("import_batches", {
   // Preorder window
   preorderStartDate: timestamp("preorderStartDate"),
   preorderEndDate: timestamp("preorderEndDate"),
+  // CN date selection window and the associated order-payment deadline.
+  startDate: date("startDate"),
+  endDate: date("endDate"),
+  paymentDeadline: date("paymentDeadline"),
+  autoIbId: int("autoIbId"),
   // Actual purchase date
   actualPurchaseDate: timestamp("actualPurchaseDate"),
   // Shipping method: air or sea
@@ -2104,6 +2114,11 @@ export const importBatches = mysqlTable("import_batches", {
   costLocked: boolean("costLocked").default(false).notNull(),
   // V2.0.98: Cost locked at timestamp
   costLockedAt: timestamp("costLockedAt"),
+  // IB business lock. An arrival-completed IB cannot be edited until explicitly unlocked.
+  isLocked: boolean("isLocked").default(false).notNull(),
+  lockedAt: timestamp("lockedAt"),
+  lockedBy: int("lockedBy"),
+  unlockReason: text("unlockReason"),
   // V2.0.98: Parent batch ID (for multi-CN追加进货, links additional CN to original batch)
   parentBatchId: int("parentBatchId"),
   // Notes
@@ -2115,6 +2130,38 @@ export const importBatches = mysqlTable("import_batches", {
 
 export type ImportBatch = typeof importBatches.$inferSelect;
 export type InsertImportBatch = typeof importBatches.$inferInsert;
+
+// ============================================================================
+// CN change audit (all editable CN fields retain before/after values)
+// ============================================================================
+export const cnChangeLogs = mysqlTable("cn_change_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  cnId: int("cnId").notNull(),
+  field: varchar("field", { length: 100 }).notNull(),
+  oldValue: text("oldValue"),
+  newValue: text("newValue"),
+  changedBy: int("changedBy"),
+  changedAt: timestamp("changedAt").defaultNow().notNull(),
+});
+
+export type CnChangeLog = typeof cnChangeLogs.$inferSelect;
+
+// ============================================================================
+// IB change audit (all editable IB header/item fields retain before/after values)
+// ============================================================================
+export const importBatchChangeLogs = mysqlTable("import_batch_change_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  ibId: int("ibId").notNull(),
+  field: varchar("field", { length: 160 }).notNull(),
+  oldValue: text("oldValue"),
+  newValue: text("newValue"),
+  changedBy: int("changedBy"),
+  changedAt: timestamp("changedAt").defaultNow().notNull(),
+}, (table) => ({
+  ibChangedAtIdx: index("import_batch_change_logs_ibId_changedAt_idx").on(table.ibId, table.changedAt),
+}));
+
+export type ImportBatchChangeLog = typeof importBatchChangeLogs.$inferSelect;
 
 // ============================================================================
 // V2.0: Import Batch Items (采购批次商品明细 - 采购汇总与到货验收)

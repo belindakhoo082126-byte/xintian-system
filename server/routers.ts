@@ -661,7 +661,7 @@ export const appRouter = router({
     orderDetails: adminProcedure
       .input(z.object({
         productId: z.number().int().positive(),
-        type: z.enum(['ordered', 'completed']),
+        type: z.enum(['ordered', 'paid', 'completed']),
       }))
       .query(async ({ input }) => {
         return await db.getProductOrderDetails(input.productId, input.type);
@@ -5589,9 +5589,9 @@ export const appRouter = router({
         chinaTrackingNumber: z.string().optional(),
         otherFees: z.string().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const { id, ...data } = input;
-        await db.updateImportBatch(id, data);
+        await db.updateImportBatch(id, data, ctx.user.id);
         return { success: true };
       }),
 
@@ -5633,17 +5633,21 @@ export const appRouter = router({
         differenceReason: z.enum(['none', 'supplier_short', 'over_supply', 'damaged', 'dead', 'wrong_item', 'not_arrived', 'other']).optional(),
         differenceNotes: z.string().optional(),
       }))
-      .mutation(async ({ input }) => {
-        return await db.upsertImportBatchItem(input);
+      .mutation(async ({ input, ctx }) => {
+        return await db.upsertImportBatchItem(input, ctx.user.id);
       }),
 
     // Delete batch item
     deleteItem: adminProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await db.deleteImportBatchItem(input.id);
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteImportBatchItem(input.id, ctx.user.id);
         return { success: true };
       }),
+
+    changeLogs: adminProcedure
+      .input(z.object({ ibId: z.number().int().positive() }))
+      .query(async ({ input }) => db.getImportBatchChangeLogs(input.ibId)),
 
     // Allocate shipping cost to items
     allocateShipping: adminProcedure
@@ -5651,6 +5655,90 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         return await db.allocateShippingCost(input.batchId);
       }),
+
+    // CN 重构：按日期选中国代购直播场次，再合并商品后建立 CN + 初始 IB。
+    getCnEligibleLiveSessions: adminProcedure
+      .input(z.object({ startDate: z.string().date(), endDate: z.string().date() }))
+      .query(async ({ input }) => {
+        if (input.startDate > input.endDate) throw new Error('开始日期不可晚于截止日期。');
+        return await db.getCNEligibleLiveSessions(input.startDate, input.endDate);
+      }),
+
+    getCnMergedProducts: adminProcedure
+      .input(z.object({ liveSessionIds: z.array(z.number().int().positive()).min(1) }))
+      .query(async ({ input }) => {
+        return await db.getCNMergedProducts(input.liveSessionIds);
+      }),
+
+    createCnWithAutoIb: adminProcedure
+      .input(z.object({
+        startDate: z.string().date(),
+        endDate: z.string().date(),
+        paymentDeadline: z.string().date().optional(),
+        batchName: z.string().min(1).optional(),
+        supplierName: z.string().optional(),
+        supplierOrderNumber: z.string().optional(),
+        chinaTrackingNumber: z.string().optional(),
+        chinaShippingCost: z.string().optional(),
+        otherFees: z.string().optional(),
+        notes: z.string().optional(),
+        liveSessionIds: z.array(z.number().int().positive()).min(1),
+        items: z.array(z.object({
+          productId: z.number().int().positive(),
+          productName: z.string().min(1),
+          variantId: z.number().int().positive().nullable().optional(),
+          variantName: z.string().nullable().optional(),
+          paidQuantity: z.number().nonnegative(),
+          finalPurchaseQuantity: z.number().nonnegative(),
+          unitPurchaseCost: z.string().optional(),
+          notes: z.string().optional(),
+        })).min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.startDate > input.endDate) throw new Error('开始日期不可晚于截止日期。');
+        return await db.createChinaPreorderWithAutoIB({ ...input, operatorId: ctx.user.id });
+      }),
+
+    updateCnWithAudit: adminProcedure
+      .input(z.object({
+        cnId: z.number().int().positive(),
+        changes: z.object({
+          batchName: z.string().min(1).optional(),
+          supplierName: z.string().nullable().optional(),
+          supplierOrderNumber: z.string().nullable().optional(),
+          chinaTrackingNumber: z.string().nullable().optional(),
+          startDate: z.string().date().optional(),
+          endDate: z.string().date().optional(),
+          paymentDeadline: z.string().date().optional(),
+          chinaShippingCost: z.string().optional(),
+          otherFees: z.string().optional(),
+          notes: z.string().nullable().optional(),
+          status: z.string().optional(),
+        }).refine(value => Object.keys(value).length > 0, '请至少提供一项要修改的 CN 内容。'),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { cnId, changes } = input;
+        return await db.updateCNWithAudit(cnId, changes, ctx.user.id);
+      }),
+
+    getCnChangeLogs: adminProcedure
+      .input(z.object({ cnId: z.number().int().positive() }))
+      .query(async ({ input }) => db.getCNChangeLogs(input.cnId)),
+
+    createSplitArrivalIb: adminProcedure
+      .input(z.object({ cnId: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => db.createSplitArrivalImportBatch(input.cnId, ctx.user.id)),
+
+    lock: adminProcedure
+      .input(z.object({ ibId: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => db.lockImportBatch(input.ibId, ctx.user.id)),
+
+    unlock: adminProcedure
+      .input(z.object({ ibId: z.number().int().positive(), reason: z.string().trim().min(1, '解锁 IB 必须填写原因。') }))
+      .mutation(async ({ input, ctx }) => db.unlockImportBatch(input.ibId, ctx.user.id, input.reason)),
+
+    processExpiredCnOrders: adminProcedure
+      .mutation(async () => db.processExpiredCNOrders()),
 
     // V2.0.97: CN/IB new procedures
     // Generate CN number

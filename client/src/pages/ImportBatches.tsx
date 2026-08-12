@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Plane, Package, Calculator, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, Trash2, Plane, Package, Calculator, CheckCircle2, AlertTriangle, Printer, CalendarDays, Layers3 } from "lucide-react";
 import { toast } from "sonner";
 
 const statusLabels: Record<string, string> = {
@@ -81,17 +81,21 @@ export default function ImportBatches() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // CN tab: batches in purchasing phase; IB tab: batches in import/arrival phase
-  const cnStatuses = ['in_progress', 'closed', 'purchased'];
-  const ibStatuses = ['preparing', 'in_transit', 'partial_arrived', 'all_arrived', 'completed'];
+  // 按单据类型区分 CN / IB，避免自动创建且仍在等待到货的 IB 被状态筛选隐藏。
   const filteredBatches = (batches || []).filter((batch: any) => {
-    if (urlTab === 'cn') return cnStatuses.includes(batch.status);
-    if (urlTab === 'ib') return ibStatuses.includes(batch.status);
+    if (urlTab === 'cn') return batch.documentType === 'cn';
+    if (urlTab === 'ib') return batch.documentType === 'ib';
     return true;
   });
+  const selectedBatch = (batches || []).find((batch: any) => batch.id === selectedBatchId) as any | undefined;
 
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [cnCreateOpen, setCnCreateOpen] = useState(false);
+  const [cnStep, setCnStep] = useState<1 | 2 | 3>(1);
+  const [cnRange, setCnRange] = useState({ startDate: "", endDate: "" });
+  const [selectedSessionMap, setSelectedSessionMap] = useState<Record<number, boolean>>({});
+  const [selectedProductQuantities, setSelectedProductQuantities] = useState<Record<string, number>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
     batchNumber: "",
@@ -108,10 +112,24 @@ export default function ImportBatches() {
     supplierOrderNumber: "",
     chinaTrackingNumber: "",
     otherFees: "0",
+    paymentDeadline: "",
   });
 
   const liveRoomsQuery = trpc.liveRooms.list.useQuery({});
   const liveRooms = liveRoomsQuery.data as any[] | undefined;
+
+  const cnSessionInput = useMemo(() => ({ startDate: cnRange.startDate, endDate: cnRange.endDate }), [cnRange.startDate, cnRange.endDate]);
+  const cnSessionsQuery = trpc.importBatches.getCnEligibleLiveSessions.useQuery(cnSessionInput, {
+    enabled: cnCreateOpen && Boolean(cnRange.startDate && cnRange.endDate && cnRange.startDate <= cnRange.endDate),
+  });
+  const selectedLiveSessionIds = useMemo(
+    () => Object.entries(selectedSessionMap).filter(([, selected]) => selected).map(([id]) => Number(id)),
+    [selectedSessionMap],
+  );
+  const cnMergedInput = useMemo(() => ({ liveSessionIds: selectedLiveSessionIds }), [selectedLiveSessionIds]);
+  const cnMergedProductsQuery = trpc.importBatches.getCnMergedProducts.useQuery(cnMergedInput, {
+    enabled: cnCreateOpen && selectedLiveSessionIds.length > 0,
+  });
 
   const batchItemsQuery = trpc.importBatches.items.useQuery(
     { batchId: selectedBatchId! },
@@ -137,6 +155,16 @@ export default function ImportBatches() {
       resetForm();
     },
     onError: (e: any) => toast.error("更新失败: " + e.message),
+  });
+
+  const updateCnWithAuditMutation = trpc.importBatches.updateCnWithAudit.useMutation({
+    onSuccess: () => {
+      toast.success("CN 已更新，修改内容已写入审计记录。");
+      queryClient.importBatches.list.invalidate();
+      setDialogOpen(false);
+      resetForm();
+    },
+    onError: (e: any) => toast.error(`更新 CN 失败：${e.message}`),
   });
 
   const deleteMutation = trpc.importBatches.delete.useMutation({
@@ -174,6 +202,17 @@ export default function ImportBatches() {
     onError: (e: any) => toast.error("IB完成失败: " + e.message),
   });
 
+  const createSplitArrivalIbMutation = trpc.importBatches.createSplitArrivalIb.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`已建立分批到货 ${data.batchNumber}，请填写本批实际到货数量。`);
+      queryClient.importBatches.list.invalidate();
+      setSelectedBatchId(data.ibId);
+      setUrlTab('ib');
+      window.history.replaceState({}, '', `${window.location.pathname}?tab=ib`);
+    },
+    onError: (e: any) => toast.error(`建立分批到货 IB 失败：${e.message}`),
+  });
+
   const allocateAllMutation = trpc.importBatches.allocateAllCosts.useMutation({
     onSuccess: (data: any) => {
       toast.success(`费用分摊完成！`);
@@ -190,12 +229,76 @@ export default function ImportBatches() {
     onError: (e: any) => toast.error("更新失败: " + e.message),
   });
 
+  const lockIbMutation = trpc.importBatches.lock.useMutation({
+    onSuccess: () => {
+      toast.success("IB 已锁定；如需修改，请先解锁并说明原因。");
+      queryClient.importBatches.list.invalidate();
+    },
+    onError: (e: any) => toast.error(`锁定失败：${e.message}`),
+  });
+
+  const unlockIbMutation = trpc.importBatches.unlock.useMutation({
+    onSuccess: () => {
+      toast.success("IB 已解锁，原因已记录在审计日志。");
+      queryClient.importBatches.list.invalidate();
+    },
+    onError: (e: any) => toast.error(`解锁失败：${e.message}`),
+  });
+
+  const createCnWithAutoIbMutation = trpc.importBatches.createCnWithAutoIb.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`已建立 ${data.cnNumber}，并自动关联 ${data.ibNumber}（等待到货）。`);
+      queryClient.importBatches.list.invalidate();
+      queryClient.importBatches.items.invalidate();
+      setCnCreateOpen(false);
+      setSelectedBatchId(data.cnId);
+      setUrlTab('cn');
+      window.history.replaceState({}, '', `${window.location.pathname}?tab=cn`);
+      resetCnWizard();
+    },
+    onError: (e: any) => toast.error(`建立 CN 失败：${e.message}`),
+  });
+
+  function resetCnWizard() {
+    setCnStep(1);
+    setCnRange({ startDate: "", endDate: "" });
+    setSelectedSessionMap({});
+    setSelectedProductQuantities({});
+  }
+
+  function productKey(product: any) {
+    return `${product.productId}:${product.variantId ?? "base"}`;
+  }
+
+  function toggleCnProduct(product: any, selected: boolean) {
+    const key = productKey(product);
+    setSelectedProductQuantities(previous => {
+      const next = { ...previous };
+      if (selected) next[key] = product.paidQuantity || 0;
+      else delete next[key];
+      return next;
+    });
+  }
+
+  function printCurrentBatch() {
+    const batch = (batches || []).find((item: any) => item.id === selectedBatchId);
+    if (!batch) return;
+    const escapeHtml = (value: unknown) => String(value ?? "-")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+    const rows = (batchItems || []).map((item: any) => `<tr><td>${escapeHtml(item.productName)}</td><td>${escapeHtml(item.finalPurchaseQuantity ?? item.paidQuantity)}</td><td>${escapeHtml(item.unitPurchaseCost ? `RM ${item.unitPurchaseCost}` : "-")}</td></tr>`).join("");
+    const title = batch.documentType === 'ib' ? 'IB 入库单' : 'CN 中国采购单';
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=850,height=900');
+    if (!printWindow) { toast.error('浏览器阻止了打印窗口，请允许弹出窗口后重试。'); return; }
+    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title} ${escapeHtml(batch.batchNumber)}</title><style>body{font-family:Arial,"Noto Sans SC",sans-serif;color:#1f2937;margin:28px}h1{color:#14532d;font-size:24px;margin:0 0 4px}.meta{color:#475569;margin-bottom:20px}.card{border:1px solid #cbd5e1;border-radius:8px;padding:16px;margin:12px 0}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #e2e8f0;text-align:left}th{background:#f0fdf4;color:#14532d}@media print{body{margin:12mm}.no-print{display:none}}</style></head><body><h1>心田 Xintian · ${title}</h1><p class="meta">单据编号：${escapeHtml(batch.batchNumber)}　打印日期：${new Date().toLocaleString('zh-MY')}</p><div class="card"><strong>批次名称：</strong>${escapeHtml(batch.batchName)}<br><strong>供应商：</strong>${escapeHtml(batch.supplierName)}<br><strong>开始／截止：</strong>${escapeHtml(batch.startDate || batch.preorderStartDate)} ～ ${escapeHtml(batch.endDate || batch.preorderEndDate)}<br><strong>状态：</strong>${escapeHtml(statusLabels[batch.status] || batch.status)}</div><table><thead><tr><th>商品</th><th>采购数量</th><th>单位成本</th></tr></thead><tbody>${rows || '<tr><td colspan="3">暂无商品</td></tr>'}</tbody></table><script>window.onload=()=>window.print()</script></body></html>`);
+    printWindow.document.close();
+  }
+
   function resetForm() {
     setFormData({
       batchNumber: "", batchName: "", sourceCountry: "中国", supplierName: "",
       liveRoomId: "", preorderStartDate: "", preorderEndDate: "",
       shippingMethod: "air", chinaShippingCost: "0", status: "draft", notes: "",
-      supplierOrderNumber: "", chinaTrackingNumber: "", otherFees: "0",
+      supplierOrderNumber: "", chinaTrackingNumber: "", otherFees: "0", paymentDeadline: "",
     });
     setEditingId(null);
   }
@@ -217,6 +320,7 @@ export default function ImportBatches() {
       supplierOrderNumber: batch.supplierOrderNumber || "",
       chinaTrackingNumber: batch.chinaTrackingNumber || "",
       otherFees: batch.otherFees?.toString() || "0",
+      paymentDeadline: batch.paymentDeadline || "",
     });
     setDialogOpen(true);
   }
@@ -242,7 +346,25 @@ export default function ImportBatches() {
       chinaTrackingNumber: formData.chinaTrackingNumber || undefined,
       otherFees: formData.otherFees || undefined,
     };
-    if (editingId) {
+    if (editingId && selectedBatch?.documentType === 'cn') {
+      const toDateOnly = (value: string) => value ? value.slice(0, 10) : undefined;
+      updateCnWithAuditMutation.mutate({
+        cnId: editingId,
+        changes: {
+          batchName: formData.batchName,
+          supplierName: formData.supplierName || null,
+          supplierOrderNumber: formData.supplierOrderNumber || null,
+          chinaTrackingNumber: formData.chinaTrackingNumber || null,
+          startDate: toDateOnly(formData.preorderStartDate),
+          endDate: toDateOnly(formData.preorderEndDate),
+          paymentDeadline: formData.paymentDeadline || undefined,
+          chinaShippingCost: formData.chinaShippingCost,
+          otherFees: formData.otherFees,
+          notes: formData.notes || null,
+          status: formData.status,
+        },
+      });
+    } else if (editingId) {
       updateMutation.mutate({ id: editingId, ...payload });
     } else {
       createMutation.mutate(payload);
@@ -256,6 +378,110 @@ export default function ImportBatches() {
           <h1 className="text-2xl font-bold tracking-tight">采购批次管理</h1>
           <p className="text-sm text-muted-foreground mt-1">管理中国进口代购采购批次，含采购汇总、到货验收、运输费用分摊</p>
         </div>
+        {urlTab === 'cn' ? (<>
+          <Dialog open={cnCreateOpen} onOpenChange={(open) => { setCnCreateOpen(open); if (!open) resetCnWizard(); }}>
+            <DialogTrigger asChild>
+              <Button className="gap-2" onClick={resetCnWizard}>
+                <Plus className="h-4 w-4" />
+                新建 CN 采购单
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>新建中国采购单（CN）</DialogTitle>
+                <p className="text-sm text-muted-foreground">选日期 → 选直播 → 合并商品 → 确认采购，系统会自动建立关联 IB（等待到货）。</p>
+              </DialogHeader>
+              <div className="grid grid-cols-3 gap-2 text-sm">
+                {[['1', '选择日期与直播'], ['2', '合并并选择商品'], ['3', '确认采购数量']].map(([step, label]) => (
+                  <div key={step} className={`rounded-lg border px-3 py-2 ${cnStep === Number(step) ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'text-muted-foreground'}`}>
+                    <span className="font-semibold">步骤 {step}</span> · {label}
+                  </div>
+                ))}
+              </div>
+
+              {cnStep === 1 && (
+                <div className="space-y-4 py-2">
+                  <Card className="border-emerald-100 bg-emerald-50/40">
+                    <CardContent className="grid gap-4 p-4 md:grid-cols-2">
+                      <div><Label>直播开始日期 *</Label><Input type="date" value={cnRange.startDate} onChange={e => setCnRange(prev => ({ ...prev, startDate: e.target.value }))} /></div>
+                      <div><Label>直播截止日期 *</Label><Input type="date" min={cnRange.startDate || undefined} value={cnRange.endDate} onChange={e => setCnRange(prev => ({ ...prev, endDate: e.target.value }))} /></div>
+                    </CardContent>
+                  </Card>
+                  {!cnRange.startDate || !cnRange.endDate ? <p className="text-sm text-muted-foreground">请先选择日期范围，系统会列出期间内的中国代购直播场次。</p> : cnSessionsQuery.isLoading ? <p className="text-sm text-muted-foreground">正在查询直播场次…</p> : (cnSessionsQuery.data || []).length === 0 ? <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">该日期范围没有中国代购直播场次。</p> : (
+                    <div className="space-y-2">
+                      {(cnSessionsQuery.data as any[]).map(session => (
+                        <label key={session.id} className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 hover:bg-muted/30">
+                          <input type="checkbox" checked={Boolean(selectedSessionMap[session.id])} onChange={e => setSelectedSessionMap(prev => ({ ...prev, [session.id]: e.target.checked }))} className="h-4 w-4 accent-emerald-700" />
+                          <CalendarDays className="h-4 w-4 text-emerald-700" />
+                          <span className="font-medium">{session.name}</span>
+                          <span className="ml-auto text-sm text-muted-foreground">{session.liveDate ? new Date(session.liveDate).toLocaleDateString('zh-MY') : '-'} · {session.productCount} 项商品</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {cnStep === 2 && (
+                <div className="space-y-3 py-2">
+                  <p className="text-sm text-muted-foreground">同一商品 ID 已按所选直播自动合并；数字为互斥阶段，部分发货按实际发货数量拆分。展开可查看每场直播的贡献。</p>
+                  {cnMergedProductsQuery.isLoading ? <p className="text-sm text-muted-foreground">正在合并商品…</p> : (cnMergedProductsQuery.data || []).length === 0 ? <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">所选直播没有可合并的商品。</p> : (
+                    <div className="overflow-x-auto rounded-lg border">
+                      <Table>
+                        <TableHeader><TableRow><TableHead>选择</TableHead><TableHead>商品／出现直播</TableHead><TableHead>已下单</TableHead><TableHead>已汇款</TableHead><TableHead>已完成</TableHead><TableHead>各场次明细</TableHead></TableRow></TableHeader>
+                        <TableBody>{(cnMergedProductsQuery.data as any[]).map(product => {
+                          const key = productKey(product); const selected = key in selectedProductQuantities;
+                          return <TableRow key={key} className={selected ? 'bg-emerald-50/50' : ''}>
+                            <TableCell><input aria-label={`选择${product.productName}`} type="checkbox" checked={selected} onChange={e => toggleCnProduct(product, e.target.checked)} className="h-4 w-4 accent-emerald-700" /></TableCell>
+                            <TableCell><div className="font-medium">{product.productName}</div><div className="text-xs text-muted-foreground">{product.liveSessionCount} 场直播</div></TableCell>
+                            <TableCell>{product.orderedQuantity}</TableCell><TableCell className="font-semibold text-sky-700">{product.paidQuantity}</TableCell><TableCell className="text-emerald-700">{product.completedQuantity}</TableCell>
+                            <TableCell><details><summary className="cursor-pointer text-xs text-muted-foreground">查看分场次</summary><div className="mt-2 space-y-1 text-xs">{product.sessions.map((session: any) => <div key={session.liveRoomId}>{session.liveRoomName}：下单 {session.orderedQuantity}／汇款 {session.paidQuantity}／完成 {session.completedQuantity}</div>)}</div></details></TableCell>
+                          </TableRow>;
+                        })}</TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {cnStep === 3 && (
+                <div className="space-y-4 py-2">
+                  <div className="rounded-lg border border-sky-100 bg-sky-50/60 p-3 text-sm text-sky-900">本次采购数量已默认带入每项商品的「已汇款」数量。您可调整最终采购量；未勾选商品不会进入 CN，也不会改变本地库存。</div>
+                  <div className="overflow-x-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>商品</TableHead><TableHead>已下单</TableHead><TableHead>已汇款</TableHead><TableHead>已完成</TableHead><TableHead>本次采购数量</TableHead></TableRow></TableHeader><TableBody>{(cnMergedProductsQuery.data as any[] || []).filter(product => productKey(product) in selectedProductQuantities).map(product => { const key = productKey(product); return <TableRow key={key}><TableCell className="font-medium">{product.productName}</TableCell><TableCell>{product.orderedQuantity}</TableCell><TableCell>{product.paidQuantity}</TableCell><TableCell>{product.completedQuantity}</TableCell><TableCell><Input type="number" min="0" className="h-8 w-28" value={selectedProductQuantities[key]} onChange={e => setSelectedProductQuantities(prev => ({ ...prev, [key]: Math.max(0, Number(e.target.value) || 0) }))} /></TableCell></TableRow>; })}</TableBody></Table></div>
+                  <p className="text-sm text-muted-foreground">汇款期限将自动设为截止日期后两天：<strong className="ml-1 text-foreground">{cnRange.endDate ? new Date(`${cnRange.endDate}T00:00:00`).toLocaleDateString('zh-MY', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '-'}</strong>（保存后可在 CN 编辑）。</p>
+                </div>
+              )}
+
+              <DialogFooter className="gap-2 sm:justify-between">
+                <Button variant="outline" onClick={() => { if (cnStep === 1) { setCnCreateOpen(false); resetCnWizard(); } else setCnStep((cnStep - 1) as 1 | 2 | 3); }}> {cnStep === 1 ? '取消' : '上一步'} </Button>
+                {cnStep < 3 ? <Button onClick={() => { if (cnStep === 1 && selectedLiveSessionIds.length === 0) { toast.error('请至少勾选一场中国代购直播。'); return; } if (cnStep === 2 && Object.keys(selectedProductQuantities).length === 0) { toast.error('请至少勾选一个要采购的商品。'); return; } setCnStep((cnStep + 1) as 1 | 2 | 3); }}>下一步</Button> : <Button disabled={createCnWithAutoIbMutation.isPending || Object.keys(selectedProductQuantities).length === 0} onClick={() => { const products = (cnMergedProductsQuery.data as any[] || []).filter(product => productKey(product) in selectedProductQuantities); createCnWithAutoIbMutation.mutate({ startDate: cnRange.startDate, endDate: cnRange.endDate, liveSessionIds: selectedLiveSessionIds, items: products.map(product => ({ productId: product.productId, productName: product.productName, variantId: product.variantId ?? null, paidQuantity: product.paidQuantity, finalPurchaseQuantity: selectedProductQuantities[productKey(product)] })) }); }}>建立 CN 并自动生成 IB</Button>}
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>编辑中国采购单（CN）</DialogTitle>
+                <p className="text-sm text-muted-foreground">保存时会逐项记录修改前后内容、操作人及时间。</p>
+              </DialogHeader>
+              <div className="grid grid-cols-1 gap-4 py-3 md:grid-cols-2">
+                <div><Label>CN 编号</Label><Input value={formData.batchNumber} disabled /></div>
+                <div><Label>采购单名称 *</Label><Input value={formData.batchName} onChange={e => setFormData({ ...formData, batchName: e.target.value })} /></div>
+                <div><Label>供应商</Label><Input value={formData.supplierName} onChange={e => setFormData({ ...formData, supplierName: e.target.value })} /></div>
+                <div><Label>供应商订单号</Label><Input value={formData.supplierOrderNumber} onChange={e => setFormData({ ...formData, supplierOrderNumber: e.target.value })} /></div>
+                <div><Label>开始日期</Label><Input type="date" value={formData.preorderStartDate.slice(0, 10)} onChange={e => setFormData({ ...formData, preorderStartDate: e.target.value })} /></div>
+                <div><Label>截止日期</Label><Input type="date" value={formData.preorderEndDate.slice(0, 10)} onChange={e => setFormData({ ...formData, preorderEndDate: e.target.value })} /></div>
+                <div><Label>汇款期限</Label><Input type="date" value={formData.paymentDeadline} onChange={e => setFormData({ ...formData, paymentDeadline: e.target.value })} /></div>
+                <div><Label>中国快递单号</Label><Input value={formData.chinaTrackingNumber} onChange={e => setFormData({ ...formData, chinaTrackingNumber: e.target.value })} /></div>
+                <div><Label>中国境内运费（RM）</Label><Input type="number" value={formData.chinaShippingCost} onChange={e => setFormData({ ...formData, chinaShippingCost: e.target.value })} /></div>
+                <div><Label>其他费用（RM）</Label><Input type="number" value={formData.otherFees} onChange={e => setFormData({ ...formData, otherFees: e.target.value })} /></div>
+                <div><Label>状态</Label><Select value={formData.status} onValueChange={value => setFormData({ ...formData, status: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(statusLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+                <div className="md:col-span-2"><Label>备注</Label><Textarea value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} rows={3} /></div>
+              </div>
+              <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button><Button onClick={handleSubmit} disabled={updateCnWithAuditMutation.isPending}>保存并记录审计</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>) : (
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={resetForm} className="gap-2">
@@ -353,6 +579,7 @@ export default function ImportBatches() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       <Tabs value={selectedBatchId ? "detail" : "list"} className="w-full">
@@ -423,35 +650,62 @@ export default function ImportBatches() {
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">批次商品明细</h2>
                 <div className="flex gap-2 flex-wrap">
+                  <Button variant="outline" size="sm" onClick={printCurrentBatch} className="gap-2">
+                    <Printer className="h-4 w-4" /> 打印{selectedBatch?.documentType === 'ib' ? ' IB 单' : ' CN 单'}
+                  </Button>
                   {urlTab === 'cn' && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => confirmCnMutation.mutate({ batchId: selectedBatchId })}
-                      disabled={confirmCnMutation.isPending}
-                      className="gap-2"
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      确认采购 (CN)
-                    </Button>
+                    <>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => confirmCnMutation.mutate({ batchId: selectedBatchId })}
+                        disabled={confirmCnMutation.isPending}
+                        className="gap-2"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        确认采购 (CN)
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => createSplitArrivalIbMutation.mutate({ cnId: selectedBatchId })}
+                        disabled={createSplitArrivalIbMutation.isPending}
+                      >
+                        新增分批到货 IB
+                      </Button>
+                    </>
                   )}
                   {urlTab === 'ib' && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => completeIbMutation.mutate({ batchId: selectedBatchId })}
-                      disabled={completeIbMutation.isPending}
-                      className="gap-2"
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      完成验货 (IB)
-                    </Button>
+                    <>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => completeIbMutation.mutate({ batchId: selectedBatchId })}
+                        disabled={completeIbMutation.isPending || Boolean(selectedBatch?.isLocked)}
+                        className="gap-2"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        完成验货 (IB)
+                      </Button>
+                      {selectedBatch?.isLocked ? (
+                        <Button variant="outline" size="sm" onClick={() => {
+                          const reason = window.prompt('请填写解锁原因（此原因会记录到CN/IB审计日志）：');
+                          if (reason?.trim()) unlockIbMutation.mutate({ ibId: selectedBatchId, reason: reason.trim() });
+                        }} disabled={unlockIbMutation.isPending}>
+                          解锁 IB
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => lockIbMutation.mutate({ ibId: selectedBatchId })} disabled={lockIbMutation.isPending}>
+                          锁定 IB
+                        </Button>
+                      )}
+                    </>
                   )}
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => allocateAllMutation.mutate({ batchId: selectedBatchId })}
-                    disabled={allocateAllMutation.isPending}
+                    disabled={allocateAllMutation.isPending || Boolean(selectedBatch?.isLocked)}
                     className="gap-2"
                   >
                     <Calculator className="h-4 w-4" />
@@ -461,7 +715,7 @@ export default function ImportBatches() {
                     variant="outline"
                     size="sm"
                     onClick={() => allocateMutation.mutate({ batchId: selectedBatchId })}
-                    disabled={allocateMutation.isPending}
+                    disabled={allocateMutation.isPending || Boolean(selectedBatch?.isLocked)}
                     className="gap-2"
                   >
                     <Calculator className="h-4 w-4" />
@@ -470,6 +724,8 @@ export default function ImportBatches() {
                 </div>
               </div>
 
+              {selectedBatch?.isLocked && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">此 IB 已在入库完成后锁定。若需要更改成本或到货数量，请先点击「解锁 IB」并填写原因；所有操作都会记录审计日志。</div>}
+              <fieldset disabled={Boolean(selectedBatch?.isLocked)} className="min-w-0 disabled:opacity-65">
               <Card>
                 <CardContent className="p-0">
                   {batchItemsQuery.isLoading ? (
@@ -579,6 +835,7 @@ export default function ImportBatches() {
                   )}
                 </CardContent>
               </Card>
+              </fieldset>
             </div>
           </TabsContent>
         )}
