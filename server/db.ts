@@ -67,6 +67,7 @@ import {
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
 import { evaluateMarketingCampaign } from './marketingEngine';
+import { SPECIAL_ORDER_FOLLOW_UP_TYPES, isSpecialOrderFollowUpType } from '../shared/specialOrderDisplay';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -10539,6 +10540,10 @@ export async function getSpecialOrderFollowUpStats() {
     otherCount: 0,
     totalPending: 0,
   };
+  const specialFollowUpTypeSql = sql.join(
+    SPECIAL_ORDER_FOLLOW_UP_TYPES.map((type) => sql`${type}`),
+    sql`, `,
+  );
   // V3.2: Read directly from orders.specialOrderType — single source of truth
   // V2.1.19: Query from order_special_statuses table (new multi-status system)
   const [ssRows] = await db.execute(sql`
@@ -10549,6 +10554,7 @@ export async function getSpecialOrderFollowUpStats() {
     JOIN orders o ON o.id = oss.orderId
     WHERE oss.status = 'pending'
       AND oss.type != 'notification_failed'
+      AND oss.type IN (${specialFollowUpTypeSql})
       AND o.physicalStatus NOT IN ('shipped', 'completed', 'cancelled')
     GROUP BY oss.type
   `);
@@ -10566,6 +10572,7 @@ export async function getSpecialOrderFollowUpStats() {
     WHERE o.isSpecialOrder = 1
       AND o.specialOrderStatus = 'pending'
       AND COALESCE(o.specialOrderType, '') != 'notification_failed'
+      AND o.specialOrderType IN (${specialFollowUpTypeSql})
       AND o.physicalStatus != 'cancelled'
       AND NOT EXISTS (
         SELECT 1 FROM order_special_statuses oss 
@@ -10576,7 +10583,8 @@ export async function getSpecialOrderFollowUpStats() {
     GROUP BY o.specialOrderType
   `);
   (legacyRows as unknown as any[]).forEach((r: any) => {
-    const key = r.specialOrderType || 'other';
+    const key = r.specialOrderType;
+    if (!isSpecialOrderFollowUpType(key)) return;
     typeCounts[key] = (typeCounts[key] || 0) + (Number(r.cnt) || 0);
   });
   const pendingShippingCount = typeCounts['pending_shipping'] || 0;
@@ -10611,6 +10619,10 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
   const db = await getDb();
   if (!db) return [];
   const now = Date.now();
+  const specialFollowUpTypeSql = sql.join(
+    SPECIAL_ORDER_FOLLOW_UP_TYPES.map((type) => sql`${type}`),
+    sql`, `,
+  );
   // V3.2: Read directly from orders table — single source of truth
   const [rows] = await db.execute(sql`
     SELECT 
@@ -10645,6 +10657,7 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
       AND o.isSpecialOrder = 1
       AND o.specialOrderStatus = 'pending'
       AND COALESCE(o.specialOrderType, '') != 'notification_failed'
+      AND o.specialOrderType IN (${specialFollowUpTypeSql})
     ORDER BY o.createdAt ASC
     LIMIT ${limit}
   `);
@@ -10725,7 +10738,7 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
         specialTypeColor = 'gray';
         break;
       default:
-        specialTypeLabel = '其他特别处理';
+        specialTypeLabel = '未分类特别状态';
         specialTypeColor = 'gray';
     }
 
@@ -10740,7 +10753,7 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
       parentOrderId: item.parentOrderId,
       customerName: item.customer_name || item.facebook_name || '未知',
       customerPhone: item.customer_phone || '',
-      specialType: item.specialOrderType || 'other',
+      specialType: item.specialOrderType,
       specialOrderSource: item.specialOrderSource || 'manual',
       specialOrderReason: item.specialOrderReason || '',
       specialTypeLabel,

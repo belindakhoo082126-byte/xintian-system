@@ -80,6 +80,12 @@ export default function Dashboard() {
   const { data: followUpStats } = trpc.orders.followUpStats.useQuery();
   const { data: followUpList } = trpc.orders.followUpList.useQuery({ limit: 50 });
   const followUpDisplay = getFollowUpDisplayState(followUpStats, followUpList);
+  // 退款管理已经在“工作状态”提供独立待处理入口，Dashboard 的特别状态区块
+  // 不再重复展示待退款；订单查询中的 pending_refund 特别原因与退款记录仍完整保留。
+  const specialFollowUpItems = ((followUpList as any[] | undefined) || []).filter(
+    (item) => item.specialType !== "pending_refund",
+  );
+  const specialFollowUpItemCount = specialFollowUpItems.length;
   const { data: ordersWithRemarks } = trpc.orderRemarks.ordersWithRemarks.useQuery();
   const { data: handoverStats } = trpc.aiHandover.getStats.useQuery();
   const { data: aiNotificationCenter } = trpc.notifications.aiCenter.useQuery();
@@ -332,7 +338,7 @@ export default function Dashboard() {
         <CardHeader className="flex flex-row items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-orange-500" />
           <CardTitle className="text-base">{lang === "zh" ? "特别状态订单待跟进" : "Special-status Order Follow-up"}</CardTitle>
-          <Badge variant="secondary" className="ml-auto">{followUpDisplay.itemCount}</Badge>
+          <Badge variant="secondary" className="ml-auto">{specialFollowUpItemCount}</Badge>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -340,12 +346,6 @@ export default function Dashboard() {
               <div className="rounded-lg border border-orange-100 bg-background/70 p-3 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "待补运费" : "Pending Shipping"}</p>
                 <p className="mt-1 text-2xl font-bold text-orange-600">{followUpDisplay.pendingShippingCount}</p>
-              </div>
-            </Link>
-            <Link href="/orders?special=1&type=pending_refund">
-              <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer">
-                <p className="text-xs text-muted-foreground">{lang === "zh" ? "待退款" : "Pending Refund"}</p>
-                <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.pendingRefundCount}</p>
               </div>
             </Link>
             <Link href="/orders?special=1&type=logistics_error">
@@ -392,12 +392,18 @@ export default function Dashboard() {
             </Link>
           </div>
 
+          <p className="rounded-md border border-orange-100 bg-background/60 px-3 py-2 text-xs leading-relaxed text-muted-foreground dark:border-orange-900/50">
+            {lang === "zh"
+              ? "“其他”仅用于已被人工明确标记为其他、且不属于待补运费、退款、物流、资料、库存、汇款或金额异常等已定义分类的订单。待退款请在上方“工作状态”的退款管理卡处理，避免重复计算。"
+              : '“Other” only includes orders explicitly marked as other and not covered by a defined shipping, refund, logistics, customer-info, stock, payment, or amount exception. Handle pending refunds from the Refund Management work-status card to avoid duplicate counting.'}
+          </p>
+
           <div className="border-t border-orange-100 pt-3 dark:border-orange-900/60">
-            {(!followUpList || (followUpList as any).length === 0) ? (
+            {specialFollowUpItems.length === 0 ? (
               <p className="py-3 text-center text-sm text-muted-foreground">{lang === "zh" ? "暂无待跟进特别订单；相关统计会在此持续显示。" : "No pending special-status orders. The monitoring framework remains visible here."}</p>
             ) : (
               <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
-                {(followUpList as any).map((item: any) => (
+                {specialFollowUpItems.map((item: any) => (
                   <Link key={item.orderId} href={`/orders/${item.orderId}`}>
                     <div className={`flex items-center justify-between gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50 ${item.isOverdue ? "border-red-300 bg-red-50 dark:bg-red-950/20" : "border-transparent"}`}>
                       <div className="min-w-0">

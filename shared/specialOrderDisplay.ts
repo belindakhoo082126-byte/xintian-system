@@ -12,6 +12,34 @@ const DEFAULT_REASON: SpecialOrderDisplayLabel = {
   icon: "•",
 };
 
+/**
+ * Dashboard、特别订单列表与订单管理共同认可的待处理特别状态。
+ * 只有数据库明确存储为 `other` 才会进入“其他”；空值、历史未知值或
+ * 已迁移但未标注类型的记录不能被自动误归为“其他”。
+ */
+export const SPECIAL_ORDER_FOLLOW_UP_TYPES = [
+  "pending_shipping",
+  "pending_refund",
+  "company_bear",
+  "logistics_error",
+  "incomplete_info",
+  "stock_exception",
+  "partial_payment",
+  "over_payment",
+  "amount_changed",
+  "other",
+] as const;
+
+export type SpecialOrderFollowUpType = (typeof SPECIAL_ORDER_FOLLOW_UP_TYPES)[number];
+
+export function isSpecialOrderFollowUpType(type?: string | null): type is SpecialOrderFollowUpType {
+  return Boolean(type && SPECIAL_ORDER_FOLLOW_UP_TYPES.includes(type as SpecialOrderFollowUpType));
+}
+
+export function isExplicitOtherSpecialOrder(type?: string | null): boolean {
+  return type === "other";
+}
+
 export const SPECIAL_ORDER_REASON_LABELS: Record<string, SpecialOrderDisplayLabel> = {
   over_payment: { zh: "多汇款", en: "Overpayment", className: "bg-red-100 text-red-700 border-red-300", icon: "↑" },
   under_payment: { zh: "少汇款", en: "Underpayment", className: "bg-orange-100 text-orange-700 border-orange-300", icon: "↓" },

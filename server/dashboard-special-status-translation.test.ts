@@ -33,4 +33,15 @@ describe("Dashboard 特别状态订单英文翻译", () => {
     expect(dashboardSource).toContain('lang === "zh" ? "中国代购" : "Import Pre-order"');
     expect(dashboardSource).toContain('lang === "zh" ? "本地" : "Local"');
   });
+
+  it("shows pending refunds only through the Refund Management work-status card, avoiding duplicate dashboard tasks", () => {
+    expect(dashboardSource).toContain('title: lang === "zh" ? "待处理退款" : "Pending Refunds"');
+    expect(dashboardSource).not.toContain('href="/orders?special=1&type=pending_refund"');
+    expect(dashboardSource).toContain('item.specialType !== "pending_refund"');
+  });
+
+  it("explains that the Other special-status category is an explicit catch-all rather than an unclassified system error", () => {
+    expect(dashboardSource).toContain('“其他”仅用于已被人工明确标记为其他');
+    expect(dashboardSource).toContain('not covered by a defined shipping, refund, logistics');
+  });
 });
