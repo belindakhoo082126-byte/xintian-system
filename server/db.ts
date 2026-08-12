@@ -3750,14 +3750,14 @@ export async function getProductOrderDetails(productId: number, type: 'ordered' 
     ORDER BY o.createdAt DESC, oi.id DESC
   `);
 
-  return rows as unknown as Array<{
+  return unwrapMySqlRows<{
     orderId: number;
     orderNumber: string;
     physicalStatus: string;
     quantity: number;
     customerName: string;
     customerPhone: string | null;
-  }>;
+  }>(rows);
 }
 
 export async function getProductByIdEnhanced(id: number) {
@@ -7501,7 +7501,16 @@ export async function createOrderFromLiveCapture(data: {
   liveVideoId?: string;
   liveRoomId?: number;
   liveType?: string;
-  matchedProducts: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string }>;
+  matchedProducts: Array<{
+    keyword: string;
+    quantity: number;
+    productId: number;
+    productName: string;
+    productSku: string;
+    unitPrice: string;
+    liveRoomProductId?: number;
+    isPreorder?: boolean;
+  }>;
   sourceName?: string;
   campaignId?: number;
   campaignName?: string;
@@ -7510,8 +7519,11 @@ export async function createOrderFromLiveCapture(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  // 已开启直播预售的商品只记录预售，不占用现货库存；其余商品仍按原子库存保留处理。
+  const inStockProducts = data.matchedProducts.filter((p) => !p.isPreorder);
+
   // V2.1.30补充4: Unified stock check with allowOversold support
-  for (const p of data.matchedProducts) {
+  for (const p of inStockProducts) {
     const productRows = await db.select({
       id: products.id,
       stockQuantity: products.stockQuantity,
@@ -7587,7 +7599,7 @@ export async function createOrderFromLiveCapture(data: {
   
   if (existingOrderId) {
     // Merge into existing order: add new items
-    await reserveProductStocksForOrder(data.matchedProducts);
+    await reserveProductStocksForOrder(inStockProducts);
     for (const p of data.matchedProducts) {
       const itemSubtotal = (parseFloat(p.unitPrice) * p.quantity).toFixed(2);
       await db.insert(orderItems).values({
@@ -7601,6 +7613,8 @@ export async function createOrderFromLiveCapture(data: {
         subtotal: itemSubtotal,
         facebookKeyword: p.keyword,
         discount: "0.00",
+        itemSource: "facebook_live",
+        salesMode: p.isPreorder ? (isImportOrder ? "import_preorder" : "presale") : "normal",
       });
       // Product stock was atomically reserved before the item was inserted.
     }
@@ -7629,6 +7643,7 @@ export async function createOrderFromLiveCapture(data: {
       orderId: existingOrderId,
       commentDate: new Date(),
     });
+    await syncLiveRoomProductCounts(data.liveRoomId, data.matchedProducts);
     
     broadcastChanges(["orders", "inventory", "dashboard"]);
     const existingOrder = await db.select().from(orders).where(eq(orders.id, existingOrderId)).limit(1);
@@ -7642,7 +7657,7 @@ export async function createOrderFromLiveCapture(data: {
   const finalTotal = subtotal - autoCreditUsed;
 
   // V2.1.02: Use XTC prefix for import_preorder live rooms, XT for normal live rooms
-  await reserveProductStocksForOrder(data.matchedProducts);
+  await reserveProductStocksForOrder(inStockProducts);
   const prefix = isImportOrder ? "XTC" : "XT";
   const orderNumber = await generateOrderNumber(prefix);
   const secureToken = generateSecureToken();
@@ -7699,9 +7714,11 @@ export async function createOrderFromLiveCapture(data: {
       subtotal: itemSubtotal,
       facebookKeyword: p.keyword,
       discount: "0.00",
+      itemSource: "facebook_live",
+      salesMode: p.isPreorder ? (isImportOrder ? "import_preorder" : "presale") : "normal",
     });
     // Product stock was atomically reserved before order creation.
-    if (p.productId) {
+    if (p.productId && !p.isPreorder) {
       await allocateFifoCostForSale({ orderId, productId: p.productId, quantity: p.quantity, createdBy: "facebook_live" });
     }
   }
@@ -7724,9 +7741,50 @@ export async function createOrderFromLiveCapture(data: {
     orderId,
     commentDate: new Date(),
   });
+  await syncLiveRoomProductCounts(data.liveRoomId, data.matchedProducts);
   
   broadcastChanges(["orders", "inventory", "dashboard", "customers"]);
   return { orderId, orderNumber, totalAmount: finalTotal.toFixed(2), secureToken, creditUsed: autoCreditUsed.toFixed(2) };
+}
+
+/** 直播现货成功捉单后更新卡片数量；预售只增加预售统计而不扣库存。 */
+async function syncLiveRoomProductCounts(
+  liveRoomId: number | undefined,
+  items: Array<{ liveRoomProductId?: number; productId: number; quantity: number; isPreorder?: boolean }>,
+) {
+  if (!liveRoomId) return;
+  const db = await getDb();
+  if (!db) return;
+
+  for (const item of items) {
+    if (!item.liveRoomProductId) continue;
+    const quantity = Number(item.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+    const isPreorder = Boolean(item.isPreorder);
+    const updated = await db.update(liveRoomProducts).set({
+      orderedCount: sql`${liveRoomProducts.orderedCount} + ${quantity}`,
+      reservedCount: isPreorder
+        ? sql`${liveRoomProducts.reservedCount}`
+        : sql`${liveRoomProducts.reservedCount} + ${quantity}`,
+      preorderCount: isPreorder
+        ? sql`${liveRoomProducts.preorderCount} + ${quantity}`
+        : sql`${liveRoomProducts.preorderCount}`,
+      availableStock: isPreorder
+        ? sql`${liveRoomProducts.availableStock}`
+        : sql`GREATEST(0, ${liveRoomProducts.availableStock} - ${quantity})`,
+      status: isPreorder
+        ? sql`${liveRoomProducts.status}`
+        : sql`CASE WHEN ${liveRoomProducts.availableStock} - ${quantity} <= 0 AND ${liveRoomProducts.allowPreorder} = false THEN 'sold_out' ELSE ${liveRoomProducts.status} END`,
+    }).where(and(
+      eq(liveRoomProducts.id, item.liveRoomProductId),
+      eq(liveRoomProducts.liveRoomId, liveRoomId),
+    ));
+
+    const affectedRows = Number((updated as any)?.[0]?.affectedRows ?? (updated as any)?.affectedRows ?? 0);
+    if (affectedRows < 1) {
+      console.warn(`[Live] Could not sync live-room product ${item.liveRoomProductId} after order capture`);
+    }
+  }
 }
 
 // --- Get live order captures (admin) ---
@@ -11437,7 +11495,9 @@ export async function adjustLiveRoomProductStock(id: number, data: {
     .where(eq(liveRoomProducts.id, id)).limit(1);
   if (product.length === 0) throw new Error("Live room product not found");
   const newStartStock = Math.max(0, product[0].startStock + data.quantityChange);
-  const newAvailableStock = newStartStock - product[0].reservedCount;
+  // Existing successful orders must remain reserved, but manual downward
+  // adjustments must never expose a negative sellable quantity in the live UI.
+  const newAvailableStock = Math.max(0, newStartStock - product[0].reservedCount);
   await db.update(liveRoomProducts).set({ startStock: newStartStock, availableStock: newAvailableStock })
     .where(eq(liveRoomProducts.id, id));
   // Sync main product stock (increase/decrease accordingly)
@@ -11578,6 +11638,7 @@ export async function getLiveRoomOrders(liveRoomId: number, limit = 100) {
     result.push({
       orderId: order.id,
       orderNumber: order.orderNumber,
+      secureToken: order.secureToken,
       customerId: order.customerId,
       customerName: customerRows[0]?.name || '',
       facebookName: customerRows[0]?.facebookName || '',

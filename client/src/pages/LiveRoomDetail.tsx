@@ -18,7 +18,7 @@ import {
   Package, DollarSign, ShoppingCart, Boxes, ChevronUp, ChevronDown,
   Search, AlertCircle, Video, BarChart3, Send,
   CheckCircle2, TrendingUp, User, Edit, Radio, Layers,
-  Bot, Monitor, StickyNote, Ban, Link2, ImageIcon, ClipboardPaste,
+  Bot, Monitor, StickyNote, Ban, Link2, ImageIcon, ClipboardPaste, Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useI18n } from "@/contexts/I18nContext";
@@ -143,6 +143,8 @@ export default function LiveRoomDetail(props: any) {
   const [priceEditOpen, setPriceEditOpen] = useState(false);
   const [priceEditId, setPriceEditId] = useState<number | null>(null);
   const [priceEditValue, setPriceEditValue] = useState("");
+  const [roomNotes, setRoomNotes] = useState("");
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
   // V2.0: Send comment state
   const [commentInput, setCommentInput] = useState("");
   // V2.0: Staff Note state
@@ -165,6 +167,10 @@ export default function LiveRoomDetail(props: any) {
       localStorage.setItem('liveCardMode', cardMode);
     }
   }, [cardMode]);
+
+  useEffect(() => {
+    setRoomNotes(room?.notes || "");
+  }, [room?.id, room?.notes]);
 
   // V2.0.11: Keyboard shortcuts
   useEffect(() => {
@@ -584,11 +590,32 @@ export default function LiveRoomDetail(props: any) {
 
           {/* Stats Bar - inline compact */}
           <div className="flex items-center gap-4 text-xs flex-shrink-0 px-1">
-            <span className="flex items-center gap-1"><Package className="h-3.5 w-3.5 text-blue-500" /><span className="text-muted-foreground">{t("live.products")}</span> <span className="font-bold">{stats.productCount || 0}</span></span>
+            <span className="flex items-center gap-1" title="商品数为本场已加入的独立商品；商品数量为本场成功捉单的总件数。"><Package className="h-3.5 w-3.5 text-blue-500" /><span className="text-muted-foreground">{t("live.products")}</span> <span className="font-bold">{stats.productCount || 0}</span></span>
             <span className="flex items-center gap-1"><ShoppingCart className="h-3.5 w-3.5 text-green-500" /><span className="text-muted-foreground">{t("live.orders")}</span> <span className="font-bold">{stats.orderCount || 0}</span></span>
-            <span className="flex items-center gap-1"><Boxes className="h-3.5 w-3.5 text-orange-500" /><span className="text-muted-foreground">{t("live.items")}</span> <span className="font-bold">{stats.totalItems || 0}</span></span>
+            <span className="flex items-center gap-1" title="仅统计本场已成功捉单的商品件数，已取消订单会从商品管理的阶段统计中扣除。"><Boxes className="h-3.5 w-3.5 text-orange-500" /><span className="text-muted-foreground">{t("live.items")}</span> <span className="font-bold">{stats.totalItems || 0}</span></span>
             <span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5 text-emerald-500" /><span className="text-muted-foreground">{t("live.revenue")}</span> <span className="font-bold">RM{(Number(stats.totalRevenue) || 0).toFixed(2)}</span></span>
           </div>
+
+          <Card className="flex-shrink-0 border-amber-200 bg-amber-50/40">
+            <CardContent className="flex items-center gap-2 py-2">
+              <StickyNote className="h-4 w-4 shrink-0 text-amber-700" />
+              <Input
+                value={roomNotes}
+                onChange={(event) => setRoomNotes(event.target.value)}
+                placeholder="直播备忘录（仅后台可见，例如：本场规则、补货提醒或交接事项）"
+                className="h-7 bg-background text-xs"
+              />
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 shrink-0 px-3 text-xs"
+                disabled={updateRoomMutation.isPending || roomNotes === (room.notes || "")}
+                onClick={() => updateRoomMutation.mutate({ id: roomId, notes: roomNotes.trim() })}
+              >
+                保存备忘
+              </Button>
+            </CardContent>
+          </Card>
 
           {/* V2.0: AI Reply & Continue Monitor Toggles - compact */}
           <div className="flex items-center gap-4 text-xs flex-shrink-0">
@@ -664,6 +691,7 @@ export default function LiveRoomDetail(props: any) {
                           onTogglePreorder={(id: number, val: boolean) => togglePreorderMutation.mutate({ id, allowPreorder: val })}
                           onAdjustStock={openStockDialog}
                           onPriceEdit={openPriceEdit}
+                          onPreview={(url: string, name: string) => setPreviewImage({ url, name })}
                           onDelete={(id: number) => deleteProductMutation.mutate({ id })}
                           onCopyKeyword={handleCopyKeyword}
                         />
@@ -1017,6 +1045,17 @@ onClick={() => setOrderViewMode("byCustomer")}>
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!previewImage} onOpenChange={(open) => !open && setPreviewImage(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{previewImage?.name || "商品照片预览"}</DialogTitle>
+          </DialogHeader>
+          {previewImage?.url ? (
+            <img src={previewImage.url} alt={previewImage.name} className="max-h-[70vh] w-full rounded-lg object-contain" />
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
       {/* Stock Adjustment Dialog */}
       <Dialog open={stockDialogOpen} onOpenChange={setStockDialogOpen}>
         <DialogContent className="max-w-md">
@@ -1230,7 +1269,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
 
 // ============ Sub Components ============
 
-function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePreorder, onAdjustStock, onPriceEdit, onDelete, onCopyKeyword }: any) {
+function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePreorder, onAdjustStock, onPriceEdit, onPreview, onDelete, onCopyKeyword }: any) {
   const { t } = useI18n();
   const variations = group.variations || [];
   const hasMultiple = variations.length > 1;
@@ -1257,7 +1296,13 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
       <CardContent className={isCompact ? 'p-1.5' : 'p-3'}>
         <div className={`flex ${isCompact ? 'gap-1.5' : 'gap-3'}`}>
           {/* Left: Product image (fixed ratio, no crop) */}
-          <div className={`${imgSize} rounded-lg overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center`}>
+          <button
+            type="button"
+            className={`${imgSize} group relative rounded-lg overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-primary`}
+            title={imgUrl ? "点击放大商品照片" : "商品暂未上传照片"}
+            disabled={!imgUrl}
+            onClick={() => imgUrl && onPreview(imgUrl, group.productName || variations[0]?.displayName || "商品照片")}
+          >
             {imgUrl ? (
               <img
                 src={imgUrl}
@@ -1274,7 +1319,8 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
             <div className={imgUrl ? 'hidden' : ''}>
               <Placeholder size={isCompact ? 'h-5 w-5' : 'h-8 w-8'} />
             </div>
-          </div>
+            {imgUrl ? <span className="absolute inset-0 hidden items-center justify-center bg-black/35 text-white group-hover:flex"><Eye className="h-5 w-5" /></span> : null}
+          </button>
 
           {/* Middle: Product info */}
           <div className="flex-1 min-w-0 flex flex-col justify-between">
@@ -1314,6 +1360,7 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
                     <span className="text-lg font-bold">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
                   )}
                 </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">直播价只用于本场新建订单；订单利润按订单商品的成本快照／FIFO成本计算。</p>
                 <div className="flex items-center gap-3 mt-1 text-sm">
                   <span className="text-muted-foreground">{t("live.inStock")}<b className="text-foreground ml-0.5">{onHand}</b></span>
                   <span className="text-muted-foreground">{t("live.called")}<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>

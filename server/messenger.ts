@@ -691,12 +691,21 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
                 customerSet.add(order.customerId);
                 // Send settlement notification via Messenger
                 try {
-                  const { sendTextMessage } = require("./messenger");
-                  const msg = `直播已结束！\n\n您的订单 ${order.orderNumber} 已整理完毕。\n总额: RM ${order.totalAmount}\n\n请尽快完成付款哦~\n如需加单，欢迎到我们的商城继续选购！`;
-                  // Try to get customer's PSID for Messenger
-                  if (order.facebookId) {
+                const { sendTextMessage, sendButtonMessage } = require("./messenger");
+                const msg = `直播已结束！\n\n您的订单 ${order.orderNumber} 已整理完毕。\n总额: RM ${order.totalAmount}\n\n请尽快完成付款哦~\n如需加单，欢迎到我们的商城继续选购！`;
+                // Try to get customer's PSID for Messenger
+                if (order.facebookId) {
+                  const checkoutUrl = order.secureToken
+                    ? `${process.env.VITE_PUBLIC_URL || 'https://www.xintian.com.my'}/order/${order.orderNumber}/${order.secureToken}`
+                    : null;
+                  if (checkoutUrl) {
+                    await sendButtonMessage(order.facebookId, msg, [
+                      { title: '查询订单及结账', url: checkoutUrl },
+                    ]).catch(() => {});
+                  } else {
                     await sendTextMessage(order.facebookId, msg).catch(() => {});
                   }
+                }
                 } catch (e) {
                   console.log("[Facebook] Settlement notification failed:", (e as any)?.message);
                 }
@@ -978,8 +987,8 @@ async function processComment(params: {
 
       if (matched.length > 0) {
         // V2.1.02: Look up live room to get liveType for order routing
-        let liveRoomId: number | undefined;
-        let liveType: string | undefined;
+        let liveRoomId: number | undefined = activeRoomId || undefined;
+        let liveType: string | undefined = activeRoom?.liveType;
         try {
           const { getLiveRooms } = require("./db");
           const allRooms = await getLiveRooms({});
@@ -987,7 +996,7 @@ async function processComment(params: {
             r.facebookVideoId === postId ||
             r.facebookLiveUrl?.includes(postId)
           );
-          if (matchingRoom) {
+          if (matchingRoom && !liveRoomId) {
             liveRoomId = matchingRoom.id;
             liveType = matchingRoom.liveType;
           }
@@ -1008,6 +1017,8 @@ async function processComment(params: {
             productName: m.productName,
             productSku: m.productSku,
             unitPrice: m.unitPrice,
+            liveRoomProductId: m.liveRoomProductId,
+            isPreorder: m.isPreorder,
           })),
           sourceName: campaign ? campaign.name : "Facebook Live",
           campaignId: campaign?.id,
@@ -1064,6 +1075,13 @@ async function processComment(params: {
     }
   } catch (kwError: any) {
     console.error("[Facebook] Keyword matching error:", kwError?.message);
+    if (String(kwError?.message || "").startsWith("STOCK_INSUFFICIENT:")) {
+      await replyToComment(
+        commentId,
+        `${commenterName} 您好！这件现货刚刚被较早留言的顾客成功下单，现已售罄。欢迎继续查看其他商品，谢谢您的支持。`,
+      ).catch(() => {});
+      return;
+    }
   }
 
   // Generic auto-replies (only if no keyword match was attempted)
