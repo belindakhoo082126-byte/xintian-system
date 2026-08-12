@@ -1,4 +1,4 @@
-import { getDb, resolveOrderCategory, recalculateOrderBalance, generateOrderNumber, generateSecureToken } from "./db";
+import { assertChinaImportOrderItemsEligible, getDb, resolveOrderCategory, recalculateOrderBalance, generateOrderNumber, generateSecureToken } from "./db";
 import { draftOrders, orderChangeRequests, reservationRecords, products, orders, orderItems, aiLogs, aiHandoverRequests } from "../drizzle/schema";
 import { eq, sql, and, desc } from "drizzle-orm";
 import { SideEffectPolicy } from "./aiTestRunner";
@@ -338,6 +338,9 @@ export async function approveDraftOrder(draftId: number, approvedBy: string): Pr
   const draftItems = draft.items as DraftOrderItem[];
   const productIds = draftItems.map(i => i.productId).filter(Boolean) as number[];
   const orderCategory = await resolveOrderCategory({ productIds });
+  if (orderCategory === "import") {
+    await assertChinaImportOrderItemsEligible(productIds);
+  }
 
   // V2.1.23: Generate proper order number with XT/XTC prefix
   const prefix = orderCategory === "import" ? "XTC" : "XT";

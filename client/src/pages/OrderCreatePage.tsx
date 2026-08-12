@@ -199,7 +199,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
 
   // Product search
   const { data: productSearchResults } = trpc.orders.searchProductsForOrder.useQuery(
-    { query: productSearchQuery },
+    { query: productSearchQuery, orderCategory },
     { enabled: productSearchQuery.length > 0 }
   );
   const { data: quickRestockSuppliers = [] } = trpc.suppliers.list.useQuery({ activeOnly: true });
@@ -231,8 +231,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
           priceType: i.priceType,
           unitCost: i.unitCost,
         })),
-        shippingAddress: [recipientForm.addressLine1, recipientForm.addressLine2, recipientForm.city, recipientForm.state, recipientForm.postcode, recipientForm.country].filter(Boolean).join(", "),
-        shippingMethod,
+        shippingAddress: isWalkIn ? undefined : [recipientForm.addressLine1, recipientForm.addressLine2, recipientForm.city, recipientForm.state, recipientForm.postcode, recipientForm.country].filter(Boolean).join(", "),
+        shippingMethod: isWalkIn ? "self_pickup" : shippingMethod,
         orderNature,
         orderSource,
         orderCategory,
@@ -240,15 +240,15 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         discountReason: discountReason || undefined,
         extraCharge,
         extraChargeDescription: extraChargeDescription || undefined,
-        recipientName: recipientForm.recipientName || undefined,
-        recipientPhone: recipientForm.recipientPhone || undefined,
+        recipientName: isWalkIn ? undefined : recipientForm.recipientName || undefined,
+        recipientPhone: isWalkIn ? undefined : recipientForm.recipientPhone || undefined,
         // V2.1.17: Pass structured address fields for customer profile auto-sync
-        addressLine1: recipientForm.addressLine1 || undefined,
-        addressLine2: recipientForm.addressLine2 || undefined,
-        city: recipientForm.city || undefined,
-        state: recipientForm.state || undefined,
-        postcode: recipientForm.postcode || undefined,
-        country: recipientForm.country || undefined,
+        addressLine1: isWalkIn ? undefined : recipientForm.addressLine1 || undefined,
+        addressLine2: isWalkIn ? undefined : recipientForm.addressLine2 || undefined,
+        city: isWalkIn ? undefined : recipientForm.city || undefined,
+        state: isWalkIn ? undefined : recipientForm.state || undefined,
+        postcode: isWalkIn ? undefined : recipientForm.postcode || undefined,
+        country: isWalkIn ? undefined : recipientForm.country || undefined,
         repottingData: createRemarkCategory === "repotting" && repottingEntries.length > 0 ? JSON.stringify(repottingEntries) : undefined,
       });
     },
@@ -466,7 +466,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     }
     if (isWalkIn) {
       findCustomerMutation.mutate({
-        name: customerForm.name || "Walk-in Customer",
+        name: customerForm.name || "Walk in",
         phoneNumber: customerForm.phoneNumber || undefined,
       });
     } else if (selectedCustomerId) {
@@ -487,8 +487,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
           priceType: i.priceType,
           unitCost: i.unitCost,
         })),
-        shippingAddress: [recipientForm.addressLine1, recipientForm.addressLine2, recipientForm.city, recipientForm.state, recipientForm.postcode, recipientForm.country].filter(Boolean).join(", "),
-        shippingMethod,
+        shippingAddress: isWalkIn ? undefined : [recipientForm.addressLine1, recipientForm.addressLine2, recipientForm.city, recipientForm.state, recipientForm.postcode, recipientForm.country].filter(Boolean).join(", "),
+        shippingMethod: isWalkIn ? "self_pickup" : shippingMethod,
         orderNature,
         orderSource,
         orderCategory,
@@ -496,15 +496,15 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         discountReason: discountReason || undefined,
         extraCharge,
         extraChargeDescription: extraChargeDescription || undefined,
-        recipientName: recipientForm.recipientName || undefined,
-        recipientPhone: recipientForm.recipientPhone || undefined,
+        recipientName: isWalkIn ? undefined : recipientForm.recipientName || undefined,
+        recipientPhone: isWalkIn ? undefined : recipientForm.recipientPhone || undefined,
         // V2.1.17: Pass structured address fields for customer profile auto-sync
-        addressLine1: recipientForm.addressLine1 || undefined,
-        addressLine2: recipientForm.addressLine2 || undefined,
-        city: recipientForm.city || undefined,
-        state: recipientForm.state || undefined,
-        postcode: recipientForm.postcode || undefined,
-        country: recipientForm.country || undefined,
+        addressLine1: isWalkIn ? undefined : recipientForm.addressLine1 || undefined,
+        addressLine2: isWalkIn ? undefined : recipientForm.addressLine2 || undefined,
+        city: isWalkIn ? undefined : recipientForm.city || undefined,
+        state: isWalkIn ? undefined : recipientForm.state || undefined,
+        postcode: isWalkIn ? undefined : recipientForm.postcode || undefined,
+        country: isWalkIn ? undefined : recipientForm.country || undefined,
         remark: remark || (createRemarkCategory === "desired_delivery_date" && createRemarkDeliveryDate ? createRemarkDeliveryDate : undefined),
         remarkCategory: createRemarkCategory || undefined,
         remarkDeliveryDate: createRemarkDeliveryDate || undefined,
@@ -734,7 +734,18 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             </Select>
           </div>
           <div className="flex items-center gap-2 col-span-2 md:col-span-4">
-            <Checkbox checked={isWalkIn} onCheckedChange={(v) => setIsWalkIn(!!v)} id="walkin" />
+            <Checkbox checked={isWalkIn} onCheckedChange={(v) => {
+              const enabled = !!v;
+              setIsWalkIn(enabled);
+              if (enabled) {
+                setSelectedCustomerId(undefined);
+                setSelectedCustomer(null);
+                setCustomerSearchQuery("");
+                setCustomerForm({ name: "Walk in", phoneNumber: "", facebookName: "", facebookId: "", messengerId: "" });
+                setShippingMethod("self_pickup");
+                setBuyerIsRecipient(false);
+              }
+            }} id="walkin" />
             <Label htmlFor="walkin" className="text-sm cursor-pointer">{translate("Walk-in 客户", "Walk-in Customer")}</Label>
           </div>
         </CardContent>
@@ -749,6 +760,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {!isWalkIn && <>
           {/* Customer Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -804,6 +816,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             </div>
           )}
 
+          </>}
           {/* Customer form fields */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <div>
@@ -814,24 +827,24 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               <Label className="text-xs">{translate("电话号码", "Phone Number")}</Label>
               <Input value={customerForm.phoneNumber} onChange={(e) => setCustomerForm({ ...customerForm, phoneNumber: e.target.value })} placeholder="012-3456789" />
             </div>
-            <div>
+            {!isWalkIn && <div>
               <Label className="text-xs">{translate("Facebook 名称", "Facebook Name")}</Label>
               <Input value={customerForm.facebookName} onChange={(e) => setCustomerForm({ ...customerForm, facebookName: e.target.value })} />
-            </div>
-            <div>
+            </div>}
+            {!isWalkIn && <div>
               <Label className="text-xs">{translate("Facebook ID", "Facebook ID")}</Label>
               <Input value={customerForm.facebookId} onChange={(e) => setCustomerForm({ ...customerForm, facebookId: e.target.value })} />
-            </div>
-            <div>
+            </div>}
+            {!isWalkIn && <div>
               <Label className="text-xs">{translate("Messenger ID", "Messenger ID")}</Label>
               <Input value={customerForm.messengerId} onChange={(e) => setCustomerForm({ ...customerForm, messengerId: e.target.value })} />
-            </div>
+            </div>}
           </div>
         </CardContent>
       </Card>
 
       {/* Section 3: Recipient Info */}
-      <Card>
+      {!isWalkIn && <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Truck className="h-4 w-4" />
@@ -896,7 +909,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             </div>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* Section 4: Product Search & Items */}
       <Card>

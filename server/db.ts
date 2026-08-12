@@ -200,6 +200,65 @@ export async function getProducts(filters?: { type?: string; search?: string; is
   return await query.orderBy(desc(products.createdAt));
 }
 
+/** 中国代购订单可选择的本地例外类别：肥料及花盆／盆器。 */
+export const CHINA_IMPORT_ALLOWED_CATEGORY_NAMES = ["肥料", "花盆", "盆器"] as const;
+
+export function isChinaImportOrderEligibleProduct(product: {
+  salesMode?: string | null;
+  isPot?: boolean | null;
+  categoryName?: string | null;
+}) {
+  return product.salesMode === "import_preorder"
+    || Boolean(product.isPot)
+    || CHINA_IMPORT_ALLOWED_CATEGORY_NAMES.includes((product.categoryName || "") as typeof CHINA_IMPORT_ALLOWED_CATEGORY_NAMES[number]);
+}
+
+/**
+ * 中国代购订单只允许中国进口代购商品，或本地肥料／花盆。此服务层校验用于
+ * 后台建单、AI建单与商城加单，不能只依赖前端筛选。
+ */
+export async function assertChinaImportOrderItemsEligible(productIds: number[]) {
+  const uniqueIds = Array.from(new Set(productIds.filter((id) => Number.isFinite(id) && id > 0)));
+  if (uniqueIds.length === 0) return;
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const rows = await db.select({
+    id: products.id,
+    name: products.name,
+    salesMode: products.salesMode,
+    isPot: products.isPot,
+    categoryName: productCategories.name,
+  }).from(products)
+    .leftJoin(productCategories, eq(products.categoryId, productCategories.id))
+    .where(inArray(products.id, uniqueIds));
+
+  const foundIds = new Set(rows.map((row) => row.id));
+  const missing = uniqueIds.filter((id) => !foundIds.has(id));
+  const disallowed = rows.filter((row) => !isChinaImportOrderEligibleProduct(row));
+  if (missing.length > 0 || disallowed.length > 0) {
+    const names = disallowed.map((row) => row.name).join("、");
+    throw new Error(`中国代购订单只可选择“中国进口代购”模式商品，以及肥料或花盆类商品${names ? `；不可加入：${names}` : ""}`);
+  }
+}
+
+export async function getProductsForOrder(filters?: { search?: string; orderCategory?: string }) {
+  const productRows = await getProducts({ search: filters?.search });
+  if (filters?.orderCategory !== "import" || productRows.length === 0) return productRows;
+  const db = await getDb();
+  if (!db) return [];
+  const categoryRows = await db.select({
+    id: products.id,
+    salesMode: products.salesMode,
+    isPot: products.isPot,
+    categoryName: productCategories.name,
+  }).from(products)
+    .leftJoin(productCategories, eq(products.categoryId, productCategories.id))
+    .where(inArray(products.id, productRows.map((product) => product.id)));
+  const eligibleIds = new Set(categoryRows.filter(isChinaImportOrderEligibleProduct).map((row) => row.id));
+  return productRows.filter((product) => eligibleIds.has(product.id));
+}
+
 export async function getProductById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
@@ -983,6 +1042,9 @@ export async function createOrderWithSplit(data: {
   if (!data.orderCategory) {
     const productIds = data.items.map(i => i.productId).filter(Boolean) as number[];
     data.orderCategory = await resolveOrderCategory({ productIds });
+  }
+  if (data.orderCategory === "import") {
+    await assertChinaImportOrderItemsEligible(data.items.map((item) => item.productId));
   }
 
   // Physical subtotal includes gift items (which have price=0)
@@ -6115,17 +6177,18 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
   const mergeableStatuses = ["pending", "hold_order", "partial_payment"];
   const currentPhysicalStatus = target[0].physicalStatus || "pending";
   if (!mergeableStatuses.includes(currentPhysicalStatus)) throw new Error("当前订单状态不允许加单");
-  // V2.1.04: Cross-type validation — prevent adding import products to local order and vice versa
+  // 中国代购可加中国进口代购商品，以及肥料和花盆；本地订单仍不能加入中国代购商品。
   const productIds = items.map((i) => i.productId).filter((id) => id > 0);
   if (productIds.length > 0) {
-    const productRows = await db.select({ orderCategory: products.orderCategory }).from(products).where(inArray(products.id, productIds));
     const orderCat = target[0].orderCategory || "local";
-    for (const pr of productRows) {
-      if (pr.orderCategory === "import" && orderCat !== "import") {
+    if (orderCat === "import") {
+      await assertChinaImportOrderItemsEligible(productIds);
+    } else {
+      const productRows = await db.select({ orderCategory: products.orderCategory }).from(products).where(inArray(products.id, productIds));
+      for (const pr of productRows) {
+        if (pr.orderCategory === "import") {
         throw new Error("此商品属于中国代购商品，不能加入本地订单，请加入/建立中国代购 XTC 订单。");
-      }
-      if (pr.orderCategory === "local" && orderCat === "import") {
-        throw new Error("此商品属于本地商品，不能加入中国代购订单，请加入/建立本地 XT 订单。");
+        }
       }
     }
   }

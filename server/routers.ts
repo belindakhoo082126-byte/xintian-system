@@ -1926,9 +1926,9 @@ export const appRouter = router({
 
     // V2.1: Search products for order creation (名称/编号/关键词/SKU)
     searchProductsForOrder: adminProcedure
-      .input(z.object({ query: z.string() }))
+      .input(z.object({ query: z.string(), orderCategory: z.enum(["local", "import"]).optional() }))
       .query(async ({ input }) => {
-        return await db.getProducts({ search: input.query });
+        return await db.getProductsForOrder({ search: input.query, orderCategory: input.orderCategory });
       }),
 
     // V2.1: Get order detail with items, payments, and logs

@@ -744,7 +744,6 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             <SelectValue placeholder={translate("通知状态", "Notification")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{translate("全部通知", "All Notifications")}</SelectItem>
             <SelectItem value="unsent">{translate("未发送", "Not Sent")}</SelectItem>
             <SelectItem value="sent">{translate("已发送", "Sent")}</SelectItem>
             <SelectItem value="failed">{translate("发送失败", "Failed")}</SelectItem>
