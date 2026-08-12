@@ -3270,6 +3270,10 @@ export const appRouter = router({
       shippingPolicy: z.string().nullable().optional(),
       refundPolicy: z.string().nullable().optional(),
       serviceTerms: z.string().nullable().optional(),
+      serviceBadges: z.object({
+        shipping: z.object({ zh: z.string().max(200), en: z.string().max(200) }),
+        reservation: z.object({ zh: z.string().max(200), en: z.string().max(200) }),
+      }).nullable().optional(),
       companyName: z.string().nullable().optional(),
       phone: z.string().nullable().optional(),
       whatsapp: z.string().nullable().optional(),

@@ -13,6 +13,7 @@ import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { MallCartFlyAnimation, type MallCartFlight } from "@/components/MallCartFlyAnimation";
 import { getMallCartItemCount, getMallShareLinks, MALL_CART_STORAGE_KEY, MALL_FAVORITES_STORAGE_KEY, readMallCartItems, readMallFavoriteIds, toggleMallFavoriteId } from "@/lib/mallInteractions";
+import { resolveMallServiceBadges } from "@/lib/mallServiceBadges";
 
 export default function MallProductDetail() {
   const [location] = useLocation();
@@ -44,6 +45,7 @@ export default function MallProductDetail() {
   const { lang, translate } = useI18n();
   const t = (zh: string, en: string) => translate(zh, en);
   const theme = getMallTheme(settings?.activeTheme, settings?.customThemeColors);
+  const serviceBadges = resolveMallServiceBadges(settings?.serviceBadges);
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
@@ -321,8 +323,8 @@ export default function MallProductDetail() {
 
             {/* Trust badges */}
             <div className="grid grid-cols-1 gap-2 border-t pt-4 sm:grid-cols-2">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Truck className="h-4 w-4" />{t("西马满RM150首10kg免邮，续重RM3/kg", "West Malaysia: Free 10kg over RM150, RM3/kg after")}</div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Shield className="h-4 w-4" />{t("7天保留", "7-day reservation")}</div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Truck className="h-4 w-4" />{lang === "zh" ? serviceBadges.shipping.zh : serviceBadges.shipping.en}</div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Shield className="h-4 w-4" />{lang === "zh" ? serviceBadges.reservation.zh : serviceBadges.reservation.en}</div>
             </div>
           </div>
         </div>

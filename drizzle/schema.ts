@@ -1104,6 +1104,8 @@ export const mallSettings = mysqlTable("mall_settings", {
   shippingPolicy: text("shippingPolicy"),
   refundPolicy: text("refundPolicy"),
   serviceTerms: text("serviceTerms"),
+  // Storefront product-detail service labels, editable in Mall Settings (zh/en)
+  serviceBadges: json("serviceBadges"),
   // Contact Information
   companyName: varchar("companyName", { length: 200 }),
   phone: varchar("phone", { length: 50 }),

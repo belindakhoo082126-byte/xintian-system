@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/contexts/I18nContext";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
-import { MALL_FAVORITES_STORAGE_KEY, readMallFavoriteIds } from "@/lib/mallInteractions";
+import { MALL_CART_STORAGE_KEY, MALL_FAVORITES_STORAGE_KEY, readMallCartItems, readMallFavoriteIds } from "@/lib/mallInteractions";
+import { toast } from "sonner";
 
 export default function MallFavorites() {
   const { translate } = useI18n();
@@ -35,6 +36,40 @@ export default function MallFavorites() {
     setFavoriteIds(next);
     localStorage.setItem(MALL_FAVORITES_STORAGE_KEY, JSON.stringify(next));
     window.dispatchEvent(new Event("mall-favorites-updated"));
+  }
+
+  function addFavoriteToCart(product: any) {
+    const availableStock = Number(product.availableStock ?? product.stockQuantity ?? 0);
+    const allowOversell = Boolean(product.allowOversell);
+    if (!allowOversell && availableStock <= 0) {
+      toast.error(t("商品已售罄", "This product is sold out"));
+      return;
+    }
+    const unitPrice = String(product.isSpecial && product.specialPrice ? product.specialPrice : product.sellingPrice || "0");
+    const cart = readMallCartItems(localStorage.getItem(MALL_CART_STORAGE_KEY));
+    const existing = cart.find((item) => item.productId === product.id && !item.variationId);
+    if (existing) {
+      if (!allowOversell && existing.quantity + 1 > availableStock) {
+        toast.error(t(`库存不足，目前最多可购买 ${availableStock} 件。`, `Insufficient stock. You can purchase up to ${availableStock} item(s).`));
+        return;
+      }
+      existing.quantity += 1;
+      existing.subtotal = (Number(unitPrice) * existing.quantity).toFixed(2);
+    } else {
+      cart.push({
+        productId: product.id,
+        productName: product.nameZh || product.name,
+        productSku: product.sku,
+        quantity: 1,
+        unitPrice,
+        subtotal: Number(unitPrice).toFixed(2),
+        availableStock,
+        allowOversell,
+      });
+    }
+    localStorage.setItem(MALL_CART_STORAGE_KEY, JSON.stringify(cart));
+    window.dispatchEvent(new Event("cart-updated"));
+    toast.success(t("已加入购物车", "Added to cart"));
   }
 
   return (
@@ -94,7 +129,10 @@ export default function MallFavorites() {
                         {product.nameEn && <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{product.nameEn}</p>}
                         <p className="mt-2 font-bold" style={{ color: theme.primary }}>RM {Number(product.sellingPrice || 0).toFixed(2)}</p>
                       </Link>
-                      <Button variant="outline" size="sm" className="mt-3 w-full text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => removeFavorite(product.id)}><Trash2 className="mr-1.5 h-3.5 w-3.5" />{t("移除收藏", "Remove")}</Button>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <Button size="sm" className="w-full" style={{ backgroundColor: theme.button }} onClick={() => addFavoriteToCart(product)} disabled={isSoldOut}><ShoppingCart className="mr-1.5 h-3.5 w-3.5" />{t("加入购物车", "Add to cart")}</Button>
+                        <Button variant="outline" size="sm" className="w-full text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => removeFavorite(product.id)}><Trash2 className="mr-1.5 h-3.5 w-3.5" />{t("移除", "Remove")}</Button>
+                      </div>
                     </CardContent>
                   </Card>
                 );
