@@ -144,12 +144,8 @@ export default function Dashboard() {
     { title: lang === "zh" ? "库存预警" : "Stock Alert", value: stats.row3.lowStock + stats.row3.outOfStock, icon: Warehouse, color: "text-red-500", link: "/products?stock=low" },
     // V2.1.25: Membership manual follow-up (待人工发送)
     { title: lang === "zh" ? "会员待人工发送" : "Membership Manual Follow Up", value: (stats as any).membershipManualFollowUp || 0, icon: Crown, color: "text-amber-500", link: "/membership" },
-    { title: lang === "zh" ? "AI 转人工待处理" : "AI Handover Pending", value: (handoverStats as any)?.pendingCount || 0, icon: Bot, color: "text-violet-600", link: "/chat" },
+    { title: lang === "zh" ? "AI 转人工待处理" : "AI Handover Pending", value: (handoverStats as any)?.pendingCount || 0, icon: Bot, color: "text-violet-600", link: "/ai-handover" },
   ];
-
-
-  const pendingNotifications = (stats as any).pendingNotifications || [];
-
 
   return (
     <div className="space-y-6">
@@ -406,45 +402,8 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* AI Agent Pending Notifications & Handover */}
+      {/* AI Tasks Module — Business AI Integration */}
       <div className="grid grid-cols-1 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2">
-            <Bot className="h-5 w-5 text-orange-500" />
-            <CardTitle className="text-base">{lang === "zh" ? "AI 转人工通知" : "AI Handover Notifications"}</CardTitle>
-            <Badge variant="secondary" className="ml-auto">{pendingNotifications.length}</Badge>
-          </CardHeader>
-          <CardContent className="space-y-2 max-h-[200px] overflow-y-auto">
-            {pendingNotifications.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">{lang === "zh" ? "暂无转人工通知" : "No handover notifications"}</p>
-            ) : (
-              pendingNotifications.slice(0, 5).map((n: any) => (
-                <Link key={n.id} href={n.orderId ? `/orders/${n.orderId}` : "/orders"}>
-                  <div className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate">
-                        <Badge variant="outline" className="mr-2">{n.type}</Badge>
-                        {n.message || "(无消息内容)"}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {n.orderNumber || `#${n.orderId || ""}`}
-                        {n.createdAt ? ` · ${new Date(n.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
-                      </p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
-                  </div>
-                </Link>
-              ))
-            )}
-            <Link href="/ai-handover" className="block">
-              <Button variant="outline" size="sm" className="w-full mt-2">
-                查看全部转人工通知 <ArrowRight className="h-3 w-3 ml-1" />
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-
-        {/* AI Tasks Module — Business AI Integration */}
         <Card className="border-purple-200 bg-purple-50/30">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">

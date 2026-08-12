@@ -30,11 +30,14 @@ describe("商品、订单与客服后台操作回归", () => {
     expect(db).toContain("secureToken");
   });
 
-  it("Dashboard 同步 AI 转人工待处理数，并在备注卡显示订单状态", () => {
+  it("Dashboard 只保留统一的 AI 转人工待处理入口，并在备注卡显示订单状态", () => {
     const dashboard = readClient("pages/Dashboard.tsx");
 
     expect(dashboard).toContain("trpc.aiHandover.getStats.useQuery");
     expect(dashboard).toContain("AI 转人工待处理");
+    expect(dashboard).toContain('link: "/ai-handover"');
+    expect(dashboard).not.toContain("AI 转人工通知");
+    expect(dashboard).not.toContain("pendingNotifications");
     expect(dashboard).toContain("ORDER_STATUS_LABELS");
     expect(dashboard).toContain("physicalStatus");
   });
