@@ -1,5 +1,7 @@
 # 心田电商后台管理系统 - TODO
 
+- [x] 商城全部主题背景显著淡化：将共享连续插画背景降至低透明度并加入高强度白色保护层，确保所有商城文字清晰可读
+
 - [x] Fix sidebar sub-menu query param navigation: LiveRooms.tsx (?type=), ImportBatches.tsx (?tab=), Orders.tsx (?nature= sync)
 - [x] Fix Dashboard special order follow-up SQL errors: raw SQL uses snake_case but DB columns are camelCase
 - [x] Ensure Dashboard special order module shows framework even when data is 0
@@ -3017,3 +3019,8 @@
 - [x] 修复组合商品在商城点击后错误跳转后台并出现 404 的问题
 - [x] 降低所有商城主题背景的视觉强度，保证文字在各主题下清晰可读
 - [x] 完成组合商品跳转与多主题可读性核验、类型检查、回归测试并保存上线版本
+
+## 商城背景与文字可读性回归
+- [ ] 进一步明显淡化所有商城主题背景，防止背景插画干扰内容阅读
+- [ ] 为商城商品名称、价格、数量、操作按钮与服务信息统一提供高对比文字保护层
+- [ ] 完成桌面和移动端多主题可读性核验、类型检查、回归测试并保存上线版本

@@ -4,6 +4,15 @@ import fs from "node:fs";
 import path from "node:path";
 
 describe("商城主题完整视觉系统", () => {
+  it("十三个商城主题均以低强度插画和高强度白色保护层呈现，确保前景文字可读", () => {
+    const root = path.resolve(__dirname, "..");
+    const artwork = fs.readFileSync(path.join(root, "client/src/components/MallThemeArtwork.tsx"), "utf8");
+
+    expect(artwork.match(/opacity-\[0\.28\]/g)).toHaveLength(13);
+    expect(artwork.match(/background: "rgba\(255,255,255,0\.72\)"/g)).toHaveLength(13);
+    expect(artwork).not.toMatch(/opacity-(90|\[0\.88\])/);
+  });
+
   it("为每个主题定义了背景图案、边缘装饰与符合节日或田园风格的图标元素", () => {
     expect(MALL_THEMES).toHaveLength(13);
     for (const theme of MALL_THEMES) {
