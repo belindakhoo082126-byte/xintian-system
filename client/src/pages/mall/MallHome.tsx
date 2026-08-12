@@ -183,15 +183,15 @@ export default function MallHome() {
       {/* Notices */}
       {notices && notices.length > 0 && (
         <section className="relative z-10 border-y" style={{ backgroundColor: `${theme.secondary}1c`, borderColor: `${theme.secondary}74` }} aria-label={translate("商城公告", "Store announcements")}>
-          <div className="max-w-6xl mx-auto px-4 py-3">
-            <div className="flex items-start gap-3 rounded-2xl border bg-white/80 px-3 py-3 shadow-sm backdrop-blur-sm sm:px-4" style={{ borderColor: `${theme.secondary}92`, boxShadow: `0 8px 22px ${theme.primary}0d` }}>
-              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white" style={{ background: theme.visual.edge }}><Megaphone className="h-4 w-4" /></div>
+          <div className="max-w-6xl mx-auto px-4 py-2">
+            <div className="flex items-start gap-2.5 rounded-xl border bg-white/80 px-3 py-2 shadow-sm backdrop-blur-sm sm:px-4" style={{ borderColor: `${theme.secondary}92`, boxShadow: `0 8px 22px ${theme.primary}0d` }}>
+              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white" style={{ background: theme.visual.edge }}><Megaphone className="h-3.5 w-3.5" /></div>
               <div className="min-w-0 flex-1">
-                <p className="mb-1 text-xs font-bold tracking-[0.16em]" style={{ color: theme.primary }}>{translate("商城公告", "Store announcements")}</p>
-                <div className="flex flex-wrap gap-2">
+                <p className="mb-0.5 text-[11px] font-bold tracking-[0.14em]" style={{ color: theme.primary }}>{translate("商城公告", "Store announcements")}</p>
+                <div className="flex flex-wrap gap-1.5">
                   {notices.map((n: any, index: number) => (
-                    <span key={n.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm leading-5" style={{ backgroundColor: `${theme.background}cc`, borderColor: `${theme.secondary}8a`, color: theme.font }}>
-                      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: theme.primary }}>{index + 1}</span>
+                    <span key={n.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs leading-4" style={{ backgroundColor: `${theme.background}cc`, borderColor: `${theme.secondary}8a`, color: theme.font }}>
+                      <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ backgroundColor: theme.primary }}>{index + 1}</span>
                       <span className="break-words">{lang === "en" && n.announcementEn?.trim() ? n.announcementEn : translateMallNotice(n.announcement, translate)}</span>
                     </span>
                   ))}
@@ -229,7 +229,18 @@ export default function MallHome() {
                 <Card className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90" style={{ borderRadius: "16px" }}>
                   <div className="aspect-square overflow-hidden bg-gray-50 relative">
                     {b.coverImage ? (
-                      <img src={b.coverImage} alt={b.name} className="w-full h-full object-cover mall-img-zoom" />
+                      <>
+                        <img
+                          src={b.coverImage}
+                          alt={b.name}
+                          className="w-full h-full object-cover mall-img-zoom"
+                          onError={(event) => {
+                            event.currentTarget.classList.add("hidden");
+                            event.currentTarget.parentElement?.querySelector("[data-image-fallback]")?.classList.remove("hidden");
+                          }}
+                        />
+                        <div data-image-fallback className="hidden absolute inset-0 items-center justify-center text-gray-300"><Boxes className="h-12 w-12" /></div>
+                      </>
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-gray-300"><Boxes className="h-12 w-12" /></div>
                     )}
@@ -262,6 +273,9 @@ export default function MallHome() {
                         {translate("包含", "Includes")}: {b.items.map((i: any) => i.productName).join('、')}
                       </p>
                     )}
+                    <div className="mt-3 flex items-center justify-center rounded-lg px-2 py-2 text-xs font-bold text-white transition-transform group-hover:scale-[1.02]" style={{ backgroundColor: theme.button }}>
+                      {translate("查看组合详情", "View bundle details")}
+                    </div>
                   </CardContent>
                 </Card>
               </Link>
@@ -296,9 +310,31 @@ export default function MallHome() {
               <Card className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90" style={{ borderRadius: "16px" }}>
                 <div className="aspect-square overflow-hidden bg-gray-50 relative">
                   {p.coverImageUrl ? (
-                    <img src={p.coverImageUrl} alt={p.name} className="w-full h-full object-cover mall-img-zoom" />
+                    <>
+                      <img
+                        src={p.coverImageUrl}
+                        alt={p.name}
+                        className="w-full h-full object-cover mall-img-zoom"
+                        onError={(event) => {
+                          event.currentTarget.classList.add("hidden");
+                          event.currentTarget.parentElement?.querySelector("[data-image-fallback]")?.classList.remove("hidden");
+                        }}
+                      />
+                      <div data-image-fallback className="hidden absolute inset-0 items-center justify-center text-gray-300"><Package className="h-12 w-12" /></div>
+                    </>
                   ) : p.images ? (
-                    <img src={p.images} alt={p.name} className="w-full h-full object-cover mall-img-zoom" />
+                    <>
+                      <img
+                        src={p.images}
+                        alt={p.name}
+                        className="w-full h-full object-cover mall-img-zoom"
+                        onError={(event) => {
+                          event.currentTarget.classList.add("hidden");
+                          event.currentTarget.parentElement?.querySelector("[data-image-fallback]")?.classList.remove("hidden");
+                        }}
+                      />
+                      <div data-image-fallback className="hidden absolute inset-0 items-center justify-center text-gray-300"><Package className="h-12 w-12" /></div>
+                    </>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-300"><Package className="h-12 w-12" /></div>
                   )}
@@ -335,6 +371,9 @@ export default function MallHome() {
                   {(p.shortDescEn || p.shortDescZh) && (
                     <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{translate(p.shortDescZh || p.shortDescEn, p.shortDescEn || p.shortDescZh)}</p>
                   )}
+                  <div className="mt-3 flex items-center justify-center rounded-lg px-2 py-2 text-xs font-bold text-white transition-transform group-hover:scale-[1.02]" style={{ backgroundColor: theme.button }}>
+                    {translate("查看商品详情", "View product details")}
+                  </div>
                 </CardContent>
               </Card>
             </Link>

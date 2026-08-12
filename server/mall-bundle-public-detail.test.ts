@@ -21,7 +21,8 @@ describe("商城公开组合商品详情", () => {
 
   it("组合详情页沿用保存的 coverImage 字段显示上传的封面图片", () => {
     expect(mallHome).toContain("{b.coverImage ? (");
-    expect(mallHome).toContain('<img src={b.coverImage} alt={b.name}');
+    expect(mallHome).toContain('src={b.coverImage}');
+    expect(mallHome).toContain('alt={b.name}');
     expect(detail).toContain("trpc.productBundles.mallDetail.useQuery");
     expect(detail).toContain("bundle.coverImage");
     expect(detail).toContain('<img src={bundle.coverImage}');
@@ -67,5 +68,17 @@ describe("商城公开组合商品详情", () => {
     expect(db).toContain('eq(categories.showInStore, true)');
     expect(productDetail).toContain('返回商城继续选购');
     expect(productDetail).toContain('Back to mall & continue shopping');
+  });
+
+  it("商品与组合卡统一采用方形图、可见详情操作条，商城公告维持紧凑展示", () => {
+    expect(mallHome).toContain('className="aspect-square overflow-hidden bg-gray-50 relative"');
+    expect(mallHome).toContain('查看组合详情');
+    expect(mallHome).toContain('View bundle details');
+    expect(mallHome).toContain('查看商品详情');
+    expect(mallHome).toContain('View product details');
+    expect(mallHome).toContain('max-w-6xl mx-auto px-4 py-2');
+    expect(mallHome).toContain('rounded-xl border bg-white/80 px-3 py-2');
+    expect(mallHome).toContain('data-image-fallback');
+    expect(mallHome).toContain('event.currentTarget.classList.add("hidden")');
   });
 });
