@@ -1,0 +1,161 @@
+CREATE TABLE IF NOT EXISTS `ai_orchestration_settings` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `isEnabled` BOOLEAN NOT NULL DEFAULT TRUE,
+  `voiceTranscriptionEnabled` BOOLEAN NOT NULL DEFAULT TRUE,
+  `requireVoiceReviewBelow` DECIMAL(5,2) NOT NULL DEFAULT 0.72,
+  `maxUnclearAttempts` INT NOT NULL DEFAULT 2,
+  `updatedBy` VARCHAR(255),
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS `ai_message_orchestrations` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `conversationId` INT NOT NULL,
+  `customerId` INT,
+  `customerMessageId` INT NOT NULL,
+  `channel` ENUM('messenger','whatsapp') NOT NULL,
+  `inputType` ENUM('text','image','audio','video','file') NOT NULL,
+  `status` ENUM('processing','completed','handover','skipped','failed') NOT NULL DEFAULT 'processing',
+  `primaryOutcome` ENUM('reply','flow','confirmation','handover','no_reply') NOT NULL DEFAULT 'no_reply',
+  `handledBy` ENUM('ai','flow','human','system') NOT NULL DEFAULT 'system',
+  `detectedIntent` VARCHAR(100),
+  `replyMessageId` INT,
+  `handoverRequestId` INT,
+  `pendingActionId` INT,
+  `processingTrace` JSON,
+  `errorCode` VARCHAR(100),
+  `errorMessage` TEXT,
+  `completedAt` TIMESTAMP NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_ai_orchestration_customer_message` (`customerMessageId`)
+);
+
+CREATE TABLE IF NOT EXISTS `ai_voice_transcripts` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `conversationId` INT NOT NULL,
+  `customerId` INT,
+  `chatMessageId` INT NOT NULL,
+  `mediaUrl` TEXT NOT NULL,
+  `durationMs` INT,
+  `status` ENUM('pending','transcribed','needs_review','failed') NOT NULL DEFAULT 'pending',
+  `transcript` TEXT,
+  `correctedTranscript` TEXT,
+  `detectedLanguage` VARCHAR(32),
+  `confidence` DECIMAL(5,2),
+  `warning` TEXT,
+  `failureReason` TEXT,
+  `correctedBy` VARCHAR(255),
+  `correctedAt` TIMESTAMP NULL,
+  `aiActionSummary` TEXT,
+  `transcribedAt` TIMESTAMP NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_ai_voice_transcript_message` (`chatMessageId`)
+);
+
+CREATE TABLE IF NOT EXISTS `ai_pending_actions` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `conversationId` INT NOT NULL,
+  `customerId` INT,
+  `sourceMessageId` INT NOT NULL,
+  `actionType` ENUM('create_order','add_to_order','update_line_quantity','remove_line','cancel_order','update_recipient','update_shipping','use_credit','apply_promotion','merge_order') NOT NULL,
+  `status` ENUM('pending_confirmation','confirmed','executed','expired','cancelled','failed') NOT NULL DEFAULT 'pending_confirmation',
+  `payload` JSON NOT NULL,
+  `pricingSnapshot` JSON,
+  `inventorySnapshot` JSON,
+  `targetOrderId` INT,
+  `confirmationReply` TEXT NOT NULL,
+  `confirmationMessageId` INT,
+  `customerConfirmationMessageId` INT,
+  `executedOrderId` INT,
+  `failureReason` TEXT,
+  `expiresAt` TIMESTAMP NULL,
+  `confirmedAt` TIMESTAMP NULL,
+  `executedAt` TIMESTAMP NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS `ai_sales_settings` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `isEnabled` BOOLEAN NOT NULL DEFAULT TRUE,
+  `proactiveRecommendationsEnabled` BOOLEAN NOT NULL DEFAULT TRUE,
+  `maxRecommendationsPerConversation` INT NOT NULL DEFAULT 2,
+  `stopAfterCustomerDecline` BOOLEAN NOT NULL DEFAULT TRUE,
+  `recommendationCooldownHours` INT NOT NULL DEFAULT 24,
+  `askEnvironmentFirst` BOOLEAN NOT NULL DEFAULT TRUE,
+  `askBudgetFirst` BOOLEAN NOT NULL DEFAULT FALSE,
+  `prioritizeEasyCare` BOOLEAN NOT NULL DEFAULT TRUE,
+  `minimumGrossMarginPercent` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+  `updatedBy` VARCHAR(255),
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS `ai_sales_records` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `conversationId` INT,
+  `customerId` INT,
+  `sourceMessageId` INT,
+  `channel` ENUM('messenger','whatsapp','live') NOT NULL,
+  `customerRequest` TEXT,
+  `recommendationType` ENUM('product','cross_sell','upsell','free_shipping_gap','promotion','replenishment') NOT NULL,
+  `recommendedProductIds` JSON,
+  `recommendationReason` TEXT,
+  `suggestedAmount` DECIMAL(12,2),
+  `pricingSnapshot` JSON,
+  `estimatedGrossProfit` DECIMAL(12,2),
+  `estimatedGrossMarginPercent` DECIMAL(5,2),
+  `customerResponse` ENUM('pending','accepted','declined','no_response') NOT NULL DEFAULT 'pending',
+  `outcome` ENUM('recommended','pending_confirmation','added','ordered','handover','lost') NOT NULL DEFAULT 'recommended',
+  `orderId` INT,
+  `orderNumber` VARCHAR(50),
+  `pendingActionId` INT,
+  `wasHandover` BOOLEAN NOT NULL DEFAULT FALSE,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS `ai_follow_up_policies` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(120) NOT NULL,
+  `channel` ENUM('messenger','whatsapp') NOT NULL DEFAULT 'messenger',
+  `triggerType` ENUM('unpaid_order','quotation','cart_abandoned','membership_flow') NOT NULL,
+  `isEnabled` BOOLEAN NOT NULL DEFAULT FALSE,
+  `cronExpression` VARCHAR(100) NOT NULL DEFAULT '0 0 9 * * *',
+  `delayHours` INT NOT NULL DEFAULT 24,
+  `maxAttempts` INT NOT NULL DEFAULT 1,
+  `respectHandover` BOOLEAN NOT NULL DEFAULT TRUE,
+  `stopOnCustomerReply` BOOLEAN NOT NULL DEFAULT TRUE,
+  `stopOnPurchase` BOOLEAN NOT NULL DEFAULT TRUE,
+  `stopOnPayment` BOOLEAN NOT NULL DEFAULT TRUE,
+  `messageTemplate` TEXT NOT NULL,
+  `scheduleCronTaskUid` VARCHAR(65),
+  `lastRunAt` TIMESTAMP NULL,
+  `createdBy` VARCHAR(255),
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ai_follow_up_task_uid` (`scheduleCronTaskUid`)
+);
+
+CREATE TABLE IF NOT EXISTS `ai_follow_up_deliveries` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `policyId` INT NOT NULL,
+  `customerId` INT NULL,
+  `conversationId` INT NULL,
+  `orderId` INT NULL,
+  `channel` ENUM('messenger','whatsapp') NOT NULL,
+  `status` ENUM('skipped','pending','sent','failed','stopped') NOT NULL DEFAULT 'pending',
+  `skipReason` VARCHAR(120),
+  `message` TEXT,
+  `platformMessageId` VARCHAR(255),
+  `errorMessage` TEXT,
+  `sentAt` TIMESTAMP NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ai_follow_up_policy_order` (`policyId`, `orderId`)
+);

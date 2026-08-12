@@ -2,8 +2,12 @@ import axios from "axios";
 import {
   addChatMessage,
   addDeliveryAttempt,
+  claimPublicFlowEvent,
+  completePublicFlowEvent,
   createAiLog,
   createHandoverRequest,
+  executeAutoOrderCapture,
+  getLiveRooms,
   getOrCreateConversation,
   matchLiveAiFlowWithMetadata,
   storeIncomingMessengerMessage,
@@ -12,6 +16,8 @@ import {
 } from "./db";
 import { AiProcessingContext } from "./aiLogContext";
 import { processChatAI } from "./aiEngines";
+import { processCustomerVoice } from "./aiVoiceService";
+import { completeUnifiedReply, orchestrateInboundText } from "./unifiedAiOrchestrator";
 
 const FB_GRAPH_API = "https://graph.facebook.com/v21.0";
 
@@ -271,7 +277,7 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
 
   // Store incoming message in chat system
   let conversation: any = null;
-  let storeResult: { conversationId: number; customerMessageId: number | null; customerId: number | null; customerName: string | null } | null = null;
+  let storeResult: Awaited<ReturnType<typeof storeIncomingMessengerMessage>> | null = null;
   try {
     storeResult = await storeIncomingMessengerMessage(psid, text, attachments);
     // Get conversation to check AI status
@@ -286,7 +292,6 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
   // as Facebook Live comments.
   if (text) {
     try {
-      const { executeAutoOrderCapture, getLiveRooms } = require("./db");
       // V2.1.02: Look up active live rooms to determine if this is an import preorder
       let liveRoomId: number | undefined;
       let liveType: string | undefined;
@@ -367,7 +372,80 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
   const aiEnabled = conversation?.aiReplyEnabled !== false;
   const handoverStatus = conversation?.handoverStatus || "none";
 
-  if (text && aiEnabled && handoverStatus !== "claimed") {
+  const audioAttachment = storeResult?.attachmentMessages?.find((attachment) => attachment.type === "audio" && attachment.mediaUrl);
+  if (!text && conversation?.id && audioAttachment?.mediaUrl) {
+    try {
+      const voiceOutcome = await processCustomerVoice({
+        conversationId: conversation.id,
+        customerId: storeResult?.customerId ?? null,
+        customerMessageId: audioAttachment.messageId,
+        customerName: storeResult?.customerName || "客户",
+        channel: "messenger",
+        platformId: psid,
+        mediaUrl: audioAttachment.mediaUrl,
+        aiReplyEnabled: aiEnabled,
+        handoverStatus,
+      });
+
+      if (voiceOutcome.kind === "ai") {
+        const outcome = voiceOutcome.orchestration;
+        if (outcome.kind === "reply" && outcome.result.reply) {
+          let delivered = false;
+          let errorMessage: string | undefined;
+          try {
+            await sendTextMessage(psid, outcome.result.reply);
+            delivered = true;
+          } catch (error: any) {
+            errorMessage = (error?.message ?? String(error)).slice(0, 500);
+          }
+          const storedReply = await addChatMessage({
+            conversationId: conversation.id,
+            senderType: "ai",
+            senderName: "AI客服（语音）",
+            messageType: "text",
+            content: outcome.result.reply,
+            status: delivered ? "sent" : "failed",
+            aiResponseSource: outcome.result.source,
+          });
+          await completeUnifiedReply(outcome.orchestrationId, {
+            replyMessageId: storedReply?.messageId ?? null,
+            delivered,
+            source: outcome.result.source,
+            errorMessage,
+          });
+        }
+        return;
+      }
+
+      if (voiceOutcome.kind === "needs_review") {
+        await createHandoverRequest({
+          conversationId: conversation.id,
+          customerId: storeResult?.customerId ?? null,
+          customerName: storeResult?.customerName || "客户",
+          platform: "messenger",
+          platformId: psid,
+          reason: "客户语音无法可靠辨识，需人工协助",
+          priority: "medium",
+        });
+      }
+
+      await sendTextMessage(psid, voiceOutcome.customerMessage);
+      await addChatMessage({
+        conversationId: conversation.id,
+        senderType: "ai",
+        senderName: voiceOutcome.kind === "confirmation" ? "AI客服（待确认）" : "AI客服（语音）",
+        messageType: "text",
+        content: voiceOutcome.customerMessage,
+        status: "sent",
+        aiResponseSource: voiceOutcome.kind === "confirmation" ? "voice_confirmation" : "voice_review",
+      });
+      return;
+    } catch (error) {
+      console.error("[Messenger] Voice processing failed:", error);
+    }
+  }
+
+  if (text && conversation?.id && storeResult?.customerMessageId) {
     // Create AiProcessingContext for logging
     const logCtx = new AiProcessingContext(
       conversation?.id ?? null,
@@ -380,22 +458,44 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
       handoverStatus,
     );
 
-    // Use the new independent AI engine pipeline for private chat
-    // Engines: Product Match → Reply Rule → Knowledge → Handover (no hardcoded replies)
+    // The unified orchestrator is the single arbitration point for AI, Flow and human handover.
+    // It decides whether there is a reply, a handover or no action. This channel adapter only delivers.
     try {
-      const result = await processChatAI(
-        {
-          text,
-          platform: "messenger",
-          conversationId: conversation?.id,
-          sourceType: "private_chat",
-        },
-        {
-          aiEnabled: true,
-          handoverStatus,
-          logContext: logCtx,
-        }
-      );
+      const outcome = await orchestrateInboundText({
+        conversationId: conversation.id,
+        customerId: storeResult.customerId,
+        customerMessageId: storeResult.customerMessageId,
+        customerName: storeResult.customerName || "客户",
+        channel: "messenger",
+        platformId: psid,
+        text,
+        aiReplyEnabled: aiEnabled,
+        handoverStatus,
+        sourceType: "private_chat",
+        logContext: logCtx,
+      });
+
+      if (outcome.kind === "duplicate") {
+        console.log("[Messenger] Duplicate message orchestration skipped:", storeResult.customerMessageId);
+        return;
+      }
+
+      const result = outcome.result;
+
+      if (outcome.kind === "handover") {
+        logCtx.sendStatus = "not_sent";
+        if (result.detectedIntent) (logCtx as any).detectedIntent = result.detectedIntent;
+        if (result.handoverSummary) (logCtx as any).handoverSummary = result.handoverSummary;
+        await createAiLog(logCtx.finalize());
+        return;
+      }
+
+      if (outcome.kind === "skipped") {
+        logCtx.sendStatus = "not_sent";
+        logCtx.addStep("orchestration", "统一回复仲裁", "已跳过自动回复（人工接管、全局停用或规则无需回复）", "skipped");
+        await createAiLog(logCtx.finalize());
+        return;
+      }
 
       if (result.shouldReply && result.reply) {
         // Create the primary log and the first delivery attempt before sending.
@@ -475,6 +575,12 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
             processingSteps: finalLog.processingSteps,
           });
         }
+        await completeUnifiedReply(outcome.orchestrationId, {
+          replyMessageId: aiReplyMessageId,
+          delivered: sendOk,
+          source: result.source,
+          errorMessage,
+        });
         return;
       }
 
@@ -730,6 +836,41 @@ async function processComment(params: {
   const lowerMsg = commentMessage.toLowerCase();
   let campaign: any = null;
 
+  // A Facebook comment can be redelivered through more than one webhook field.
+  // Claim it before any Flow or order logic so one platform event can create at
+  // most one customer-facing reply and one live-order capture.
+  let publicEventClaim: { id: number } | null = null;
+  let publicEventResult: {
+    outcome: "flow" | "live_order" | "no_reply" | "failed";
+    handledBy: "flow" | "live_order" | "system";
+    liveRoomId?: number | null;
+    responseSummary?: string | null;
+    errorMessage?: string | null;
+  } = {
+    outcome: "no_reply",
+    handledBy: "system",
+    responseSummary: "评论未命中可执行 Flow 或直播捉单关键词",
+  };
+  try {
+    const claimResult = await claimPublicFlowEvent({
+      platform: "facebook",
+      eventType: sourceType === "facebook_live" ? "live_comment" : "comment",
+      sourceEventId: commentId,
+    });
+    if (!claimResult.isNew) {
+      console.log("[Facebook] Duplicate public comment event skipped:", commentId);
+      return;
+    }
+    publicEventClaim = claimResult.claim;
+  } catch (claimError: any) {
+    // Fail closed. It is safer to defer a reply than to risk a duplicate order
+    // or duplicate Flow response when the single-event guard is unavailable.
+    console.error("[Facebook] Unable to claim public comment event:", claimError?.message);
+    return;
+  }
+
+  try {
+
   // Flow comments intentionally use no chat conversation. Their platform event and matched
   // Flow ID are persisted directly so audit records never create a fake private chat.
   try {
@@ -795,6 +936,18 @@ async function processComment(params: {
 
       // AI Flow matched — auto-reply and return (no order capture).
       const replyResult = await replyToComment(commentId, flowMatch.reply);
+      publicEventResult = replyResult.success
+        ? {
+            outcome: "flow",
+            handledBy: "flow",
+            responseSummary: `Flow #${flowMatch.flowId} 已回复：${flowMatch.matchedKeyword}`,
+          }
+        : {
+            outcome: "failed",
+            handledBy: "flow",
+            responseSummary: `Flow #${flowMatch.flowId} 回复发送失败`,
+            errorMessage: replyResult.errorMessage ?? "Facebook 评论回复发送失败",
+          };
       const finalProcessingSteps = [
         ...processingSteps,
         {
@@ -864,9 +1017,12 @@ async function processComment(params: {
           );
           if (expiredPreorderRooms.length > 0 && keywords.length > 0) {
             // Preorder deadline has passed - reply with closure message
-            await replyToComment(commentId,
+            const replyResult = await replyToComment(commentId,
               `${commenterName} 您好！此代购活动已截止，如有疑问请联系客服，谢谢。`
             );
+            publicEventResult = replyResult.success
+              ? { outcome: "no_reply", handledBy: "system", responseSummary: "已回复代购活动截止通知" }
+              : { outcome: "failed", handledBy: "system", responseSummary: "代购截止通知发送失败", errorMessage: replyResult.errorMessage ?? null };
             return;
           }
           const preparingRooms = await getLiveRooms({ status: 'preparing' });
@@ -1015,10 +1171,17 @@ async function processComment(params: {
           sourceType: campaign ? "facebook_post" : "facebook_live",
         });
         const itemList = matched.map((m: any) => `${m.keyword}+${m.quantity}`).join(", ");
-        await replyToComment(
+        const commentReplyResult = await replyToComment(
           commentId,
           `${commenterName} 您好！已自动建单 ✅\n订单编号: ${orderResult.orderNumber}\n商品: ${itemList}\n总额: RM ${orderResult.totalAmount}\n\n请私信我们提供收货地址和付款方式哦~`
         );
+        publicEventResult = {
+          outcome: "live_order",
+          handledBy: "live_order",
+          liveRoomId: liveRoomId ?? null,
+          responseSummary: `已建立订单 ${orderResult.orderNumber}`,
+          errorMessage: commentReplyResult.success ? null : (commentReplyResult.errorMessage ?? "订单评论确认发送失败"),
+        };
         try {
           const isMerged = (orderResult as any).merged;
           if (isMerged) {
@@ -1068,11 +1231,29 @@ async function processComment(params: {
 
   // Generic auto-replies (only if no keyword match was attempted)
   if (lowerMsg.includes("要") || lowerMsg.includes("买") || lowerMsg.includes("下单")) {
-    await replyToComment(commentId, `${commenterName} 您好！已收到您的订单意向，请私信我们完成下单哦~`);
+    const replyResult = await replyToComment(commentId, `${commenterName} 您好！已收到您的订单意向，请私信我们完成下单哦~`);
+    publicEventResult = replyResult.success
+      ? { outcome: "no_reply", handledBy: "system", responseSummary: "已回复通用下单引导" }
+      : { outcome: "failed", handledBy: "system", responseSummary: "通用下单引导发送失败", errorMessage: replyResult.errorMessage ?? null };
   } else if (lowerMsg.includes("多少钱") || lowerMsg.includes("价格") || lowerMsg.includes("price")) {
-    await replyToComment(commentId, `${commenterName} 您好！请私信我们获取详细价格信息~`);
+    const replyResult = await replyToComment(commentId, `${commenterName} 您好！请私信我们获取详细价格信息~`);
+    publicEventResult = replyResult.success
+      ? { outcome: "no_reply", handledBy: "system", responseSummary: "已回复通用价格引导" }
+      : { outcome: "failed", handledBy: "system", responseSummary: "通用价格引导发送失败", errorMessage: replyResult.errorMessage ?? null };
   } else if (lowerMsg.includes("有货") || lowerMsg.includes("stock")) {
-    await replyToComment(commentId, `${commenterName} 您好！请私信我们确认库存情况~`);
+    const replyResult = await replyToComment(commentId, `${commenterName} 您好！请私信我们确认库存情况~`);
+    publicEventResult = replyResult.success
+      ? { outcome: "no_reply", handledBy: "system", responseSummary: "已回复通用库存引导" }
+      : { outcome: "failed", handledBy: "system", responseSummary: "通用库存引导发送失败", errorMessage: replyResult.errorMessage ?? null };
+  }
+  } finally {
+    if (publicEventClaim) {
+      try {
+        await completePublicFlowEvent(publicEventClaim.id, publicEventResult);
+      } catch (completeError: any) {
+        console.error("[Facebook] Unable to finalize public comment event:", completeError?.message);
+      }
+    }
   }
 }
 

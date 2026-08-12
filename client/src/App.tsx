@@ -23,6 +23,7 @@ import OrderChangeRequests from "@/pages/OrderChangeRequests";
 import ReplyRules from "@/pages/ReplyRules";
 import AiKnowledge from "@/pages/AiKnowledge";
 import AiBrain from "@/pages/AiBrain";
+import AiSalesCenter from "@/pages/AiSalesCenter";
 import Suppliers from "@/pages/Suppliers";
 import PurchaseOrders from "@/pages/PurchaseOrders";
 import BusinessReport from "@/pages/BusinessReport";
@@ -104,6 +105,7 @@ function DashboardRoutes() {
       <Route path={"/draft-orders"} component={DraftOrders} />
       <Route path={"/order-change-requests"} component={OrderChangeRequests} />
       <Route path={"/ai-brain"} component={AiBrain} />
+      <Route path={"/ai-sales"} component={AiSalesCenter} />
       <Route path={"/reply-rules"} component={ReplyRules} />
       <Route path={"/ai-knowledge"} component={AiKnowledge} />
       <Route path={"/flows"} component={Flows} />

@@ -33,6 +33,7 @@ import * as parceldaily from "./parceldaily";
 import * as parcelking from "./parcelking";
 import { ParcelKingError } from "./parcelking";
 import * as shippingProvider from "./shippingProvider";
+import { createHeartbeatJob, updateHeartbeatJob } from "./_core/heartbeat";
 
 const PACKING_SHIPPING_ERROR_MESSAGES: Record<string, string> = {
   PACKING_ORDER_NOT_FOUND: "订单不存在或已被删除",
@@ -5757,6 +5758,175 @@ export const appRouter = router({
         }
         return { success: true };
       }),
+  }),
+
+  // =========================================================================
+  // V5.0: Unified AI customer-service orchestration, voice and sales center
+  // =========================================================================
+  aiOrchestration: router({
+    getSettings: adminProcedure.query(async () => {
+      return await db.getAiOrchestrationSettings();
+    }),
+    updateSettings: adminProcedure.input(z.object({
+      isEnabled: z.boolean().optional(),
+      voiceTranscriptionEnabled: z.boolean().optional(),
+      requireVoiceReviewBelow: z.string().optional(),
+      maxUnclearAttempts: z.number().int().min(1).max(10).optional(),
+    })).mutation(async ({ input, ctx }) => {
+      await db.updateAiOrchestrationSettings({ ...input, updatedBy: ctx.user?.name || "Staff" });
+      return { success: true };
+    }),
+    listVoiceTranscripts: adminProcedure.input(z.object({
+      conversationId: z.number().optional(),
+      status: z.enum(["all", "pending", "transcribed", "needs_review", "failed"]).optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    })).query(async ({ input }) => {
+      return await db.listAiVoiceTranscripts(input);
+    }),
+    reviseVoiceTranscript: adminProcedure.input(z.object({
+      id: z.number(),
+      correctedTranscript: z.string().min(1),
+    })).mutation(async ({ input, ctx }) => {
+      await db.updateAiVoiceTranscript(input.id, {
+        status: "transcribed",
+        correctedTranscript: input.correctedTranscript,
+        correctedBy: ctx.user?.name || "Staff",
+        correctedAt: new Date(),
+      });
+      return { success: true };
+    }),
+    getPendingAction: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await db.getAiPendingAction(input.id);
+    }),
+    updatePendingAction: adminProcedure.input(z.object({
+      id: z.number(),
+      status: z.enum(["confirmed", "executed", "expired", "failed", "cancelled"]),
+      failureReason: z.string().max(500).optional(),
+    })).mutation(async ({ input, ctx }) => {
+      await db.updateAiPendingAction(input.id, {
+        status: input.status,
+        confirmedBy: ["confirmed", "executed"].includes(input.status) ? (ctx.user?.name || "Staff") : null,
+        confirmedAt: ["confirmed", "executed"].includes(input.status) ? new Date() : null,
+        failureReason: input.failureReason ?? null,
+      });
+      return { success: true };
+    }),
+  }),
+
+  aiSales: router({
+    getSettings: adminProcedure.query(async () => {
+      return await db.getAiSalesSettings();
+    }),
+    updateSettings: adminProcedure.input(z.object({
+      isEnabled: z.boolean().optional(),
+      proactiveRecommendationsEnabled: z.boolean().optional(),
+      maxRecommendationsPerConversation: z.number().int().min(1).max(10).optional(),
+      stopAfterCustomerDecline: z.boolean().optional(),
+      recommendationCooldownHours: z.number().int().min(0).max(720).optional(),
+      askEnvironmentFirst: z.boolean().optional(),
+      askBudgetFirst: z.boolean().optional(),
+      prioritizeEasyCare: z.boolean().optional(),
+      minimumGrossMarginPercent: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      await db.updateAiSalesSettings({ ...input, updatedBy: ctx.user?.name || "Staff" });
+      return { success: true };
+    }),
+    listRecords: adminProcedure.input(z.object({
+      conversationId: z.number().optional(),
+      customerId: z.number().optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    })).query(async ({ input }) => {
+      return await db.listAiSalesRecords(input);
+    }),
+  }),
+
+  // =========================================================================
+  // AI Follow-up — explicitly activated Heartbeat jobs with delivery audit
+  // =========================================================================
+  aiFollowUp: router({
+    listPolicies: adminProcedure.query(async () => {
+      return await db.listAiFollowUpPolicies();
+    }),
+    listDeliveries: adminProcedure.input(z.object({
+      policyId: z.number().int().positive().optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    })).query(async ({ input }) => {
+      return await db.listAiFollowUpDeliveries(input);
+    }),
+    createPolicy: adminProcedure.input(z.object({
+      name: z.string().trim().min(1).max(120),
+      channel: z.enum(["messenger", "whatsapp"]).default("messenger"),
+      triggerType: z.enum(["unpaid_order", "quotation", "cart_abandoned", "membership_flow"]),
+      cronExpression: z.string().trim().min(9).max(100).default("0 0 9 * * *"),
+      delayHours: z.number().int().min(1).max(24 * 30).default(24),
+      maxAttempts: z.number().int().min(1).max(3).default(1),
+      respectHandover: z.boolean().default(true),
+      stopOnCustomerReply: z.boolean().default(true),
+      stopOnPurchase: z.boolean().default(true),
+      stopOnPayment: z.boolean().default(true),
+      messageTemplate: z.string().trim().min(1).max(2000),
+    })).mutation(async ({ input, ctx }) => {
+      // A saved policy never starts running automatically. The administrator
+      // must explicitly enable it after reviewing its template and safeguards.
+      const policy = await db.createAiFollowUpPolicy({
+        ...input,
+        createdBy: ctx.user?.name || "Staff",
+      });
+      try {
+        const scheduled = await createHeartbeatJob({
+          name: `ai-follow-up-${policy.id}`,
+          cron: input.cronExpression,
+          path: "/api/scheduled/ai-follow-up",
+          method: "POST",
+          payload: {},
+          description: `AI 自动跟进：${input.name}（创建后默认暂停）`,
+        }, "");
+        // Pause before returning so a newly saved policy cannot send without
+        // a later, explicit enable action.
+        await updateHeartbeatJob(scheduled.taskUid, { enable: false }, "");
+        const updated = await db.updateAiFollowUpPolicy(policy.id, {
+          scheduleCronTaskUid: scheduled.taskUid,
+          isEnabled: false,
+        });
+        return { policy: updated, taskUid: scheduled.taskUid, isEnabled: false };
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `已保存但无法建立计划任务：${error instanceof Error ? error.message : "未知错误"}`,
+        });
+      }
+    }),
+    updatePolicy: adminProcedure.input(z.object({
+      id: z.number().int().positive(),
+      cronExpression: z.string().trim().min(9).max(100).optional(),
+      delayHours: z.number().int().min(1).max(24 * 30).optional(),
+      maxAttempts: z.number().int().min(1).max(3).optional(),
+      respectHandover: z.boolean().optional(),
+      stopOnCustomerReply: z.boolean().optional(),
+      stopOnPurchase: z.boolean().optional(),
+      stopOnPayment: z.boolean().optional(),
+      messageTemplate: z.string().trim().min(1).max(2000).optional(),
+    })).mutation(async ({ input }) => {
+      const policy = await db.getAiFollowUpPolicy(input.id);
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "自动跟进策略不存在" });
+      if (input.cronExpression && policy.scheduleCronTaskUid) {
+        await updateHeartbeatJob(policy.scheduleCronTaskUid, { cron: input.cronExpression }, "");
+      }
+      const { id, ...changes } = input;
+      return await db.updateAiFollowUpPolicy(id, changes);
+    }),
+    setEnabled: adminProcedure.input(z.object({
+      id: z.number().int().positive(),
+      isEnabled: z.boolean(),
+    })).mutation(async ({ input }) => {
+      const policy = await db.getAiFollowUpPolicy(input.id);
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "自动跟进策略不存在" });
+      if (!policy.scheduleCronTaskUid) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "策略尚未绑定计划任务，不能启用" });
+      }
+      await updateHeartbeatJob(policy.scheduleCronTaskUid, { enable: input.isEnabled }, "");
+      return await db.updateAiFollowUpPolicy(policy.id, { isEnabled: input.isEnabled });
+    }),
   }),
 
   // =========================================================================

@@ -39,6 +39,9 @@ import {
   chatConversations, chatMessages, aiHandoverRequests,
   // V4.1 imports - AI Brain Phase 2 (AI Logs)
   aiLogs, aiLogDeliveryAttempts,
+  // V5.0 imports - Unified AI customer-service orchestration
+  aiOrchestrationSettings, aiMessageOrchestrations, aiPublicEventClaims, aiVoiceTranscripts, aiPendingActions, aiSalesSettings, aiSalesRecords,
+  aiFollowUpPolicies, aiFollowUpDeliveries,
   // V4.2 imports - AI Brain Phase 2 Task 2 (AI Test Center)
   aiTestRuns, aiKnowledge,
   // V4.3 imports - AI Brain Phase 2 Task 5 (Regression Test & AI Version)
@@ -11452,9 +11455,9 @@ export async function getChatCustomerInfo(customerId: number): Promise<any> {
 }
 
 // Store incoming Messenger message to chat
-export async function storeIncomingMessengerMessage(psid: string, text: string, attachments?: any[]): Promise<{ conversationId: number; customerMessageId: number | null; customerId: number | null; customerName: string | null }> {
+export async function storeIncomingMessengerMessage(psid: string, text: string, attachments?: any[]): Promise<{ conversationId: number; customerMessageId: number | null; customerId: number | null; customerName: string | null; attachmentMessages: Array<{ messageId: number; type: string; mediaUrl: string | null }> }> {
   const db = await getDb();
-  if (!db) return { conversationId: 0, customerMessageId: null, customerId: null, customerName: null };
+  if (!db) return { conversationId: 0, customerMessageId: null, customerId: null, customerName: null, attachmentMessages: [] };
   
   // Find or create customer by messengerId (PSID)
   // This ensures every Messenger user gets a customer record, even if they just say "Hi"
@@ -11482,6 +11485,7 @@ export async function storeIncomingMessengerMessage(psid: string, text: string, 
   const conversation = await getOrCreateConversation(customerId, "messenger", psid);
   
   let customerMessageId: number | null = null;
+  const attachmentMessages: Array<{ messageId: number; type: string; mediaUrl: string | null }> = [];
   // Add text message
   if (text) {
     const msgResult = await addChatMessage({
@@ -11501,14 +11505,21 @@ export async function storeIncomingMessengerMessage(psid: string, text: string, 
                      att.type === "audio" ? "audio" :
                      att.type === "video" ? "video" :
                      att.type === "file" ? "file" : "text";
-      await addChatMessage({
+      const attachmentResult = await addChatMessage({
         conversationId: conversation.id,
         senderType: "customer",
         messageType: msgType,
         content: att.title || att.type,
         mediaUrl: att.payload?.url,
         status: "delivered",
-            });
+      });
+      if (attachmentResult?.messageId) {
+        attachmentMessages.push({
+          messageId: attachmentResult.messageId,
+          type: msgType,
+          mediaUrl: att.payload?.url ?? null,
+        });
+      }
     }
   }
   // Broadcast chat change for real-time SSE push
@@ -11518,6 +11529,7 @@ export async function storeIncomingMessengerMessage(psid: string, text: string, 
     customerMessageId,
     customerId,
     customerName: customer.length > 0 ? (customer[0] as any).name ?? null : null,
+    attachmentMessages,
   };
 }
 // ===========================================================================
@@ -15008,4 +15020,534 @@ export async function getStockAllocationSummary(batchId: number) {
   }
 
   return Object.values(summary);
+}
+
+// ============================================================================
+// V5.0 — Unified AI customer-service orchestration
+// ============================================================================
+
+export async function getAiOrchestrationSettings() {
+  const db = await getDb();
+  if (!db) return null;
+  const [existing] = await db.select().from(aiOrchestrationSettings).limit(1);
+  if (existing) return existing;
+  await db.insert(aiOrchestrationSettings).values({});
+  const [created] = await db.select().from(aiOrchestrationSettings).limit(1);
+  return created ?? null;
+}
+
+export async function getAiSalesSettings() {
+  const db = await getDb();
+  if (!db) return null;
+  const [existing] = await db.select().from(aiSalesSettings).limit(1);
+  if (existing) return existing;
+  await db.insert(aiSalesSettings).values({});
+  const [created] = await db.select().from(aiSalesSettings).limit(1);
+  return created ?? null;
+}
+
+export async function updateAiOrchestrationSettings(data: {
+  isEnabled?: boolean;
+  voiceTranscriptionEnabled?: boolean;
+  requireVoiceReviewBelow?: string;
+  maxUnclearAttempts?: number;
+  updatedBy: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const current = await getAiOrchestrationSettings();
+  if (!current) throw new Error("Unable to initialize AI orchestration settings");
+  await db.update(aiOrchestrationSettings).set({
+    ...data,
+    updatedAt: new Date(),
+  }).where(eq(aiOrchestrationSettings.id, current.id));
+  broadcastChange("chat" as any);
+}
+
+export async function updateAiSalesSettings(data: {
+  isEnabled?: boolean;
+  proactiveRecommendationsEnabled?: boolean;
+  maxRecommendationsPerConversation?: number;
+  stopAfterCustomerDecline?: boolean;
+  recommendationCooldownHours?: number;
+  askEnvironmentFirst?: boolean;
+  askBudgetFirst?: boolean;
+  prioritizeEasyCare?: boolean;
+  minimumGrossMarginPercent?: string;
+  updatedBy: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const current = await getAiSalesSettings();
+  if (!current) throw new Error("Unable to initialize AI sales settings");
+  await db.update(aiSalesSettings).set({
+    ...data,
+    updatedAt: new Date(),
+  }).where(eq(aiSalesSettings.id, current.id));
+  broadcastChange("chat" as any);
+}
+
+export async function beginAiMessageOrchestration(data: {
+  conversationId: number;
+  customerId: number | null;
+  customerMessageId: number;
+  channel: "messenger" | "whatsapp";
+  inputType: "text" | "image" | "audio" | "video" | "file";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [existing] = await db.select().from(aiMessageOrchestrations)
+    .where(eq(aiMessageOrchestrations.customerMessageId, data.customerMessageId))
+    .limit(1);
+  if (existing) return { record: existing, isNew: false };
+
+  try {
+    const [inserted] = await db.insert(aiMessageOrchestrations).values({
+      ...data,
+      status: "processing",
+      primaryOutcome: "no_reply",
+      handledBy: "system",
+    });
+    const id = (inserted as any).insertId;
+    const [record] = await db.select().from(aiMessageOrchestrations)
+      .where(eq(aiMessageOrchestrations.id, id))
+      .limit(1);
+    return { record: record!, isNew: true };
+  } catch (error) {
+    const [raceWinner] = await db.select().from(aiMessageOrchestrations)
+      .where(eq(aiMessageOrchestrations.customerMessageId, data.customerMessageId))
+      .limit(1);
+    if (raceWinner) return { record: raceWinner, isNew: false };
+    throw error;
+  }
+}
+
+export async function finalizeAiMessageOrchestration(
+  orchestrationId: number,
+  data: {
+    status: "completed" | "handover" | "skipped" | "failed";
+    primaryOutcome: "reply" | "flow" | "confirmation" | "handover" | "no_reply";
+    handledBy: "ai" | "flow" | "human" | "system";
+    detectedIntent?: string | null;
+    replyMessageId?: number | null;
+    handoverRequestId?: number | null;
+    pendingActionId?: number | null;
+    processingTrace?: unknown;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+  },
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(aiMessageOrchestrations).set({
+    ...data,
+    processingTrace: data.processingTrace ?? null,
+    completedAt: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(aiMessageOrchestrations.id, orchestrationId));
+  broadcastChange("chat" as any);
+}
+
+/**
+ * Public comments have no private chat-message record to reserve. Claim the
+ * platform event itself before a Flow, live-order capture, or generic reply is
+ * evaluated. The database unique key is the final safeguard against webhook
+ * retries and concurrent workers sending duplicate customer-facing replies.
+ */
+export async function claimPublicFlowEvent(data: {
+  platform: "facebook" | "instagram";
+  eventType: "comment" | "mention" | "live_comment";
+  sourceEventId: string;
+  liveRoomId?: number | null;
+  handledBy?: "flow" | "live_order" | "system";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const conditions = and(
+    eq(aiPublicEventClaims.platform, data.platform),
+    eq(aiPublicEventClaims.eventType, data.eventType),
+    eq(aiPublicEventClaims.sourceEventId, data.sourceEventId),
+  );
+  const [existing] = await db.select().from(aiPublicEventClaims).where(conditions).limit(1);
+  if (existing) return { claim: existing, isNew: false };
+
+  try {
+    const [result] = await db.insert(aiPublicEventClaims).values({
+      ...data,
+      handledBy: data.handledBy ?? "system",
+      outcome: "processing",
+    });
+    const [claim] = await db.select().from(aiPublicEventClaims)
+      .where(eq(aiPublicEventClaims.id, (result as any).insertId))
+      .limit(1);
+    return { claim: claim!, isNew: true };
+  } catch (error) {
+    const [raceWinner] = await db.select().from(aiPublicEventClaims).where(conditions).limit(1);
+    if (raceWinner) return { claim: raceWinner, isNew: false };
+    throw error;
+  }
+}
+
+export async function completePublicFlowEvent(
+  claimId: number,
+  data: {
+    outcome: "flow" | "live_order" | "no_reply" | "failed";
+    handledBy: "flow" | "live_order" | "system";
+    liveRoomId?: number | null;
+    responseSummary?: string | null;
+    errorMessage?: string | null;
+  },
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(aiPublicEventClaims).set({
+    ...data,
+    completedAt: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(aiPublicEventClaims.id, claimId));
+}
+
+export async function createAiVoiceTranscript(data: {
+  conversationId: number;
+  customerId: number | null;
+  chatMessageId: number;
+  mediaUrl: string;
+  durationMs?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [existing] = await db.select().from(aiVoiceTranscripts)
+    .where(eq(aiVoiceTranscripts.chatMessageId, data.chatMessageId))
+    .limit(1);
+  if (existing) return existing;
+  const [result] = await db.insert(aiVoiceTranscripts).values({ ...data, status: "pending" });
+  const [record] = await db.select().from(aiVoiceTranscripts)
+    .where(eq(aiVoiceTranscripts.id, (result as any).insertId))
+    .limit(1);
+  broadcastChange("chat" as any);
+  return record ?? null;
+}
+
+export async function updateAiVoiceTranscript(
+  transcriptId: number,
+  data: {
+    status?: "pending" | "transcribed" | "needs_review" | "failed";
+    transcript?: string | null;
+    correctedTranscript?: string | null;
+    detectedLanguage?: string | null;
+    confidence?: string | null;
+    warning?: string | null;
+    failureReason?: string | null;
+    correctedBy?: string | null;
+    correctedAt?: Date | null;
+    aiActionSummary?: string | null;
+    transcribedAt?: Date | null;
+  },
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(aiVoiceTranscripts).set({ ...data, updatedAt: new Date() })
+    .where(eq(aiVoiceTranscripts.id, transcriptId));
+  broadcastChange("chat" as any);
+}
+
+export async function createAiPendingAction(data: {
+  conversationId: number;
+  customerId: number | null;
+  sourceMessageId: number;
+  actionType: "create_order" | "add_to_order" | "update_line_quantity" | "remove_line" | "cancel_order" | "update_recipient" | "update_shipping" | "use_credit" | "apply_promotion" | "merge_order";
+  payload: unknown;
+  pricingSnapshot?: unknown;
+  inventorySnapshot?: unknown;
+  targetOrderId?: number | null;
+  confirmationReply: string;
+  expiresAt?: Date | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(aiPendingActions).values({
+    ...data,
+    payload: data.payload as any,
+    pricingSnapshot: data.pricingSnapshot as any,
+    inventorySnapshot: data.inventorySnapshot as any,
+    status: "pending_confirmation",
+  });
+  const [record] = await db.select().from(aiPendingActions)
+    .where(eq(aiPendingActions.id, (result as any).insertId))
+    .limit(1);
+  broadcastChange("chat" as any);
+  return record ?? null;
+}
+
+export async function createAiSalesRecord(data: {
+  conversationId?: number | null;
+  customerId?: number | null;
+  sourceMessageId?: number | null;
+  channel: "messenger" | "whatsapp" | "live";
+  customerRequest?: string | null;
+  recommendationType: "product" | "cross_sell" | "upsell" | "free_shipping_gap" | "promotion" | "replenishment";
+  recommendedProductIds?: unknown;
+  recommendationReason?: string | null;
+  suggestedAmount?: string | null;
+  pricingSnapshot?: unknown;
+  estimatedGrossProfit?: string | null;
+  estimatedGrossMarginPercent?: string | null;
+  customerResponse?: "pending" | "accepted" | "declined" | "no_response";
+  outcome?: "recommended" | "pending_confirmation" | "added" | "ordered" | "handover" | "lost";
+  orderId?: number | null;
+  orderNumber?: string | null;
+  pendingActionId?: number | null;
+  wasHandover?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(aiSalesRecords).values({
+    ...data,
+    recommendedProductIds: data.recommendedProductIds as any,
+    pricingSnapshot: data.pricingSnapshot as any,
+  });
+  const [record] = await db.select().from(aiSalesRecords)
+    .where(eq(aiSalesRecords.id, (result as any).insertId))
+    .limit(1);
+  broadcastChange("chat" as any);
+  return record ?? null;
+}
+
+export async function listAiSalesRecords(filters: { conversationId?: number; customerId?: number; limit?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [] as any[];
+  if (filters.conversationId) conditions.push(eq(aiSalesRecords.conversationId, filters.conversationId));
+  if (filters.customerId) conditions.push(eq(aiSalesRecords.customerId, filters.customerId));
+  let query = db.select().from(aiSalesRecords).$dynamic();
+  if (conditions.length > 0) query = query.where(and(...conditions));
+  return query.orderBy(desc(aiSalesRecords.createdAt)).limit(filters.limit ?? 50);
+}
+
+export async function listAiVoiceTranscripts(filters: { conversationId?: number; status?: string; limit?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [] as any[];
+  if (filters.conversationId) conditions.push(eq(aiVoiceTranscripts.conversationId, filters.conversationId));
+  if (filters.status && filters.status !== "all") conditions.push(eq(aiVoiceTranscripts.status, filters.status as any));
+  let query = db.select().from(aiVoiceTranscripts).$dynamic();
+  if (conditions.length > 0) query = query.where(and(...conditions));
+  return query.orderBy(desc(aiVoiceTranscripts.createdAt)).limit(filters.limit ?? 100);
+}
+
+export async function getAiPendingAction(actionId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [record] = await db.select().from(aiPendingActions)
+    .where(eq(aiPendingActions.id, actionId))
+    .limit(1);
+  return record ?? null;
+}
+
+export async function updateAiPendingAction(
+  actionId: number,
+  data: {
+    status: "pending_confirmation" | "confirmed" | "executed" | "expired" | "failed" | "cancelled";
+    confirmedBy?: string | null;
+    confirmedAt?: Date | null;
+    failureReason?: string | null;
+  },
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(aiPendingActions).set({
+    ...data,
+    updatedAt: new Date(),
+  }).where(eq(aiPendingActions.id, actionId));
+  broadcastChange("chat" as any);
+}
+
+export async function listAiFollowUpPolicies() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiFollowUpPolicies).orderBy(desc(aiFollowUpPolicies.updatedAt));
+}
+
+export async function getAiFollowUpPolicy(policyId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [policy] = await db.select().from(aiFollowUpPolicies)
+    .where(eq(aiFollowUpPolicies.id, policyId))
+    .limit(1);
+  return policy ?? null;
+}
+
+export async function getAiFollowUpPolicyByTaskUid(taskUid: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const [policy] = await db.select().from(aiFollowUpPolicies)
+    .where(eq(aiFollowUpPolicies.scheduleCronTaskUid, taskUid))
+    .limit(1);
+  return policy ?? null;
+}
+
+export async function createAiFollowUpPolicy(data: {
+  name: string;
+  channel: "messenger" | "whatsapp";
+  triggerType: "unpaid_order" | "quotation" | "cart_abandoned" | "membership_flow";
+  cronExpression?: string;
+  delayHours?: number;
+  maxAttempts?: number;
+  respectHandover?: boolean;
+  stopOnCustomerReply?: boolean;
+  stopOnPurchase?: boolean;
+  stopOnPayment?: boolean;
+  messageTemplate: string;
+  createdBy?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(aiFollowUpPolicies).values({ ...data, isEnabled: false });
+  const [policy] = await db.select().from(aiFollowUpPolicies)
+    .where(eq(aiFollowUpPolicies.id, (result as any).insertId))
+    .limit(1);
+  broadcastChange("chat" as any);
+  return policy ?? null;
+}
+
+export async function updateAiFollowUpPolicy(
+  policyId: number,
+  data: Partial<{
+    name: string;
+    channel: "messenger" | "whatsapp";
+    triggerType: "unpaid_order" | "quotation" | "cart_abandoned" | "membership_flow";
+    isEnabled: boolean;
+    cronExpression: string;
+    delayHours: number;
+    maxAttempts: number;
+    respectHandover: boolean;
+    stopOnCustomerReply: boolean;
+    stopOnPurchase: boolean;
+    stopOnPayment: boolean;
+    messageTemplate: string;
+    scheduleCronTaskUid: string | null;
+    lastRunAt: Date | null;
+  }>,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(aiFollowUpPolicies).set({ ...data, updatedAt: new Date() })
+    .where(eq(aiFollowUpPolicies.id, policyId));
+  broadcastChange("chat" as any);
+}
+
+export async function listAiFollowUpDeliveries(filters: { policyId?: number; limit?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select().from(aiFollowUpDeliveries).$dynamic();
+  if (filters.policyId) query = query.where(eq(aiFollowUpDeliveries.policyId, filters.policyId));
+  return query.orderBy(desc(aiFollowUpDeliveries.createdAt)).limit(filters.limit ?? 100);
+}
+
+/**
+ * A policy may send only one message per order. The unique database key is the
+ * final duplicate-delivery protection when two scheduled runs overlap.
+ */
+export async function reserveAiFollowUpDelivery(data: {
+  policyId: number;
+  customerId: number | null;
+  conversationId: number | null;
+  orderId: number;
+  channel: "messenger" | "whatsapp";
+  status: "skipped" | "pending" | "sent" | "failed" | "stopped";
+  skipReason?: string | null;
+  message?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [existing] = await db.select().from(aiFollowUpDeliveries)
+    .where(and(
+      eq(aiFollowUpDeliveries.policyId, data.policyId),
+      eq(aiFollowUpDeliveries.orderId, data.orderId),
+    ))
+    .limit(1);
+  if (existing) return { delivery: existing, isNew: false };
+  try {
+    const [result] = await db.insert(aiFollowUpDeliveries).values(data);
+    const [delivery] = await db.select().from(aiFollowUpDeliveries)
+      .where(eq(aiFollowUpDeliveries.id, (result as any).insertId))
+      .limit(1);
+    broadcastChange("chat" as any);
+    return { delivery: delivery!, isNew: true };
+  } catch (error) {
+    const [raceWinner] = await db.select().from(aiFollowUpDeliveries)
+      .where(and(
+        eq(aiFollowUpDeliveries.policyId, data.policyId),
+        eq(aiFollowUpDeliveries.orderId, data.orderId),
+      ))
+      .limit(1);
+    if (raceWinner) return { delivery: raceWinner, isNew: false };
+    throw error;
+  }
+}
+
+export async function finalizeAiFollowUpDelivery(
+  deliveryId: number,
+  data: {
+    status: "skipped" | "pending" | "sent" | "failed" | "stopped";
+    skipReason?: string | null;
+    platformMessageId?: string | null;
+    errorMessage?: string | null;
+    sentAt?: Date | null;
+  },
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(aiFollowUpDeliveries).set({ ...data, updatedAt: new Date() })
+    .where(eq(aiFollowUpDeliveries.id, deliveryId));
+  broadcastChange("chat" as any);
+}
+
+/** Safe candidate list: only physical orders still pending and still unpaid. */
+export async function listEligibleAiFollowUpOrders(policy: {
+  channel: "messenger" | "whatsapp";
+  triggerType: "unpaid_order" | "quotation" | "cart_abandoned" | "membership_flow";
+  delayHours: number;
+  respectHandover: boolean;
+}) {
+  const db = await getDb();
+  if (!db || policy.triggerType !== "unpaid_order") return [];
+  const cutoff = new Date(Date.now() - Math.max(1, policy.delayHours) * 60 * 60 * 1000);
+  const rows = await db.select({
+    orderId: orders.id,
+    orderNumber: orders.orderNumber,
+    totalAmount: orders.totalAmount,
+    paidAmount: orders.paidAmount,
+    orderCreatedAt: orders.createdAt,
+    customerId: customers.id,
+    customerName: customers.name,
+    messengerId: customers.messengerId,
+  })
+    .from(orders)
+    .innerJoin(customers, eq(orders.customerId, customers.id))
+    .where(and(
+      eq(orders.physicalStatus, "pending"),
+      lte(orders.createdAt, cutoff),
+      sql`${orders.paidAmount} < ${orders.totalAmount}`,
+    ))
+    .orderBy(asc(orders.createdAt))
+    .limit(100);
+
+  const candidates: Array<typeof rows[number] & { conversationId: number | null; skipReason: string | null }> = [];
+  for (const row of rows) {
+    const [conversation] = await db.select().from(chatConversations)
+      .where(and(
+        eq(chatConversations.customerId, row.customerId),
+        eq(chatConversations.platform, policy.channel),
+      ))
+      .orderBy(desc(chatConversations.lastMessageAt))
+      .limit(1);
+    const skipReason = !row.messengerId && policy.channel === "messenger"
+      ? "missing_channel_identity"
+      : policy.respectHandover && conversation && conversation.handoverStatus !== "none"
+        ? "human_handover_active"
+        : null;
+    candidates.push({ ...row, conversationId: conversation?.id ?? null, skipReason });
+  }
+  return candidates;
 }

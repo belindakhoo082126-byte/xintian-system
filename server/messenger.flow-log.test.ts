@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   addDeliveryAttempt: vi.fn(),
   updateDeliveryAttempt: vi.fn(),
   updateAiLogAfterSend: vi.fn(),
+  claimPublicFlowEvent: vi.fn(),
+  completePublicFlowEvent: vi.fn(),
   getOrCreateConversation: vi.fn(),
   storeIncomingMessengerMessage: vi.fn(),
   addChatMessage: vi.fn(),
@@ -17,6 +19,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./db", () => ({
   addChatMessage: mocks.addChatMessage,
   addDeliveryAttempt: mocks.addDeliveryAttempt,
+  claimPublicFlowEvent: mocks.claimPublicFlowEvent,
+  completePublicFlowEvent: mocks.completePublicFlowEvent,
   createAiLog: mocks.createAiLog,
   createHandoverRequest: mocks.createHandoverRequest,
   getOrCreateConversation: mocks.getOrCreateConversation,
@@ -43,6 +47,7 @@ describe("Flow 来源 AI日志", () => {
     });
     mocks.createAiLog.mockResolvedValue(501);
     mocks.addDeliveryAttempt.mockResolvedValue(502);
+    mocks.claimPublicFlowEvent.mockResolvedValue({ claim: { id: 700 }, isNew: true });
     mocks.axiosPost.mockResolvedValue({ data: { id: "reply-comment-900" } });
   });
 
@@ -59,6 +64,11 @@ describe("Flow 来源 AI日志", () => {
       },
     }, "page-under-test");
 
+    expect(mocks.claimPublicFlowEvent).toHaveBeenCalledWith(expect.objectContaining({
+      platform: "facebook",
+      eventType: "live_comment",
+      sourceEventId: "comment-123",
+    }));
     expect(mocks.matchLiveAiFlowWithMetadata).toHaveBeenCalledWith("请问配送怎么安排？");
     expect(mocks.createAiLog).toHaveBeenCalledWith(expect.objectContaining({
       conversationId: null,
@@ -85,6 +95,10 @@ describe("Flow 来源 AI日志", () => {
         expect.objectContaining({ step: "flow_match", flowId: 88, result: "hit" }),
         expect.objectContaining({ step: "delivery", result: "sent" }),
       ]),
+    }));
+    expect(mocks.completePublicFlowEvent).toHaveBeenCalledWith(700, expect.objectContaining({
+      outcome: "flow",
+      handledBy: "flow",
     }));
   });
 
@@ -121,6 +135,31 @@ describe("Flow 来源 AI日志", () => {
       errorStage: "facebook_comment_send",
       errorMessage: "Facebook 暂时不可用",
     }));
+    expect(mocks.completePublicFlowEvent).toHaveBeenCalledWith(700, expect.objectContaining({
+      outcome: "failed",
+      handledBy: "flow",
+      errorMessage: "Facebook 暂时不可用",
+    }));
     errorSpy.mockRestore();
+  });
+
+  it("skips duplicate public comment events before Flow evaluation or customer-facing delivery", async () => {
+    mocks.claimPublicFlowEvent.mockResolvedValueOnce({ claim: { id: 701 }, isNew: false });
+
+    await handlePageFeedEvent({
+      field: "feed",
+      value: {
+        item: "comment",
+        comment_id: "comment-retry",
+        post_id: "post-456",
+        live_video_id: "live-789",
+        from: { id: "commenter-psid", name: "重复投递客户" },
+        message: "请问配送怎么安排？",
+      },
+    }, "page-under-test");
+
+    expect(mocks.matchLiveAiFlowWithMetadata).not.toHaveBeenCalled();
+    expect(mocks.axiosPost).not.toHaveBeenCalled();
+    expect(mocks.completePublicFlowEvent).not.toHaveBeenCalled();
   });
 });

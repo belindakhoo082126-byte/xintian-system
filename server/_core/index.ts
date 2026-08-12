@@ -18,6 +18,7 @@ import { addSSEClient } from "./realtime";
 import { sdk } from "./sdk";
 import * as db from "../db";
 import { sendTextMessage } from "../messenger";
+import { runAiFollowUpPolicyTask } from "../aiFollowUpService";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -150,6 +151,19 @@ async function startServer() {
       res.json({ ok: true, checked: pending.length, reminded, failed });
     } catch (err: any) {
       res.status(500).json({ error: err.message, stack: err.stack, timestamp: new Date().toISOString() });
+    }
+  });
+
+  // Each Heartbeat task is bound to a stored policy UID. The identity comes only
+  // from authenticated cron context, never the request URL or body.
+  app.post("/api/scheduled/ai-follow-up", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
+      const result = await runAiFollowUpPolicyTask(user.taskUid);
+      res.json({ ok: true, ...result, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, timestamp: new Date().toISOString() });
     }
   });
 

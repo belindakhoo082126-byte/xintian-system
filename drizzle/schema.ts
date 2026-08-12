@@ -2430,6 +2430,224 @@ export const aiPersona = mysqlTable("ai_persona", {
 export type AiPersona = typeof aiPersona.$inferSelect;
 export type InsertAiPersona = typeof aiPersona.$inferInsert;
 
+// ============================================================================
+// V4.4: Unified AI customer-service orchestration, voice and sales center
+// ============================================================================
+
+// A single operational policy row controls the unified entry point.
+export const aiOrchestrationSettings = mysqlTable("ai_orchestration_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  voiceTranscriptionEnabled: boolean("voiceTranscriptionEnabled").default(true).notNull(),
+  requireVoiceReviewBelow: decimal("requireVoiceReviewBelow", { precision: 5, scale: 2 }).default("0.72").notNull(),
+  maxUnclearAttempts: int("maxUnclearAttempts").default(2).notNull(),
+  updatedBy: varchar("updatedBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiOrchestrationSettings = typeof aiOrchestrationSettings.$inferSelect;
+export type InsertAiOrchestrationSettings = typeof aiOrchestrationSettings.$inferInsert;
+
+// One and only one primary outcome may be produced for an inbound customer message.
+export const aiMessageOrchestrations = mysqlTable("ai_message_orchestrations", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  customerId: int("customerId"),
+  customerMessageId: int("customerMessageId").notNull(),
+  channel: mysqlEnum("channel", ["messenger", "whatsapp"]).notNull(),
+  inputType: mysqlEnum("inputType", ["text", "image", "audio", "video", "file"]).notNull(),
+  status: mysqlEnum("status", ["processing", "completed", "handover", "skipped", "failed"]).default("processing").notNull(),
+  primaryOutcome: mysqlEnum("primaryOutcome", ["reply", "flow", "confirmation", "handover", "no_reply"]).default("no_reply").notNull(),
+  handledBy: mysqlEnum("handledBy", ["ai", "flow", "human", "system"]).default("system").notNull(),
+  detectedIntent: varchar("detectedIntent", { length: 100 }),
+  replyMessageId: int("replyMessageId"),
+  handoverRequestId: int("handoverRequestId"),
+  pendingActionId: int("pendingActionId"),
+  processingTrace: json("processingTrace"),
+  errorCode: varchar("errorCode", { length: 100 }),
+  errorMessage: text("errorMessage"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  customerMessageUnique: uniqueIndex("uq_ai_orchestration_customer_message").on(table.customerMessageId),
+}));
+export type AiMessageOrchestration = typeof aiMessageOrchestrations.$inferSelect;
+export type InsertAiMessageOrchestration = typeof aiMessageOrchestrations.$inferInsert;
+
+// Public comments are not stored as chat messages, so claim their platform event ID
+// before evaluating a Flow or live-order command. This provides database-level
+// deduplication across webhook retries and concurrent workers.
+export const aiPublicEventClaims = mysqlTable("ai_public_event_claims", {
+  id: int("id").autoincrement().primaryKey(),
+  platform: mysqlEnum("platform", ["facebook", "instagram"]).notNull(),
+  eventType: mysqlEnum("eventType", ["comment", "mention", "live_comment"]).notNull(),
+  sourceEventId: varchar("sourceEventId", { length: 255 }).notNull(),
+  liveRoomId: int("liveRoomId"),
+  outcome: mysqlEnum("outcome", ["processing", "flow", "live_order", "no_reply", "failed"]).default("processing").notNull(),
+  handledBy: mysqlEnum("handledBy", ["flow", "live_order", "system"]).default("system").notNull(),
+  responseSummary: text("responseSummary"),
+  errorMessage: text("errorMessage"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  publicEventUnique: uniqueIndex("uq_ai_public_event_claim").on(table.platform, table.eventType, table.sourceEventId),
+}));
+export type AiPublicEventClaim = typeof aiPublicEventClaims.$inferSelect;
+export type InsertAiPublicEventClaim = typeof aiPublicEventClaims.$inferInsert;
+
+// Keeps the original voice attachment alongside transcription and human correction.
+export const aiVoiceTranscripts = mysqlTable("ai_voice_transcripts", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  customerId: int("customerId"),
+  chatMessageId: int("chatMessageId").notNull(),
+  mediaUrl: text("mediaUrl").notNull(),
+  durationMs: int("durationMs"),
+  status: mysqlEnum("status", ["pending", "transcribed", "needs_review", "failed"]).default("pending").notNull(),
+  transcript: text("transcript"),
+  correctedTranscript: text("correctedTranscript"),
+  detectedLanguage: varchar("detectedLanguage", { length: 32 }),
+  confidence: decimal("confidence", { precision: 5, scale: 2 }),
+  warning: text("warning"),
+  failureReason: text("failureReason"),
+  correctedBy: varchar("correctedBy", { length: 255 }),
+  correctedAt: timestamp("correctedAt"),
+  aiActionSummary: text("aiActionSummary"),
+  transcribedAt: timestamp("transcribedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  chatMessageUnique: uniqueIndex("uq_ai_voice_transcript_message").on(table.chatMessageId),
+}));
+export type AiVoiceTranscript = typeof aiVoiceTranscripts.$inferSelect;
+export type InsertAiVoiceTranscript = typeof aiVoiceTranscripts.$inferInsert;
+
+// Proposed business mutations are immutable snapshots until the customer confirms in text.
+export const aiPendingActions = mysqlTable("ai_pending_actions", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  customerId: int("customerId"),
+  sourceMessageId: int("sourceMessageId").notNull(),
+  actionType: mysqlEnum("actionType", [
+    "create_order", "add_to_order", "update_line_quantity", "remove_line", "cancel_order",
+    "update_recipient", "update_shipping", "use_credit", "apply_promotion", "merge_order",
+  ]).notNull(),
+  status: mysqlEnum("status", ["pending_confirmation", "confirmed", "executed", "expired", "cancelled", "failed"]).default("pending_confirmation").notNull(),
+  payload: json("payload").notNull(),
+  pricingSnapshot: json("pricingSnapshot"),
+  inventorySnapshot: json("inventorySnapshot"),
+  targetOrderId: int("targetOrderId"),
+  confirmationReply: text("confirmationReply").notNull(),
+  confirmationMessageId: int("confirmationMessageId"),
+  customerConfirmationMessageId: int("customerConfirmationMessageId"),
+  executedOrderId: int("executedOrderId"),
+  failureReason: text("failureReason"),
+  expiresAt: timestamp("expiresAt"),
+  confirmedAt: timestamp("confirmedAt"),
+  executedAt: timestamp("executedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiPendingAction = typeof aiPendingActions.$inferSelect;
+export type InsertAiPendingAction = typeof aiPendingActions.$inferInsert;
+
+// Sales policy config is separate from the AI brain, while always consuming shared catalog data.
+export const aiSalesSettings = mysqlTable("ai_sales_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  proactiveRecommendationsEnabled: boolean("proactiveRecommendationsEnabled").default(true).notNull(),
+  maxRecommendationsPerConversation: int("maxRecommendationsPerConversation").default(2).notNull(),
+  stopAfterCustomerDecline: boolean("stopAfterCustomerDecline").default(true).notNull(),
+  recommendationCooldownHours: int("recommendationCooldownHours").default(24).notNull(),
+  askEnvironmentFirst: boolean("askEnvironmentFirst").default(true).notNull(),
+  askBudgetFirst: boolean("askBudgetFirst").default(false).notNull(),
+  prioritizeEasyCare: boolean("prioritizeEasyCare").default(true).notNull(),
+  minimumGrossMarginPercent: decimal("minimumGrossMarginPercent", { precision: 5, scale: 2 }).default("0.00").notNull(),
+  updatedBy: varchar("updatedBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiSalesSettings = typeof aiSalesSettings.$inferSelect;
+export type InsertAiSalesSettings = typeof aiSalesSettings.$inferInsert;
+
+// Captures recommendations and their business outcomes without exposing cost to customers.
+export const aiSalesRecords = mysqlTable("ai_sales_records", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId"),
+  customerId: int("customerId"),
+  sourceMessageId: int("sourceMessageId"),
+  channel: mysqlEnum("channel", ["messenger", "whatsapp", "live"]).notNull(),
+  customerRequest: text("customerRequest"),
+  recommendationType: mysqlEnum("recommendationType", ["product", "cross_sell", "upsell", "free_shipping_gap", "promotion", "replenishment"]).notNull(),
+  recommendedProductIds: json("recommendedProductIds"),
+  recommendationReason: text("recommendationReason"),
+  suggestedAmount: decimal("suggestedAmount", { precision: 12, scale: 2 }),
+  pricingSnapshot: json("pricingSnapshot"),
+  estimatedGrossProfit: decimal("estimatedGrossProfit", { precision: 12, scale: 2 }),
+  estimatedGrossMarginPercent: decimal("estimatedGrossMarginPercent", { precision: 5, scale: 2 }),
+  customerResponse: mysqlEnum("customerResponse", ["pending", "accepted", "declined", "no_response"]).default("pending").notNull(),
+  outcome: mysqlEnum("outcome", ["recommended", "pending_confirmation", "added", "ordered", "handover", "lost"]).default("recommended").notNull(),
+  orderId: int("orderId"),
+  orderNumber: varchar("orderNumber", { length: 50 }),
+  pendingActionId: int("pendingActionId"),
+  wasHandover: boolean("wasHandover").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiSalesRecord = typeof aiSalesRecords.$inferSelect;
+export type InsertAiSalesRecord = typeof aiSalesRecords.$inferInsert;
+
+// Follow-up policies are independently pausable. Their persisted task UID is the
+// only identity used by the Heartbeat callback, never request-body data.
+export const aiFollowUpPolicies = mysqlTable("ai_follow_up_policies", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 120 }).notNull(),
+  channel: mysqlEnum("channel", ["messenger", "whatsapp"]).default("messenger").notNull(),
+  triggerType: mysqlEnum("triggerType", ["unpaid_order", "quotation", "cart_abandoned", "membership_flow"]).notNull(),
+  isEnabled: boolean("isEnabled").default(false).notNull(),
+  cronExpression: varchar("cronExpression", { length: 100 }).default("0 0 9 * * *").notNull(),
+  delayHours: int("delayHours").default(24).notNull(),
+  maxAttempts: int("maxAttempts").default(1).notNull(),
+  respectHandover: boolean("respectHandover").default(true).notNull(),
+  stopOnCustomerReply: boolean("stopOnCustomerReply").default(true).notNull(),
+  stopOnPurchase: boolean("stopOnPurchase").default(true).notNull(),
+  stopOnPayment: boolean("stopOnPayment").default(true).notNull(),
+  messageTemplate: text("messageTemplate").notNull(),
+  scheduleCronTaskUid: varchar("scheduleCronTaskUid", { length: 65 }),
+  lastRunAt: timestamp("lastRunAt"),
+  createdBy: varchar("createdBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  taskUidUnique: uniqueIndex("uq_ai_follow_up_task_uid").on(table.scheduleCronTaskUid),
+}));
+export type AiFollowUpPolicy = typeof aiFollowUpPolicies.$inferSelect;
+export type InsertAiFollowUpPolicy = typeof aiFollowUpPolicies.$inferInsert;
+
+// Every candidate decision and delivery attempt is retained for audit and safe retries.
+export const aiFollowUpDeliveries = mysqlTable("ai_follow_up_deliveries", {
+  id: int("id").autoincrement().primaryKey(),
+  policyId: int("policyId").notNull(),
+  customerId: int("customerId"),
+  conversationId: int("conversationId"),
+  orderId: int("orderId"),
+  channel: mysqlEnum("channel", ["messenger", "whatsapp"]).notNull(),
+  status: mysqlEnum("status", ["skipped", "pending", "sent", "failed", "stopped"]).default("pending").notNull(),
+  skipReason: varchar("skipReason", { length: 120 }),
+  message: text("message"),
+  platformMessageId: varchar("platformMessageId", { length: 255 }),
+  errorMessage: text("errorMessage"),
+  sentAt: timestamp("sentAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  policyOrderUnique: uniqueIndex("uq_ai_follow_up_policy_order").on(table.policyId, table.orderId),
+}));
+export type AiFollowUpDelivery = typeof aiFollowUpDeliveries.$inferSelect;
+export type InsertAiFollowUpDelivery = typeof aiFollowUpDeliveries.$inferInsert;
+
 /**
  * AI Log Center - records every AI processing event for audit and analytics.
  */

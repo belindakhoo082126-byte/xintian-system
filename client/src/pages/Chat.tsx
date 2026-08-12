@@ -4,6 +4,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -14,7 +15,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   MessageSquare, Send, Bot, User, Phone, Facebook,
   ShoppingBag, AlertCircle, CheckCircle2, Clock, Zap, Search,
-  Package, MapPin, CreditCard, FileText, ArrowRight, Copy, Eye
+  Package, MapPin, CreditCard, FileText, ArrowRight, Copy, Eye, Mic, PencilLine
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
@@ -32,6 +33,8 @@ export default function Chat() {
   const [sseConnected, setSseConnected] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [copiedCheckoutOrderId, setCopiedCheckoutOrderId] = useState<number | null>(null);
+  const [editingVoiceTranscriptId, setEditingVoiceTranscriptId] = useState<number | null>(null);
+  const [voiceCorrection, setVoiceCorrection] = useState("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sseRef = useRef<EventSource | null>(null);
@@ -156,6 +159,30 @@ export default function Chat() {
   const toggleAIMut = trpc.chat.toggleAI.useMutation();
   const handoverMut = trpc.chat.handover.useMutation();
   const resumeAIMut = trpc.chat.resumeAI.useMutation();
+  const voiceTranscriptInput = useMemo(() => ({
+    conversationId: selectedConvId || undefined,
+    status: "all" as const,
+    limit: 20,
+  }), [selectedConvId]);
+  const { data: voiceTranscripts } = trpc.aiOrchestration.listVoiceTranscripts.useQuery(
+    voiceTranscriptInput,
+    { enabled: !!selectedConvId, staleTime: 0 }
+  );
+  const salesRecordInput = useMemo(() => ({
+    conversationId: selectedConvId || undefined,
+    limit: 5,
+  }), [selectedConvId]);
+  const { data: salesRecords } = trpc.aiSales.listRecords.useQuery(
+    salesRecordInput,
+    { enabled: !!selectedConvId, staleTime: 0, refetchOnWindowFocus: true }
+  );
+  const reviseVoiceTranscriptMut = trpc.aiOrchestration.reviseVoiceTranscript.useMutation({
+    onSuccess: () => {
+      setEditingVoiceTranscriptId(null);
+      setVoiceCorrection("");
+      queryClient.invalidateQueries({ queryKey: ["aiOrchestration"] });
+    },
+  });
 
   // Mark as read when selecting a conversation
   useEffect(() => {
@@ -255,6 +282,12 @@ export default function Chat() {
     if (diffHour < 24) return `${diffHour}小时前`;
     if (diffDay < 7) return `${diffDay}天前`;
     return d.toLocaleDateString("zh-CN");
+  };
+
+  const formatAudioDuration = (durationMs?: number | null) => {
+    if (!durationMs || durationMs < 1000) return "语音";
+    const totalSeconds = Math.round(durationMs / 1000);
+    return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
   };
 
   return (
@@ -460,6 +493,11 @@ export default function Chat() {
                           {msg.messageType === "image" && msg.mediaUrl && (
                             <img src={msg.mediaUrl} alt="image" className="rounded mb-1 max-w-full" />
                           )}
+                          {msg.messageType === "audio" && msg.mediaUrl && (
+                            <audio controls src={msg.mediaUrl} className="mb-1 max-w-full" preload="metadata">
+                              您的浏览器不支持播放语音。
+                            </audio>
+                          )}
                           {msg.content}
                         </div>
                       </div>
@@ -560,6 +598,84 @@ export default function Chat() {
                 )
               ) : (
                 <p className="text-sm text-muted-foreground">未关联客户（仅平台ID: {selectedConv.platformId}）</p>
+              )}
+            </div>
+
+            <Separator />
+
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="flex items-center gap-1.5 text-sm font-semibold"><Mic className="h-4 w-4 text-violet-600" />客户语音</h3>
+                {voiceTranscripts && voiceTranscripts.length > 0 && (
+                  <Badge variant="outline" className="text-[10px]">{voiceTranscripts.length} 条</Badge>
+                )}
+              </div>
+              {!voiceTranscripts || voiceTranscripts.length === 0 ? (
+                <p className="text-xs text-muted-foreground">此对话暂无已接收的客户语音。</p>
+              ) : (
+                <div className="space-y-2">
+                  {voiceTranscripts.slice(0, 3).map((voice: any) => {
+                    const displayedTranscript = voice.correctedTranscript || voice.transcript || "等待语音转写结果";
+                    const isEditing = editingVoiceTranscriptId === voice.id;
+                    const needsReview = voice.status === "needs_review" || voice.status === "failed";
+                    return (
+                      <div key={voice.id} className={`space-y-1.5 rounded-md border p-2 ${needsReview ? "border-amber-300 bg-amber-50/70" : "bg-muted/40"}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-muted-foreground">{formatAudioDuration(voice.durationMs)} · {voice.detectedLanguage || "自动识别"}</span>
+                          <Badge variant={needsReview ? "secondary" : "outline"} className={`text-[10px] ${needsReview ? "bg-amber-100 text-amber-800" : ""}`}>
+                            {voice.status === "needs_review" ? "待复核" : voice.status === "failed" ? "转写失败" : voice.status === "pending" ? "转写中" : "已转写"}
+                          </Badge>
+                        </div>
+                        <audio controls src={voice.mediaUrl} className="h-8 w-full" preload="metadata">您的浏览器不支持播放语音。</audio>
+                        {isEditing ? (
+                          <div className="space-y-1.5">
+                            <Textarea value={voiceCorrection} onChange={(event) => setVoiceCorrection(event.target.value)} className="min-h-16 text-xs" aria-label="修正后的语音文字" />
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setEditingVoiceTranscriptId(null); setVoiceCorrection(""); }}>取消</Button>
+                              <Button size="sm" className="h-7 text-xs" disabled={!voiceCorrection.trim() || reviseVoiceTranscriptMut.isPending} onClick={() => reviseVoiceTranscriptMut.mutate({ id: voice.id, correctedTranscript: voiceCorrection.trim() })}>保存修正</Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-xs leading-relaxed">{displayedTranscript}</p>
+                            {voice.warning && <p className="text-[11px] text-amber-800">{voice.warning}</p>}
+                            {voice.aiActionSummary && <p className="text-[11px] text-violet-700">AI：{voice.aiActionSummary}</p>}
+                            <Button variant="ghost" size="sm" className="h-6 px-1 text-[11px]" onClick={() => { setEditingVoiceTranscriptId(voice.id); setVoiceCorrection(displayedTranscript); }}><PencilLine className="mr-1 h-3 w-3" />修正文字</Button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="flex items-center gap-1.5 text-sm font-semibold"><ShoppingBag className="h-4 w-4 text-indigo-600" />AI 销售建议</h3>
+                {salesRecords && salesRecords.length > 0 && <Badge variant="outline" className="text-[10px]">{salesRecords.length} 项</Badge>}
+              </div>
+              {!salesRecords || salesRecords.length === 0 ? (
+                <p className="text-xs text-muted-foreground">此对话尚无 AI 销售建议。AI 只能建议，任何加购或订单动作仍须确认。</p>
+              ) : (
+                <div className="space-y-2">
+                  {salesRecords.map((record: any) => {
+                    const pending = record.outcome === "pending_confirmation";
+                    const outcomeText = record.outcome === "ordered" ? "已成立订单" : record.outcome === "added" ? "已加入草稿" : pending ? "待确认" : record.outcome === "handover" ? "已转人工" : record.outcome === "lost" ? "未成交" : "已建议";
+                    return (
+                      <div key={record.id} className={`rounded-md border p-2 ${pending ? "border-amber-300 bg-amber-50/70" : "bg-muted/35"}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs font-medium">{record.recommendationType === "free_shipping_gap" ? "凑免邮建议" : record.recommendationType === "cross_sell" ? "关联加购" : record.recommendationType === "upsell" ? "升级建议" : "商品推荐"}</p>
+                          <Badge variant={pending ? "secondary" : "outline"} className={`shrink-0 text-[10px] ${pending ? "bg-amber-100 text-amber-800" : ""}`}>{outcomeText}</Badge>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{record.recommendationReason || record.customerRequest || "已记录销售建议"}</p>
+                        <p className="mt-1 text-[10px] text-muted-foreground">客户：{record.customerResponse === "accepted" ? "接受" : record.customerResponse === "declined" ? "拒绝" : record.customerResponse === "no_response" ? "尚未回应" : "待回应"}</p>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
 

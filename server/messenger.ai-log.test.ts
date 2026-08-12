@@ -4,11 +4,15 @@ const mocks = vi.hoisted(() => ({
   storeIncomingMessengerMessage: vi.fn(),
   getOrCreateConversation: vi.fn(),
   createAiLog: vi.fn(),
+  executeAutoOrderCapture: vi.fn(),
+  getLiveRooms: vi.fn(),
   addDeliveryAttempt: vi.fn(),
   updateDeliveryAttempt: vi.fn(),
   updateAiLogAfterSend: vi.fn(),
   addChatMessage: vi.fn(),
   processChatAI: vi.fn(),
+  orchestrateInboundText: vi.fn(),
+  completeUnifiedReply: vi.fn(),
   axiosPost: vi.fn(),
 }));
 
@@ -16,6 +20,8 @@ vi.mock("./db", () => ({
   storeIncomingMessengerMessage: mocks.storeIncomingMessengerMessage,
   getOrCreateConversation: mocks.getOrCreateConversation,
   createAiLog: mocks.createAiLog,
+  executeAutoOrderCapture: mocks.executeAutoOrderCapture,
+  getLiveRooms: mocks.getLiveRooms,
   addDeliveryAttempt: mocks.addDeliveryAttempt,
   updateDeliveryAttempt: mocks.updateDeliveryAttempt,
   updateAiLogAfterSend: mocks.updateAiLogAfterSend,
@@ -24,6 +30,11 @@ vi.mock("./db", () => ({
 
 vi.mock("./aiEngines", () => ({
   processChatAI: mocks.processChatAI,
+}));
+
+vi.mock("./unifiedAiOrchestrator", () => ({
+  orchestrateInboundText: mocks.orchestrateInboundText,
+  completeUnifiedReply: mocks.completeUnifiedReply,
 }));
 
 vi.mock("axios", () => ({
@@ -62,7 +73,25 @@ describe("普通私聊 AI日志发送生命周期", () => {
         ruleId: 88,
       };
     });
+    mocks.orchestrateInboundText.mockImplementation(async (input: any) => {
+      input.logContext.finalSource = "reply_rule";
+      input.logContext.matchedRuleId = 88;
+      input.logContext.aiReply = "受控测试回复";
+      input.logContext.addStep("reply_rule", "固定回复规则", "命中规则（ID:88）", "hit", { ruleId: 88 });
+      return {
+        kind: "reply",
+        result: {
+          shouldReply: true,
+          reply: "受控测试回复",
+          source: "reply_rule",
+          shouldHandover: false,
+          ruleId: 88,
+        },
+      };
+    });
     mocks.createAiLog.mockResolvedValue(701);
+    mocks.getLiveRooms.mockResolvedValue([]);
+    mocks.executeAutoOrderCapture.mockResolvedValue({ handled: false });
     mocks.addDeliveryAttempt.mockResolvedValue(702);
     mocks.updateDeliveryAttempt.mockResolvedValue(undefined);
     mocks.updateAiLogAfterSend.mockResolvedValue(undefined);
