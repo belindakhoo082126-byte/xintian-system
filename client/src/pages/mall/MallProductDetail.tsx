@@ -281,13 +281,17 @@ export default function MallProductDetail() {
                 </p>
               </div>
             )}
-            {/* Free Repotting Notice for plants */}
-            {product.categoryId && (
-              <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
-                <p className="font-medium">🪴 {t("免费换盆服务", "Free Repotting Service")}</p>
-                <p className="text-xs mt-1">{t("购买植物并同单加购花盆，结账时可选择免费换盆。", "Buy plants and pots in the same order, select free repotting at checkout.")}</p>
+            <section className="overflow-hidden rounded-2xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50 via-white to-amber-50 shadow-sm" aria-label={t("购物服务公告", "Shopping information")}>
+              <div className="flex items-center gap-2 border-b border-emerald-100 bg-white/70 px-4 py-2.5">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-sm text-white">✦</span>
+                <p className="text-sm font-bold text-emerald-800">{t("心田贴心服务", "Xintian Shopping Guide")}</p>
               </div>
-            )}
+              <div className="space-y-3 px-4 py-3.5 text-sm">
+                <div className="flex gap-3"><span className="mt-0.5">🪴</span><div><p className="font-semibold text-emerald-800">{t("免费换盆服务", "Free Repotting Service")}</p><p className="mt-0.5 text-xs leading-5 text-emerald-700">{t("购买植物并同单加购花盆，结账时可选择免费换盆。", "Buy plants and pots in the same order, then select complimentary repotting at checkout.")}</p></div></div>
+                <div className="flex gap-3 border-t border-emerald-100 pt-3"><span className="mt-0.5">🚚</span><div><p className="font-semibold text-emerald-800">{t("西马运费优惠", "West Malaysia Delivery")}</p><p className="mt-0.5 text-xs leading-5 text-emerald-700">{t("消费满 RM150 首 10kg 免邮，续重 RM3/kg；不含特价商品及会员费用。", "Spend RM150 for free delivery on the first 10kg; RM3/kg thereafter. Special-price items and membership fees are excluded.")}</p></div></div>
+                <div className="flex gap-3 border-t border-emerald-100 pt-3"><span className="mt-0.5">📅</span><div><p className="font-semibold text-emerald-800">{t("订单保留", "Order Reservation")}</p><p className="mt-0.5 text-xs leading-5 text-emerald-700">{t("本地订单可保留 7 天，逾期系统将自动取消。", "Local orders are reserved for 7 days and will be cancelled automatically after expiry.")}</p></div></div>
+              </div>
+            </section>
 
             {/* Quantity */}
             <div>
@@ -315,11 +319,6 @@ export default function MallProductDetail() {
               <Button variant="outline" size="icon" onClick={() => void shareProduct("whatsapp")} title="WhatsApp"><MessageCircle className="h-4 w-4 text-[#25D366]" /></Button>
             </div>
 
-            {/* Trust badges */}
-            <div className="flex gap-4 pt-4 border-t">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Truck className="h-4 w-4" />{t("西马满RM150首10kg免邮，续重RM3/kg", "West Malaysia: Free 10kg over RM150, RM3/kg after")}</div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Shield className="h-4 w-4" />{t("7天保留", "7-day reservation")}</div>
-            </div>
           </div>
         </div>
 

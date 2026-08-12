@@ -3917,6 +3917,7 @@ export const appRouter = router({
       shippingMethod: z.enum(["west_malaysia", "east_malaysia", "east_malaysia_poslaju", "east_malaysia_shopee", "lalamove", "self_pickup"]),
       items: z.array(z.object({
         productId: z.number(),
+        bundleId: z.number().int().positive().optional(),
         productName: z.string(),
         productSku: z.string().optional(),
         variationId: z.number().optional(),

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { ChevronLeft, Package } from "lucide-react";
+import { ChevronLeft, Package, ShoppingCart } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useI18n } from "@/contexts/I18nContext";
 import { getMallTheme } from "@/lib/mallTheme";
@@ -7,6 +7,7 @@ import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { toast } from "sonner";
 
 export default function MallBundleDetail() {
   const [location] = useLocation();
@@ -37,6 +38,45 @@ export default function MallBundleDetail() {
   const salePrice = Number(bundle.specialPrice) > 0 ? bundle.specialPrice : bundle.sellingPrice;
   const hasOriginalPrice = Number(bundle.originalTotalPrice) > Number(salePrice);
   const displayName = lang === "en" && bundle.nameEn ? bundle.nameEn : bundle.name;
+  const isSoldOut = Number(bundle.bundleStock) <= 0;
+  const addBundleToCart = (goToCheckout = false) => {
+    const representativeProductId = Number(bundle.items?.[0]?.productId);
+    if (!Number.isInteger(representativeProductId) || representativeProductId <= 0) {
+      toast.error(t("此组合商品资料不完整，暂时无法购买。", "This bundle is incomplete and cannot be purchased yet."));
+      return;
+    }
+    if (isSoldOut) {
+      toast.error(t("组合优惠已售罄", "This bundle is sold out"));
+      return;
+    }
+    const price = Number(salePrice);
+    const nextItem = {
+      productId: representativeProductId,
+      bundleId: bundle.id,
+      productName: displayName,
+      productSku: `BUNDLE-${bundle.id}`,
+      quantity: 1,
+      unitPrice: price.toFixed(2),
+      subtotal: price.toFixed(2),
+      availableStock: Number(bundle.bundleStock),
+      isSpecial: true,
+      isBundle: true,
+      imageUrl: bundle.coverImage || undefined,
+    };
+    let cart: any[] = [];
+    try { cart = JSON.parse(localStorage.getItem("mall_cart") || "[]"); } catch { cart = []; }
+    const existingIndex = cart.findIndex((item) => Number(item.bundleId) === Number(bundle.id));
+    if (existingIndex >= 0) {
+      const nextQuantity = Math.min(Number(bundle.bundleStock), Number(cart[existingIndex].quantity || 0) + 1);
+      cart[existingIndex] = { ...cart[existingIndex], quantity: nextQuantity, subtotal: (price * nextQuantity).toFixed(2), availableStock: Number(bundle.bundleStock) };
+    } else {
+      cart.push(nextItem);
+    }
+    localStorage.setItem("mall_cart", JSON.stringify(cart));
+    window.dispatchEvent(new Event("cart-updated"));
+    toast.success(t("组合优惠已加入购物车", "Bundle added to cart"));
+    if (goToCheckout) window.location.assign("/mall/checkout");
+  };
 
   return (
     <div className="relative min-h-screen overflow-x-hidden" style={{ backgroundColor: theme.background, backgroundImage: theme.visual.pattern, color: theme.font }}>
@@ -88,7 +128,11 @@ export default function MallBundleDetail() {
                   </ul>
                 </section>
 
-                <Link href="/mall"><Button className="w-full" style={{ backgroundColor: theme.primary }}>{t("返回继续选购", "Continue shopping")}</Button></Link>
+                <div className="space-y-2">
+                  <Button variant="outline" className="w-full" onClick={() => addBundleToCart(false)} disabled={isSoldOut}><ShoppingCart className="mr-2 h-4 w-4" />{isSoldOut ? t("组合优惠已售罄", "Sold out") : t("加入购物车", "Add to Cart")}</Button>
+                  <Button className="w-full" style={{ backgroundColor: theme.primary }} onClick={() => addBundleToCart(true)} disabled={isSoldOut}>{t("立即购买", "Buy Now")}</Button>
+                  <Link href="/mall" className="block"><Button variant="ghost" className="w-full">{t("返回继续选购", "Continue shopping")}</Button></Link>
+                </div>
               </CardContent>
             </Card>
           </div>

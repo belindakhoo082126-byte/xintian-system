@@ -221,6 +221,7 @@ export default function MallCheckout() {
       ...form,
       items: cart.map((i) => ({
         productId: i.productId,
+        bundleId: i.bundleId ? Number(i.bundleId) : undefined,
         productName: i.productName,
         productSku: i.productSku,
         variationId: i.variationId,

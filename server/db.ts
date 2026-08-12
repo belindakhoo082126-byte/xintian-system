@@ -5633,6 +5633,7 @@ export async function mallCheckout(data: {
   shippingMethod: string;
   items: Array<{
     productId: number;
+    bundleId?: number;
     productName: string;
     productSku?: string;
     variationId?: number;
@@ -5651,6 +5652,28 @@ export async function mallCheckout(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // The browser only identifies a bundle. Its price, components and stock are
+  // always refreshed from the stored bundle just before an order is created.
+  const publicBundles = await getMallBundles();
+  for (const item of data.items) {
+    if (!item.bundleId) continue;
+    const bundle = publicBundles.find((candidate) => candidate.id === item.bundleId);
+    if (!bundle) throw new Error("组合优惠不存在、已下架或已售罄");
+    if (bundle.bundleStock < item.quantity) throw new Error(`组合包库存不足 (剩余 ${bundle.bundleStock} 组)`);
+    const trustedPrice = Number(bundle.specialPrice) > 0 ? Number(bundle.specialPrice) : Number(bundle.sellingPrice);
+    const representative = bundle.items[0];
+    if (!representative?.productId) throw new Error("组合优惠内容不完整，暂时无法结账");
+    item.productId = representative.productId;
+    item.productName = bundle.name;
+    item.productSku = `BUNDLE-${bundle.id}`;
+    item.variationId = undefined;
+    item.variationName = undefined;
+    item.unitPrice = trustedPrice.toFixed(2);
+    item.subtotal = (trustedPrice * item.quantity).toFixed(2);
+    item.isSpecial = true;
+  }
+  const regularItems = data.items.filter((item) => !item.bundleId);
 
   // Find or create customer
   const customer = await findOrCreateCustomer({
@@ -5730,7 +5753,7 @@ export async function mallCheckout(data: {
     if (!mergeTarget) {
       throw new Error("Selected hold order is no longer available for this customer");
     }
-    await reserveProductStocksForOrder(data.items);
+    await reserveProductStocksForOrder(regularItems);
 
     // Add items to existing order
     for (const item of data.items) {
@@ -5794,13 +5817,16 @@ export async function mallCheckout(data: {
     );
     await releaseHoldOrder(data.mergeIntoOrderId, "Mall checkout");
 
+    for (const item of data.items.filter((entry) => entry.bundleId)) {
+      await deductBundleStock(item.bundleId!, item.quantity);
+    }
     return { orderId: data.mergeIntoOrderId, orderNumber: existingOrder?.orderNumber, merged: true, totalAmount: newTotal.toFixed(2) };
   }
 
   // Create new order
   // V2.1.04: Use resolveOrderCategory for unified routing
-  await reserveProductStocksForOrder(data.items);
-  const mallProductIds = data.items.map(i => i.productId).filter(Boolean) as number[];
+  await reserveProductStocksForOrder(regularItems);
+  const mallProductIds = regularItems.map(i => i.productId).filter(Boolean) as number[];
   const resolvedCategory = await resolveOrderCategory({ productIds: mallProductIds });
   const isImport = resolvedCategory === "import";
   const orderPrefix = isImport ? "XTC" : "XT";
@@ -5856,6 +5882,10 @@ export async function mallCheckout(data: {
       facebookKeyword: item.facebookKeyword || null,
       discount: item.discount || "0.00",
     });
+  }
+
+  for (const item of data.items.filter((entry) => entry.bundleId)) {
+    await deductBundleStock(item.bundleId!, item.quantity);
   }
 
   // Save only auditable marketing results. Gifts and add-on products must still

@@ -32,7 +32,15 @@ export default function MallCart() {
 
   function updateQty(index: number, delta: number) {
     const newCart = [...cart];
-    newCart[index].quantity = Math.max(1, newCart[index].quantity + delta);
+    const maxQuantity = newCart[index].isBundle
+      ? Math.max(1, Number(newCart[index].availableStock) || 1)
+      : Number.POSITIVE_INFINITY;
+    const requestedQuantity = Math.max(1, newCart[index].quantity + delta);
+    if (requestedQuantity > maxQuantity) {
+      toast.error(`组合优惠库存不足，目前最多可购买 ${maxQuantity} 组。`);
+      return;
+    }
+    newCart[index].quantity = requestedQuantity;
     newCart[index].subtotal = (parseFloat(newCart[index].unitPrice) * newCart[index].quantity).toFixed(2);
     updateCart(newCart);
   }
@@ -81,11 +89,12 @@ export default function MallCart() {
             {cart.map((item, i) => (
               <Card key={i}>
                 <CardContent className="p-4 flex items-center gap-4">
-                  <div className="w-16 h-16 rounded border bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <Package className="h-8 w-8 text-muted-foreground" />
+                  <div className="w-16 h-16 overflow-hidden rounded border bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    {item.imageUrl ? <img src={item.imageUrl} alt="" className="h-full w-full object-cover" /> : <Package className="h-8 w-8 text-muted-foreground" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm line-clamp-1">{item.productName}</p>
+                    {item.isBundle && <span className="mt-1 inline-flex rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">组合优惠</span>}
                     {item.variationName && <p className="text-xs text-muted-foreground">{item.variationName}</p>}
                     <p className="text-[#2d6a4f] font-semibold mt-1">RM {item.unitPrice}</p>
                   </div>
