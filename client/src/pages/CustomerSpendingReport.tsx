@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Users, ShoppingBag, DollarSign, TrendingDown } from "lucide-react";
 import { Link } from "wouter";
 import { useI18n } from "@/contexts/I18nContext";
+import { ReportMethodologyCard } from "@/components/ReportMethodologyCard";
 
 const PRESET_LABELS = [
   { value: "today", zh: "今天", en: "Today" },
@@ -61,6 +62,7 @@ export default function CustomerSpendingReport() {
 
   return (
     <div className="space-y-6">
+      <ReportMethodologyCard kind="customerSpending" />
       <div className="flex items-center gap-4">
         <Link href="/profit-report">
           <Button variant="ghost" size="icon">

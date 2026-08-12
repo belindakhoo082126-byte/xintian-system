@@ -30,6 +30,7 @@ import SalesPaymentReport from "@/pages/SalesPaymentReport";
 import ProductSalesReport from "@/pages/ProductSalesReport";
 import CustomerSpendingReport from "@/pages/CustomerSpendingReport";
 import PurchaseInventoryReport from "@/pages/PurchaseInventoryReport";
+import PaymentRecord from "@/pages/PaymentRecord";
 import FacebookSettings from "@/pages/FacebookSettings";
 import SystemSettings from "@/pages/SystemSettings";
 import ShippingRules from "@/pages/ShippingRules";
@@ -115,6 +116,7 @@ function DashboardRoutes() {
       <Route path="/reports/purchase-inventory" component={PurchaseInventoryReport} />
       <Route path="/reports/profit-analysis" component={ProfitAnalysisReport} />
       <Route path="/reports/loss-analysis" component={LossAnalysisReport} />
+      <Route path="/reports/payment-record" component={PaymentRecord} />
       <Route path="/inventory-log" component={InventoryLog} />
       <Route path="/product-bundles" component={ProductBundles} />
       <Route path="/live-rooms" component={LiveRooms} />

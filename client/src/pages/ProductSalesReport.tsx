@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, ShoppingBag, TrendingDown, TrendingUp, Percent } from "lucide-react";
 import { Link } from "wouter";
+import { ReportMethodologyCard } from "@/components/ReportMethodologyCard";
 
 const PRESETS = [
   { value: "today", zh: "今天", en: "Today" },
@@ -57,6 +58,7 @@ export default function ProductSalesReport() {
 
   return (
     <div className="space-y-6">
+      <ReportMethodologyCard kind="productSales" />
       <div className="flex items-center gap-4">
         <Link href="/profit-report">
           <Button variant="ghost" size="icon">

@@ -15,6 +15,7 @@ import {
   Crown, Medal, Award, Receipt, AlertCircle,
 } from "lucide-react";
 import { Link } from "wouter";
+import { ReportMethodologyCard } from "@/components/ReportMethodologyCard";
 
 const PRESETS = [
   { value: "today", zh: "今天", en: "Today" },
@@ -81,6 +82,7 @@ export default function BusinessReport() {
 
   return (
     <div className="space-y-6">
+      <ReportMethodologyCard kind="businessOverview" />
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>

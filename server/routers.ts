@@ -1326,6 +1326,16 @@ export const appRouter = router({
         const dateRange = db.getDateRange(input.preset, input.customStart, input.customEnd);
         return await db.getSalesPaymentReport(dateRange);
       }),
+    // Auditable cash ledger: approved receipts and completed refunds by transaction date.
+    paymentRecords: adminProcedure
+      .input(z.object({
+        from: z.coerce.date(),
+        to: z.coerce.date(),
+        type: z.enum(["all", "payment", "refund"]).optional(),
+      }))
+      .query(async ({ input }) => {
+        return await db.getPaymentRecords(input);
+      }),
     // Product Sales sub-report
     productSales: adminProcedure
       .input(z.object({

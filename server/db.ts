@@ -7268,14 +7268,21 @@ type DashboardCashReceiptRow = {
   total: string | number | null;
 };
 
+type DashboardCashRefundRow = DashboardCashReceiptRow;
+
 /**
  * Dashboard cash cards are cash-receipt indicators, not order-value indicators.
  * They only aggregate payment rows that have completed review, grouped by the
  * same local/import category used by the existing dashboard.
  */
-export function summarizeDashboardCashReceipts(rows: DashboardCashReceiptRow[]) {
+export function summarizeDashboardCashReceipts(
+  rows: DashboardCashReceiptRow[],
+  refundRows: DashboardCashRefundRow[] = [],
+) {
   let localReceivedMonth = 0;
   let importReceivedMonth = 0;
+  let localRefundedMonth = 0;
+  let importRefundedMonth = 0;
 
   for (const row of rows) {
     const amount = Number(row.total || 0);
@@ -7286,11 +7293,116 @@ export function summarizeDashboardCashReceipts(rows: DashboardCashReceiptRow[]) 
     }
   }
 
+  for (const row of refundRows) {
+    const amount = Number(row.total || 0);
+    if (row.orderCategory === "import") {
+      importRefundedMonth += amount;
+    } else if (row.orderCategory === "local") {
+      localRefundedMonth += amount;
+    }
+  }
+
+  const totalReceivedMonth = localReceivedMonth + importReceivedMonth;
+  const totalRefundedMonth = localRefundedMonth + importRefundedMonth;
+
   return {
     localReceivedMonth: localReceivedMonth.toFixed(2),
     importReceivedMonth: importReceivedMonth.toFixed(2),
-    totalReceivedMonth: (localReceivedMonth + importReceivedMonth).toFixed(2),
+    totalReceivedMonth: totalReceivedMonth.toFixed(2),
+    localRefundedMonth: localRefundedMonth.toFixed(2),
+    importRefundedMonth: importRefundedMonth.toFixed(2),
+    totalRefundedMonth: totalRefundedMonth.toFixed(2),
+    localNetReceivedMonth: (localReceivedMonth - localRefundedMonth).toFixed(2),
+    importNetReceivedMonth: (importReceivedMonth - importRefundedMonth).toFixed(2),
+    totalNetReceivedMonth: (totalReceivedMonth - totalRefundedMonth).toFixed(2),
   };
+}
+
+/**
+ * Financial audit trail used by Payment Record. A refund row is created only
+ * after the refund/Credit action is executed, therefore it represents a
+ * completed refund and is recorded by refundDate (falling back to createdAt).
+ */
+export async function getPaymentRecords(input: {
+  from: Date;
+  to: Date;
+  type?: "all" | "payment" | "refund";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const { from, to, type = "all" } = input;
+  const customerName = sql<string>`COALESCE(${customers.displayName}, ${customers.name}, ${customers.facebookName}, ${orders.facebookName}, '')`;
+  const orderCategory = (orders as any).orderCategory;
+  const records: Array<{
+    id: number;
+    orderId: number;
+    orderNumber: string | null;
+    orderCategory: string | null;
+    customerName: string;
+    amount: string | number;
+    type: "payment" | "refund";
+    occurredAt: Date | string | null;
+    method: string | null;
+    source: string | null;
+    operatorName: string | null;
+    notes: string | null;
+    receiptUrl: string | null;
+  }> = [];
+
+  if (type !== "refund") {
+    const paymentRows = await db.select({
+      id: orderPayments.id,
+      orderId: orderPayments.orderId,
+      orderNumber: orders.orderNumber,
+      orderCategory,
+      customerName,
+      amount: orderPayments.amount,
+      occurredAt: sql<Date>`COALESCE(${orderPayments.paymentDate}, ${orderPayments.createdAt})`,
+      method: orderPayments.paymentMethod,
+      source: orderPayments.paymentSource,
+      operatorName: orderPayments.operatorName,
+      notes: orderPayments.notes,
+      receiptUrl: orderPayments.receiptUrl,
+    }).from(orderPayments)
+      .innerJoin(orders, eq(orderPayments.orderId, orders.id))
+      .leftJoin(customers, eq(orders.customerId, customers.id))
+      .where(and(
+        eq(orderPayments.reviewStatus, "approved"),
+        sql`COALESCE(${orderPayments.paymentDate}, ${orderPayments.createdAt}) >= ${from}`,
+        sql`COALESCE(${orderPayments.paymentDate}, ${orderPayments.createdAt}) < ${to}`,
+      ));
+    records.push(...paymentRows.map((row) => ({ ...row, type: "payment" as const })));
+  }
+
+  if (type !== "payment") {
+    const refundRows = await db.select({
+      id: orderRefunds.id,
+      orderId: orderRefunds.orderId,
+      orderNumber: orders.orderNumber,
+      orderCategory,
+      customerName,
+      amount: orderRefunds.amount,
+      occurredAt: sql<Date>`COALESCE(${orderRefunds.refundDate}, ${orderRefunds.createdAt})`,
+      method: orderRefunds.refundMethod,
+      operatorName: orderRefunds.operatorName,
+      notes: orderRefunds.notes,
+      receiptUrl: orderRefunds.receiptUrl,
+    }).from(orderRefunds)
+      .innerJoin(orders, eq(orderRefunds.orderId, orders.id))
+      .leftJoin(customers, eq(orders.customerId, customers.id))
+      .where(and(
+        sql`COALESCE(${orderRefunds.refundDate}, ${orderRefunds.createdAt}) >= ${from}`,
+        sql`COALESCE(${orderRefunds.refundDate}, ${orderRefunds.createdAt}) < ${to}`,
+      ));
+    records.push(...refundRows.map((row) => ({ ...row, type: "refund" as const, source: null })));
+  }
+
+  return records.sort((a, b) => {
+    const aTime = a.occurredAt ? new Date(a.occurredAt).getTime() : 0;
+    const bTime = b.occurredAt ? new Date(b.occurredAt).getTime() : 0;
+    return bTime - aTime || b.id - a.id;
+  });
 }
 
 export async function getDashboardV11Stats() {
@@ -7350,7 +7462,18 @@ export async function getDashboardV11Stats() {
       sql`${(orders as any).orderCategory} IN ('local', 'import')`,
     ))
     .groupBy((orders as any).orderCategory) as DashboardCashReceiptRow[];
-  const cashReceiptBreakdown = summarizeDashboardCashReceipts(monthlyApprovedPayments);
+  const monthlyCompletedRefunds = await db.select({
+    orderCategory: (orders as any).orderCategory,
+    total: sql<string>`COALESCE(SUM(${orderRefunds.amount}), 0)`,
+  }).from(orderRefunds)
+    .innerJoin(orders, eq(orderRefunds.orderId, orders.id))
+    .where(and(
+      sql`COALESCE(${orderRefunds.refundDate}, ${orderRefunds.createdAt}) >= ${firstOfMonth}`,
+      sql`COALESCE(${orderRefunds.refundDate}, ${orderRefunds.createdAt}) < ${firstOfNextMonth}`,
+      sql`${(orders as any).orderCategory} IN ('local', 'import')`,
+    ))
+    .groupBy((orders as any).orderCategory) as DashboardCashRefundRow[];
+  const cashReceiptBreakdown = summarizeDashboardCashReceipts(monthlyApprovedPayments, monthlyCompletedRefunds);
 
   // V2.1.12: Row 5: Scheduled shipping today — unified query matching getScheduledShippingOrders
   const scheduledValidStatuses = ['pending', 'packing', 'hold_order', 'receipt_uploaded', 'partial_payment', 'waiting_stock', 'ready_to_ship', 'scheduled_ship'];

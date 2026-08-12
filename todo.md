@@ -3,6 +3,9 @@
 - [x] Fix sidebar sub-menu query param navigation: LiveRooms.tsx (?type=), ImportBatches.tsx (?tab=), Orders.tsx (?nature= sync)
 - [x] Fix Dashboard special order follow-up SQL errors: raw SQL uses snake_case but DB columns are camelCase
 - [x] Ensure Dashboard special order module shows framework even when data is 0
+- [x] 新增逐笔 Payment Record 付款流水页面（可筛选、可追溯）
+- [x] Dashboard 净实收金额（扣除已完成退款）
+- [x] 七项报告页面顶部固定统计口径说明
 
 ## 数据库层
 
@@ -3006,3 +3009,9 @@
 
 - [x] 核对 Dashboard 与七项报告的日期范围、订单状态、付款记录和金额字段，解释并修复不一致的统计口径
 - [x] 将 Dashboard 本月营业额改为按实际已确认付款日期统计的实收金额，并将 Payment Record 菜单更名为经营总览
+
+## 付款流水与报告透明度
+
+- [ ] 新增可查看与筛选逐笔已确认付款的 Payment Record 页面
+- [ ] 在 Dashboard 新增扣除已完成退款后的本月净实收金额
+- [ ] 在七项报告页面顶部固定展示对应的统计口径说明

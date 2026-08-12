@@ -12,6 +12,12 @@ describe("Dashboard 本月已收款统计", () => {
       localReceivedMonth: "200.00",
       importReceivedMonth: "240.00",
       totalReceivedMonth: "440.00",
+      localRefundedMonth: "0.00",
+      importRefundedMonth: "0.00",
+      totalRefundedMonth: "0.00",
+      localNetReceivedMonth: "200.00",
+      importNetReceivedMonth: "240.00",
+      totalNetReceivedMonth: "440.00",
     });
   });
 
@@ -20,6 +26,31 @@ describe("Dashboard 本月已收款统计", () => {
       localReceivedMonth: "0.00",
       importReceivedMonth: "0.00",
       totalReceivedMonth: "0.00",
+      localRefundedMonth: "0.00",
+      importRefundedMonth: "0.00",
+      totalRefundedMonth: "0.00",
+      localNetReceivedMonth: "0.00",
+      importNetReceivedMonth: "0.00",
+      totalNetReceivedMonth: "0.00",
+    });
+  });
+
+  it("按实际退款日期扣减本地与代购的净实收，不影响已确认收款总额", () => {
+    expect(summarizeDashboardCashReceipts(
+      [
+        { orderCategory: "local", total: "150.00" },
+        { orderCategory: "import", total: "80.00" },
+      ],
+      [
+        { orderCategory: "local", total: "20.00" },
+        { orderCategory: "import", total: "5.50" },
+      ],
+    )).toMatchObject({
+      totalReceivedMonth: "230.00",
+      totalRefundedMonth: "25.50",
+      localNetReceivedMonth: "130.00",
+      importNetReceivedMonth: "74.50",
+      totalNetReceivedMonth: "204.50",
     });
   });
 });

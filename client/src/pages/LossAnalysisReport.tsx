@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertTriangle, RefreshCw } from "lucide-react";
+import { ReportMethodologyCard } from "@/components/ReportMethodologyCard";
 
 const ADJUSTMENT_TYPE_LABELS: Record<string, { zh: string; en: string }> = {
   quality_issue: { zh: "品质异常报废", en: "Quality Issue Scrap" },
@@ -60,6 +61,7 @@ export default function LossAnalysisReport() {
 
   return (
     <div className="space-y-6">
+      <ReportMethodologyCard kind="lossAnalysis" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <AlertTriangle className="h-6 w-6 text-orange-500" />

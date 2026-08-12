@@ -153,6 +153,15 @@ export default function Dashboard() {
       bg: "border-primary/20 bg-primary/5",
       link: "/profit-report",
     },
+    {
+      title: lang === "zh" ? "本月净实收" : "Net Monthly Receipts",
+      subtitle: lang === "zh" ? "已确认收款 − 已完成退款" : "Approved receipts less completed refunds",
+      value: `RM ${Number(cashReceiptBreakdown.totalNetReceivedMonth || 0).toFixed(2)}`,
+      icon: TrendingUp,
+      color: "text-teal-600",
+      bg: "border-teal-200 bg-teal-50 dark:bg-teal-950/20",
+      link: "/payment-record",
+    },
   ];
 
   // V2.1: 9 fixed work status cards — always visible even at 0
@@ -206,10 +215,10 @@ export default function Dashboard() {
         <span className="text-sm text-muted-foreground">{new Date().toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}</span>
       </div>
 
-      {/* V2.3 Row 1: Sales (营业额) — 3 cards */}
+      {/* V2.3 Row 1: confirmed receipts and net receipts — 4 cards */}
       <div>
         <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "营业额（本月）" : "Sales (This Month)"}</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {salesRow.map((card, i) => (
             <Link key={i} href={card.link}>
               <Card className={`${card.bg} hover:shadow-md transition-shadow cursor-pointer`}>

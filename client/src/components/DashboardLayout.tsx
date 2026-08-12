@@ -191,6 +191,7 @@ const menuStructure: MenuEntry[] = [
       { icon: TrendingUp, label: { zh: "利润分析", en: "Profit Analysis" }, path: "/reports/profit-analysis" },
       { icon: AlertTriangle, label: { zh: "损耗分析", en: "Loss Analysis" }, path: "/reports/loss-analysis" },
       { icon: Receipt, label: { zh: "经营总览", en: "Business Overview" }, path: "/profit-report" },
+      { icon: Receipt, label: { zh: "付款流水", en: "Payment Record" }, path: "/reports/payment-record" },
     ],
   },
 

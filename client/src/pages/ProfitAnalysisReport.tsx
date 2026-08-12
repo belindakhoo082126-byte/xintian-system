@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TrendingUp, DollarSign, Package, Truck, AlertTriangle, RefreshCw } from "lucide-react";
+import { ReportMethodologyCard } from "@/components/ReportMethodologyCard";
 
 export default function ProfitAnalysisReport() {
   const { translate, lang } = useI18n();
@@ -64,6 +65,7 @@ export default function ProfitAnalysisReport() {
 
   return (
     <div className="space-y-6">
+      <ReportMethodologyCard kind="profitAnalysis" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{translate("利润分析报告", "Profit Analysis Report")}</h1>
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
