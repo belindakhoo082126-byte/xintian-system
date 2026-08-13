@@ -281,6 +281,20 @@ export default function LiveRoomDetail(props: any) {
     onError: (e: any) => toast.error(t("live.operationFailed") + ": " + e.message),
   });
 
+  const saveRoomNotesMutation = trpc.liveRooms.saveRoomNotes.useMutation({
+    onSuccess: (data) => {
+      const savedNotes = data.notes || "";
+      setRoomNotes(savedNotes);
+      queryClient.liveRooms.getById.setData({ id: roomId }, (current) =>
+        current ? { ...current, notes: savedNotes, updatedAt: data.updatedAt } : current
+      );
+      queryClient.liveRooms.getById.invalidate({ id: roomId });
+      queryClient.liveRooms.list.invalidate();
+      toast.success("直播备忘录已保存");
+    },
+    onError: (e: any) => toast.error("备忘录保存失败：" + e.message),
+  });
+
   const startLiveMutation = trpc.liveRooms.startLive.useMutation({
     onSuccess: () => {
       queryClient.liveRooms.getById.invalidate({ id: roomId });
@@ -613,23 +627,33 @@ export default function LiveRoomDetail(props: any) {
           </div>
 
           <Card className="flex-shrink-0 border-amber-200 bg-amber-50/40">
-            <CardContent className="flex items-center gap-2 py-2">
-              <StickyNote className="h-4 w-4 shrink-0 text-amber-700" />
-              <Input
+            <CardContent className="space-y-2 py-2.5">
+              <div className="flex items-center gap-2">
+                <StickyNote className="h-4 w-4 shrink-0 text-amber-700" />
+                <span className="text-xs font-semibold text-amber-900">直播备忘录</span>
+                <span className="text-[11px] text-muted-foreground">仅后台可见</span>
+              </div>
+              <Textarea
                 value={roomNotes}
                 onChange={(event) => setRoomNotes(event.target.value)}
-                placeholder="直播备忘录（仅后台可见，例如：本场规则、补货提醒或交接事项）"
-                className="h-7 bg-background text-xs"
+                placeholder="记录本场规则、补货提醒或交接事项；保存后会立即在此处显示。"
+                aria-label="直播备忘录"
+                className="min-h-16 resize-y bg-background text-xs"
               />
-              <Button
-                type="button"
-                size="sm"
-                className="h-7 shrink-0 px-3 text-xs"
-                disabled={updateRoomMutation.isPending || roomNotes === (room.notes || "")}
-                onClick={() => updateRoomMutation.mutate({ id: roomId, notes: roomNotes.trim() })}
-              >
-                保存备忘
-              </Button>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] text-muted-foreground">
+                  {(room.notes || "").trim() ? "已载入最近保存的备忘录" : "尚未保存备忘录"}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 shrink-0 px-3 text-xs"
+                  disabled={saveRoomNotesMutation.isPending || roomNotes.trim() === (room.notes || "").trim()}
+                  onClick={() => saveRoomNotesMutation.mutate({ liveRoomId: roomId, content: roomNotes })}
+                >
+                  {saveRoomNotesMutation.isPending ? "保存中…" : "保存备忘"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

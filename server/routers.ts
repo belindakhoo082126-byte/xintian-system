@@ -5388,6 +5388,24 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    // 直播间备忘录采用专用接口：保存后重新读取数据库记录，前端只以已持久化的内容回显。
+    saveRoomNotes: adminProcedure
+      .input(z.object({
+        liveRoomId: z.number().int().positive(),
+        content: z.string().trim().max(5000, "备忘录不可超过 5000 个字"),
+      }))
+      .mutation(async ({ input }) => {
+        const room = await db.getLiveRoomById(input.liveRoomId);
+        if (!room) throw new Error("直播间不存在");
+
+        await db.updateLiveRoom(input.liveRoomId, { notes: input.content });
+        const savedRoom = await db.getLiveRoomById(input.liveRoomId);
+        return {
+          notes: savedRoom?.notes || "",
+          updatedAt: savedRoom?.updatedAt || new Date(),
+        };
+      }),
+
     delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
