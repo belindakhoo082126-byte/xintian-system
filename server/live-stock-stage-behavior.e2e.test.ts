@@ -183,4 +183,40 @@ describe.sequential("直播库存与订单阶段隔离行为验证", () => {
     const [trimmedProduct] = await db!.select({ stockQuantity: products.stockQuantity }).from(products).where(eq(products.id, normalProductId));
     expect(Number(trimmedProduct.stockQuantity)).toBe(0);
   }, 20_000);
+
+  it("黑名单客户的直播留言不会建立订单、占用库存或写入直播捉单记录", async () => {
+    const db = await getDb();
+    expect(db, "DATABASE_URL 必须可用，才可进行真实隔离演练").toBeTruthy();
+    await cleanupQaRows();
+
+    const blacklistedCode = `QALB${Date.now().toString().slice(-10)}`;
+    const blacklistedName = `${qaKey} 黑名单客户`;
+    const blacklistedInsert = await db!.insert(customers).values({
+      customerId: blacklistedCode,
+      name: blacklistedName,
+      displayName: blacklistedName,
+      facebookName: blacklistedName,
+      messengerId: `${qaKey}-BLACKLISTED-PSID`,
+      customerSource: "facebook_live",
+      isBlacklisted: true,
+      blacklistReason: "QA validation",
+    });
+    const blacklistedCustomerId = asInsertId(blacklistedInsert);
+    customerIds.push(blacklistedCustomerId);
+    qaCustomerCodes.push(blacklistedCode);
+
+    await expect(createOrderFromLiveCapture({
+      commenterName: blacklistedName,
+      commenterPsid: `${qaKey}-BLACKLISTED-PSID`,
+      commentMessage: "QA-BLACKLISTED",
+      commentId: `${qaKey}-BLACKLISTED-COMMENT`,
+      liveType: "normal",
+      matchedProducts: [],
+    })).rejects.toThrow("CUSTOMER_BLACKLISTED");
+
+    const blacklistedOrders = await db!.select({ id: orders.id })
+      .from(orders)
+      .where(eq(orders.customerId, blacklistedCustomerId));
+    expect(blacklistedOrders).toHaveLength(0);
+  }, 20_000);
 });

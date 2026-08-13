@@ -657,7 +657,7 @@ export default function Customers() {
                               </p>
                               <p className="text-xs text-muted-foreground">
                                 {l.reason}
-                                {l.orderNumber && ` (订单 ${l.orderNumber})`}
+                                {l.orderNumber && ` (${translate("订单", "Order")} ${l.orderNumber})`}
                               </p>
                             </div>
                             <div className="text-right">
@@ -749,7 +749,7 @@ export default function Customers() {
                               </p>
                             )}
                             {event.orderNumber && (
-                              <p className="text-xs text-muted-foreground mt-1">订单: {event.orderNumber}</p>
+                              <p className="text-xs text-muted-foreground mt-1">{translate("订单", "Order")}: {event.orderNumber}</p>
                             )}
                             {event.operatorName && (
                               <p className="text-xs text-muted-foreground mt-1">{translate("操作人", "Operator")}: {event.operatorName}</p>

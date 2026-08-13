@@ -323,13 +323,14 @@ export default function LiveRoomDetail(props: any) {
     onError: (e: any) => toast.error(t("live.sendFailed") + ": " + e.message),
   });
 
-  // V2.0: Toggle blacklist mutation
-  const toggleBlacklistMutation = trpc.liveRooms.toggleBlacklist.useMutation({
+  // V2.0: Blacklist the commenter through the same PSID identity used by live capture.
+  const blacklistCommenterMutation = trpc.liveRooms.blacklistCommenter.useMutation({
     onSuccess: () => {
       toast.success(t("live.blacklistUpdated"));
       setBlacklistDialogOpen(false);
       setBlacklistCustomer(null);
       setBlacklistReason("");
+      queryClient.liveRooms.getComments.invalidate({ liveRoomId: roomId });
     },
     onError: (e: any) => toast.error(t("live.operationFailed") + ": " + e.message),
   });
@@ -424,6 +425,20 @@ export default function LiveRoomDetail(props: any) {
     setPriceEditId(id);
     setPriceEditValue(String(currentPrice));
     setPriceEditOpen(true);
+  }
+
+  function openBlacklistForComment(comment: any) {
+    if (comment.isCustomerBlacklisted) {
+      toast.info("此客户已在黑名单中，系统不会从直播留言建立订单。");
+      return;
+    }
+    setBlacklistCustomer({
+      name: comment.commenterName,
+      psid: comment.commenterPsid,
+      customerId: comment.customerId,
+    });
+    setBlacklistReason("");
+    setBlacklistDialogOpen(true);
   }
 
   function handlePriceSave() {
@@ -800,6 +815,7 @@ export default function LiveRoomDetail(props: any) {
                           comment={comment}
                           onClick={() => setSelectedComment(comment)}
                           onMarkHandled={() => markCommentHandledMutation.mutate({ commentId: comment.id })}
+                          onAvatarClick={() => openBlacklistForComment(comment)}
                         />
                       ))
                     )}
@@ -1127,9 +1143,11 @@ onClick={() => setOrderViewMode("byCustomer")}>
             </DialogHeader>
             <div className="space-y-3 py-3">
               <div className="flex items-center gap-2">
-                <Avatar className="h-8 w-8"><AvatarFallback className="text-xs">{(selectedComment.commenterName || "?").charAt(0)}</AvatarFallback></Avatar>
+                <Avatar className={`h-8 w-8 ${selectedComment.isCustomerBlacklisted ? "bg-black text-white ring-2 ring-black" : ""}`}>
+                  <AvatarFallback className={`text-xs ${selectedComment.isCustomerBlacklisted ? "bg-black text-white" : ""}`}>{(selectedComment.commenterName || "?").charAt(0)}</AvatarFallback>
+                </Avatar>
                 <div>
-                  <p className="text-sm font-medium">{selectedComment.commenterName}</p>
+                  <p className="text-sm font-medium">{selectedComment.commenterName} {selectedComment.isCustomerBlacklisted && <Badge variant="destructive" className="ml-1 h-5 text-[10px]">黑名单／不可捉单</Badge>}</p>
                   <p className="text-xs text-muted-foreground">{new Date(selectedComment.createdAt).toLocaleString("zh-CN")}</p>
                 </div>
               </div>
@@ -1211,8 +1229,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
             <DialogFooter>
               <Button variant="outline" size="sm" className="gap-1"
                 onClick={() => {
-                  setBlacklistCustomer({ name: selectedComment.commenterName, psid: selectedComment.commenterPsid });
-                  setBlacklistDialogOpen(true);
+                  openBlacklistForComment(selectedComment);
                 }}>
                 <Ban className="h-4 w-4" /> {t("live.addToBlacklist")}
               </Button>
@@ -1251,11 +1268,14 @@ onClick={() => setOrderViewMode("byCustomer")}>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBlacklistDialogOpen(false)}>{t("live.removeProduct")}</Button>
             <Button variant="destructive"
-              disabled={toggleBlacklistMutation.isPending || !blacklistReason.trim()}
+              disabled={blacklistCommenterMutation.isPending || !blacklistReason.trim() || !blacklistCustomer?.name}
               onClick={() => {
                 if (blacklistCustomer && blacklistReason.trim()) {
-                  toast.info(t("live.blacklistNeedCustomerId"));
-                  setBlacklistDialogOpen(false);
+                  blacklistCommenterMutation.mutate({
+                    commenterName: blacklistCustomer.name,
+                    commenterPsid: blacklistCustomer.psid || undefined,
+                    reason: blacklistReason.trim(),
+                  });
                 }
               }}>
               <Ban className="h-4 w-4" /> {t("live.confirmAdd")}
@@ -1281,7 +1301,7 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
   const stockColor = totalAvailable > 10 ? "text-green-600" : totalAvailable > 0 ? "text-yellow-600" : "text-red-600";
   const stockBg = totalAvailable > 10 ? "bg-green-50" : totalAvailable > 0 ? "bg-yellow-50" : "bg-red-50";
   const isCompact = cardMode === 'compact';
-  const imgSize = isCompact ? 'w-10 h-10' : 'w-[100px] h-[100px]';
+  const imgSize = isCompact ? 'w-14 h-14' : 'w-[128px] h-[128px]';
   const imgUrl = group.coverImageUrl || variations[0]?.imageUrl;
 
   // Placeholder image component (no text, just icon)
@@ -1293,8 +1313,8 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
 
   return (
     <Card className={`${isCompact ? 'py-0' : ''}`}>
-      <CardContent className={isCompact ? 'p-1.5' : 'p-3'}>
-        <div className={`flex ${isCompact ? 'gap-1.5' : 'gap-3'}`}>
+      <CardContent className={isCompact ? 'p-2.5' : 'p-4'}>
+        <div className={`flex ${isCompact ? 'gap-2.5' : 'gap-4'}`}>
           {/* Left: Product image (fixed ratio, no crop) */}
           <button
             type="button"
@@ -1327,15 +1347,15 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
             {isCompact ? (
               <>
                 <div className="flex items-center gap-1">
-                  <p className="font-bold truncate text-xs flex-1">{group.productName}</p>
-                  <span className="font-bold text-sm whitespace-nowrap">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
+                  <p className="font-bold truncate text-sm flex-1">{group.productName}</p>
+                  <span className="font-bold text-base whitespace-nowrap">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
                   <code className="text-xs bg-primary/10 text-primary px-1 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
                   {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length} {t("live.spec")}</Badge>}
                   {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">{t("live.preorder")}</Badge>}
                 </div>
-                <div className="flex items-center gap-2 text-xs mt-0.5">
+                <div className="flex items-center gap-2 text-sm mt-1">
                   <span className="text-muted-foreground">{t("live.inStock")}<b className="text-foreground ml-0.5">{onHand}</b></span>
                   <span className="text-muted-foreground">{t("live.called")}<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>
                   <span className="text-muted-foreground">{t("live.available")}<b className={`${stockColor} ml-0.5`}>{totalAvailable}</b></span>
@@ -1344,7 +1364,7 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
             ) : (
               <>
                 <div>
-                  <p className="font-bold truncate text-sm">{group.productName}</p>
+                  <p className="font-bold truncate text-base">{group.productName}</p>
                   <div className="flex items-center gap-1.5 mt-1">
                     <code className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
                     {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length} {t("live.spec")}</Badge>}
@@ -1360,8 +1380,8 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
                     <span className="text-lg font-bold">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
                   )}
                 </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">直播价只用于本场新建订单；订单利润按订单商品的成本快照／FIFO成本计算。</p>
-                <div className="flex items-center gap-3 mt-1 text-sm">
+                <p className="mt-1 text-xs text-muted-foreground">直播价只用于本场新建订单；订单利润按订单商品的成本快照／FIFO成本计算。</p>
+                <div className="flex items-center gap-3 mt-2 text-base">
                   <span className="text-muted-foreground">{t("live.inStock")}<b className="text-foreground ml-0.5">{onHand}</b></span>
                   <span className="text-muted-foreground">{t("live.called")}<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>
                   <span className="text-muted-foreground">{t("live.available")}<b className={`${stockColor} ml-0.5`}>{totalAvailable}</b></span>
@@ -1372,22 +1392,22 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
 
           {/* Right: Action buttons - horizontal in compact, vertical in large */}
           {isCompact ? (
-            <div className="flex items-center gap-0.5 flex-shrink-0">
-              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center" title={t("live.changePriceTitle")}
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0 justify-center" title={t("live.changePriceTitle")}
                 onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
-                <DollarSign className="h-3 w-3" />
+                <DollarSign className="h-4 w-4" />
               </Button>
-              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center" title={t("live.adjustStockTitle")}
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0 justify-center" title={t("live.adjustStockTitle")}
                 onClick={() => onAdjustStock(variations[0]?.id)}>
-                <Package className="h-3 w-3" />
+                <Package className="h-4 w-4" />
               </Button>
-              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center" title={t("live.copyKeyword")}
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0 justify-center" title={t("live.copyKeyword")}
                 onClick={() => onCopyKeyword(variations[0]?.id)}>
-                <Copy className="h-3 w-3" />
+                <Copy className="h-4 w-4" />
               </Button>
-              <Button variant="outline" size="sm" className="h-6 w-6 p-0 justify-center text-destructive" title={t("live.removeProduct")}
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0 justify-center text-destructive" title={t("live.removeProduct")}
                 onClick={() => onDelete(variations[0]?.id)}>
-                <Trash2 className="h-3 w-3" />
+                <Trash2 className="h-4 w-4" />
               </Button>
               <Switch
                 checked={variations[0]?.allowPreorder || false}
@@ -1397,13 +1417,13 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
             </div>
           ) : (
             <div className="flex flex-col gap-1 flex-shrink-0">
-              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title={t("live.changePriceTitle")}
+              <Button variant="outline" size="sm" className="h-9 w-10 p-0 justify-center" title={t("live.changePriceTitle")}
                 onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
-                <DollarSign className="h-3.5 w-3.5" />
+                <DollarSign className="h-4 w-4" />
               </Button>
-              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title={t("live.adjustStockTitle")}
+              <Button variant="outline" size="sm" className="h-9 w-10 p-0 justify-center" title={t("live.adjustStockTitle")}
                 onClick={() => onAdjustStock(variations[0]?.id)}>
-                <Package className="h-3.5 w-3.5" />
+                <Package className="h-4 w-4" />
               </Button>
               <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title={t("live.copyKeyword")}
                 onClick={() => onCopyKeyword(variations[0]?.id)}>
@@ -1480,19 +1500,28 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
   );
 }
 
-function CommentRow({ comment, onClick, onMarkHandled }: any) {
+function CommentRow({ comment, onClick, onMarkHandled, onAvatarClick }: any) {
   const { t } = useI18n();
   return (
     <div
       className={`flex items-start gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer ${comment.isHandled ? "opacity-60" : ""}`}
       onClick={onClick}
     >
-      <Avatar className="h-6 w-6 flex-shrink-0">
-        <AvatarFallback className="text-xs">{(comment.commenterName || "?").charAt(0)}</AvatarFallback>
-      </Avatar>
+      <button
+        type="button"
+        title={comment.isCustomerBlacklisted ? "黑名单客户，不可捉单" : "点击将客户加入黑名单"}
+        aria-label={comment.isCustomerBlacklisted ? `${comment.commenterName} 已在黑名单` : `将 ${comment.commenterName} 加入黑名单`}
+        className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+        onClick={(event) => { event.stopPropagation(); onAvatarClick?.(); }}
+      >
+        <Avatar className={`h-6 w-6 flex-shrink-0 ${comment.isCustomerBlacklisted ? "bg-black text-white ring-1 ring-black" : ""}`}>
+          <AvatarFallback className={`text-xs ${comment.isCustomerBlacklisted ? "bg-black text-white" : ""}`}>{(comment.commenterName || "?").charAt(0)}</AvatarFallback>
+        </Avatar>
+      </button>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1">
           <span className="text-xs font-medium truncate">{comment.commenterName}</span>
+          {comment.isCustomerBlacklisted && <Badge variant="destructive" className="h-4 px-1 text-[9px]">黑名单</Badge>}
           <span className={`inline-flex px-1 py-0.5 rounded text-xs ${matchResultColors[comment.matchResult] || ""}`}>
             {matchResultLabels[comment.matchResult] || comment.matchResult}
           </span>

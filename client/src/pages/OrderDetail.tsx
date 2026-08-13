@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { ArrowLeft, Package, Truck, CheckCircle, Clock, AlertCircle, PauseCircle, Bell, History, FileText, MessageSquare, User, Lock, Trash2, Plus, Sprout, Calendar, AlertTriangle, RotateCw } from "lucide-react";
+import { ArrowLeft, Package, Truck, CheckCircle, Clock, AlertCircle, PauseCircle, Bell, History, FileText, MessageSquare, User, Lock, Trash2, Plus, Sprout, Calendar, AlertTriangle, RotateCw, GitFork } from "lucide-react";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
 
 const HOLD_TYPE_LABELS_RAW: Record<string, { zh: string; en: string }> = {
@@ -76,6 +76,8 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
   const [transitionNotes, setTransitionNotes] = useState("");
   const [specialStatusOpen, setSpecialStatusOpen] = useState(false);
   const [specialStatusForm, setSpecialStatusForm] = useState({ type: "", reason: "" });
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitQuantities, setSplitQuantities] = useState<Record<number, number>>({});
   const utils = trpc.useUtils();
 
   const { data: orderData, isLoading } = trpc.orders.getById.useQuery({ id: orderId });
@@ -189,6 +191,16 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
     onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
   });
 
+  const splitOrderMutation = trpc.orders.split.useMutation({
+    onSuccess: (result) => {
+      utils.orders.invalidate();
+      toast.success(translate("订单已拆分，新订单号：{number}", "Order split. New order: {number}", { number: result.newOrderNumber }));
+      setSplitQuantities({});
+      setSplitOpen(false);
+    },
+    onError: (e) => toast.error(translate("拆单失败", "Split failed") + `: ${e.message}`),
+  });
+
   if (isLoading) {
     return <div className="flex items-center justify-center py-20 text-muted-foreground">{translate("加载中...", "Loading...")}</div>;
   }
@@ -211,6 +223,13 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
     variant: statusCfgRaw.variant,
     color: statusCfgRaw.color,
   };
+  const canSplitOrder = !isImportOrder && order.orderType === "physical" && ["pending", "receipt_uploaded", "hold_order"].includes(order.physicalStatus || "") && Number(order.paidAmount || 0) === 0 && Number(order.creditUsed || 0) === 0 && Number(order.discountAmount || 0) === 0 && Number(order.promotionDiscount || 0) === 0 && Number(order.extraCharge || 0) === 0 && items.length > 1;
+  const regularSubtotal = items.filter((item: any) => item.priceType !== "special").reduce((sum: number, item: any) => sum + Number(item.subtotal || 0), 0);
+  const specialSubtotal = items.filter((item: any) => item.priceType === "special").reduce((sum: number, item: any) => sum + Number(item.subtotal || 0), 0);
+  const selectedSplitItems = items
+    .filter((item: any) => Number(splitQuantities[item.id] || 0) > 0)
+    .map((item: any) => ({ orderItemId: item.id, quantity: Number(splitQuantities[item.id]) }));
+  const leavesItemsOnOriginalOrder = items.some((item: any) => Number(splitQuantities[item.id] || 0) < Number(item.quantity));
 
   function handleConfirmPayment() {
     const hasHold = !!holdInfo?.isActive;
@@ -282,6 +301,12 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
           <History className="h-4 w-4 mr-2" />
             {translate("手动变更状态", "Change Status Manually")}
         </Button>
+        {canSplitOrder && (
+          <Button variant="outline" onClick={() => setSplitOpen(true)}>
+            <GitFork className="h-4 w-4 mr-2" />
+            {translate("拆分订单", "Split Order")}
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -314,7 +339,15 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                     <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
                   ) : items?.map((item: any) => (
                     <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.productName}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{item.productName}</span>
+                          {item.priceType === "special" ? <Badge className="bg-rose-600 hover:bg-rose-600">{translate("特价", "Special")}</Badge> : <Badge variant="outline">{translate("原价", "Regular")}</Badge>}
+                        </div>
+                        {item.priceType === "special" && Number(item.originalUnitPrice || 0) > 0 && (
+                          <p className="mt-1 text-xs text-muted-foreground line-through">{translate("原价", "Regular")}: RM {Number(item.originalUnitPrice).toFixed(2)}</p>
+                        )}
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || "-"}</TableCell>
                       <TableCell className="text-sm">{item.variationName || "-"}</TableCell>
                       <TableCell>
@@ -414,9 +447,33 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
             <CardHeader><CardTitle>{translate("订单摘要", "Order Summary")}</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">{translate("商品小计", "Subtotal")}</span>
-                <span>RM {Number(order.physicalSubtotal).toFixed(2)}</span>
+                <span className="text-muted-foreground">{translate("原价商品", "Regular-price Items")}</span>
+                <span>RM {regularSubtotal.toFixed(2)}</span>
               </div>
+              {specialSubtotal > 0 && (
+                <div className="flex justify-between text-rose-600">
+                  <span>{translate("特价商品", "Special-price Items")}</span>
+                  <span>RM {specialSubtotal.toFixed(2)}</span>
+                </div>
+              )}
+              {Number(order.membershipSubtotal || 0) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{translate("会员费用", "Membership Fee")}</span>
+                  <span>RM {Number(order.membershipSubtotal).toFixed(2)}</span>
+                </div>
+              )}
+              {Number(order.creditUsed || 0) > 0 && (
+                <div className="flex justify-between text-indigo-600">
+                  <span>{translate("Credit 抵扣", "Credit Applied")}</span>
+                  <span>-RM {Number(order.creditUsed).toFixed(2)}</span>
+                </div>
+              )}
+              {Number(order.promotionDiscount || 0) > 0 && (
+                <div className="flex justify-between text-orange-600">
+                  <span>{translate("促销折扣", "Promotion Discount")}</span>
+                  <span>-RM {Number(order.promotionDiscount).toFixed(2)}</span>
+                </div>
+              )}
               {Number(order.discountAmount) > 0 && (
                 <div className="flex justify-between text-orange-600">
                   <span>{translate("折扣", "Discount")}{order.discountReason ? ` (${order.discountReason})` : ""}</span>
@@ -967,6 +1024,41 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
           <DialogFooter>
             <Button variant="outline" onClick={() => setStatusTransitionOpen(false)}>{translate("取消", "Cancel")}</Button>
             <Button onClick={handleTransition} disabled={transitionMutation.isPending}>{translate("确认变更", "Confirm Change")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={splitOpen} onOpenChange={(open) => { setSplitOpen(open); if (!open) setSplitQuantities({}); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{translate("拆分订单", "Split Order")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">{translate("选择要移至新订单的商品和数量。系统会按现行运费规则重新计算两张订单；不会重复占用库存。", "Select products and quantities to move. Both orders will be recalculated under current shipping rules; stock will not be reserved twice.")}</p>
+            <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border p-3">
+              {items.map((item: any) => {
+                const splitQuantity = Number(splitQuantities[item.id] || 0);
+                return (
+                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-muted">
+                    <span className="flex items-center gap-3">
+                      <input type="checkbox" checked={splitQuantity > 0} onChange={(e) => setSplitQuantities((current) => ({ ...current, [item.id]: e.target.checked ? 1 : 0 }))} className="h-4 w-4 rounded border" />
+                      <span><span className="block font-medium">{item.productName}</span><span className="text-xs text-muted-foreground">x{item.quantity}{item.priceType === "special" ? ` · ${translate("特价", "Special")}` : ""}</span></span>
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <Input aria-label={translate("拆分数量", "Split quantity")} type="number" min={1} max={item.quantity} value={splitQuantity || ""} disabled={splitQuantity === 0} onChange={(e) => setSplitQuantities((current) => ({ ...current, [item.id]: Math.min(Number(item.quantity), Math.max(1, Number(e.target.value) || 1)) }))} className="h-8 w-20" />
+                      <span className="w-24 text-right text-sm font-medium">RM {((Number(item.subtotal || 0) / Number(item.quantity || 1)) * splitQuantity).toFixed(2)}</span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {!leavesItemsOnOriginalOrder && <p className="text-sm text-destructive">{translate("原订单必须至少保留一项商品或数量。", "At least one item or quantity must remain on the original order.")}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSplitOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={() => splitOrderMutation.mutate({ orderId, items: selectedSplitItems })} disabled={selectedSplitItems.length === 0 || !leavesItemsOnOriginalOrder || splitOrderMutation.isPending}>
+              <GitFork className="h-4 w-4 mr-2" />{translate("确认拆分", "Confirm Split")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

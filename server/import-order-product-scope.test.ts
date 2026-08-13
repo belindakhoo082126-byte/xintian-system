@@ -29,4 +29,9 @@ describe("中国代购订单与Walk in范围", () => {
     expect(createSource).toContain('shippingMethod: isWalkIn ? "self_pickup" : shippingMethod');
     expect(createSource).toContain('{!isWalkIn && <Card>');
   });
+
+  it("将全额确认付款的Walk in自取订单直接流转为已发货", () => {
+    expect(dbSource).toContain("if (order[0].shippingMethod === 'self_pickup')");
+    expect(dbSource).toContain("newStatus = 'shipped' as any;");
+  });
 });

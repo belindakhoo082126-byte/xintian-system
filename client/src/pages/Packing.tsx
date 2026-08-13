@@ -158,8 +158,8 @@ export default function Packing() {
       // Customer info section
       const customerInfoHtml = `
         <div style="margin-bottom:4px;font-size:12px;line-height:1.4">
-          <div><strong>下单人:</strong> <span style="font-size:16px;font-weight:bold">${data.facebookName || data.customerName || "-"}</span></div>
-          <div><strong>收件人:</strong> <span style="font-size:16px;font-weight:bold">${data.recipientName || data.customerName || "-"}</span></div>
+          <div><strong>下单人:</strong> <span style="font-size:22px;font-weight:bold;line-height:1.3">${data.facebookName || data.customerName || "-"}</span></div>
+          <div><strong>收件人:</strong> <span style="font-size:22px;font-weight:bold;line-height:1.3">${data.recipientName || data.customerName || "-"}</span></div>
           <div><strong>电话:</strong> ${data.recipientPhone || data.customerPhone || ""}</div>
           <div><strong>地址:</strong> ${[
             data.addressLine1,

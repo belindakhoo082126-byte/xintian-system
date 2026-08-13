@@ -79,6 +79,42 @@ async function autoNotifyCustomer(orderId: number, message: string, psid?: strin
   return { platform: "none", status: "failed", error: "No contact method available" };
 }
 
+/**
+ * 手动发货与自动发货共用的客户通知审计：物流写入已成功后才执行，
+ * 通知渠道失败只记录状态，不得撤销已完成的发货操作。
+ */
+async function recordManualShipmentNotification(
+  orderId: number,
+  packages: Array<{ courier: string; trackingNumber?: string }>,
+  isPartial = false,
+): Promise<void> {
+  try {
+    const order = await db.getOrderById(orderId);
+    if (!order) return;
+    const customer = await db.getCustomerById(order.customerId);
+    if (!customer) return;
+
+    const trackingNumbers = packages.map((pkg) => pkg.trackingNumber).filter((value): value is string => Boolean(value));
+    const couriers = Array.from(new Set(packages.map((pkg) => pkg.courier).filter(Boolean))).join("、") || "物流公司";
+    const shippingMessage = `老板娘/老板您好，我们已为您${isPartial ? "部分发货" : "发货"}啦，收到包裹如有问题记得48小时内发图/视频给我们哦，追踪号码：${trackingNumbers.length ? trackingNumbers.join("、") : "请以快递公司更新为准"}，快递公司：${couriers}`;
+    const notice = await autoNotifyCustomer(orderId, shippingMessage, customer.messengerId || undefined, customer.phoneNumber || undefined);
+    const noticeStatus = notice.status === "sent" ? "sent" : notice.status === "pending" ? "pending" : "failed";
+    await db.updateOrderNotificationStatus(orderId, noticeStatus, notice.error || null);
+    await db.createNotificationLog({
+      orderId,
+      customerId: order.customerId,
+      type: "shipping_notification",
+      channel: notice.platform,
+      message: shippingMessage,
+      status: noticeStatus,
+      errorMessage: notice.error || null,
+    });
+  } catch (error) {
+    // 发货已落库；仅记录通知链路自身的意外错误，不能将订单误判为未发货。
+    console.error("[Shipping] Failed to record manual shipment notification", error);
+  }
+}
+
 export const appRouter = router({
   system: systemRouter,
 
@@ -1695,6 +1731,22 @@ export const appRouter = router({
         await db.logOrderOperation(id, "edit", desc, null, ctx.user?.name || "admin");
         return { success: true };
       }),
+
+    split: adminProcedure
+      .input(z.object({
+        orderId: z.number().int().positive(),
+        items: z.array(z.object({
+          orderItemId: z.number().int().positive(),
+          quantity: z.number().int().positive(),
+        })).min(1).max(100),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return db.splitUnpaidPhysicalOrder({
+          ...input,
+          operator: ctx.user?.name || ctx.user?.openId || "admin",
+        });
+      }),
+
     // V2.0.92: Update order items (add/edit/delete) with auto recalculation
     updateItems: adminProcedure
       .input(z.object({
@@ -2357,6 +2409,7 @@ export const appRouter = router({
           if (template) {
             const messageContent = template.messageContent;
             const imageUrl = template.imageUrl || "";
+            const audioUrl = template.audioUrl || "";
 
             // Get the order to find customer's Messenger PSID
             const order = await db.getOrderById(review.orderId);
@@ -2366,13 +2419,14 @@ export const appRouter = router({
             let flowResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: "No PSID available" };
 
             if (psid) {
-              // Send via real Messenger API - text + image only, no button
+              // Send via real Messenger API - text, optional tutorial image, then optional voice greeting.
               flowResult = await sendTelegramJoinFlow(
                 psid,
                 "", // No button link - link is in the message text
                 messageContent,
                 "", // No button name
-                imageUrl // Pass image URL for sending
+                imageUrl, // Pass image URL for sending
+                audioUrl // Pass optional voice greeting after the tutorial image
               );
             } else {
               console.warn("[Membership] No Messenger PSID found for customer, cannot send Flow automatically");
@@ -2638,6 +2692,7 @@ export const appRouter = router({
         messageContent: z.string().min(1),
         imageUrl: z.string().optional(),
         videoUrl: z.string().optional(),
+        audioUrl: z.string().optional(),
         buttonName: z.string().optional(),
         buttonLink: z.string().optional(),
         reminderEnabled: z.boolean().optional(),
@@ -2660,6 +2715,7 @@ export const appRouter = router({
         messageContent: z.string().optional(),
         imageUrl: z.string().optional(),
         videoUrl: z.string().optional(),
+        audioUrl: z.string().optional(),
         buttonName: z.string().optional(),
         buttonLink: z.string().optional(),
         reminderEnabled: z.boolean().optional(),
@@ -2695,7 +2751,7 @@ export const appRouter = router({
         flowTemplateId: z.number(),
         stepOrder: z.number(),
         stepName: z.string().min(1),
-        messageType: z.enum(["text", "image", "video", "button", "contact_support"]),
+        messageType: z.enum(["text", "image", "video", "audio", "button", "contact_support"]),
         messageContent: z.string().optional(),
         mediaUrl: z.string().optional(),
         buttonName: z.string().optional(),
@@ -2713,7 +2769,7 @@ export const appRouter = router({
         id: z.number(),
         stepOrder: z.number().optional(),
         stepName: z.string().optional(),
-        messageType: z.enum(["text", "image", "video", "button", "contact_support"]).optional(),
+        messageType: z.enum(["text", "image", "video", "audio", "button", "contact_support"]).optional(),
         messageContent: z.string().optional(),
         mediaUrl: z.string().optional(),
         buttonName: z.string().optional(),
@@ -4184,7 +4240,9 @@ export const appRouter = router({
       })),
     })).mutation(async ({ input }) => {
       try {
-        return await db.fullShipping(input.orderId, input.packages);
+        const result = await db.fullShipping(input.orderId, input.packages);
+        await recordManualShipmentNotification(input.orderId, input.packages);
+        return result;
       } catch (error) {
         return rethrowPackingShippingError(error);
       }
@@ -4207,7 +4265,9 @@ export const appRouter = router({
       itemQuantities: z.array(z.object({ itemId: z.string(), quantity: z.number() })).optional(),
     })).mutation(async ({ input }) => {
       try {
-        return await db.partialShipping(input.orderId, input.itemIds, input.packageData, input.itemQuantities);
+        const result = await db.partialShipping(input.orderId, input.itemIds, input.packageData, input.itemQuantities);
+        await recordManualShipmentNotification(input.orderId, [input.packageData], true);
+        return result;
       } catch (error) {
         return rethrowPackingShippingError(error);
       }
@@ -4222,6 +4282,7 @@ export const appRouter = router({
       mode: z.enum(["full", "partial"]),
       itemIds: z.array(z.number()).optional(),
       itemQuantities: z.array(z.object({ itemId: z.string(), quantity: z.number().positive() })).optional(),
+      packages: z.array(z.object({ weightKg: z.number().positive() })).min(1).optional(),
     })).mutation(async ({ input }) => {
       if (!shippingProvider.parcelDailyProvider.isConfigured) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Parcel Daily API 尚未配置，无法自动生成追踪号码和 AWB" });
@@ -4260,39 +4321,46 @@ export const appRouter = router({
       };
 
       try {
-        const created = await shippingProvider.parcelDailyProvider.createShipment({
-          courier,
-          pickupAddress,
-          deliveryAddress,
-          weightKg: input.actualWeight,
-          price: Number((order as any).actualShippingFee || 0),
-          content: "Plants and garden goods",
-          contentValue: Number(order.totalAmount || 0),
-          reference: order.orderNumber,
-        });
-        const checkedOut = await shippingProvider.parcelDailyProvider.checkoutShipment(created.providerOrderId);
-        const awb = await shippingProvider.parcelDailyProvider.getConsignmentNote?.(created.providerOrderId);
+        const requestedPackages = input.packages?.length ? input.packages : [{ weightKg: input.actualWeight }];
+        if (input.mode === "partial" && requestedPackages.length > 1) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "部分发货请一次建立一个包裹，避免商品归属不明确" });
+        }
         const courierLabel = isEastMalaysia ? "Poslaju" : "Line Clear";
-        const packageData = {
-          courier: courierLabel,
-          shippingType: "auto" as const,
-          trackingNumber: checkedOut.trackingNumber,
-          shippingLabelUrl: awb?.url || checkedOut.consignmentNoteUrl || undefined,
-          providerOrderId: created.providerOrderId,
-          weight: String(input.actualWeight),
-          shippingCost: String((order as any).actualShippingFee || checkedOut.shippingCost || 0),
-        };
+        const shipmentResults = await Promise.all(requestedPackages.map(async (requestedPackage, index) => {
+          const created = await shippingProvider.parcelDailyProvider.createShipment({
+            courier,
+            pickupAddress,
+            deliveryAddress,
+            weightKg: requestedPackage.weightKg,
+            price: Number((order as any).actualShippingFee || 0),
+            content: "Plants and garden goods",
+            contentValue: Number(order.totalAmount || 0),
+            reference: `${order.orderNumber}-${index + 1}`,
+          });
+          const checkedOut = await shippingProvider.parcelDailyProvider.checkoutShipment(created.providerOrderId);
+          const awb = await shippingProvider.parcelDailyProvider.getConsignmentNote?.(created.providerOrderId);
+          return {
+            courier: courierLabel,
+            shippingType: "auto" as const,
+            trackingNumber: checkedOut.trackingNumber,
+            shippingLabelUrl: awb?.url || checkedOut.consignmentNoteUrl || undefined,
+            providerOrderId: created.providerOrderId,
+            weight: String(requestedPackage.weightKg),
+            shippingCost: Number(checkedOut.shippingCost || 0).toFixed(2),
+          };
+        }));
 
         if (input.mode === "partial") {
           if (!input.itemIds?.length) {
             throw new TRPCError({ code: "BAD_REQUEST", message: "部分发货必须选择商品" });
           }
-          await db.partialShipping(input.orderId, input.itemIds, packageData, input.itemQuantities);
+          await db.partialShipping(input.orderId, input.itemIds, shipmentResults[0], input.itemQuantities);
         } else {
-          await db.fullShipping(input.orderId, [packageData]);
+          await db.fullShipping(input.orderId, shipmentResults);
         }
 
-        const shippingMessage = `老板娘/老板您好，我们已为您发货啦，收到包裹如有问题记得48小时内发图/视频给我们哦，追踪号码：${checkedOut.trackingNumber}，快递公司：${courierLabel}`;
+        const trackingNumbers = shipmentResults.map((shipment) => shipment.trackingNumber).join("、");
+        const shippingMessage = `老板娘/老板您好，我们已为您发货啦，收到包裹如有问题记得48小时内发图/视频给我们哦，追踪号码：${trackingNumbers}，快递公司：${courierLabel}`;
         const notice = await autoNotifyCustomer(input.orderId, shippingMessage, customer.messengerId || undefined, customer.phoneNumber || undefined);
         const noticeStatus = notice.status === "sent" ? "sent" : notice.status === "pending" ? "pending" : "failed";
         await db.updateOrderNotificationStatus(input.orderId, noticeStatus, notice.error || null);
@@ -4309,8 +4377,10 @@ export const appRouter = router({
         return {
           success: true,
           courier: courierLabel,
-          trackingNumber: checkedOut.trackingNumber,
-          shippingLabelUrl: packageData.shippingLabelUrl || null,
+          trackingNumber: trackingNumbers,
+          trackingNumbers: shipmentResults.map((shipment) => shipment.trackingNumber),
+          shippingLabelUrl: shipmentResults[0]?.shippingLabelUrl || null,
+          shippingLabelUrls: shipmentResults.map((shipment) => shipment.shippingLabelUrl).filter(Boolean),
           notificationStatus: noticeStatus,
           notificationError: notice.error || null,
         };
@@ -5534,6 +5604,19 @@ export const appRouter = router({
           input.reason || '',
           ctx.user?.name || 'Admin',
         );
+      }),
+
+    blacklistCommenter: adminProcedure
+      .input(z.object({
+        commenterName: z.string().trim().min(1),
+        commenterPsid: z.string().trim().optional(),
+        reason: z.string().trim().min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.blacklistLiveCommenter({
+          ...input,
+          operatorName: ctx.user?.name || 'Admin',
+        });
       }),
 
     // --- V2.0: Staff Notes (工作人员备注) ---

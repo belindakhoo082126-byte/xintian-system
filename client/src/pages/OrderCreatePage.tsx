@@ -314,6 +314,16 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   }, [manualItems]);
 
   const itemsSubtotal = physicalSubtotal + membershipSubtotal;
+  const regularItemsSubtotal = useMemo(() => {
+    return manualItems
+      .filter((item) => item.productId !== undefined && item.priceType !== "special")
+      .reduce((sum, item) => sum + parseFloat(item.subtotal || "0"), 0);
+  }, [manualItems]);
+  const specialItemsSubtotal = useMemo(() => {
+    return manualItems
+      .filter((item) => item.productId !== undefined && item.priceType === "special")
+      .reduce((sum, item) => sum + parseFloat(item.subtotal || "0"), 0);
+  }, [manualItems]);
   const discountNum = parseFloat(discountAmount) || 0;
   const extraChargeNum = parseFloat(extraCharge) || 0;
 
@@ -933,12 +943,12 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
 
           {/* Product results dropdown */}
           {productSearchResults && (productSearchResults as any[]).length > 0 && productSearchQuery && (
-            <ScrollArea className="h-[200px] border rounded-lg">
-              <div className="p-2 space-y-1">
+            <ScrollArea className="h-[300px] border rounded-lg">
+              <div className="p-3 space-y-2">
                 {(productSearchResults as any[]).slice(0, 20).map((p: any) => {
                   const outOfStock = (p.stockQuantity ?? 0) <= 0 && !p.allowOversold;
                   return (
-                  <div key={p.id} className={`rounded ${outOfStock ? "bg-muted/30" : ""}`}>
+                  <div key={p.id} className={`rounded-lg border ${outOfStock ? "bg-muted/30" : "bg-card"}`}>
                     <button
                       disabled={outOfStock}
                       onClick={() => {
@@ -964,19 +974,19 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                         }]);
                         setProductSearchQuery("");
                       }}
-                      className={`w-full text-left p-2 rounded text-sm flex items-center justify-between ${outOfStock ? "opacity-40 cursor-not-allowed" : "hover:bg-muted"}`}
+                      className={`w-full text-left p-3 rounded-lg text-base flex items-center justify-between gap-3 ${outOfStock ? "opacity-40 cursor-not-allowed" : "hover:bg-muted"}`}
                     >
-                      <div className="flex items-center gap-2">
-                        {(p.coverImageUrl || p.imageUrl) && <img src={p.coverImageUrl || p.imageUrl} alt="" className="w-10 h-10 rounded object-cover" />}
+                      <div className="flex items-center gap-3 min-w-0">
+                        {(p.coverImageUrl || p.imageUrl) && <img src={p.coverImageUrl || p.imageUrl} alt="" className="w-14 h-14 rounded-md object-cover flex-shrink-0" />}
                         <div>
-                          <div className="font-medium">{p.name}</div>
-                          <div className="text-xs text-muted-foreground">{translate("库存", "Stock")}: <span className={p.stockQuantity <= 0 ? "text-red-500 font-medium" : "text-green-600 font-medium"}>{p.stockQuantity ?? 0}</span> {p.keywords && `· ${p.keywords}`}</div>
+                          <div className="font-semibold leading-6">{p.name}</div>
+                          <div className="text-sm text-muted-foreground">{translate("库存", "Stock")}: <span className={p.stockQuantity <= 0 ? "text-red-500 font-semibold" : "text-green-600 font-semibold"}>{p.stockQuantity ?? 0}</span> {p.keywords && `· ${p.keywords}`}</div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="font-medium">RM {p.sellingPrice || p.regularPrice || "0"}</div>
-                        {outOfStock && <div className="text-xs text-red-500">{translate("库存不足", "Out of stock")}</div>}
-                        {p.wholesalePrice && !outOfStock && <div className="text-xs text-muted-foreground">{translate("批发", "Wholesale")}: RM {p.wholesalePrice}</div>}
+                      <div className="text-right flex-shrink-0">
+                        <div className="font-semibold text-lg">RM {p.sellingPrice || p.regularPrice || "0"}</div>
+                        {outOfStock && <div className="text-sm text-red-500">{translate("库存不足", "Out of stock")}</div>}
+                        {p.wholesalePrice && !outOfStock && <div className="text-sm text-muted-foreground">{translate("批发", "Wholesale")}: RM {p.wholesalePrice}</div>}
                       </div>
                     </button>
                     {outOfStock && (
@@ -1157,6 +1167,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                       )}
                       <div className="text-xs text-muted-foreground">
                         <span className="font-medium">{translate("售价", "Price")}:</span> RM {item.sellingPrice || item.unitPrice}
+                        {item.priceType === "special" && <Badge variant="secondary" className="ml-2 h-5 bg-amber-100 text-amber-800">{translate("特价", "Special")}</Badge>}
+                        {item.priceType !== "special" && <Badge variant="outline" className="ml-2 h-5">{translate("原价", "Regular")}</Badge>}
                       </div>
                     </div>
                     <Button variant="ghost" size="icon" className="shrink-0" onClick={() => removeManualItem(idx)}>
@@ -1273,6 +1285,14 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
           {/* Amount summary */}
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
+              <span>{translate("原价商品", "Regular-price Items")}</span>
+              <span className="font-medium">RM {regularItemsSubtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>{translate("特价商品", "Special-price Items")}</span>
+              <span className="font-medium text-amber-700">RM {specialItemsSubtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between border-t pt-2">
               <span>{translate("商品小计", "Items Subtotal")}</span>
               <span className="font-medium">RM {itemsSubtotal.toFixed(2)}</span>
             </div>

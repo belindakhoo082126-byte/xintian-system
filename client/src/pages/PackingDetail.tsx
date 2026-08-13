@@ -79,10 +79,12 @@ export default function PackingDetail() {
     courier: string;
     shippingType: "auto" | "manual" | "parcelking";
     trackingNumber: string;
+    shippingLabelUrl?: string;
     weight: string;
     serviceId: string;
   }>>([{ courier: "Line Clear", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
   const [actualWeightInput, setActualWeightInput] = useState("");
+  const [uploadingAwbIndex, setUploadingAwbIndex] = useState<number | null>(null);
 
   const { data: specialActions } = trpc.shippingV2.specialOrderActions.useQuery({ orderId }, { enabled: !!detail });
 
@@ -307,9 +309,10 @@ export default function PackingDetail() {
     onError: (err) => toast.error(translate(`发货失败: ${err.message}`, `Shipment failed: ${err.message}`)),
   });
 
-  const handleShip = (mode: "full" | "partial") => {
+  const handleShip = async (mode: "full" | "partial") => {
     const shippingMethod = (detail as any)?.shippingMethod || "west_malaysia";
     const requiresParcelDaily = shippingMethod === "west_malaysia" || shippingMethod === "east_malaysia_poslaju";
+    const hasAutoParcelDailyPackage = requiresParcelDaily && packages.some((pkg) => pkg.shippingType === "auto");
     const missingAddressFields = shippingMethod === "self_pickup"
       ? []
       : getMissingPackingRecipientAddressFields(detail as any, lang);
@@ -321,9 +324,18 @@ export default function PackingDetail() {
       return;
     }
     const actualWeight = Number((detail as any)?.actualWeight || 0);
-    if (requiresParcelDaily) {
-      if (!actualWeight || actualWeight <= 0) {
-        toast.error(translate("请先在上方确认实际重量，系统才可生成追踪号码与 AWB。", "Please confirm the actual weight above before generating the tracking number and AWB."));
+    if (hasAutoParcelDailyPackage) {
+      if (packages.some((pkg) => pkg.shippingType !== "auto")) {
+        toast.error(translate("同一次自动发货的包裹请统一选择自动模式；手动包裹请另行确认发货", "Use automatic mode for every package in one automatic shipment; confirm manual packages separately"));
+        return;
+      }
+      const packageWeights = packages.map((pkg) => Number(pkg.weight));
+      if (packageWeights.some((weight) => !Number.isFinite(weight) || weight <= 0)) {
+        toast.error(translate("请为每个包裹填写大于 0 的实际重量", "Enter a valid weight greater than 0 for every package"));
+        return;
+      }
+      if (mode === "partial" && packages.length > 1) {
+        toast.error(translate("部分发货请一次建立一个包裹，避免商品归属不明确", "Create one package per partial shipment to keep item assignment clear"));
         return;
       }
       if (mode === "partial" && selectedItems.length === 0) {
@@ -333,13 +345,23 @@ export default function PackingDetail() {
       const itemQuantities = selectedItems
         .filter((itemId) => shipQuantities[itemId] !== undefined)
         .map((itemId) => ({ itemId: String(itemId), quantity: shipQuantities[itemId] }));
-      autoShipParcelDailyMutation.mutate({
-        orderId,
-        actualWeight,
-        mode,
-        itemIds: mode === "partial" ? selectedItems : undefined,
-        itemQuantities: itemQuantities.length > 0 ? itemQuantities : undefined,
-      });
+      const packageWeightTotal = packageWeights.reduce((sum, weight) => sum + weight, 0);
+      try {
+        // 先以各包裹的合计重量回写订单，继续沿用既有运费差额与特别订单规则。
+        if (Math.abs(actualWeight - packageWeightTotal) > 0.001) {
+          await updateWeightMutation.mutateAsync({ orderId, actualWeight: packageWeightTotal });
+        }
+        await autoShipParcelDailyMutation.mutateAsync({
+          orderId,
+          actualWeight: packageWeightTotal,
+          mode,
+          itemIds: mode === "partial" ? selectedItems : undefined,
+          itemQuantities: itemQuantities.length > 0 ? itemQuantities : undefined,
+          packages: packageWeights.map((weightKg) => ({ weightKg })),
+        });
+      } catch {
+        // Mutation callbacks display the actionable backend error.
+      }
       return;
     }
     if (mode === "full") {
@@ -347,9 +369,9 @@ export default function PackingDetail() {
                 toast.error(translate("请至少添加一个包裹", "Please add at least one package"));
         return;
       }
-      const hasEmptyTracking = packages.some((p) => !p.trackingNumber && p.shippingType === "manual");
-      if (hasEmptyTracking) {
-                toast.error(translate("手动物流必须填写 Tracking Number", "Manual logistics must have a Tracking Number"));
+      const hasIncompleteManualPackage = packages.some((p) => p.shippingType === "manual" && (!p.trackingNumber || !p.shippingLabelUrl));
+      if (hasIncompleteManualPackage) {
+                toast.error(translate("手动发货必须填写追踪号并上传 AWB", "Manual shipping requires a tracking number and an AWB upload"));
         return;
       }
       fullShipMutation.mutate({
@@ -358,7 +380,8 @@ export default function PackingDetail() {
           courier: p.courier,
           shippingType: p.shippingType as "auto" | "manual",
           trackingNumber: p.trackingNumber || undefined,
-          weight: String(actualWeight || p.weight || "") || undefined,
+          shippingLabelUrl: p.shippingLabelUrl || undefined,
+          weight: p.weight || String(actualWeight || "") || undefined,
         })),
       });
     } else {
@@ -370,9 +393,13 @@ export default function PackingDetail() {
                 toast.error(translate("请至少添加一个包裹", "Please add at least one package"));
         return;
       }
+      if (packages.length > 1) {
+        toast.error(translate("部分发货一次只可建立一个包裹", "Partial shipping supports one package per shipment"));
+        return;
+      }
       const pkg = packages[0];
-      if (!pkg.trackingNumber && pkg.shippingType === "manual") {
-                toast.error(translate("手动物流必须填写 Tracking Number", "Manual logistics must have a Tracking Number"));
+      if (pkg.shippingType === "manual" && (!pkg.trackingNumber || !pkg.shippingLabelUrl)) {
+                toast.error(translate("手动发货必须填写追踪号并上传 AWB", "Manual shipping requires a tracking number and an AWB upload"));
         return;
       }
       // V2.1.26补充4: Pass per-item ship quantities (Issue 7)
@@ -386,7 +413,8 @@ export default function PackingDetail() {
           courier: pkg.courier,
           shippingType: pkg.shippingType as "auto" | "manual",
           trackingNumber: pkg.trackingNumber || undefined,
-          weight: String(actualWeight || pkg.weight || "") || undefined,
+          shippingLabelUrl: pkg.shippingLabelUrl || undefined,
+          weight: pkg.weight || String(actualWeight || "") || undefined,
         },
         itemQuantities: itemQuantities.length > 0 ? itemQuantities : undefined,
       });
@@ -416,6 +444,35 @@ export default function PackingDetail() {
   const updatePackage = (index: number, field: string, value: string) => {
     setPackages((prev) => prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)));
   };
+
+  async function uploadShippingLabel(index: number, file: File) {
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(translate("AWB 文件不能超过 10MB", "AWB file must not exceed 10MB"));
+      return;
+    }
+    setUploadingAwbIndex(index);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: dataUrl, filename: file.name, contentType: file.type }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.url) throw new Error(payload.error || "Upload failed");
+      updatePackage(index, "shippingLabelUrl", payload.url);
+      toast.success(translate("AWB 已上传", "AWB uploaded"));
+    } catch (error: any) {
+      toast.error(error?.message || translate("上传 AWB 失败", "Failed to upload AWB"));
+    } finally {
+      setUploadingAwbIndex(null);
+    }
+  }
 
   const handlePrint = () => {
     window.print();
@@ -1370,8 +1427,8 @@ export default function PackingDetail() {
                         </Select>
                       </div>
                     )}
-                    {/* Parcel Daily and fixed methods must not expose a second shipping setup. */}
-                    {!lockedCourier && (
+                    {/* Parcel Daily keeps its route-selected courier but can be switched between automatic and manual shipment. */}
+                    {!fixedCourier && (
                       <div className="space-y-1">
                         <Label htmlFor={`shipping-type-${index}`}>{translate("发货类型", "Shipping Type")}</Label>
                         <Select
@@ -1383,14 +1440,26 @@ export default function PackingDetail() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="manual">{translate("手动发货", "Manual")}</SelectItem>
-                            <SelectItem value="auto">{translate("自动发货 (API)", "Auto (API)")}</SelectItem>
+                            {automaticParcelDaily && <SelectItem value="auto">{translate("自动生成 AWB（Parcel Daily）", "Auto AWB (Parcel Daily)")}</SelectItem>}
                           </SelectContent>
                         </Select>
                       </div>
                     )}
+                    <div className="space-y-1">
+                      <Label htmlFor={`package-weight-${index}`}>{translate("本包裹实际重量 (kg)", "This package weight (kg)")}</Label>
+                      <Input
+                        id={`package-weight-${index}`}
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={pkg.weight}
+                        onChange={(e) => updatePackage(index, "weight", e.target.value)}
+                        placeholder="0.00"
+                      />
+                    </div>
                     {/* Lalamove and Shopee use manually supplied tracking references only. */}
                     {(pkg.shippingType === "manual" || fixedCourier) && (
-                      <div className="space-y-1 col-span-2">
+                      <div className="space-y-2 col-span-2">
                         <Label htmlFor={`tracking-number-${index}`}>{translate("追踪号", "Tracking Number")}</Label>
                         <Input
                           id={`tracking-number-${index}`}
@@ -1398,6 +1467,32 @@ export default function PackingDetail() {
                           onChange={(e) => updatePackage(index, "trackingNumber", e.target.value)}
                           placeholder={translate("输入追踪号", "Enter tracking number")}
                         />
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <Button asChild size="sm" variant="outline" disabled={uploadingAwbIndex === index}>
+                            <label htmlFor={`awb-upload-${index}`} className="cursor-pointer">
+                              <FileUp className="h-4 w-4 mr-1" />
+                              {uploadingAwbIndex === index ? translate("上传中…", "Uploading…") : translate("上传 AWB", "Upload AWB")}
+                            </label>
+                          </Button>
+                          <Input
+                            id={`awb-upload-${index}`}
+                            type="file"
+                            accept="application/pdf,image/*"
+                            className="sr-only"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (file) void uploadShippingLabel(index, file);
+                              event.currentTarget.value = "";
+                            }}
+                          />
+                          {pkg.shippingLabelUrl ? (
+                            <a className="inline-flex items-center text-xs text-blue-700 hover:underline" href={pkg.shippingLabelUrl} target="_blank" rel="noreferrer">
+                              <ExternalLink className="h-3.5 w-3.5 mr-1" />{translate("查看已上传 AWB", "View uploaded AWB")}
+                            </a>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">{translate("手动发货建议上传 AWB 以便追溯", "Upload the AWB for traceability")}</span>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1471,8 +1566,8 @@ export default function PackingDetail() {
 
         {/* V2.1.26: Customer info - show orderer name (下单人) + recipient */}
         <div style={{ marginBottom: "4px", fontSize: "12px", lineHeight: "1.4" }}>
-          <div><strong>{translate("下单人:", "Orderer:")}</strong> <span style={{ fontSize: "16px", fontWeight: "bold" }}>{data.facebookName || data.customerName || "-"}</span></div>
-          <div><strong>{translate("收件人:", "Recipient:")}</strong> <span style={{ fontSize: "16px", fontWeight: "bold" }}>{data.recipientName || data.customerName || "-"}</span></div>
+          <div><strong>{translate("下单人:", "Orderer:")}</strong> <span style={{ fontSize: "22px", fontWeight: "bold", lineHeight: 1.3 }}>{data.facebookName || data.customerName || "-"}</span></div>
+          <div><strong>{translate("收件人:", "Recipient:")}</strong> <span style={{ fontSize: "22px", fontWeight: "bold", lineHeight: 1.3 }}>{data.recipientName || data.customerName || "-"}</span></div>
           <div><strong>{translate("电话:", "Phone:")}</strong> {data.recipientPhone || data.customerPhone}</div>
           <div><strong>{translate("地址:", "Address:")}</strong> {
             [

@@ -335,6 +335,10 @@ export default function ImportBatches() {
       toast.error("请填写批次编号和名称");
       return;
     }
+    if (urlTab === 'ib' && !editingId) {
+      toast.error("IB 只能由 CN 自动建立或从 CN 新增分批到货，不可在 IB 页面直接新建。");
+      return;
+    }
     const payload: any = {
       batchNumber: formData.batchNumber,
       batchName: formData.batchName,
@@ -488,15 +492,9 @@ export default function ImportBatches() {
           </Dialog>
         </>) : (
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={resetForm} className="gap-2">
-              <Plus className="h-4 w-4" />
-              新建采购批次
-            </Button>
-          </DialogTrigger>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editingId ? "编辑采购批次" : "新建采购批次"}</DialogTitle>
+              <DialogTitle>编辑进口批次（IB）</DialogTitle>
             </DialogHeader>
             <div className="grid grid-cols-2 gap-4 py-4">
               <div>

@@ -398,6 +398,17 @@ export default function Dashboard() {
               : '“Other” only includes orders explicitly marked as other and not covered by a defined shipping, refund, logistics, customer-info, stock, payment, or amount exception. Handle pending refunds from the Refund Management work-status card to avoid duplicate counting.'}
           </p>
 
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded-md border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs leading-relaxed text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+              <p className="font-semibold">{lang === "zh" ? "库存警告" : "Low-stock warning"}</p>
+              <p>{lang === "zh" ? "商品的可售库存低于所设阈值，提醒安排补货；库存记录本身仍一致。" : "Sellable stock is below its configured threshold and needs replenishment; the inventory record itself remains consistent."}</p>
+            </div>
+            <div className="rounded-md border border-indigo-200 bg-indigo-50/70 px-3 py-2 text-xs leading-relaxed text-indigo-950 dark:border-indigo-900/60 dark:bg-indigo-950/20 dark:text-indigo-100">
+              <p className="font-semibold">{lang === "zh" ? "库存异常" : "Stock exception"}</p>
+              <p>{lang === "zh" ? "库存资料出现需要人工核对的不一致，例如负库存或异常流水；请打开相关订单或库存审计记录处理。" : "Inventory data needs manual review because of an inconsistency, such as negative stock or an irregular ledger entry. Open the related order or inventory audit record to resolve it."}</p>
+            </div>
+          </div>
+
           <div className="border-t border-orange-100 pt-3 dark:border-orange-900/60">
             {specialFollowUpItems.length === 0 ? (
               <p className="py-3 text-center text-sm text-muted-foreground">{lang === "zh" ? "暂无待跟进特别订单；相关统计会在此持续显示。" : "No pending special-status orders. The monitoring framework remains visible here."}</p>

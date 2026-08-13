@@ -86,11 +86,11 @@ export async function sendButtonMessage(
 }
 
 /**
- * Send an image/video via Messenger
+ * Send an image/video/audio attachment via Messenger
  */
 export async function sendMediaMessage(
   psid: string,
-  mediaType: "image" | "video",
+  mediaType: "image" | "video" | "audio",
   url: string,
   caption?: string
 ): Promise<any> {
@@ -165,7 +165,7 @@ export async function sendTemplateMessage(
 export async function sendMembershipFlow(
   psid: string,
   flowSteps: Array<{
-    type: "text" | "image" | "video" | "button" | "contact";
+    type: "text" | "image" | "video" | "audio" | "button" | "contact";
     content: string;
     mediaUrl?: string;
     buttonText?: string;
@@ -194,6 +194,9 @@ export async function sendMembershipFlow(
           break;
         case "video":
           response = await sendMediaMessage(psid, "video", step.mediaUrl || "", step.content);
+          break;
+        case "audio":
+          response = await sendMediaMessage(psid, "audio", step.mediaUrl || "", step.content);
           break;
         case "button":
           response = await sendButtonMessage(psid, step.content, [
@@ -1160,7 +1163,8 @@ export async function sendTelegramJoinFlow(
   telegramLink: string,
   welcomeText: string,
   buttonText: string,
-  imageUrl?: string
+  imageUrl?: string,
+  audioUrl?: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     // Step 1: Send welcome text (contains Telegram link in the text itself)
@@ -1174,6 +1178,16 @@ export async function sendTelegramJoinFlow(
       } catch (imgError: any) {
         console.warn("[Messenger] Failed to send membership image:", imgError?.message);
         // Don't fail the whole flow if image fails
+      }
+    }
+
+    // Step 3: Send an optional membership voice greeting.
+    if (audioUrl) {
+      try {
+        await sendMediaMessage(psid, "audio", audioUrl);
+      } catch (audioError: any) {
+        console.warn("[Messenger] Failed to send membership audio:", audioError?.message);
+        // Keep the confirmed membership Flow successful when only its optional voice fails.
       }
     }
 

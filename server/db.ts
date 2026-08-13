@@ -69,6 +69,7 @@ import { broadcastChange, broadcastChanges } from './_core/realtime';
 import { evaluateMarketingCampaign } from './marketingEngine';
 import { SPECIAL_ORDER_FOLLOW_UP_TYPES, isSpecialOrderFollowUpType } from '../shared/specialOrderDisplay';
 import { WEST_MALAYSIA_V22_SHIPPING } from '../shared/shippingV22';
+import { calculateOrderPriceBreakdown } from "../shared/orderPricing";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -1111,31 +1112,23 @@ export async function createOrderWithSplit(data: {
     await assertChinaImportOrderItemsEligible(data.items.map((item) => item.productId));
   }
 
-  // Physical subtotal includes gift items (which have price=0)
-  const physicalSubtotal = data.items
-    .filter(i => i.productType === "physical" || i.productType === "gift")
-    .reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
-
-  const membershipSubtotal = data.items
-    .filter(i => i.productType === "membership")
-    .reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
-
   // V2.2: Calculate shipping using new West Malaysia rules
-  // Free shipping threshold is based on 商品结算金额 = subtotal - promotion - discount (not credit or extra charge)
   let shippingFee = 0;
   const promotionDiscountNum = parseFloat(data.promotionDiscount || "0");
   const discountAmountNum = parseFloat(data.discountAmount || "0");
   const extraChargeNum = parseFloat(data.extraCharge || "0");
   const creditUsedNum = parseFloat(data.creditUsed || "0");
-  
-  // 商品结算金额 = 商品小计 - 促销优惠 - 人工折扣 (Credit and extra charge don't affect free shipping threshold)
-  const settledAmount = physicalSubtotal + membershipSubtotal - promotionDiscountNum - discountAmountNum;
+  const priceBreakdown = calculateOrderPriceBreakdown(data.items, {
+    promotionDiscount: promotionDiscountNum,
+    discountAmount: discountAmountNum,
+  });
+  const { physicalSubtotal, membershipSubtotal, freeShippingEligibleSubtotal } = priceBreakdown;
   
   if (hasPhysical && data.shippingMethod === "west_malaysia") {
     const totalWeight = data.items
       .filter(i => i.productType === "physical" || i.productType === "gift")
       .reduce((sum, i) => sum + 0.5 * i.quantity, 0);
-    const shipResult = calculateWestMalaysiaShipping(totalWeight, settledAmount);
+    const shipResult = calculateWestMalaysiaShipping(totalWeight, freeShippingEligibleSubtotal);
     shippingFee = shipResult.shippingFee;
   } else if (hasPhysical && data.shippingMethod === "east_malaysia_poslaju") {
     // V2.0.80: 东马 PosLaju 预收 RM50（2kg 内），打包后 API 计算实际运费
@@ -1145,7 +1138,7 @@ export async function createOrderWithSplit(data: {
     shippingFee = 0;
   } else if (hasPhysical && data.shippingMethod === "lalamove") {
     // V2.0.84: Lalamove — 满 RM150 公司承担，未满收 RM15
-    shippingFee = settledAmount >= 150 ? 0 : 15;
+    shippingFee = freeShippingEligibleSubtotal >= 150 ? 0 : 15;
   }
 
   // V2.0.78: Auto-deduct credit from customer balance (no manual input)
@@ -1781,7 +1774,11 @@ export async function recalculateOrderBalance(orderId: number) {
   if (!lockedStatuses.includes(order[0].physicalStatus || '')) {
     if (totalPaid >= totalAmount && totalAmount > 0) {
       // Fully paid or overpaid
-      if (order[0].physicalStatus === 'hold_order') {
+      if (order[0].shippingMethod === 'self_pickup') {
+        // Walk-in orders are collected at the shop. Once their payment is
+        // confirmed in full, no packing or courier dispatch is required.
+        newStatus = 'shipped' as any;
+      } else if (order[0].physicalStatus === 'hold_order') {
         newStatus = 'hold_order' as any;
       } else if (order[0].physicalStatus === 'pending') {
         newStatus = 'packing' as any;
@@ -5634,12 +5631,10 @@ export async function recalculateOrderTotals(orderId: number) {
   // Get all items
   const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
   
-  let subtotal = 0;
   let totalWeight = 0;
   let totalDiscount = 0;
   
   for (const item of items) {
-    subtotal += Number(item.subtotal);
     totalWeight += Number(item.unitWeight) * item.quantity;
     totalDiscount += Number(item.discount || 0);
   }
@@ -5648,14 +5643,31 @@ export async function recalculateOrderTotals(orderId: number) {
   const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!order[0]) return null;
   
-  const shippingFee = Number(order[0].shippingFee || 0);
+  const priceBreakdown = calculateOrderPriceBreakdown(items, {
+    promotionDiscount: order[0].promotionDiscount,
+    discountAmount: totalDiscount,
+  });
+  const subtotal = priceBreakdown.physicalSubtotal + priceBreakdown.membershipSubtotal;
+  const promotionDiscount = Number(order[0].promotionDiscount || 0);
+  const extraCharge = Number(order[0].extraCharge || 0);
+  const creditUsed = Number(order[0].creditUsed || 0);
+  let shippingFee = Number(order[0].shippingFee || 0);
+  if (order[0].shippingMethod === "west_malaysia") {
+    shippingFee = calculateWestMalaysiaShipping(totalWeight, priceBreakdown.freeShippingEligibleSubtotal).shippingFee;
+  } else if (order[0].shippingMethod === "lalamove") {
+    shippingFee = priceBreakdown.freeShippingEligibleSubtotal >= 150 ? 0 : 15;
+  } else if (order[0].shippingMethod === "self_pickup") {
+    shippingFee = 0;
+  }
   const paidAmount = Number(order[0].paidAmount || 0);
-  const totalAmount = subtotal - totalDiscount + shippingFee;
+  const totalAmount = subtotal - promotionDiscount - totalDiscount + extraCharge + shippingFee - creditUsed;
   
   await db.update(orders).set({
     physicalSubtotal: subtotal.toString(),
     totalWeight: totalWeight.toString(),
     discountAmount: totalDiscount.toString(),
+    shippingFee: shippingFee.toString(),
+    customerPaidShipping: shippingFee.toString(),
     totalAmount: totalAmount.toString(),
   }).where(eq(orders.id, orderId));
   
@@ -6372,22 +6384,22 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
   }
 
   const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
-  const physicalSubtotal = allItems
-    .filter((item: any) => item.productType === "physical" || item.productType === "gift")
-    .reduce((sum, item) => sum + parseFloat(item.subtotal || "0"), 0);
+  const priceBreakdown = calculateOrderPriceBreakdown(allItems, {
+    promotionDiscount: target[0].promotionDiscount,
+    discountAmount: target[0].discountAmount,
+  });
+  const physicalSubtotal = priceBreakdown.physicalSubtotal;
   const totalWeight = allItems
     .filter((item: any) => item.productType === "physical" || item.productType === "gift")
     .reduce((sum, item) => sum + 0.5 * Number(item.quantity || 0), 0);
-  const specialSubtotal = allItems
-    .filter((item: any) => item.priceType === "special")
-    .reduce((sum, item) => sum + parseFloat(item.subtotal || "0"), 0);
+  const specialSubtotal = priceBreakdown.specialSubtotal;
 
   const membershipSubtotal = parseFloat(target[0].membershipSubtotal || "0");
   const promotionDiscount = parseFloat(target[0].promotionDiscount || "0");
   const discountAmount = parseFloat(target[0].discountAmount || "0");
   const extraCharge = parseFloat(target[0].extraCharge || "0");
   const creditUsed = parseFloat(target[0].creditUsed || "0");
-  const eligibleSubtotal = physicalSubtotal + membershipSubtotal - specialSubtotal - promotionDiscount - discountAmount;
+  const eligibleSubtotal = priceBreakdown.freeShippingEligibleSubtotal;
 
   let shippingFee = 0;
   if (target[0].shippingMethod === "west_malaysia") {
@@ -6893,6 +6905,135 @@ export function calculateWestMalaysiaShipping(totalWeight: number, orderTotal: n
   const extraWeight = Math.ceil(totalWeight - includedWeightKg);
   const extraCharge = extraWeight * additionalKgFee;
   return { shippingFee: baseFee + extraCharge, freeShipping: isFreeShipping, extraWeightCharge: extraCharge };
+}
+
+/**
+ * Split complete product rows from an unpaid local physical order. Stock was
+ * reserved at original order creation; this only moves order ownership.
+ */
+export async function splitUnpaidPhysicalOrder(input: { orderId: number; items: Array<{ orderItemId: number; quantity: number }>; operator: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const requestedQuantities = new Map<number, number>();
+  for (const selection of input.items) {
+    if (!Number.isInteger(selection.orderItemId) || selection.orderItemId <= 0 || !Number.isInteger(selection.quantity) || selection.quantity <= 0) {
+      throw new Error("请选择有效的商品与拆分数量");
+    }
+    if (requestedQuantities.has(selection.orderItemId)) throw new Error("同一商品不能重复选择");
+    requestedQuantities.set(selection.orderItemId, selection.quantity);
+  }
+  if (requestedQuantities.size === 0) throw new Error("请选择要拆出的商品");
+  const [source] = await db.select().from(orders).where(eq(orders.id, input.orderId)).limit(1);
+  if (!source) throw new Error("订单不存在");
+  if (source.orderType !== "physical" || source.orderCategory === "import") throw new Error("目前只支持本地实体订单拆单");
+  if (!['pending', 'receipt_uploaded', 'hold_order'].includes(source.physicalStatus || '')) throw new Error("只有未确认付款或保留中的订单可以拆单");
+  if (Number(source.paidAmount || 0) > 0 || Number(source.creditUsed || 0) > 0) throw new Error("含已确认付款或已使用 Credit 的订单不可拆单");
+  if (Number(source.discountAmount || 0) > 0 || Number(source.promotionDiscount || 0) > 0 || Number(source.extraCharge || 0) > 0) {
+    throw new Error("含订单级折扣、促销或额外收费的订单不可拆单，请先处理金额后再拆单");
+  }
+
+  const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, source.id));
+  const knownItemIds = new Set(allItems.map((item) => item.id));
+  if (Array.from(requestedQuantities.keys()).some((itemId) => !knownItemIds.has(itemId))) throw new Error("选择的商品不属于此订单或已更新");
+  if (allItems.some((item) => (requestedQuantities.get(item.id) || 0) > item.quantity)) throw new Error("拆分数量不可超过原订单商品数量");
+
+  const projectItemQuantity = (item: typeof allItems[number], quantity: number) => ({
+    ...item,
+    quantity,
+    // Preserve the original per-unit price snapshot and prorate only row-level values.
+    subtotal: ((Number(item.subtotal || 0) / item.quantity) * quantity).toFixed(2),
+    discount: ((Number(item.discount || 0) / item.quantity) * quantity).toFixed(2),
+  });
+  const movedItems = allItems
+    .filter((item) => requestedQuantities.has(item.id))
+    .map((item) => projectItemQuantity(item, requestedQuantities.get(item.id)!));
+  const retainedItems = allItems
+    .filter((item) => item.quantity - (requestedQuantities.get(item.id) || 0) > 0)
+    .map((item) => projectItemQuantity(item, item.quantity - (requestedQuantities.get(item.id) || 0)));
+  if (retainedItems.length === 0) throw new Error("请至少保留一项商品在原订单");
+
+  const calculateTotals = (items: typeof allItems) => {
+    const price = calculateOrderPriceBreakdown(items);
+    const totalWeight = items.reduce((sum, item) => sum + Number(item.unitWeight || 0) * item.quantity, 0);
+    const shippingFee = source.shippingMethod === "west_malaysia"
+      ? calculateWestMalaysiaShipping(totalWeight, price.freeShippingEligibleSubtotal).shippingFee
+      : source.shippingMethod === "east_malaysia_poslaju" ? 50
+        : source.shippingMethod === "lalamove" ? (price.freeShippingEligibleSubtotal >= WEST_MALAYSIA_V22_SHIPPING.freeShippingThreshold ? 0 : 15)
+          : 0;
+    return { physicalSubtotal: price.physicalSubtotal, membershipSubtotal: price.membershipSubtotal, totalWeight, shippingFee, totalAmount: price.physicalSubtotal + price.membershipSubtotal + shippingFee };
+  };
+  const retainedTotals = calculateTotals(retainedItems);
+  const splitTotals = calculateTotals(movedItems);
+  const newOrderNumber = await generateOrderNumber("XT");
+  const secureToken = generateSecureToken();
+  let newOrderId = 0;
+
+  await db.transaction(async (tx) => {
+    const result = await tx.insert(orders).values({
+      orderNumber: newOrderNumber, customerId: source.customerId, facebookName: source.facebookName, facebookId: source.facebookId, messengerId: source.messengerId,
+      orderType: source.orderType, salesChannel: source.salesChannel, physicalSubtotal: splitTotals.physicalSubtotal.toFixed(2), membershipSubtotal: splitTotals.membershipSubtotal.toFixed(2),
+      shippingFee: splitTotals.shippingFee.toFixed(2), totalAmount: splitTotals.totalAmount.toFixed(2), paidAmount: "0.00", physicalStatus: source.physicalStatus,
+      shippingAddress: source.shippingAddress, shippingMethod: source.shippingMethod, paymentMethodId: source.paymentMethodId, paymentMethodName: source.paymentMethodName,
+      orderSource: source.orderSource, sourceName: source.sourceName, totalWeight: splitTotals.totalWeight.toFixed(2), orderCategory: source.orderCategory, orderNature: source.orderNature,
+      recipientName: source.recipientName, recipientPhone: source.recipientPhone, addressLine1: source.addressLine1, addressLine2: source.addressLine2, postcode: source.postcode,
+      recipientCity: source.recipientCity, recipientState: source.recipientState, recipientPostcode: source.recipientPostcode, recipientCountry: source.recipientCountry,
+      parentOrderId: source.id, secureToken, checkoutLink: `/order/${newOrderNumber}/${secureToken}`, notificationStatus: "pending",
+    });
+    newOrderId = Number((result as any)[0]?.insertId);
+    if (!newOrderId) throw new Error("无法建立拆分后的订单");
+    for (const item of allItems) {
+      const movedQuantity = requestedQuantities.get(item.id) || 0;
+      if (movedQuantity === 0) continue;
+      const movedItem = projectItemQuantity(item, movedQuantity);
+      if (movedQuantity === item.quantity) {
+        await tx.update(orderItems).set({ orderId: newOrderId }).where(and(eq(orderItems.orderId, source.id), eq(orderItems.id, item.id)));
+        continue;
+      }
+
+      const retainedItem = projectItemQuantity(item, item.quantity - movedQuantity);
+      await tx.update(orderItems).set({
+        quantity: retainedItem.quantity,
+        subtotal: retainedItem.subtotal,
+        discount: retainedItem.discount,
+      }).where(and(eq(orderItems.orderId, source.id), eq(orderItems.id, item.id)));
+      await tx.insert(orderItems).values({
+        orderId: newOrderId,
+        productId: item.productId,
+        productName: item.productName,
+        productSku: item.productSku,
+        productType: item.productType,
+        giftSlot: item.giftSlot,
+        variationId: item.variationId,
+        variationName: item.variationName,
+        facebookKeyword: item.facebookKeyword,
+        quantity: movedItem.quantity,
+        unitPrice: item.unitPrice,
+        discount: movedItem.discount,
+        subtotal: movedItem.subtotal,
+        unitWeight: item.unitWeight,
+        itemSource: item.itemSource,
+        salesMode: item.salesMode,
+        priceType: item.priceType,
+        unitCost: item.unitCost,
+        originalUnitPrice: item.originalUnitPrice,
+        marketingCampaignId: item.marketingCampaignId,
+        marketingRuleId: item.marketingRuleId,
+        marketingSource: item.marketingSource,
+        marketingDiscount: item.marketingDiscount,
+        marketingSnapshot: item.marketingSnapshot,
+      });
+    }
+    await tx.update(orders).set({
+      physicalSubtotal: retainedTotals.physicalSubtotal.toFixed(2), membershipSubtotal: retainedTotals.membershipSubtotal.toFixed(2), shippingFee: retainedTotals.shippingFee.toFixed(2),
+      totalWeight: retainedTotals.totalWeight.toFixed(2), totalAmount: retainedTotals.totalAmount.toFixed(2),
+    }).where(eq(orders.id, source.id));
+  });
+
+  const splitAuditItems = movedItems.map((item) => ({ orderItemId: item.id, quantity: item.quantity, productName: item.productName }));
+  await logOrderOperation(source.id, "split", `订单拆单：已移出 ${movedItems.length} 项商品至 ${newOrderNumber}`, JSON.stringify({ newOrderId, newOrderNumber, items: splitAuditItems }), input.operator);
+  await logOrderOperation(newOrderId, "split", `由订单 ${source.orderNumber} 拆分建立`, JSON.stringify({ parentOrderId: source.id, items: splitAuditItems }), input.operator);
+  return { originalOrderId: source.id, originalOrderNumber: source.orderNumber, newOrderId, newOrderNumber };
 }
 
 // ============================================================================
@@ -7824,6 +7965,11 @@ export async function createOrderFromLiveCapture(data: {
     facebookName: data.commenterName,
     messengerId: data.commenterPsid,
   });
+  // 黑名单客户可保留既有客户资料，但绝不可通过直播留言建立或合并订单。
+  // 该检查必须在库存预留、订单合并及任何订单写入前执行。
+  if (customer.isBlacklisted) {
+    throw new Error(`CUSTOMER_BLACKLISTED: ${customer.displayName || customer.name || data.commenterName} 已被列入黑名单，无法捉单`);
+  }
   
   // Calculate totals
   const subtotal = data.matchedProducts.reduce((sum, p) => sum + parseFloat(p.unitPrice) * p.quantity, 0);
@@ -10566,6 +10712,47 @@ export async function processExpiredCNOrders() {
   return { inspected: candidates.length, cancelledCount: cancelled.length, failedCount: failed.length, cancelled, runAt };
 }
 
+/**
+ * 本地订单付款期限巡检：仅处理下单满七天、仍未有效付款且未处于付款凭证待审核的订单。
+ * 取消动作统一经 cancelOrderWithReason 执行，以维持库存释放、审计与通知的既有幂等语义。
+ */
+export async function processExpiredLocalOrders() {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const candidates = unwrapMySqlRows<{ id: number; orderNumber: string }>(await db.execute(sql`
+    SELECT o.id, o.orderNumber
+    FROM orders o
+    WHERE (o.orderCategory IS NULL OR o.orderCategory = 'local')
+      AND o.physicalStatus <> 'cancelled'
+      AND o.createdAt < DATE_SUB(NOW(), INTERVAL 7 DAY)
+      AND COALESCE(o.paymentStatus, '') IN ('pending', 'unpaid', 'partial')
+      AND NOT EXISTS (
+        SELECT 1 FROM order_payments pending_proof
+        WHERE pending_proof.orderId = o.id
+          AND pending_proof.receiptUrl IS NOT NULL
+          AND TRIM(pending_proof.receiptUrl) <> ''
+          AND pending_proof.reviewStatus = 'pending'
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM order_payments approved_payment
+        WHERE approved_payment.orderId = o.id
+          AND approved_payment.reviewStatus = 'approved'
+      )
+  `));
+  const cancelled: Array<{ id: number; orderNumber: string }> = [];
+  const failed: Array<{ id: number; orderNumber: string }> = [];
+  for (const order of candidates) {
+    try {
+      await cancelOrderWithReason(order.id, '本地订单下单满7天仍未有有效付款凭证，系统自动取消', '系统自动');
+      cancelled.push(order);
+    } catch (error) {
+      console.error('[Local expiry] unable to cancel order', order.id, error);
+      failed.push(order);
+    }
+  }
+  return { inspected: candidates.length, cancelledCount: cancelled.length, failedCount: failed.length, cancelled, runAt: new Date() };
+}
+
 export async function deleteImportBatch(id: number) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
@@ -12507,7 +12694,29 @@ export async function getLiveComments(liveRoomId: number, filters?: {
   const results = await db.select().from(liveComments)
     .where(and(...conditions))
     .orderBy(desc(liveComments.createdAt)).limit(limit).offset(offset);
-  return results;
+
+  const psids = Array.from(new Set(results.map((comment) => comment.commenterPsid).filter((psid): psid is string => Boolean(psid))));
+  if (psids.length === 0) {
+    return results.map((comment) => ({ ...comment, customerId: null, isCustomerBlacklisted: false }));
+  }
+
+  const customerRows = await db.select({
+    id: customers.id,
+    messengerId: customers.messengerId,
+    isBlacklisted: customers.isBlacklisted,
+  }).from(customers).where(inArray(customers.messengerId, psids));
+  const customersByPsid = new Map(customerRows
+    .filter((customer) => customer.messengerId)
+    .map((customer) => [customer.messengerId as string, customer]));
+
+  return results.map((comment) => {
+    const customer = comment.commenterPsid ? customersByPsid.get(comment.commenterPsid) : undefined;
+    return {
+      ...comment,
+      customerId: customer?.id || null,
+      isCustomerBlacklisted: Boolean(customer?.isBlacklisted),
+    };
+  });
 }
 
 export async function getLiveCommentStats(liveRoomId: number) {
@@ -15297,6 +15506,23 @@ export async function getCustomerByCommenter(commenterName: string, commenterPsi
   return byName[0] || null;
 }
 
+/** Resolve a live commenter through the same PSID path used by live capture, then blacklist the resolved customer. */
+export async function blacklistLiveCommenter(input: {
+  commenterName: string;
+  commenterPsid?: string | null;
+  reason: string;
+  operatorName: string;
+}) {
+  const customer = await findOrCreateCustomer({
+    name: input.commenterName,
+    phoneNumber: "",
+    facebookName: input.commenterName,
+    messengerId: input.commenterPsid || undefined,
+  });
+  await toggleCustomerBlacklist(customer.id, true, input.reason, input.operatorName);
+  return { success: true, customerId: customer.id };
+}
+
 // ============================================================================
 // Live Comment Notes (Staff Note) CRUD
 // ============================================================================
@@ -17168,6 +17394,15 @@ export async function addMarketingPhysicalItemToOrder(input: {
   const [product] = await database.select().from(products).where(eq(products.id, input.productId)).limit(1);
   if (!product) throw new Error("营销商品不存在");
   if (!Number.isInteger(input.quantity) || input.quantity <= 0) throw new Error("营销商品数量必须大于 0");
+  if (input.source === "campaign_gift") {
+    if (input.quantity !== 1) throw new Error("每张订单只能赠送一件赠品");
+    const existingGift = await database
+      .select({ id: orderItems.id })
+      .from(orderItems)
+      .where(and(eq(orderItems.orderId, input.orderId), eq(orderItems.productType, "gift")))
+      .limit(1);
+    if (existingGift.length > 0) throw new Error("此订单已有赠品，不能重复建立直播赠品");
+  }
   await reserveProductStocksForOrder([{ productId: input.productId, quantity: input.quantity }]);
   try {
     const unitPrice = Math.max(0, input.unitPrice);
@@ -17177,6 +17412,7 @@ export async function addMarketingPhysicalItemToOrder(input: {
       productName: product.name,
       productSku: product.sku || null,
       productType: input.source === "campaign_gift" ? "gift" : "physical",
+      giftSlot: input.source === "campaign_gift" ? 1 : null,
       quantity: input.quantity,
       unitPrice: unitPrice.toFixed(2),
       subtotal: (unitPrice * input.quantity).toFixed(2),

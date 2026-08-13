@@ -675,6 +675,8 @@ export const orderItems = mysqlTable("order_items", {
   productName: varchar("productName", { length: 255 }).notNull(),
   productSku: varchar("productSku", { length: 100 }),
   productType: mysqlEnum("productType", ["physical", "membership", "gift"]),
+  // New gifts use slot 1; legacy gift rows remain null and retain their history.
+  giftSlot: int("giftSlot"),
   // Variant snapshot
   variationId: int("variationId"),
   variationName: varchar("variationName", { length: 255 }),
@@ -999,6 +1001,7 @@ export const messengerFlowTemplates = mysqlTable("messenger_flow_templates", {
   messageContent: text("messageContent").notNull(),
   imageUrl: varchar("imageUrl", { length: 500 }),
   videoUrl: varchar("videoUrl", { length: 500 }),
+  audioUrl: varchar("audioUrl", { length: 500 }),
   buttonName: varchar("buttonName", { length: 100 }).default("进入心田会员系统"),
   buttonLink: varchar("buttonLink", { length: 500 }),
   reminderEnabled: boolean("reminderEnabled").default(true),
@@ -1024,7 +1027,7 @@ export const flowSteps = mysqlTable("flow_steps", {
   flowTemplateId: int("flowTemplateId").notNull(),
   stepOrder: int("stepOrder").notNull(),
   stepName: varchar("stepName", { length: 255 }).notNull(),
-  messageType: mysqlEnum("messageType", ["text", "image", "video", "button", "contact_support"]).notNull(),
+  messageType: mysqlEnum("messageType", ["text", "image", "video", "audio", "button", "contact_support"]).notNull(),
   messageContent: text("messageContent"),
   mediaUrl: varchar("mediaUrl", { length: 500 }),
   buttonName: varchar("buttonName", { length: 100 }),
@@ -1120,6 +1123,8 @@ export const systemSettings = mysqlTable("system_settings", {
   // Security
   requireStaffLogin: boolean("requireStaffLogin").default(true).notNull(),
   autoCompleteDays: int("autoCompleteDays").default(7).notNull(),
+  // Project-level Heartbeat task UID for the idempotent local-order payment expiry check.
+  localOrderExpiryTaskUid: varchar("localOrderExpiryTaskUid", { length: 65 }),
   // Live comment footer (used in keyword copy & live post)
   liveCommentFooter: text("liveCommentFooter"),
   // V2.0.42: Custom checkout message template (supports {link} placeholder)

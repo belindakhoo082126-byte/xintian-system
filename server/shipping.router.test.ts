@@ -41,6 +41,7 @@ import { appRouter } from "./routers";
 import * as dbMock from "./db";
 import * as parcelkingMock from "./parcelking";
 import * as shippingProviderMock from "./shippingProvider";
+import * as messengerMock from "./messenger";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
@@ -149,6 +150,45 @@ describe("shipping router safety checks", () => {
     );
   });
 
+  it("sends and audits a customer notification after a manual full shipment", async () => {
+    vi.mocked(dbMock.fullShipping).mockResolvedValue({ success: true } as any);
+    vi.mocked(dbMock.getOrderById).mockResolvedValue({ id: 90001, orderNumber: "XT90001", customerId: 30001 } as any);
+    vi.mocked(dbMock.getCustomerById).mockResolvedValue({ id: 30001, messengerId: "psid-manual-shipping", phoneNumber: "0123456789" } as any);
+    vi.mocked(messengerMock.sendTextMessage).mockResolvedValue({} as any);
+
+    const caller = appRouter.createCaller(createAuthContext());
+    await expect(caller.shipping.fullShip({
+      orderId: 90001,
+      packages: [{ courier: "Manual Courier", shippingType: "manual", trackingNumber: "MANUAL-TRACK-1", shippingLabelUrl: "https://awb.example/manual.pdf", weight: "1.2" }],
+    })).resolves.toEqual({ success: true });
+
+    expect(messengerMock.sendTextMessage).toHaveBeenCalledWith("psid-manual-shipping", expect.stringContaining("MANUAL-TRACK-1"));
+    expect(dbMock.updateOrderNotificationStatus).toHaveBeenCalledWith(90001, "sent", null);
+    expect(dbMock.createNotificationLog).toHaveBeenCalledWith(expect.objectContaining({
+      orderId: 90001, customerId: 30001, type: "shipping_notification", status: "sent",
+    }));
+  });
+
+  it("sends and audits a customer notification after a manual partial shipment", async () => {
+    vi.mocked(dbMock.partialShipping).mockResolvedValue({ success: true, allShipped: false } as any);
+    vi.mocked(dbMock.getOrderById).mockResolvedValue({ id: 90001, orderNumber: "XT90001", customerId: 30001 } as any);
+    vi.mocked(dbMock.getCustomerById).mockResolvedValue({ id: 30001, messengerId: "psid-partial-shipping", phoneNumber: "0123456789" } as any);
+    vi.mocked(messengerMock.sendTextMessage).mockResolvedValue({} as any);
+
+    const caller = appRouter.createCaller(createAuthContext());
+    await expect(caller.shipping.partialShip({
+      orderId: 90001,
+      itemIds: [1001],
+      itemQuantities: [{ itemId: "1001", quantity: 1 }],
+      packageData: { courier: "Manual Courier", shippingType: "manual", trackingNumber: "MANUAL-PARTIAL-1", shippingLabelUrl: "https://awb.example/manual-partial.pdf", weight: "0.8" },
+    })).resolves.toEqual({ success: true, allShipped: false });
+
+    expect(messengerMock.sendTextMessage).toHaveBeenCalledWith("psid-partial-shipping", expect.stringContaining("部分发货"));
+    expect(dbMock.createNotificationLog).toHaveBeenCalledWith(expect.objectContaining({
+      orderId: 90001, customerId: 30001, type: "shipping_notification", status: "sent",
+    }));
+  });
+
   it("routes Parcel Daily AWB, tracking, weight and actual fee through fullShipping", async () => {
     vi.mocked(dbMock.getOrderById).mockResolvedValue({
       id: 90001, orderNumber: "XT90001", customerId: 30001, shippingMethod: "west_malaysia", actualShippingFee: "18.50", totalAmount: "200",
@@ -172,6 +212,51 @@ describe("shipping router safety checks", () => {
     expect(dbMock.fullShipping).toHaveBeenCalledWith(90001, [expect.objectContaining({
       courier: "Line Clear", trackingNumber: "PD-TRACK-1", shippingLabelUrl: "https://awb.example/PD-TRACK-1.pdf", weight: "2.5", shippingCost: "18.50",
     })]);
+  });
+
+  it("creates a separate Parcel Daily AWB for each declared full-shipment package", async () => {
+    vi.mocked(dbMock.getOrderById).mockResolvedValue({
+      id: 90001, orderNumber: "XT90001", customerId: 30001, shippingMethod: "west_malaysia", actualShippingFee: "18.50", totalAmount: "200",
+    } as any);
+    vi.mocked(dbMock.getCustomerById).mockResolvedValue({
+      id: 30001, name: "收件客户", phoneNumber: "0123456789", address: "Jalan Test 1", postalCode: "11700", messengerId: null,
+    } as any);
+    vi.mocked(dbMock.getSystemSettings).mockResolvedValue({
+      defaultShipFromName: "Xintian", defaultShipFromPhone: "0124311232", defaultShipFromAddress: "No 31, Jalan Pantai Jerjak 5", defaultShipFromPostcode: "11700",
+    } as any);
+    vi.mocked(shippingProviderMock.parcelDailyProvider.createShipment)
+      .mockResolvedValueOnce({ providerOrderId: "PD-ORDER-1" } as any)
+      .mockResolvedValueOnce({ providerOrderId: "PD-ORDER-2" } as any);
+    vi.mocked(shippingProviderMock.parcelDailyProvider.checkoutShipment)
+      .mockResolvedValueOnce({ trackingNumber: "PD-TRACK-1", shippingCost: 8.5 } as any)
+      .mockResolvedValueOnce({ trackingNumber: "PD-TRACK-2", shippingCost: 10 } as any);
+    vi.mocked(shippingProviderMock.parcelDailyProvider.getConsignmentNote)
+      .mockResolvedValueOnce({ url: "https://awb.example/PD-TRACK-1.pdf" } as any)
+      .mockResolvedValueOnce({ url: "https://awb.example/PD-TRACK-2.pdf" } as any);
+    vi.mocked(dbMock.fullShipping).mockResolvedValue({ success: true } as any);
+
+    const caller = appRouter.createCaller(createAuthContext());
+    await expect(caller.shipping.autoShipParcelDaily({
+      orderId: 90001,
+      actualWeight: 3.5,
+      mode: "full",
+      packages: [{ weightKg: 1.25 }, { weightKg: 2.25 }],
+    })).resolves.toMatchObject({
+      success: true,
+      trackingNumbers: ["PD-TRACK-1", "PD-TRACK-2"],
+      shippingLabelUrls: ["https://awb.example/PD-TRACK-1.pdf", "https://awb.example/PD-TRACK-2.pdf"],
+    });
+
+    expect(shippingProviderMock.parcelDailyProvider.createShipment).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      reference: "XT90001-1", weightKg: 1.25,
+    }));
+    expect(shippingProviderMock.parcelDailyProvider.createShipment).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      reference: "XT90001-2", weightKg: 2.25,
+    }));
+    expect(dbMock.fullShipping).toHaveBeenCalledWith(90001, [
+      expect.objectContaining({ trackingNumber: "PD-TRACK-1", weight: "1.25", shippingCost: "8.50" }),
+      expect.objectContaining({ trackingNumber: "PD-TRACK-2", weight: "2.25", shippingCost: "10.00" }),
+    ]);
   });
 
   it("routes Parcel King label, tracking, weight and final fee through fullShipping", async () => {

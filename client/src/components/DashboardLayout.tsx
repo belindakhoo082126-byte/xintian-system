@@ -41,6 +41,7 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
+import { BackendEnglishFallback } from "./BackendEnglishFallback";
 
 type MenuChild = {
   icon: any;
@@ -567,7 +568,7 @@ function DashboardLayoutContent({
           </div>
         )}
         <main className="flex-1 p-4">
-          {children}
+          <BackendEnglishFallback>{children}</BackendEnglishFallback>
         </main>
       </SidebarInset>
     </>

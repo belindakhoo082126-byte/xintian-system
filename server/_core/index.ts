@@ -216,6 +216,27 @@ async function startServer() {
     }
   });
 
+  // 本地订单付款期限巡检：仅允许平台认证的Heartbeat调用，处理逻辑本身可重复执行。
+  app.post("/api/scheduled/local-payment-expiry", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
+      const settings = await db.getSystemSettings();
+      if (!settings?.localOrderExpiryTaskUid || settings.localOrderExpiryTaskUid !== user.taskUid) {
+        return res.json({ ok: true, skipped: "unregistered-task", taskUid: user.taskUid, timestamp: new Date().toISOString() });
+      }
+      const result = await db.processExpiredLocalOrders();
+      res.json({ ok: true, taskUid: user.taskUid, ...result, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(500).json({
+        error: err.message || "本地订单付款期限巡检失败",
+        stack: err.stack,
+        context: { url: req.originalUrl },
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
   // Real-time sync: Server-Sent Events endpoint
   app.get("/api/sync", (req, res) => {
     const cleanup = addSSEClient(res);

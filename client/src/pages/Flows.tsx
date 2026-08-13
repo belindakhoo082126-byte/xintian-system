@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Edit2, Trash2 } from "lucide-react";
+import { Plus, Edit2, Trash2, Music2, Upload, X } from "lucide-react";
 
 const DEFAULT_MESSAGE = `🎉 欢迎加入【心田会员俱乐部】
 
@@ -38,6 +38,7 @@ export default function Flows() {
   const { translate } = useI18n();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [audioUploading, setAudioUploading] = useState(false);
   const utils = trpc.useUtils();
 
   const { data: templates, isLoading } = trpc.flows.list.useQuery();
@@ -76,6 +77,7 @@ export default function Flows() {
     messageContent: DEFAULT_MESSAGE,
     imageUrl: "",
     videoUrl: "",
+    audioUrl: "",
     buttonName: "",
     buttonLink: "",
     reminderEnabled: false,
@@ -94,6 +96,7 @@ export default function Flows() {
       messageContent: DEFAULT_MESSAGE,
       imageUrl: "",
       videoUrl: "",
+      audioUrl: "",
       buttonName: "",
       buttonLink: "",
       reminderEnabled: false,
@@ -114,15 +117,16 @@ export default function Flows() {
       description: t.description || "",
       messageContent: t.messageContent || "",
       imageUrl: t.imageUrl || "",
-      videoUrl: "",
-      buttonName: "",
-      buttonLink: "",
-      reminderEnabled: false,
-      reminderDelayHours: 24,
-      reminderMessage: "",
-      reminderMaxCount: 3,
-      followUpEnabled: false,
-      followUpDelayHours: 72,
+      videoUrl: t.videoUrl || "",
+      audioUrl: t.audioUrl || "",
+      buttonName: t.buttonName || "",
+      buttonLink: t.buttonLink || "",
+      reminderEnabled: t.reminderEnabled ?? false,
+      reminderDelayHours: t.reminderDelayHours ?? 24,
+      reminderMessage: t.reminderMessage || "",
+      reminderMaxCount: t.reminderMaxCount ?? 3,
+      followUpEnabled: t.followUpEnabled ?? false,
+      followUpDelayHours: t.followUpDelayHours ?? 72,
       isActive: t.isActive ?? true,
     });
     setDialogOpen(true);
@@ -137,6 +141,40 @@ export default function Flows() {
       updateMutation.mutate({ id: editingId, ...form });
     } else {
       createMutation.mutate(form);
+    }
+  }
+
+  async function handleAudioUpload(file?: File) {
+    if (!file) return;
+    if (!file.type.startsWith("audio/")) {
+      toast.error(translate("请上传音频文件", "Please upload an audio file"));
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(translate("语音文件不能超过 10MB", "Audio file must not exceed 10MB"));
+      return;
+    }
+    setAudioUploading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("Unable to read audio file"));
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: dataUrl, filename: file.name, contentType: file.type }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.url) throw new Error(result.error || "Upload failed");
+      setForm(current => ({ ...current, audioUrl: result.url }));
+      toast.success(translate("语音已上传", "Voice audio uploaded"));
+    } catch (error: any) {
+      toast.error(translate("语音上传失败: {message}", "Voice upload failed: {message}", { message: error.message }));
+    } finally {
+      setAudioUploading(false);
     }
   }
 
@@ -162,7 +200,7 @@ export default function Flows() {
               <TableRow>
                 <TableHead>{translate("Flow 名称", "Flow Name")}</TableHead>
                 <TableHead>{translate("描述", "Description")}</TableHead>
-                <TableHead>{translate("教学图片", "Tutorial Image")}</TableHead>
+                <TableHead>{translate("媒体", "Media")}</TableHead>
                 <TableHead>{translate("状态", "Status")}</TableHead>
                 <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
               </TableRow>
@@ -177,9 +215,11 @@ export default function Flows() {
                   <TableCell className="font-medium">{t.name}</TableCell>
                   <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{t.description || "-"}</TableCell>
                   <TableCell>
-                    {t.imageUrl ? (
-                      <Badge variant="default">{translate("已设置", "Set")}</Badge>
-                    ) : "-"}
+                    <div className="flex flex-wrap gap-1">
+                      {t.imageUrl && <Badge variant="default">{translate("图片", "Image")}</Badge>}
+                      {t.audioUrl && <Badge variant="secondary"><Music2 className="mr-1 h-3 w-3" />{translate("语音", "Audio")}</Badge>}
+                      {!t.imageUrl && !t.audioUrl && "-"}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant={t.isActive ? "default" : "outline"}>
@@ -245,6 +285,19 @@ export default function Flows() {
               <Input value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
                 placeholder="https://..." />
               <p className="text-xs text-muted-foreground mt-1">{translate("会员注册教学图片，将在文案发送后自动发送给客户", "Membership tutorial image, will be sent to customer after the message text")}</p>
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-dashed p-3">
+              <Label>{translate("语音欢迎讯息（可选）", "Voice Greeting (optional)")}</Label>
+              <p className="text-xs text-muted-foreground">{translate("会在文字与教学图片后以Messenger语音附件发送。支持常见音频格式，最大10MB。", "Sent as a Messenger audio attachment after the text and tutorial image. Common audio formats supported, up to 10MB.")}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <input id="flow-audio-upload" type="file" accept="audio/*" className="sr-only" onChange={(e) => handleAudioUpload(e.target.files?.[0])} />
+                <Button type="button" variant="outline" size="sm" disabled={audioUploading} onClick={() => document.getElementById("flow-audio-upload")?.click()}>
+                  <Upload className="mr-2 h-4 w-4" />{audioUploading ? translate("上传中...", "Uploading...") : translate("上传语音", "Upload Voice")}
+                </Button>
+                <Input className="min-w-[220px] flex-1" value={form.audioUrl} onChange={(e) => setForm({ ...form, audioUrl: e.target.value })} placeholder={translate("或粘贴安全语音 URL", "Or paste a secure audio URL")} />
+              </div>
+              {form.audioUrl && <div className="flex items-center gap-2"><audio controls className="h-9 flex-1" src={form.audioUrl} /><Button type="button" variant="ghost" size="icon" onClick={() => setForm({ ...form, audioUrl: "" })} aria-label={translate("移除语音", "Remove audio")}><X className="h-4 w-4" /></Button></div>}
             </div>
           </div>
 
