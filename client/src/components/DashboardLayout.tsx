@@ -35,7 +35,7 @@ import {
   FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings,
   Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle, AlertCircle,
   ClipboardList, Video, Plane, ChevronDown, Bot, Home, FileText, Receipt, Brain, FileEdit,
-  Megaphone, Undo2,
+  Megaphone, Undo2, BellRing,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -164,6 +164,7 @@ const menuStructure: MenuEntry[] = [
       { icon: MessageSquare, label: { zh: "Chat 客服", en: "Chat" }, path: "/chat" },
       { icon: AlertCircle, label: { zh: "AI 转人工通知", en: "AI Handover" }, path: "/ai-handover" },
       { icon: Brain, label: { zh: "AI 大脑", en: "AI Brain" }, path: "/ai-brain" },
+      { icon: BellRing, label: { zh: "自动通知", en: "Auto Notifications" }, path: "/auto-notifications" },
       { icon: Bot, label: { zh: "Flow 管理", en: "Flow Management" }, path: "/flows" },
       { icon: Video, label: { zh: "直播AI", en: "Live AI" }, path: "/live-ai-flows" },
     ],

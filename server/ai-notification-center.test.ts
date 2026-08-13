@@ -36,20 +36,20 @@ describe("AI 自动通知中心", () => {
     expect(routerSource).toContain("handleAiFailure: adminProcedure");
   });
 
-  it("提供AI中心独立入口与失败记录的查看、手动发送和处理操作", () => {
-    expect(aiBrainSource).toContain('"notifications"');
-    expect(aiBrainSource).toContain("AiNotificationCenter");
+  it("提供独立子菜单入口与失败记录的查看、手动发送和处理操作", () => {
+    expect(aiBrainSource).not.toContain('"notifications"');
+    expect(aiBrainSource).not.toContain("AiNotificationCenter");
     for (const marker of ["自动通知中心", "待人工处理通知", "复制并人工发送", "无需重发", "模板变量说明"]) {
       expect(centerSource).toContain(marker);
     }
   });
 
-  it("从特别订单统计、筛选与Dashboard网格拆离，并提供直达AI中心的独立卡", () => {
+  it("从特别订单统计、筛选与Dashboard网格拆离，并提供直达自动通知菜单的独立卡", () => {
     expect(dbSource).toContain("oss.type != 'notification_failed'");
     expect(dbSource).toContain("COALESCE(o.specialOrderType, '') != 'notification_failed'");
     expect(specialOrderDisplaySource).not.toContain('value: "notification_failed"');
     expect(dashboardSource).toContain("trpc.notifications.aiCenter.useQuery()");
-    expect(dashboardSource).toContain('href="/ai-brain?tab=notifications"');
+    expect(dashboardSource).toContain('href="/auto-notifications"');
     expect(dashboardSource).toContain("AI 自动通知失败");
   });
 });

@@ -319,7 +319,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <Link href="/ai-brain?tab=notifications">
+      <Link href="/auto-notifications">
         <Card className="border-violet-200 bg-violet-50/50 transition-colors hover:bg-violet-100/60 dark:border-violet-900/60 dark:bg-violet-950/20 dark:hover:bg-violet-950/35">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="rounded-xl bg-violet-100 p-3 text-violet-700 dark:bg-violet-900/60 dark:text-violet-200"><Send className="h-5 w-5" /></div>
