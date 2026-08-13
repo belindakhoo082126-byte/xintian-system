@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useI18n } from "@/contexts/I18nContext";
 import { toast } from "sonner";
 import { getSpecialOrderHandlingLabel, getSpecialOrderReasonLabel, SPECIAL_ORDER_FILTER_OPTIONS } from "@shared/specialOrderDisplay";
+import { getPackingSlipRemarkRows, renderPackingSlipRemarkHtml } from "@shared/packingSlipRemarks";
 
 // V2.1.13: Status color mapping for scheduled shipping orders (8 statuses)
 const SCHEDULED_STATUS_CONFIG: Record<string, { label: { zh: string; en: string }; color: string; bgColor: string; borderColor: string }> = {
@@ -230,14 +231,15 @@ export default function Packing() {
           <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold"><span>总金额:</span><span>RM ${s.totalAmount || "0.00"}</span></div>
         </div>`;
 
-      const remarksHtml = data.remarks && data.remarks.length > 0
+      const remarkRows = getPackingSlipRemarkRows([
+        ...(data.remarks || []),
+        ...(data.adminRemarks || []),
+        ...(data.customerRemark ? [{ remarkCategory: "customer", content: data.customerRemark }] : []),
+      ], lang === "en" ? "en" : "zh");
+      const remarksHtml = remarkRows.length > 0
         ? `<div style="margin-bottom:8px;border:2px solid #000;padding:4px">
-            ${data.remarks.map((r: any) => {
-              if (r.remarkCategory === "repotting") return `<div style="margin-bottom:4px"><div style="font-weight:bold;font-size:12px">📌 换盆</div><div style="font-size:11px;margin-left:8px">${r.content || ""}</div></div>`;
-              if (r.remarkCategory === "desired_delivery_date") return `<div style="margin-bottom:4px"><div style="font-weight:bold;font-size:12px">📌 希望收货日期</div><div style="font-size:11px;margin-left:8px">${r.desiredDeliveryDate ? new Date(r.desiredDeliveryDate).toLocaleDateString() : ""}${r.desiredDeliveryReason ? " — " + r.desiredDeliveryReason : ""}</div></div>`;
-              if (r.remarkCategory === "other") return `<div style="margin-bottom:4px"><div style="font-weight:bold;font-size:12px">📌 其他备注</div><div style="font-size:11px;margin-left:8px">${r.content || ""}</div></div>`;
-              return "";
-            }).join("")}
+            <div style="font-weight:bold;font-size:12px;margin-bottom:4px">${lang === "en" ? "Order Notes" : "订单备注"}</div>
+            ${renderPackingSlipRemarkHtml(remarkRows)}
           </div>`
         : "";
 

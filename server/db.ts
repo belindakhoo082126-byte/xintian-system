@@ -6852,6 +6852,9 @@ export async function getPackingDetail(orderId: number) {
     customerId: orders.customerId,
     customerName: customers.name,
     customerPhone: customers.phoneNumber,
+    // 发货资料未在订单写入时，包货界面以客户档案作安全回退。
+    customerAddress: customers.address,
+    customerPostalCode: customers.postalCode,
     facebookName: orders.facebookName,
     recipientName: orders.recipientName,
     recipientPhone: orders.recipientPhone,
@@ -7097,6 +7100,62 @@ export async function createPackage(data: {
   return { packageId, packageNumber };
 }
 
+export type ShipmentSummaryPackage = {
+  courier?: string | null;
+  trackingNumber?: string | null;
+  weight?: string | number | null;
+  shippingCost?: string | number | null;
+  shippedAt?: Date | null;
+};
+
+/**
+ * 订单区域8仅保留一份物流摘要：最近包裹的快递／追踪号、所有包裹的重量及实际运费合计。
+ * AWB原始链接始终保存在packages表，订单详情从最新带标签的包裹读取。
+ */
+export function calculateShipmentSummary(packagesForOrder: ShipmentSummaryPackage[]) {
+  const latest = [...packagesForOrder].reverse().find((pkg) =>
+    Boolean(String(pkg.trackingNumber || "").trim() || String(pkg.courier || "").trim()),
+  );
+  const numericValues = (field: "weight" | "shippingCost") => packagesForOrder
+    .map((pkg) => pkg[field])
+    .filter((value): value is string | number => value !== null && value !== undefined && String(value).trim() !== "")
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  const weights = numericValues("weight");
+  const shippingCosts = numericValues("shippingCost");
+  const shippedTimes = packagesForOrder
+    .map((pkg) => pkg.shippedAt)
+    .filter((value): value is Date => value instanceof Date && !Number.isNaN(value.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  return {
+    courierCompany: latest?.courier?.trim() || undefined,
+    trackingNumber: latest?.trackingNumber?.trim() || undefined,
+    actualWeight: weights.length ? weights.reduce((sum, value) => sum + value, 0) : undefined,
+    actualShippingFee: shippingCosts.length ? shippingCosts.reduce((sum, value) => sum + value, 0) : undefined,
+    firstShippedAt: shippedTimes[0],
+  };
+}
+
+async function syncOrderShipmentSummary(db: any, orderId: number, physicalStatus: "partial_shipped" | "shipped") {
+  const packageRows = await db.select({
+    courier: packages.courier,
+    trackingNumber: packages.trackingNumber,
+    weight: packages.weight,
+    shippingCost: packages.shippingCost,
+    shippedAt: packages.shippedAt,
+  }).from(packages).where(eq(packages.orderId, orderId));
+  const summary = calculateShipmentSummary(packageRows);
+  const update: Record<string, unknown> = { physicalStatus };
+  if (summary.courierCompany) update.courierCompany = summary.courierCompany;
+  if (summary.trackingNumber) update.trackingNumber = summary.trackingNumber;
+  if (summary.actualWeight !== undefined) update.actualWeight = String(summary.actualWeight);
+  if (summary.actualShippingFee !== undefined) update.actualShippingFee = String(summary.actualShippingFee);
+  if (summary.firstShippedAt) update.shippedAt = summary.firstShippedAt;
+  await db.update(orders).set(update).where(eq(orders.id, orderId));
+  return summary;
+}
+
 // --- Full Shipping: Mark order as shipped ---
 export async function fullShipping(orderId: number, packageList: Array<{
   courier: string;
@@ -7137,14 +7196,7 @@ export async function fullShipping(orderId: number, packageList: Array<{
     });
   }
   
-  // Update order status to shipped + sync courier/tracking to orders table for order management area 8
-  const lastPackage = packageList[packageList.length - 1];
-  await db.update(orders).set({
-    physicalStatus: "shipped",
-    shippedAt: new Date(),
-    courierCompany: lastPackage.courier || null,
-    trackingNumber: lastPackage.trackingNumber || null,
-  }).where(eq(orders.id, orderId));
+  await syncOrderShipmentSummary(db, orderId, "shipped");
   
   return { success: true };
 }
@@ -7225,13 +7277,7 @@ export async function partialShipping(orderId: number, itemIds: number[], packag
   // Check if all items are fully shipped (shipped qty >= order qty)
   const allShipped = allItems.every((item) => (totalShippedQty.get(item.id) || 0) >= item.quantity);
   
-  // Update order status + sync courier/tracking to orders table for order management area 8
-  await db.update(orders).set({
-    physicalStatus: allShipped ? "shipped" : "partial_shipped",
-    ...(allShipped ? { shippedAt: new Date() } : {}),
-    courierCompany: packageData.courier || null,
-    trackingNumber: packageData.trackingNumber || null,
-  }).where(eq(orders.id, orderId));
+  await syncOrderShipmentSummary(db, orderId, allShipped ? "shipped" : "partial_shipped");
   
   return { success: true, allShipped };
 }

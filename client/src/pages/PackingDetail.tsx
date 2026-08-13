@@ -15,6 +15,8 @@ import { toast } from "sonner";
 import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare, RefreshCw, AlertTriangle, Copy } from "lucide-react";
 import { useEffect } from "react";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
+import { getPackingSlipRemarkRows } from "@shared/packingSlipRemarks";
+import { getMissingPackingRecipientAddressFields } from "@shared/packingRecipientAddress";
 
 // V2.1.30: Only show Parcel Daily services (Poslaju for east Malaysia, Line Clear for west Malaysia)
 const COURIERS = [
@@ -268,6 +270,16 @@ export default function PackingDetail() {
   const handleShip = (mode: "full" | "partial") => {
     const shippingMethod = (detail as any)?.shippingMethod || "west_malaysia";
     const requiresParcelDaily = shippingMethod === "west_malaysia" || shippingMethod === "east_malaysia_poslaju";
+    const missingAddressFields = shippingMethod === "self_pickup"
+      ? []
+      : getMissingPackingRecipientAddressFields(detail as any, lang);
+    if (missingAddressFields.length > 0) {
+      toast.error(translate(
+        `收件资料不完整，请先补齐：${missingAddressFields.join("、")}`,
+        `Recipient details are incomplete. Complete: ${missingAddressFields.join(", ")}`,
+      ));
+      return;
+    }
     const actualWeight = Number((detail as any)?.actualWeight || 0);
     if (requiresParcelDaily) {
       if (!actualWeight || actualWeight <= 0) {
@@ -378,6 +390,7 @@ export default function PackingDetail() {
   }
 
   const d = detail as any;
+  const missingAddressFields = d.shippingMethod === "self_pickup" ? [] : getMissingPackingRecipientAddressFields(d, lang);
   const specialLabel = d.shippingMethod === "lalamove" ? "LALAMOVE" :
     d.shippingMethod === "east_malaysia_shopee" ? translate("东马 SHOPEE", "East Malaysia SHOPEE") :
     d.shippingMethod === "east_malaysia_poslaju" ? translate("东马 POSLAJU", "East Malaysia POSLAJU") : "";
@@ -947,6 +960,12 @@ export default function PackingDetail() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {missingAddressFields.length > 0 && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <span className="font-semibold">{translate("地址校验提醒：", "Address validation:")}</span>{" "}
+                {translate("发货前请补齐：", "Complete before shipping: ")}{missingAddressFields.join("、")}
+              </div>
+            )}
             {/* Estimated weight display */}
             {detail && (
               <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1355,6 +1374,11 @@ export default function PackingDetail() {
   // V2.1.26: Simplified A5 Packing Slip - no images, large order number, large quantity, keywords, unit price, shipping method
   function A5PackingSlip({ data, translate, lang }: { data: any; translate: (zh: string, en: string, params?: Record<string, string | number>) => string; lang: "zh" | "en" }) {
     const allItems = [...(data.items || []), ...(data.giftItems || [])];
+    const remarkRows = getPackingSlipRemarkRows([
+      ...(data.remarks || []),
+      ...(data.adminRemarks || []),
+      ...(data.customerRemark ? [{ remarkCategory: "customer", content: data.customerRemark }] : []),
+    ], lang === "en" ? "en" : "zh");
     // V2.1.26补充4: Only use grid when more than 2 product items (Issue 5e)
     const productItemCount = (data.items || []).length;
     const useGrid = productItemCount > 2;
@@ -1496,29 +1520,12 @@ export default function PackingDetail() {
           </div>
         )}
 
-        {/* V2.1.26补充6: Customer Remark (Issue 4) */}
-        {data.customerRemark && (
+        {remarkRows.length > 0 && (
           <div style={{ marginBottom: "4px", border: "2px solid #000", padding: "4px" }}>
-            <div style={{ fontWeight: "bold", fontSize: "12px" }}>📌 {translate("客户备注", "Customer Remark")}</div>
-            <div style={{ fontSize: "11px", marginLeft: "8px" }}>{data.customerRemark}</div>
-          </div>
-        )}
-
-        {/* V2.1.26补充6: Admin Remarks (Issue 4) */}
-        {data.adminRemarks && data.adminRemarks.length > 0 && (
-          <div style={{ marginBottom: "8px", border: "2px solid #000", padding: "4px" }}>
-            <div style={{ fontWeight: "bold", fontSize: "12px", marginBottom: "4px" }}>📌 {translate("后台备注", "Admin Remarks")}</div>
-            {data.adminRemarks.map((r: any, i: number) => (
-              <div key={i} style={{ marginBottom: "4px" }}>
-                <div style={{ fontSize: "11px", marginLeft: "8px" }}>
-                  {r.remarkCategory === "repotting" ? translate("换盆", "Repotting") :
-                   r.remarkCategory === "desired_delivery_date" ? translate("发货日期", "Delivery Date") :
-                   r.remarkCategory === "select_tree" ? translate("选树身", "Select Tree") :
-                   r.remarkCategory === "other" ? translate("其他", "Other") : r.remarkCategory}
-                  {r.content && <span> — {r.content}</span>}
-                  {r.desiredDeliveryDate && <span> — {new Date(r.desiredDeliveryDate).toLocaleDateString()}</span>}
-                  {r.desiredDeliveryReason && <span> ({r.desiredDeliveryReason})</span>}
-                </div>
+            <div style={{ fontWeight: "bold", fontSize: "12px", marginBottom: "4px" }}>{translate("订单备注", "Order Notes")}</div>
+            {remarkRows.map((remark, index) => (
+              <div key={`${remark.label}-${remark.content}-${index}`} style={{ fontSize: "11px", marginLeft: "8px", marginBottom: "3px", whiteSpace: "pre-wrap" }}>
+                <strong>{remark.label}：</strong>{remark.content}
               </div>
             ))}
           </div>

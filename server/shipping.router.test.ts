@@ -4,6 +4,27 @@ import type { TrpcContext } from "./_core/context";
 vi.mock("./db", () => ({
   fullShipping: vi.fn(),
   partialShipping: vi.fn(),
+  getOrderById: vi.fn(),
+  getCustomerById: vi.fn(),
+  getSystemSettings: vi.fn(),
+  updateOrderNotificationStatus: vi.fn(),
+  createNotificationLog: vi.fn(),
+}));
+
+vi.mock("./shippingProvider", () => ({
+  parcelDailyProvider: {
+    isConfigured: true,
+    createShipment: vi.fn(),
+    checkoutShipment: vi.fn(),
+    getConsignmentNote: vi.fn(),
+  },
+}));
+
+vi.mock("./parcelking", () => ({
+  ParcelKingError: class ParcelKingError extends Error {},
+  isParcelKingConfigured: vi.fn(),
+  normalizePhone: vi.fn(),
+  createOrder: vi.fn(),
 }));
 
 vi.mock("./messenger", () => ({
@@ -18,6 +39,8 @@ vi.mock("./messenger", () => ({
 
 import { appRouter } from "./routers";
 import * as dbMock from "./db";
+import * as parcelkingMock from "./parcelking";
+import * as shippingProviderMock from "./shippingProvider";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
@@ -124,5 +147,53 @@ describe("shipping router safety checks", () => {
       partialShipmentInput.packageData,
       partialShipmentInput.itemQuantities
     );
+  });
+
+  it("routes Parcel Daily AWB, tracking, weight and actual fee through fullShipping", async () => {
+    vi.mocked(dbMock.getOrderById).mockResolvedValue({
+      id: 90001, orderNumber: "XT90001", customerId: 30001, shippingMethod: "west_malaysia", actualShippingFee: "18.50", totalAmount: "200",
+    } as any);
+    vi.mocked(dbMock.getCustomerById).mockResolvedValue({
+      id: 30001, name: "收件客户", phoneNumber: "0123456789", address: "Jalan Test 1", postalCode: "11700", messengerId: null,
+    } as any);
+    vi.mocked(dbMock.getSystemSettings).mockResolvedValue({
+      defaultShipFromName: "Xintian", defaultShipFromPhone: "0124311232", defaultShipFromAddress: "No 31, Jalan Pantai Jerjak 5", defaultShipFromPostcode: "11700",
+    } as any);
+    vi.mocked(shippingProviderMock.parcelDailyProvider.createShipment).mockResolvedValue({ providerOrderId: "PD-ORDER-1" } as any);
+    vi.mocked(shippingProviderMock.parcelDailyProvider.checkoutShipment).mockResolvedValue({ trackingNumber: "PD-TRACK-1", shippingCost: 18.5 } as any);
+    vi.mocked(shippingProviderMock.parcelDailyProvider.getConsignmentNote).mockResolvedValue({ url: "https://awb.example/PD-TRACK-1.pdf" } as any);
+    vi.mocked(dbMock.fullShipping).mockResolvedValue({ success: true } as any);
+
+    const caller = appRouter.createCaller(createAuthContext());
+    await expect(caller.shipping.autoShipParcelDaily({ orderId: 90001, actualWeight: 2.5, mode: "full" })).resolves.toMatchObject({
+      success: true, trackingNumber: "PD-TRACK-1", shippingLabelUrl: "https://awb.example/PD-TRACK-1.pdf",
+    });
+
+    expect(dbMock.fullShipping).toHaveBeenCalledWith(90001, [expect.objectContaining({
+      courier: "Line Clear", trackingNumber: "PD-TRACK-1", shippingLabelUrl: "https://awb.example/PD-TRACK-1.pdf", weight: "2.5", shippingCost: "18.50",
+    })]);
+  });
+
+  it("routes Parcel King label, tracking, weight and final fee through fullShipping", async () => {
+    vi.mocked(parcelkingMock.isParcelKingConfigured).mockReturnValue(true);
+    vi.mocked(parcelkingMock.normalizePhone).mockReturnValue({ dial_code: "+60", mobile: "123456789" } as any);
+    vi.mocked(dbMock.getOrderById).mockResolvedValue({
+      id: 90002, orderNumber: "XT90002", customerId: 30002, shippingMethod: "west_malaysia", shippingAddress: "Jalan Test 2", totalAmount: "200",
+    } as any);
+    vi.mocked(dbMock.getCustomerById).mockResolvedValue({
+      id: 30002, name: "客户乙", phoneNumber: "0123456789", address: "Jalan Test 2", postalCode: "11700", messengerId: null,
+    } as any);
+    vi.mocked(dbMock.getSystemSettings).mockResolvedValue({
+      defaultShipFromName: "Xintian", defaultShipFromPhone: "0124311232", defaultShipFromAddress: "No 31, Jalan Pantai Jerjak 5", defaultShipFromPostcode: "11700", notifyOnShipment: false,
+    } as any);
+    vi.mocked(parcelkingMock.createOrder).mockResolvedValue({ result: { tracking_no: "PK-TRACK-1", label_url: "https://awb.example/PK-TRACK-1.pdf", final_amount: 99.4 } } as any);
+    vi.mocked(dbMock.fullShipping).mockResolvedValue({ success: true } as any);
+
+    const caller = appRouter.createCaller(createAuthContext());
+    await expect(caller.shipping.createParcelKing({ orderId: 90002, serviceId: 77, weightKg: 8 })).resolves.toMatchObject({ success: true });
+
+    expect(dbMock.fullShipping).toHaveBeenCalledWith(90002, [expect.objectContaining({
+      courier: "ParcelKing #77", trackingNumber: "PK-TRACK-1", shippingLabelUrl: "https://awb.example/PK-TRACK-1.pdf", weight: "8", shippingCost: "99.4",
+    })]);
   });
 });

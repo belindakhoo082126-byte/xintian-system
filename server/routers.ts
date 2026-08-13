@@ -1940,7 +1940,16 @@ export const appRouter = router({
         const items = await db.getOrderItems(input.id);
         const payments = await db.getOrderPayments(input.id);
         const logs = await db.getOrderOperationLogs(input.id);
-        return { ...order, items, payments, logs };
+        const packages = await db.getOrderPackages(input.id);
+        const latestLabelPackage = [...packages].reverse().find((pkg: any) => pkg.shippingLabelUrl);
+        return {
+          ...order,
+          // AWB原始链接持续保存在包裹记录；订单区域8展示最近可用标签，避免新增重复存储。
+          shippingLabelUrl: latestLabelPackage?.shippingLabelUrl || null,
+          items,
+          payments,
+          logs,
+        };
       }),
 
     // V2.1: Compare shipping quotes from multiple providers
