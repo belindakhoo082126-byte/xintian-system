@@ -33,6 +33,11 @@ export default function MallHome() {
   const searchParams = new URLSearchParams(location.split("?")[1] || "");
   const categoryId = searchParams.get("categoryId") ? parseInt(searchParams.get("categoryId")!) : undefined;
   const searchQuery = searchParams.get("q") || search;
+  const browseContextParams = new URLSearchParams();
+  if (categoryId && categoryId > 0) browseContextParams.set("categoryId", String(categoryId));
+  if (searchQuery.trim()) browseContextParams.set("q", searchQuery.trim());
+  const browseContextQuery = browseContextParams.toString();
+  const productDetailHref = (id: number) => `/mall/product/${id}${browseContextQuery ? `?${browseContextQuery}` : ""}`;
 
   const { data: settings } = trpc.mall.settings.useQuery();
   const { data: banners } = trpc.mall.banners.useQuery({ type: "home_16x9" });
@@ -79,15 +84,17 @@ export default function MallHome() {
 
   // Category click handler - use setLocation for proper navigation
   function handleCategoryClick(id?: number) {
-    if (id) {
-      setLocation(`/mall?categoryId=${id}`);
-    } else {
-      setLocation(`/mall`);
-    }
+    const nextParams = new URLSearchParams();
+    if (id) nextParams.set("categoryId", String(id));
+    if (searchQuery.trim()) nextParams.set("q", searchQuery.trim());
+    setLocation(`/mall${nextParams.size ? `?${nextParams.toString()}` : ""}`);
   }
 
   function handleSearch() {
-    setLocation(`/mall?q=${encodeURIComponent(search)}`);
+    const nextParams = new URLSearchParams();
+    if (categoryId) nextParams.set("categoryId", String(categoryId));
+    if (search.trim()) nextParams.set("q", search.trim());
+    setLocation(`/mall${nextParams.size ? `?${nextParams.toString()}` : ""}`);
   }
 
   return (
@@ -306,7 +313,7 @@ export default function MallHome() {
             </Card>
           ))}
           {!isProductsLoading && products?.map((p: any) => (
-            <Link key={p.id} href={`/mall/product/${p.id}`}>
+            <Link key={p.id} href={productDetailHref(p.id)}>
               <Card className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90" style={{ borderRadius: "16px" }}>
                 <div className="aspect-square overflow-hidden bg-gray-50 relative">
                   {p.coverImageUrl ? (

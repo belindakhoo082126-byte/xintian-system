@@ -14,9 +14,42 @@ import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { MallCartFlyAnimation, type MallCartFlight } from "@/components/MallCartFlyAnimation";
 import { getMallShareLinks, MALL_FAVORITES_STORAGE_KEY, readMallFavoriteIds, toggleMallFavoriteId } from "@/lib/mallInteractions";
 
+function getMallNoticeText(
+  announcement: string,
+  announcementEn: string | null | undefined,
+  lang: string,
+  translate: (zh: string, en: string) => string,
+) {
+  if (lang !== "en") return announcement;
+  if (announcementEn?.trim()) return announcementEn;
+
+  const normalized = announcement.replace(/\s+/g, "").toLowerCase();
+  if (normalized.includes("免费换盆")) {
+    return translate("免费换盆服务：购买植物并同单加购花盆，结账时可选择免费换盆。", "Free repotting: buy plants and pots in the same order, then select complimentary repotting at checkout.");
+  }
+  if (normalized.includes("rm150") || normalized.includes("150免邮")) {
+    return translate("西马消费满 RM150 首 10kg 免邮，续重 RM3/kg；不含特价商品及会员费用。", "Spend RM150 for free delivery on the first 10kg; RM3/kg thereafter. Special-price items and membership fees are excluded.");
+  }
+  if (normalized.includes("7天") || normalized.includes("保留")) {
+    return translate("本地订单可保留 7 天，逾期系统将自动取消。", "Local orders are reserved for 7 days and will be cancelled automatically after expiry.");
+  }
+  if (normalized.includes("lalamove")) {
+    return translate("槟城支持 Lalamove 配送。", "Lalamove delivery is available in Penang.");
+  }
+  return translate("此公告暂未提供英文译文。", "English translation is not currently available for this announcement.");
+}
+
 export default function MallProductDetail() {
   const [location] = useLocation();
-  const productId = parseInt(location.split("/").pop() || "0");
+  const productPath = location.split("?")[0];
+  const productId = parseInt(productPath.split("/").pop() || "0");
+  const sourceParams = new URLSearchParams(location.split("?")[1] || "");
+  const mallReturnParams = new URLSearchParams();
+  const sourceCategoryId = Number(sourceParams.get("categoryId"));
+  const sourceSearch = sourceParams.get("q")?.trim();
+  if (Number.isInteger(sourceCategoryId) && sourceCategoryId > 0) mallReturnParams.set("categoryId", String(sourceCategoryId));
+  if (sourceSearch) mallReturnParams.set("q", sourceSearch);
+  const mallReturnHref = `/mall${mallReturnParams.size ? `?${mallReturnParams.toString()}` : ""}`;
   const [quantity, setQuantity] = useState(1);
   const [selectedVariantId, setSelectedVariantId] = useState<number | undefined>(undefined);
   const [cartCount, setCartCount] = useState(0);
@@ -58,7 +91,7 @@ export default function MallProductDetail() {
       <div className="min-h-screen flex flex-col items-center justify-center gap-4">
         <Package className="h-16 w-16 text-muted-foreground" />
         <p className="text-muted-foreground">{t("商品不存在", "Product not found")}</p>
-        <Link href="/mall"><Button>{t("返回商城", "Back to Mall")}</Button></Link>
+        <Link href={mallReturnHref}><Button>{t("返回商城", "Back to Mall")}</Button></Link>
       </div>
     );
   }
@@ -74,6 +107,14 @@ export default function MallProductDetail() {
   const allowOversell = Boolean(selectedVariantStock?.allowOversold ?? productStock.allowOversold);
   const availableStock = Number(selectedVariantStock?.availableStock ?? selectedVariantStock?.stockQuantity ?? productStock.availableStock ?? productStock.stockQuantity ?? 0);
   const isSoldOut = !allowOversell && availableStock <= 0;
+  const bilingualProductText = (zh?: string | null, en?: string | null) => {
+    const preferred = lang === "en" ? en : zh;
+    const fallback = lang === "en" ? zh : en;
+    return preferred?.trim() || fallback?.trim() || undefined;
+  };
+  const shortDescription = bilingualProductText(product.shortDescZh, product.shortDescEn);
+  const detailedDescription = bilingualProductText(product.fullDescZh, product.fullDescEn);
+  const careInstructions = bilingualProductText(product.careZh, product.careEn);
 
   function setSafeQuantity(nextQuantity: number) {
     const requested = Math.max(1, Number.isFinite(nextQuantity) ? nextQuantity : 1);
@@ -184,8 +225,8 @@ export default function MallProductDetail() {
       {/* Header */}
       <header className="sticky top-0 z-50 border-b shadow-sm" style={{ backgroundColor: `${theme.background}f2`, borderColor: `${theme.secondary}8c`, backdropFilter: "blur(12px)" }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
-          <Link href="/mall"><Button variant="ghost" size="icon"><ChevronLeft className="h-5 w-5" /></Button></Link>
-          <Link href="/mall" className="flex items-center gap-2">
+          <Link href={mallReturnHref}><Button variant="ghost" size="icon" aria-label={t("返回商城继续选购", "Back to mall & continue shopping")}><ChevronLeft className="h-5 w-5" /></Button></Link>
+          <Link href={mallReturnHref} className="flex items-center gap-2">
             <span className="font-bold text-lg" style={{ color: theme.primary }}>{settings?.shopName || t("心田", "Xintian")}</span>
           </Link>
           <Link href="/mall/checkout" className="ml-auto relative">
@@ -224,7 +265,7 @@ export default function MallProductDetail() {
               {product.isSpecial && (
                 <Badge className="bg-orange-100 text-orange-700 mb-2">{t("特价", "Special Price")}</Badge>
               )}
-              {product.shortDescZh && <p className="text-sm text-muted-foreground">{product.shortDescZh}</p>}
+              {shortDescription && <p className="text-sm text-muted-foreground">{shortDescription}</p>}
             </div>
 
             <div className="flex items-center gap-3">
@@ -288,7 +329,7 @@ export default function MallProductDetail() {
                   {notices.map((notice: any, index: number) => (
                     <div key={notice.id} className={index === 0 ? "flex gap-3" : "flex gap-3 border-t border-emerald-100 pt-2.5"}>
                       <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[11px] font-bold text-white">{index + 1}</span>
-                      <p className="leading-5 text-emerald-800">{lang === "en" && notice.announcementEn?.trim() ? notice.announcementEn : notice.announcement}</p>
+                      <p className="leading-5 text-emerald-800">{getMallNoticeText(notice.announcement, notice.announcementEn, lang, t)}</p>
                     </div>
                   ))}
                 </div>
@@ -320,7 +361,7 @@ export default function MallProductDetail() {
               <Button variant="outline" size="sm" onClick={() => void shareProduct("copy")}><Link2 className="mr-1.5 h-4 w-4" />{t("分享链接", "Share link")}</Button>
               <Button variant="outline" size="icon" onClick={() => void shareProduct("whatsapp")} title="WhatsApp"><MessageCircle className="h-4 w-4 text-[#25D366]" /></Button>
             </div>
-            <Link href="/mall" className="inline-flex">
+            <Link href={mallReturnHref} className="inline-flex">
               <Button variant="outline" size="sm" className="border-emerald-300 bg-white/90 text-emerald-800 hover:bg-emerald-50">
                 <ChevronLeft className="mr-1.5 h-4 w-4" />{t("返回商城继续选购", "Back to mall & continue shopping")}
               </Button>
@@ -330,13 +371,19 @@ export default function MallProductDetail() {
         </div>
 
         {/* Product Description */}
-        {(product.fullDescZh || product.lightDesc || product.waterDesc || product.fertilizerDesc || product.pruningDesc) && (
+        {(detailedDescription || careInstructions || product.lightDesc || product.waterDesc || product.fertilizerDesc || product.pruningDesc) && (
           <Card className="mt-6 border-white/80 bg-white/90" style={{ borderColor: `${theme.secondary}a8`, boxShadow: `0 10px 28px ${theme.primary}10` }}>
             <CardContent className="p-6 space-y-4">
-              {product.fullDescZh && (
+              {detailedDescription && (
                 <div>
                   <h3 className="font-semibold mb-2">{t("详细描述", "Detailed Description")}</h3>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{product.fullDescZh}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{detailedDescription}</p>
+                </div>
+              )}
+              {careInstructions && (
+                <div>
+                  <h3 className="font-semibold mb-2">{t("养护资料", "Care Instructions")}</h3>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{careInstructions}</p>
                 </div>
               )}
               {/* Structured care info */}

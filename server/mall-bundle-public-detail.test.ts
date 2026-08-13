@@ -52,7 +52,8 @@ describe("商城公开组合商品详情", () => {
   it("商品服务公告以同一完整卡片显示换盆、运费和订单保留，并在英文下有对应文案", () => {
     expect(productDetail).toContain('aria-label={t("购物服务公告", "Shopping information")}');
     expect(productDetail).toContain("trpc.mall.notices.useQuery()");
-    expect(productDetail).toContain('notice.announcementEn?.trim() ? notice.announcementEn : notice.announcement');
+    expect(productDetail).toContain("getMallNoticeText(notice.announcement, notice.announcementEn, lang, t)");
+    expect(productDetail).toContain('return translate("此公告暂未提供英文译文。", "English translation is not currently available for this announcement.")');
     expect(productDetail).not.toContain("心田贴心服务");
   });
 
@@ -68,6 +69,19 @@ describe("商城公开组合商品详情", () => {
     expect(db).toContain('eq(categories.showInStore, true)');
     expect(productDetail).toContain('返回商城继续选购');
     expect(productDetail).toContain('Back to mall & continue shopping');
+  });
+
+  it("商品详情保留分类与搜索来源，并在英文模式优先展示英文商品介绍与养护资料", () => {
+    expect(mallHome).toContain('browseContextParams.set("categoryId", String(categoryId))');
+    expect(mallHome).toContain('browseContextParams.set("q", searchQuery.trim())');
+    expect(mallHome).toContain('href={productDetailHref(p.id)}');
+    expect(mallHome).toContain('if (searchQuery.trim()) nextParams.set("q", searchQuery.trim())');
+    expect(mallHome).toContain('if (categoryId) nextParams.set("categoryId", String(categoryId))');
+    expect(productDetail).toContain('const mallReturnHref = `/mall${mallReturnParams.size ? `?${mallReturnParams.toString()}` : ""}`');
+    expect(productDetail).toContain('const shortDescription = bilingualProductText(product.shortDescZh, product.shortDescEn)');
+    expect(productDetail).toContain('const detailedDescription = bilingualProductText(product.fullDescZh, product.fullDescEn)');
+    expect(productDetail).toContain('const careInstructions = bilingualProductText(product.careZh, product.careEn)');
+    expect(productDetail).toContain('notices.map((notice: any, index: number) => (');
   });
 
   it("商品与组合卡统一采用方形图、可见详情操作条，商城公告维持紧凑展示", () => {

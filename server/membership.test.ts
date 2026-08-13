@@ -611,6 +611,14 @@ describe("settings router", () => {
     expect(result).toMatchObject({ id: 1, companyName: "心田 ERP" });
     expect(dbMock.updateSystemSettings).toHaveBeenCalledWith({ companyName: "心田 ERP" });
   });
+  it("update persists and returns the confirmed company logo URL", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const companyLogoUrl = "https://storage.example.com/xintian-logo.png";
+    const result = await caller.settings.update({ companyLogoUrl });
+    expect(dbMock.updateSystemSettings).toHaveBeenCalledWith({ companyLogoUrl });
+    expect(result).toMatchObject({ id: 1, companyLogoUrl });
+  });
 });
 
 describe("shippingRules router", () => {
