@@ -74,6 +74,7 @@ export default function ImportBatches() {
     const params = new URLSearchParams(window.location.search);
     return params.get('tab') || 'cn';
   });
+  const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -94,7 +95,6 @@ export default function ImportBatches() {
   });
   const selectedBatch = (batches || []).find((batch: any) => batch.id === selectedBatchId) as any | undefined;
 
-  const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [cnCreateOpen, setCnCreateOpen] = useState(false);
   const [cnStep, setCnStep] = useState<1 | 2 | 3>(1);
