@@ -69,15 +69,15 @@ export default function MallCart() {
   if (!loaded) return null;
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa]">
+    <div className="min-h-screen overflow-x-hidden bg-[#f8f9fa]">
       <header className="sticky top-0 z-50 bg-white border-b shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-4">
+        <div className="mx-auto flex max-w-4xl items-center gap-2 px-3 py-3 sm:gap-4 sm:px-4">
           <Link href="/mall"><Button variant="ghost" size="icon"><ChevronLeft className="h-5 w-5" /></Button></Link>
-          <h1 className="font-semibold text-lg">购物车</h1>
+          <h1 className="min-w-0 truncate text-lg font-semibold">购物车</h1>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6">
+      <main className="mx-auto max-w-4xl px-3 py-4 sm:px-4 sm:py-6">
         {cart.length === 0 ? (
           <div className="text-center py-20">
             <ShoppingCart className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-30" />
@@ -88,22 +88,22 @@ export default function MallCart() {
           <div className="space-y-3">
             {cart.map((item, i) => (
               <Card key={i}>
-                <CardContent className="p-4 flex items-center gap-4">
+                <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-3 p-3 sm:flex-nowrap sm:gap-4 sm:p-4">
                   <div className="w-16 h-16 overflow-hidden rounded border bg-gray-100 flex items-center justify-center flex-shrink-0">
                     {item.imageUrl ? <img src={item.imageUrl} alt="" className="h-full w-full object-cover" /> : <Package className="h-8 w-8 text-muted-foreground" />}
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1 basis-[calc(100%-5rem)] sm:basis-auto">
                     <p className="font-medium text-sm line-clamp-1">{item.productName}</p>
                     {item.isBundle && <span className="mt-1 inline-flex rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">组合优惠</span>}
                     {item.variationName && <p className="text-xs text-muted-foreground">{item.variationName}</p>}
                     <p className="text-[#2d6a4f] font-semibold mt-1">RM {item.unitPrice}</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:ml-0 sm:gap-2">
                     <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => updateQty(i, -1)}><Minus className="h-3 w-3" /></Button>
                     <span className="w-8 text-center text-sm">{item.quantity}</span>
                     <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => updateQty(i, 1)}><Plus className="h-3 w-3" /></Button>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => removeItem(i)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                  <Button variant="ghost" size="icon" className="shrink-0" onClick={() => removeItem(i)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                 </CardContent>
               </Card>
             ))}
@@ -142,9 +142,9 @@ export default function MallCart() {
 
             <Card className="mt-4">
               <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <span className="text-lg font-semibold">合计: RM {subtotal.toFixed(2)}</span>
-                  <Link href="/mall/checkout"><Button className="bg-[#2d6a4f] hover:bg-[#40916c]">去结算</Button></Link>
+                  <Link href="/mall/checkout" className="w-full sm:w-auto"><Button className="w-full bg-[#2d6a4f] hover:bg-[#40916c] sm:w-auto">去结算</Button></Link>
                 </div>
                 {/* V2.0.90: Show return-to-order button when add-on session exists */}
                 {addOnOrder && (

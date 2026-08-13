@@ -151,17 +151,14 @@ export default function Packing() {
   // V2.1.26: Render slip data into HTML and print via hidden iframe - unified with A5PackingSlip format
   const printSlipData = (slipDataList: any[]) => {
     const html = slipDataList.map((data) => {
-      const productItemCount = (data.items || []).length;
-      const useGrid = productItemCount > 2;
       const shippingLabel = data.shippingMethodLabel || data.specialLabel || "西马";
 
-      // Customer info section
       const customerInfoHtml = `
-        <div style="margin-bottom:4px;font-size:12px;line-height:1.4">
-          <div><strong>下单人:</strong> <span style="font-size:22px;font-weight:bold;line-height:1.3">${data.facebookName || data.customerName || "-"}</span></div>
-          <div><strong>收件人:</strong> <span style="font-size:22px;font-weight:bold;line-height:1.3">${data.recipientName || data.customerName || "-"}</span></div>
+        <div style="margin:0 0 5px;font-size:12px;line-height:1.35">
+          <div style="margin-bottom:1px"><strong>下单人:</strong> <span style="font-size:17px;font-weight:800;line-height:1.25">${data.facebookName || data.customerName || "-"}</span></div>
+          <div style="margin-bottom:1px"><strong>收件人:</strong> <span style="font-size:17px;font-weight:800;line-height:1.25">${data.recipientName || data.customerName || "-"}</span></div>
           <div><strong>电话:</strong> ${data.recipientPhone || data.customerPhone || ""}</div>
-          <div><strong>地址:</strong> ${[
+          <div style="word-break:break-word"><strong>地址:</strong> ${[
             data.addressLine1,
             data.addressLine2,
             data.postcode || data.recipientPostcode,
@@ -170,65 +167,35 @@ export default function Packing() {
           ].filter(Boolean).join(", ")}</div>
         </div>`;
 
-      const itemsHtml = useGrid
-        ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            ${data.items.map((item: any) => `
-              <div style="border:2px solid #000;padding:8px;border-radius:6px;min-height:80px">
-                <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-                  <span style="font-size:20px">☐</span>
-                  <span style="font-weight:bold;font-size:22px;line-height:1.2">${item.productName}</span>
-                </div>
-                ${item.keyword ? `<div style="font-size:14px;color:#555;margin-left:26px">${item.keyword}</div>` : ""}
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
-                  <span style="font-size:14px">RM${Number(item.unitPrice || 0).toFixed(0)} × ${item.quantity}</span>
-                  <span style="font-size:36px;font-weight:bold;border:4px solid #000;padding:4px 12px;border-radius:6px">${item.quantity}</span>
-                </div>
-                <div style="font-size:13px;text-align:right;margin-top:4px">小计: RM${Number(item.subtotal || 0).toFixed(2)}</div>
-              </div>
-            `).join("")}
-          </div>`
-        : data.items.map((item: any) => `
-            <div style="margin-bottom:6px;padding-bottom:4px;border-bottom:1px dashed #ccc">
-              <div style="display:flex;align-items:center;gap:4px">
-                <span style="font-size:16px">☐</span>
-                <span style="font-weight:bold;font-size:18px;line-height:1.2">${item.productName}</span>
-                ${item.variationName ? `<span style="font-size:11px">(${item.variationName})</span>` : ""}
-              </div>
-              ${item.keyword ? `<div style="font-size:11px;color:#555;margin-left:20px">关键词: ${item.keyword}</div>` : ""}
-              <div style="margin-left:20px;display:flex;justify-content:space-between;align-items:center">
-                <span style="font-size:12px">单价: RM${Number(item.unitPrice || 0).toFixed(2)} × ${item.quantity} = RM${Number(item.subtotal || 0).toFixed(2)}</span>
-                <span style="font-size:32px;font-weight:bold;${item.quantity > 1 ? "border:3px solid #000;padding:2px 10px;border-radius:4px" : ""}">${item.quantity}</span>
-              </div>
-            </div>
-          `).join("");
+      const itemsHtml = data.items.map((item: any) => `
+        <div style="position:relative;min-height:62px;margin-bottom:5px;padding:4px 50px 6px 0;border-bottom:1px solid #d1d5db">
+          <div style="display:flex;align-items:flex-start;gap:5px">
+            <span style="font-size:15px;line-height:1.15">☐</span>
+            <div style="font-weight:800;font-size:16px;line-height:1.22">${item.productName}${item.variationName ? ` <span style="font-size:11px;font-weight:500">(${item.variationName})</span>` : ""}</div>
+          </div>
+          ${item.keyword ? `<div style="font-size:11px;line-height:1.25;margin:2px 0 0 20px;color:#333">关键词: ${item.keyword}</div>` : ""}
+          <div style="font-size:11px;line-height:1.3;margin:4px 0 0 20px">单价: RM${Number(item.unitPrice || 0).toFixed(2)} × ${item.quantity} = RM${Number(item.subtotal || 0).toFixed(2)}</div>
+          <div style="position:absolute;right:1px;top:50%;transform:translateY(-50%);min-width:36px;text-align:center;font-size:31px;line-height:1;font-weight:900;${Number(item.quantity) > 1 ? "border:2px solid #000;border-radius:3px;padding:4px 7px" : ""}">${item.quantity}</div>
+        </div>
+      `).join("");
 
       const giftHtml = data.giftItems && data.giftItems.length > 0
-        ? `<div style="border-top:1px solid #000;margin:4px 0"></div>
-            ${data.giftItems.map((gift: any) => `
-              <div style="margin-bottom:4px">
-                <div style="display:flex;align-items:center;gap:4px">
-                  <span style="font-size:16px">☐</span>
-                  <span style="font-size:16px;font-weight:bold"><strong>赠品</strong> ${gift.productName}</span>
-                </div>
-                <div style="margin-left:20px;display:flex;justify-content:flex-end">
-                  <span style="font-size:24px;font-weight:bold;border:2px solid #000;padding:1px 8px;border-radius:3px">${gift.quantity}</span>
-                </div>
-              </div>
-            `).join("")}`
+          ? `<div style="margin:4px 0 2px;border-top:1px solid #000"></div>
+            ${data.giftItems.map((gift: any) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 2px;font-size:14px"><span>☐ <strong>赠品</strong> ${gift.productName}</span><strong style="font-size:23px">${gift.quantity}</strong></div>`).join("")}`
         : "";
 
       // Amount details section
       const s = data.summary || {};
       const amountHtml = `
-        <div style="border-top:2px solid #000;margin:4px 0"></div>
-        <div style="margin-bottom:6px;font-size:13px;line-height:1.6">
+        <div style="border-top:2px solid #000;margin:5px 0 3px"></div>
+        <div style="margin-bottom:6px;font-size:12px;line-height:1.45">
           <div style="display:flex;justify-content:space-between"><span>商品小计:</span><span>RM ${s.physicalSubtotal || s.regularTotal || "0.00"}</span></div>
           <div style="display:flex;justify-content:space-between"><span>运费:</span><span>RM ${s.shippingFee || "0.00"}</span></div>
           ${parseFloat(s.discountAmount || "0") > 0 ? `<div style="display:flex;justify-content:space-between"><span>折扣: ${s.discountReason ? `(${s.discountReason})` : ""}</span><span>-RM ${s.discountAmount}</span></div>` : ""}
           ${parseFloat(s.extraCharge || "0") > 0 ? `<div style="display:flex;justify-content:space-between"><span>额外收费: ${s.extraChargeDescription ? `(${s.extraChargeDescription})` : ""}</span><span>+RM ${s.extraCharge}</span></div>` : ""}
           ${parseFloat(s.creditUsed || "0") > 0 ? `<div style="display:flex;justify-content:space-between"><span>Credit:</span><span>-RM ${s.creditUsed}</span></div>` : ""}
           <div style="border-top:1px solid #000;margin:2px 0"></div>
-          <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold"><span>总金额:</span><span>RM ${s.totalAmount || "0.00"}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:900"><span>总金额:</span><span>RM ${s.totalAmount || "0.00"}</span></div>
         </div>`;
 
       const remarkRows = getPackingSlipRemarkRows([
@@ -237,21 +204,21 @@ export default function Packing() {
         ...(data.customerRemark ? [{ remarkCategory: "customer", content: data.customerRemark }] : []),
       ], lang === "en" ? "en" : "zh");
       const remarksHtml = remarkRows.length > 0
-        ? `<div style="margin-bottom:8px;border:2px solid #000;padding:4px">
-            <div style="font-weight:bold;font-size:12px;margin-bottom:4px">${lang === "en" ? "Order Notes" : "订单备注"}</div>
-            ${renderPackingSlipRemarkHtml(remarkRows)}
+        ? `<div style="margin-top:7px;margin-bottom:4px;border:2px solid #000;padding:6px 7px">
+            <div style="font-weight:900;font-size:16px;margin-bottom:5px">${lang === "en" ? "Order Notes" : "订单备注"}</div>
+            <div style="font-size:14px;font-weight:700;line-height:1.4">${renderPackingSlipRemarkHtml(remarkRows)}</div>
           </div>`
         : "";
 
       return `
-        <div style="page-break-after:always;width:148mm;padding:8mm;font-family:sans-serif;font-size:12px;color:#000">
-          <div style="text-align:center;font-size:36px;font-weight:bold;margin-bottom:4px;border:3px solid #000;padding:6px">${shippingLabel}</div>
-          <div style="text-align:center;font-size:28px;font-weight:bold;margin-bottom:4px">${data.orderNumber}</div>
+        <div style="page-break-after:always;box-sizing:border-box;width:148mm;min-height:210mm;padding:7mm 8mm;font-family:Arial,'Microsoft JhengHei',sans-serif;font-size:12px;color:#000;background:#fff">
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;margin-bottom:5px"><span>${new Date().toLocaleString("en-MY")}</span><span>A5 Packing Slip</span></div>
+          <div style="text-align:center;font-size:26px;line-height:1.12;font-weight:900;letter-spacing:.4px;margin-bottom:3px;border:2px solid #000;padding:7px 5px">${shippingLabel}</div>
+          <div style="text-align:center;font-size:25px;line-height:1.1;font-weight:900;margin-bottom:6px">${data.orderNumber}</div>
           ${customerInfoHtml}
-          <div style="border-top:2px solid #000;margin:4px 0"></div>
-          <div style="margin-bottom:8px">${itemsHtml}${giftHtml}</div>
+          <div style="border-top:2px solid #000;margin:5px 0 4px"></div>
+          <div style="margin-bottom:4px">${itemsHtml}${giftHtml}</div>
           ${amountHtml}
-          ${data.summary.isFreeShipping ? `<div style="text-align:center;font-size:14px;font-weight:bold;color:green;margin-bottom:4px">免邮</div>` : ""}
           ${remarksHtml}
         </div>
       `;
@@ -277,18 +244,18 @@ export default function Packing() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 min-w-0">
       {/* Hidden iframe for printing */}
       <iframe ref={printFrameRef} style={{ position: "absolute", width: "0", height: "0", border: "none", left: "-9999px" }} />
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold">{translate("包货工作台", "Packing")}</h1>
           <p className="text-sm text-muted-foreground mt-1">{translate("包货与发货管理", "Packing and Shipping Management")}</p>
         </div>
         {/* V2.1.26: Batch print button */}
         {selectedOrderIds.size > 0 && !isScheduledTab && (
-          <Button variant="default" size="sm" onClick={handleBatchPrint} disabled={isBatchPrinting}>
+          <Button className="w-full sm:w-auto" variant="default" size="sm" onClick={handleBatchPrint} disabled={isBatchPrinting}>
             <Printer className="h-4 w-4 mr-1" />
             {translate("批量打印 ({count})", "Batch Print ({count})", { count: selectedOrderIds.size })}
           </Button>
@@ -296,7 +263,8 @@ export default function Packing() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <div className="-mx-1 overflow-x-auto px-1 pb-1">
+        <TabsList className="h-auto min-w-max justify-start gap-1 whitespace-nowrap p-1">
           {STATUS_TABS.map((tab) => (
             <TabsTrigger key={tab.key} value={tab.key} className="gap-2">
               <tab.icon className={`h-4 w-4 ${tab.color}`} />
@@ -307,23 +275,24 @@ export default function Packing() {
             </TabsTrigger>
           ))}
         </TabsList>
+        </div>
 
         <TabsContent value={activeTab} className="mt-4">
           {isScheduledTab && (
             <Card className="mb-4"><CardContent className="py-3">
-              <div className="flex items-end gap-4">
-                <div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4">
+                <div className="w-full sm:w-auto">
                   <Label className="text-xs">{translate("开始日期", "Start Date")}</Label>
-                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-40" />
+                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full sm:w-40" />
                 </div>
-                <div>
+                <div className="w-full sm:w-auto">
                   <Label className="text-xs">{translate("结束日期", "End Date")}</Label>
-                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-40" />
+                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full sm:w-40" />
                 </div>
-                <div>
+                <div className="w-full sm:w-auto">
                   <Label className="text-xs">{translate("状态筛选", "Status Filter")}</Label>
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-40"><SelectValue placeholder={translate("全部状态", "All Status")} /></SelectTrigger>
+                  <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder={translate("全部状态", "All Status")} /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">{translate("全部状态", "All Status")}</SelectItem>
                       {Object.entries(SCHEDULED_STATUS_CONFIG).map(([key, cfg]) => (
@@ -333,7 +302,7 @@ export default function Packing() {
                   </Select>
                 </div>
                 {isSpecialTab && (
-                  <div>
+                  <div className="w-full sm:w-auto">
                     <Label className="text-xs">{translate("异常原因", "Special Reason")}</Label>
                     <Select value={specialTypeFilter} onValueChange={setSpecialTypeFilter}>
                       <SelectTrigger className="w-[190px]"><SelectValue /></SelectTrigger>
@@ -349,9 +318,9 @@ export default function Packing() {
                   </div>
                 )}
                 {(dateFrom || dateTo || statusFilter !== "all" || specialTypeFilter !== "all") && (
-                  <Button variant="outline" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setStatusFilter("all"); setSpecialTypeFilter("all"); }}>{translate("清除筛选", "Clear Filters")}</Button>
+                  <Button className="w-full sm:w-auto" variant="outline" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setStatusFilter("all"); setSpecialTypeFilter("all"); }}>{translate("清除筛选", "Clear Filters")}</Button>
                 )}
-                <div className="ml-auto text-sm text-muted-foreground">{translate("共 {count} 单", "Total {count} orders", { count: orderList.length })}</div>
+                <div className="text-sm text-muted-foreground sm:ml-auto">{translate("共 {count} 单", "Total {count} orders", { count: orderList.length })}</div>
               </div>
             </CardContent></Card>
           )}
@@ -382,7 +351,7 @@ export default function Packing() {
                 {orderList.map((order: any) => (
                   <Card key={order.id} className="hover:shadow-md transition-shadow">
                     <CardContent className="py-4">
-                      <div className="flex items-center justify-between gap-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                         <div className="flex items-start gap-3 flex-1 min-w-0">
                           {/* V2.1.26: Per-order checkbox for batch print */}
                           {!isScheduledTab && (
@@ -393,7 +362,7 @@ export default function Packing() {
                             />
                           )}
                           <Link href={`/packing/${order.id}`} className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-2">
+                            <div className="mb-2 flex flex-wrap items-center gap-2">
                               <span className="font-semibold text-sm">{order.orderNumber}</span>
                               {order.specialLabel && (
                                 <Badge variant="outline" className={`text-xs border-0 ${getShippingLabelClassName(order.specialLabel)}`}>{order.specialLabel}</Badge>
@@ -445,7 +414,7 @@ export default function Packing() {
                             </div>
                           </Link>
                         </div>
-                        <div className="flex items-center gap-4 text-right">
+                        <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t pt-3 text-right sm:w-auto sm:flex-nowrap sm:border-0 sm:pt-0">
                           <div>
                             <div className="text-xs text-muted-foreground">{translate("商品种类", "Item Types")}</div>
                             <div className="font-semibold">{order.itemTypes}</div>

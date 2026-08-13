@@ -224,10 +224,10 @@ export default function MallProductDetail() {
       <div className="relative z-10">
       {/* Header */}
       <header className="sticky top-0 z-50 border-b shadow-sm" style={{ backgroundColor: `${theme.background}f2`, borderColor: `${theme.secondary}8c`, backdropFilter: "blur(12px)" }}>
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
+        <div className="mx-auto flex max-w-6xl items-center gap-2 px-3 py-3 sm:gap-4 sm:px-4">
           <Link href={mallReturnHref}><Button variant="ghost" size="icon" aria-label={t("返回商城继续选购", "Back to mall & continue shopping")}><ChevronLeft className="h-5 w-5" /></Button></Link>
-          <Link href={mallReturnHref} className="flex items-center gap-2">
-            <span className="font-bold text-lg" style={{ color: theme.primary }}>{settings?.shopName || t("心田", "Xintian")}</span>
+          <Link href={mallReturnHref} className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-lg font-bold" style={{ color: theme.primary }}>{settings?.shopName || t("心田", "Xintian")}</span>
           </Link>
           <Link href="/mall/checkout" className="ml-auto relative">
             <Button id="mall-cart-anchor" variant="ghost"><ShoppingCart className="h-5 w-5" /></Button>
@@ -236,8 +236,8 @@ export default function MallProductDetail() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <main className="mx-auto max-w-4xl px-3 py-4 sm:px-4 sm:py-6">
+        <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
           {/* Product Images */}
           <div className="space-y-3">
             <Card className="overflow-hidden border-white/80 bg-white/90" style={{ borderColor: `${theme.secondary}a8`, boxShadow: `0 10px 28px ${theme.primary}14` }}>

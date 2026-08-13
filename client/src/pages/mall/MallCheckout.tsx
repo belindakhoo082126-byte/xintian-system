@@ -14,8 +14,11 @@ import { ChevronLeft, ClipboardPaste, Truck, Package, Merge, Plane, Minus, Plus,
 import { Checkbox } from "@/components/ui/checkbox";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
+import { useI18n } from "@/contexts/I18nContext";
 
 export default function MallCheckout() {
+  const { translate } = useI18n();
+  const t = (zh: string, en: string) => translate(zh, en);
   const [cart, setCart] = useState<any[]>([]);
   const [form, setForm] = useState<{
     customerName: string; contactNumber: string; whatsappNumber: string; email: string;
@@ -322,7 +325,7 @@ export default function MallCheckout() {
         <Card>
           <CardHeader><CardTitle>收货信息</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div><Label>姓名 *</Label><Input value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} /></div>
               <div><Label>联系电话 *</Label><Input value={form.contactNumber} onChange={(e) => setForm({ ...form, contactNumber: e.target.value })} /></div>
               <div><Label>WhatsApp</Label><Input value={form.whatsappNumber} onChange={(e) => setForm({ ...form, whatsappNumber: e.target.value })} /></div>
@@ -330,7 +333,7 @@ export default function MallCheckout() {
             </div>
             <div><Label>地址行 1 *</Label><Input value={form.addressLine1} onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} /></div>
             <div><Label>地址行 2</Label><Input value={form.addressLine2} onChange={(e) => setForm({ ...form, addressLine2: e.target.value })} /></div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div><Label>邮编 *</Label><Input value={form.postcode} onChange={(e) => setForm({ ...form, postcode: e.target.value })} /></div>
               <div><Label>城市 *</Label><Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /></div>
               <div><Label>州属 *</Label><Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} /></div>
@@ -456,40 +459,40 @@ export default function MallCheckout() {
           <CardHeader><CardTitle><Truck className="h-5 w-5 inline mr-2" />配送方式</CardTitle></CardHeader>
           <CardContent>
             <RadioGroup value={form.shippingMethod} onValueChange={(v) => setForm({ ...form, shippingMethod: v as any })}>
-              <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2">
-                <div className="flex items-center gap-3">
+              <label className="flex items-start justify-between gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2 sm:items-center">
+                <div className="flex min-w-0 items-start gap-3 sm:items-center">
                   <RadioGroupItem value="west_malaysia" />
                   <div><p className="font-medium text-sm">西马配送</p><p className="text-xs text-muted-foreground">满RM150首10kg免邮，未满RM15起，续重RM3/kg</p></div>
                 </div>
-                <span className="font-semibold">{shippingFee === 0 ? "免邮" : `RM ${shippingFee}`}</span>
+                <span className="shrink-0 font-semibold">{shippingFee === 0 ? t("免邮", "Free") : `RM ${shippingFee}`}</span>
               </label>
-              <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2">
-                <div className="flex items-center gap-3">
+              <label className="flex items-start justify-between gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2 sm:items-center">
+                <div className="flex min-w-0 items-start gap-3 sm:items-center">
                   <RadioGroupItem value="east_malaysia_poslaju" />
                   <div><p className="font-medium text-sm">东马 PosLaju</p><p className="text-xs text-muted-foreground">预收 RM50，打包后按实际运费结算</p></div>
                 </div>
-                <span className="font-semibold">RM 50</span>
+                <span className="shrink-0 font-semibold">RM 50</span>
               </label>
-              <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2">
-                <div className="flex items-center gap-3">
+              <label className="flex items-start justify-between gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2 sm:items-center">
+                <div className="flex min-w-0 items-start gap-3 sm:items-center">
                   <RadioGroupItem value="east_malaysia_shopee" />
                   <div><p className="font-medium text-sm">东马 Shopee</p><p className="text-xs text-muted-foreground">运费由 Shopee 平台收取，本系统不收运费</p></div>
                 </div>
-                <span className="font-semibold text-emerald-600">RM 0</span>
+                <span className="shrink-0 font-semibold text-emerald-600">RM 0</span>
               </label>
-              <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2">
-                <div className="flex items-center gap-3">
+              <label className="flex items-start justify-between gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2 sm:items-center">
+                <div className="flex min-w-0 items-start gap-3 sm:items-center">
                   <RadioGroupItem value="self_pickup" />
                   <div><p className="font-medium text-sm">自取</p><p className="text-xs text-muted-foreground">槟城 ECOLAND NURSERY</p></div>
                 </div>
-                <span className="font-semibold">免费</span>
+                <span className="shrink-0 font-semibold">{t("免费", "Free")}</span>
               </label>
-              <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent">
-                <div className="flex items-center gap-3">
+              <label className="flex items-start justify-between gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent sm:items-center">
+                <div className="flex min-w-0 items-start gap-3 sm:items-center">
                   <RadioGroupItem value="lalamove" />
-                  <div><p className="font-medium text-sm">Lalamove</p><p className="text-xs text-muted-foreground">满 RM150 免邮，未满 RM15</p></div>
+                  <div className="min-w-0"><p className="font-medium text-sm">Lalamove</p><p className="text-xs text-muted-foreground">{t("槟城支持 Lalamove 配送。满 RM150 免邮，未满收 RM15。", "Lalamove delivery is available in Penang. Free delivery from RM150; otherwise RM15.")}</p></div>
                 </div>
-                <span className="font-semibold">{thresholdSubtotal >= 150 ? "免邮" : "RM 15"}</span>
+                <span className="shrink-0 font-semibold">{thresholdSubtotal >= 150 ? t("免邮", "Free") : "RM 15"}</span>
               </label>
             </RadioGroup>
           </CardContent>

@@ -666,8 +666,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">
             {orderCategory === "import" ? translate("中国代购订单", "Import Orders") :
              orderCategory === "local" ? translate("本地订单", "Local Orders") :
@@ -680,14 +680,14 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           </p>
         </div>
         {orderCategory !== "all" && (
-          <Button onClick={() => setLocation(`/orders/create/${orderCategory === "import" ? "import" : "local"}`)}>
+          <Button className="w-full sm:w-auto" onClick={() => setLocation(`/orders/create/${orderCategory === "import" ? "import" : "local"}`)}>
             <Plus className="h-4 w-4 mr-2" />{translate("手动建单", "Create Manual Order")}
           </Button>
         )}
       </div>
 
-      <div className="flex gap-4 items-center flex-wrap">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex items-center gap-3 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
+        <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder={translate("搜索订单号/客户/追踪号...", "Search order/customer/tracking...")}
@@ -697,7 +697,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-[160px] shrink-0 sm:w-[180px]">
             <SelectValue placeholder={translate("订单状态", "Order Status")} />
           </SelectTrigger>
           <SelectContent>
@@ -708,7 +708,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           </SelectContent>
         </Select>
         <Select value={natureFilter} onValueChange={setNatureFilter}>
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-[145px] shrink-0 sm:w-[160px]">
             <SelectValue placeholder={translate("订单性质", "Order Nature")} />
           </SelectTrigger>
           <SelectContent>
@@ -719,7 +719,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           </SelectContent>
         </Select>
         <Select value={sourceFilter} onValueChange={setSourceFilter}>
-          <SelectTrigger className="w-[150px]">
+          <SelectTrigger className="w-[135px] shrink-0 sm:w-[150px]">
             <SelectValue placeholder={translate("订单来源", "Order Source")} />
           </SelectTrigger>
           <SelectContent>
@@ -730,7 +730,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           </SelectContent>
         </Select>
         <Select value={remarkFilter} onValueChange={setRemarkFilter}>
-          <SelectTrigger className="w-[150px]">
+          <SelectTrigger className="w-[135px] shrink-0 sm:w-[150px]">
             <SelectValue placeholder={translate("订单备注", "Order Remarks")} />
           </SelectTrigger>
           <SelectContent>
@@ -740,7 +740,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           </SelectContent>
         </Select>
         <Select value={notificationFilter} onValueChange={setNotificationFilter}>
-          <SelectTrigger className="w-[150px]">
+          <SelectTrigger className="w-[135px] shrink-0 sm:w-[150px]">
             <SelectValue placeholder={translate("通知状态", "Notification")} />
           </SelectTrigger>
           <SelectContent>
@@ -753,7 +753,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           variant={specialFilter ? "default" : "outline"}
           size="sm"
           onClick={() => setSpecialFilter(!specialFilter)}
-          className="h-9"
+          className="h-9 shrink-0"
         >
           {translate("特别订单", "Special Orders")}
         </Button>
@@ -789,12 +789,12 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
         )}
       </div>
 
-      <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3">
-        <div>
+      <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <p className="text-sm font-medium">{translate("结单通知管理", "Checkout Notification Management")}</p>
           <p className="text-xs text-muted-foreground">{translate("勾选订单后点击「发送选中」批量发送结单通知到 Messenger", "Select orders and click \"Send Selected\" to batch send checkout notifications via Messenger")}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {selectedIds.size > 0 && (
             <>
               <span className="text-sm text-muted-foreground">{translate("已选 {count} 张", "{count} selected", { count: selectedIds.size })}</span>
@@ -828,9 +828,9 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
         </div>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
+      <Card className="min-w-0 overflow-hidden">
+        <CardContent className="overflow-x-auto p-0">
+          <Table className="min-w-[920px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[40px]">

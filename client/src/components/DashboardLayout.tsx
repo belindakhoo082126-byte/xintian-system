@@ -552,14 +552,14 @@ function DashboardLayoutContent({
         />
       </div>
 
-      <SidebarInset>
+      <SidebarInset className="w-full min-w-0 max-w-full overflow-x-hidden">
         {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40 no-print">
-            <div className="flex items-center gap-2">
+          <div className="sticky top-0 z-40 flex h-14 min-w-0 items-center justify-between border-b bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur no-print">
+            <div className="flex min-w-0 items-center gap-2">
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
-              <div className="flex items-center gap-3">
+              <div className="min-w-0 flex items-center gap-3">
                 <div className="flex flex-col gap-1">
-                  <span className="tracking-tight text-foreground">
+                  <span className="truncate tracking-tight text-foreground">
                     {activeLabel}
                   </span>
                 </div>
@@ -567,7 +567,7 @@ function DashboardLayoutContent({
             </div>
           </div>
         )}
-        <main className="flex-1 p-4">
+        <main className="min-w-0 max-w-full flex-1 overflow-x-hidden p-3 sm:p-4">
           <BackendEnglishFallback>{children}</BackendEnglishFallback>
         </main>
       </SidebarInset>

@@ -120,16 +120,16 @@ export default function MallHome() {
 
       {/* Header */}
       <header className="sticky top-0 z-50 border-b shadow-sm" style={{ backgroundColor: `${theme.background}f2`, borderColor: `${theme.secondary}8c`, backdropFilter: "blur(12px)" }}>
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
-          <Link href="/mall" className="flex items-center gap-2 shrink-0">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-2 px-3 py-3 sm:flex-nowrap sm:gap-4 sm:px-4">
+          <Link href="/mall" className="flex min-w-0 items-center gap-2 shrink-0">
             {settings?.logoUrl ? (
               <img src={settings.logoUrl} alt={settings.shopName} className="h-10 w-10 rounded-lg object-contain" />
             ) : (
               <img src={import.meta.env.VITE_APP_LOGO || ""} alt={settings?.shopName || "心田"} className="h-10 w-10 rounded-lg object-contain" />
             )}
-            <span className="font-bold text-lg mall-theme-primary">{settings?.shopName || "心田 Xintian"}</span>
+            <span className="max-w-[11rem] truncate font-bold text-base mall-theme-primary sm:max-w-none sm:text-lg">{settings?.shopName || "心田 Xintian"}</span>
           </Link>
-          <div className="flex-1 max-w-md mx-auto">
+          <div className="order-3 w-full basis-full sm:order-none sm:flex-1 sm:basis-auto sm:max-w-md sm:mx-auto">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -142,7 +142,7 @@ export default function MallHome() {
               />
             </div>
           </div>
-          <Button variant="ghost" size="sm" className="shrink-0 text-xs" onClick={() => setIsPoliciesOpen(true)}>
+          <Button variant="ghost" size="sm" className="shrink-0 px-2 text-xs" onClick={() => setIsPoliciesOpen(true)}>
             {translate("购物条款与政策", "Policies")}
           </Button>
           <Link href="/mall/checkout" className="shrink-0">
