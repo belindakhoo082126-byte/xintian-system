@@ -952,7 +952,7 @@ export default function ProductsV2() {
 
       {/* Product Editor Dialog - Step Wizard */}
       <Dialog open={dialogOpen} onOpenChange={(v) => { setDialogOpen(v); if (!v) resetForm(); }}>
-        <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
+        <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? translate("编辑商品", "Edit Product") : translate("新增商品", "Add Product")}</DialogTitle>
           </DialogHeader>
@@ -964,12 +964,12 @@ export default function ProductsV2() {
                 <button
                   type="button"
                   onClick={() => setStep(i)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer hover:opacity-80 ${
+                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-base transition-colors cursor-pointer hover:opacity-80 ${
                     i === step ? "bg-primary text-primary-foreground" :
                     i < step ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
                   }`}
                 >
-                  <span className="flex items-center justify-center w-5 h-5 rounded-full text-xs font-medium">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full text-sm font-medium">
                     {i < step ? <Check className="h-3 w-3" /> : i + 1}
                   </span>
                   {translate(s.zh, s.en)}
@@ -985,11 +985,11 @@ export default function ProductsV2() {
           ) : (
             <>
               {/* Step Content */}
-              <div className="min-h-[300px]">
+              <div className="min-h-[360px] [&_input]:h-11 [&_input]:text-base [&_[data-slot=select-trigger]]:h-11 [&_[data-slot=select-trigger]]:text-base">
                 {/* Step 0: Basic Info */}
                 {step === 0 && (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                       <div>
                         <Label>{translate("商品名称", "Product Name")} *</Label>
                         <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={translate("商品名称", "Product Name")} />
@@ -1007,7 +1007,7 @@ export default function ProductsV2() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                       <div>
                         <Label>{translate("商品模式", "Product Mode")} *</Label>
                         <Select value={form.productMode} onValueChange={(v: any) => setForm({ ...form, productMode: v })}>
@@ -1035,7 +1035,7 @@ export default function ProductsV2() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                       <div>
                         <Label>{translate("销售单位", "Sales Unit")}</Label>
                         <Select
@@ -1113,22 +1113,22 @@ export default function ProductsV2() {
 
                     {/* V2: Special, Presale, Standalone Shipping */}
                     {isPhysical && (
-                      <div className="grid grid-cols-3 gap-4">
-                        <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+                        <div className="flex min-h-24 items-center justify-between rounded-xl border p-4">
                           <div>
                             <Label>{translate("特价商品", "Special Price")}</Label>
                             <p className="text-xs text-muted-foreground">{translate("商城显示特价标记", "Show special price tag in mall")}</p>
                           </div>
                           <Switch checked={form.isSpecial} onCheckedChange={(v) => setForm({ ...form, isSpecial: v })} />
                         </div>
-                        <div className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="flex min-h-24 items-center justify-between rounded-xl border p-4">
                           <div>
                             <Label>{translate("允许预售", "Allow Presale")}</Label>
                             <p className="text-xs text-muted-foreground">{translate("库存不足时可预售", "Allow pre-order when out of stock")}</p>
                           </div>
                           <Switch checked={form.allowPresale} onCheckedChange={(v) => setForm({ ...form, allowPresale: v })} />
                         </div>
-                        <div className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="flex min-h-24 items-center justify-between rounded-xl border p-4">
                           <div>
                             <Label>{translate("单颗邮寄", "Standalone Shipping")}</Label>
                             <p className="text-xs text-muted-foreground">{translate("单独包裹计算", "Separate package shipping")}</p>
