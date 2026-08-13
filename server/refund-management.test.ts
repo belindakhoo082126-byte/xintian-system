@@ -6,6 +6,8 @@ const readProjectFile = (relativePath: string) => fs.readFileSync(path.resolve(p
 const dbSource = readProjectFile("server/db.ts");
 const routerSource = readProjectFile("server/routers.ts");
 const refundPageSource = readProjectFile("client/src/pages/RefundManagement.tsx");
+const packingPageSource = readProjectFile("client/src/pages/PackingDetail.tsx");
+const schemaSource = readProjectFile("drizzle/schema.ts");
 const dashboardSource = readProjectFile("client/src/pages/Dashboard.tsx");
 const orderPageSource = readProjectFile("client/src/pages/OrderBrowsePage.tsx");
 const appSource = readProjectFile("client/src/App.tsx");
@@ -140,5 +142,43 @@ describe("退款管理客户通知与后台接入", () => {
     expect(dashboardSource).toContain("待处理退款");
     expect(orderPageSource).toContain("部分退款");
     expect(orderPageSource).toContain("refundNumber).filter(Boolean).join");
+  });
+});
+
+describe("包货异常退款桥接", () => {
+  it("退款异常仅建立一笔可追溯的未处理退款，异常重试不会重复建立或提前影响库存与财务", () => {
+    const exceptionRefund = sourceBlock(
+      "export async function createPackingExceptionRefund",
+      "const refundProofRequired",
+    );
+
+    expect(schemaSource).toContain('sourceExceptionId: int("sourceExceptionId")');
+    expect(schemaSource).toContain('refundId: int("refundId")');
+    expect(exceptionRefund).toContain("if (exception.refundId)");
+    expect(exceptionRefund).toContain("existing: true");
+    expect(exceptionRefund).toContain("createRefundRequest({");
+    expect(exceptionRefund).toContain("sourceExceptionId: exception.id");
+    expect(exceptionRefund).toContain("refundId: refund.id");
+    expect(exceptionRefund).not.toContain("inventoryAdjustments");
+    expect(exceptionRefund).not.toContain("customerCreditLedger");
+  });
+
+  it("包货与退款管理均保留客户退款资料、QR附件及关联退款状态，并提供可操作入口", () => {
+    const exceptionList = sourceBlock(
+      "export async function getOrderExceptions",
+      "export async function createOrderException",
+    );
+
+    expect(exceptionList).toContain("linkedRefund");
+    expect(exceptionList).toContain("customerRefundDetails");
+    expect(exceptionList).toContain("attachmentUrls");
+    expect(packingPageSource).toContain("uploadRefundAttachment");
+    expect(packingPageSource).toContain("customerRefundDetails");
+    expect(packingPageSource).toContain("refundAttachmentUrls");
+    expect(packingPageSource).toContain("关联退款");
+    expect(packingPageSource).toContain('href="/admin/refunds"');
+    expect(refundPageSource).toContain("parseAttachmentUrls");
+    expect(refundPageSource).toContain("copyRefundDetails");
+    expect(refundPageSource).toContain("客户QR／问题附件");
   });
 });

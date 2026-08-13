@@ -4794,6 +4794,9 @@ export const appRouter = router({
       replacementQuantity: z.number().optional(),
       replacementUnitPrice: z.number().optional(),
       refundMethod: z.enum(["credit", "tng", "cash"]).optional(),
+      customerRefundDetails: z.string().max(5000).optional(),
+      attachmentUrls: z.string().max(10000).optional(),
+      internalNotes: z.string().max(5000).optional(),
     })).mutation(async ({ input, ctx }) => {
       const userName = ctx.user?.name || ctx.user?.email || 'Unknown';
 
@@ -4813,6 +4816,9 @@ export const appRouter = router({
           customerAction: input.customerAction,
           quantity: input.quantity,
           orderId: input.orderId,
+          customerRefundDetails: input.customerRefundDetails,
+          attachmentUrls: input.attachmentUrls,
+          internalNotes: input.internalNotes,
         },
       );
 

@@ -2061,13 +2061,20 @@ export async function getRefundOrderDetail(orderId: number) {
 export async function createRefundRequest(data: {
   orderId: number; requestedAmount: number; refundMethod: string; refundReason?: string; issueDescription?: string;
   customerRefundDetails?: string; attachmentUrls?: string; internalNotes?: string; requestedBy: string; items: RefundItemInput[];
+  // 仅包货异常可在发货前建立正式“未处理”退款；后台手动退款仍限制已发货／已完成订单。
+  sourceExceptionId?: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
   if (data.requestedAmount <= 0) throw new Error('退款申请金额必须大于 RM0');
+  if (data.sourceExceptionId) {
+    const existing = await db.select().from(orderRefunds)
+      .where(eq(orderRefunds.sourceExceptionId, data.sourceExceptionId)).limit(1);
+    if (existing[0]) return { id: existing[0].id, refundNumber: existing[0].refundNumber || `RF-${existing[0].id}`, existing: true };
+  }
   const detail = await getRefundOrderDetail(data.orderId);
   if (!detail?.order) throw new Error('订单不存在');
-  if (!['shipped', 'completed'].includes(detail.order.physicalStatus || '')) throw new Error('仅已发货或已完成订单可建立退款');
+  if (!data.sourceExceptionId && !['shipped', 'completed'].includes(detail.order.physicalStatus || '')) throw new Error('仅已发货或已完成订单可建立退款');
   for (const item of data.items) {
     if (item.refundQuantity <= 0) throw new Error('退款商品数量必须大于 0');
     const original = item.orderItemId ? detail.items.find((row: any) => row.id === item.orderItemId) : null;
@@ -2079,6 +2086,7 @@ export async function createRefundRequest(data: {
   const refundId = await db.transaction(async (tx: any) => {
     const inserted = await tx.insert(orderRefunds).values({
       orderId: data.orderId, refundNumber, status: 'pending', requestedAmount: data.requestedAmount.toFixed(2), amount: '0', refundMethod: data.refundMethod,
+      sourceExceptionId: data.sourceExceptionId || null,
       refundReason: data.refundReason || null, issueDescription: data.issueDescription || null, customerRefundDetails: data.customerRefundDetails || null,
       attachmentUrls: data.attachmentUrls || null, internalNotes: data.internalNotes || null, requestedBy: data.requestedBy,
     });
@@ -2094,6 +2102,74 @@ export async function createRefundRequest(data: {
   await logOrderOperation(data.orderId, 'refund_request', `建立退款申请 ${refundNumber}，申请金额 RM${data.requestedAmount.toFixed(2)}`, null, data.requestedBy);
   broadcastChanges(['orders', 'dashboard']);
   return { id: refundId, refundNumber };
+}
+
+/**
+ * 包货异常的退款只建立正式的“未处理”退款，实际退款、Credit、库存和订单利润
+ * 均由退款管理的完成操作处理，避免旧异常流程发生即时且不可追溯的结算。
+ */
+export async function createPackingExceptionRefund(data: {
+  exceptionId: number;
+  requestedBy: string;
+  refundAmount?: number;
+  refundMethod?: 'credit' | 'tng' | 'cash';
+  customerRefundDetails?: string;
+  attachmentUrls?: string;
+  internalNotes?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const exceptionRows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, data.exceptionId)).limit(1);
+  const exception = exceptionRows[0];
+  if (!exception) throw new Error('异常记录不存在');
+  if (exception.refundId) {
+    const linked = await db.select().from(orderRefunds).where(eq(orderRefunds.id, exception.refundId)).limit(1);
+    if (linked[0]) return { id: linked[0].id, refundNumber: linked[0].refundNumber || `RF-${linked[0].id}`, existing: true };
+  }
+  const orderRows = await db.select().from(orders).where(eq(orders.id, exception.orderId)).limit(1);
+  if (!orderRows[0]) throw new Error('异常订单不存在');
+  const itemRows = exception.orderItemId
+    ? await db.select().from(orderItems).where(eq(orderItems.id, exception.orderItemId)).limit(1)
+    : [];
+  const item = itemRows[0];
+  const quantity = Math.max(0, Number(exception.quantity || 0));
+  const calculatedAmount = item ? Number(item.unitPrice || 0) * quantity : 0;
+  const requestedAmount = Number(data.refundAmount ?? exception.refundAmount ?? calculatedAmount);
+  if (requestedAmount <= 0) throw new Error('退款金额必须大于 RM0');
+  if (item && quantity <= 0) throw new Error('退款商品数量必须大于 0');
+  const treatment: RefundItemInput['inventoryTreatment'] = exception.exceptionType === 'quality_issue' ? 'write_off' : 'none';
+  const refund = await createRefundRequest({
+    orderId: exception.orderId,
+    requestedAmount,
+    refundMethod: data.refundMethod === 'tng' ? 'tng_qr' : (data.refundMethod || 'credit'),
+    refundReason: `包货异常：${exception.exceptionType}`,
+    issueDescription: exception.description || undefined,
+    customerRefundDetails: data.customerRefundDetails,
+    attachmentUrls: data.attachmentUrls,
+    internalNotes: [`来源：包货异常 #${exception.id}`, data.internalNotes].filter(Boolean).join('\n'),
+    requestedBy: data.requestedBy,
+    sourceExceptionId: exception.id,
+    items: item ? [{
+      orderItemId: item.id,
+      productId: item.productId,
+      productName: item.productName,
+      productSku: item.productSku || null,
+      refundQuantity: quantity,
+      unitPrice: Number(item.unitPrice || 0),
+      unitCost: Number(item.unitCost || 0),
+      refundAmount: requestedAmount,
+      inventoryTreatment: treatment,
+    }] : [],
+  });
+  await db.update(orderExceptions).set({
+    refundId: refund.id,
+    resolutionType: 'refund',
+    customerAction: 'refund',
+    refundAmount: requestedAmount.toFixed(2),
+  }).where(eq(orderExceptions.id, exception.id));
+  await logOrderOperation(exception.orderId, 'refund_request', `包货异常 #${exception.id} 已建立退款 ${refund.refundNumber}`, null, data.requestedBy);
+  broadcastChanges(['orders', 'dashboard']);
+  return refund;
 }
 
 const refundProofRequired = (method: string) => /tng|duitnow|bank|transfer|qr/i.test(method);
@@ -2133,6 +2209,13 @@ export async function completeRefundRequest(data: { refundId: number; actualAmou
       await tx.update(orderRefundItems).set({ inventoryActionStatus: 'returned', inventoryAdjustmentId: Number((adjustment as any)[0]?.insertId) || null, inventoryHandledBy: data.processedBy, inventoryHandledAt: new Date() }).where(eq(orderRefundItems.id, item.id));
     }
     await tx.update(orderRefunds).set({ status: awaitingReturn ? 'awaiting_return' : 'processed', amount: data.actualAmount.toFixed(2), receiptUrl: data.receiptUrl || null, processedBy: data.processedBy, processedAt: new Date(), inventoryFinalizedAt: awaitingReturn ? null : new Date(), creditLedgerId }).where(eq(orderRefunds.id, data.refundId));
+    if (refund[0].sourceExceptionId) {
+      await tx.update(orderExceptions).set({
+        status: awaitingReturn ? 'open' : 'resolved',
+        resolvedBy: awaitingReturn ? null : data.processedBy,
+        resolvedAt: awaitingReturn ? null : new Date(),
+      }).where(eq(orderExceptions.id, refund[0].sourceExceptionId));
+    }
   });
   await recalculateOrderBalance(refund[0].orderId);
   await logOrderOperation(refund[0].orderId, 'refund_processed', `完成退款 ${refund[0].refundNumber || data.refundId}，实际退款 RM${data.actualAmount.toFixed(2)}${awaitingReturn ? '；待确认退货' : ''}`, null, data.processedBy);
@@ -8709,8 +8792,21 @@ export async function updateUserLanguage(openId: string, language: string) {
 export async function getOrderExceptions(orderId: number) {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.orderId, orderId));
-  return rows;
+  const rows = await db.select({ exception: orderExceptions, refund: orderRefunds })
+    .from(orderExceptions)
+    .leftJoin(orderRefunds, eq(orderExceptions.refundId, orderRefunds.id))
+    .where(eq(orderExceptions.orderId, orderId));
+  return rows.map(({ exception, refund }) => ({
+    ...exception,
+    linkedRefund: refund ? {
+      id: refund.id,
+      refundNumber: refund.refundNumber,
+      status: refund.status,
+      requestedAmount: refund.requestedAmount,
+      customerRefundDetails: refund.customerRefundDetails,
+      attachmentUrls: refund.attachmentUrls,
+    } : null,
+  }));
 }
 
 export async function createOrderException(data: {
@@ -8799,10 +8895,26 @@ export async function resolveOrderException(
     quantity?: number;
     // V2.1.26补充6: orderId for quantity sync and credit refund
     orderId?: number;
+    customerRefundDetails?: string;
+    attachmentUrls?: string;
+    internalNotes?: string;
   },
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  if (resolutionType === 'refund') {
+    const refund = await createPackingExceptionRefund({
+      exceptionId,
+      requestedBy: resolvedBy,
+      refundAmount: options?.refundAmount,
+      refundMethod: options?.refundMethod,
+      customerRefundDetails: options?.customerRefundDetails,
+      attachmentUrls: options?.attachmentUrls,
+      internalNotes: options?.internalNotes,
+    });
+    const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1);
+    return { ...rows[0], linkedRefund: { id: refund.id, refundNumber: refund.refundNumber, status: 'pending' } };
+  }
   const updateData: any = {
     resolutionType,
     status: 'resolved',

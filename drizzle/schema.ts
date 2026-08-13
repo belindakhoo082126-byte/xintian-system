@@ -1651,6 +1651,8 @@ export const orderExceptions = mysqlTable("order_exceptions", {
   scrapCost: decimal("scrapCost", { precision: 10, scale: 2 }).default("0"),
   // Refund amount (if refund)
   refundAmount: decimal("refundAmount", { precision: 10, scale: 2 }).default("0"),
+  // 正式退款管理记录；包货异常退款经此字段可追溯至同一笔退款。
+  refundId: int("refundId"),
   // Description of the quality issue
   description: text("description"),
   // V2.1.26补充4: Quantity of affected items (Issue 6a/6c/6e)
@@ -2524,6 +2526,8 @@ export type InsertOrderPayment = typeof orderPayments.$inferInsert;
 export const orderRefunds = mysqlTable("order_refunds", {
   id: int("id").autoincrement().primaryKey(),
   orderId: int("orderId").notNull(),
+  // 包货异常建立的退款来源；唯一约束防止异常编辑、重试时重复建退款。
+  sourceExceptionId: int("sourceExceptionId").unique(),
   // 独立退款编号；旧记录允许为空，新的退款管理记录必须生成编号。
   refundNumber: varchar("refundNumber", { length: 50 }).unique(),
   // 未处理不影响库存及正式利润；待退货确认表示款项已完成但实物处理未完成。

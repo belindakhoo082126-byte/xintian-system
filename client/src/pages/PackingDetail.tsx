@@ -11,8 +11,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare, RefreshCw, AlertTriangle, Copy } from "lucide-react";
+import { ArrowLeft, Printer, Truck, Package, Plus, X, MapPin, Phone, User, Ship, CheckCircle2, Sprout, MessageSquare, RefreshCw, AlertTriangle, Copy, FileUp, ExternalLink } from "lucide-react";
 import { useEffect } from "react";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
 import { getPackingSlipRemarkRows } from "@shared/packingSlipRemarks";
@@ -66,6 +67,10 @@ export default function PackingDetail() {
   const [exceptionQuantity, setExceptionQuantity] = useState<number>(1);
   const [customerAction, setCustomerAction] = useState<"replace_product" | "wait_restock" | "refund" | "pending">("pending");
   const [refundMethod, setRefundMethod] = useState<"credit" | "tng" | "cash">("credit");
+  const [customerRefundDetails, setCustomerRefundDetails] = useState("");
+  const [refundAttachmentUrls, setRefundAttachmentUrls] = useState<string[]>([]);
+  const [refundInternalNotes, setRefundInternalNotes] = useState("");
+  const [uploadingRefundAttachment, setUploadingRefundAttachment] = useState(false);
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [productSearchResults, setProductSearchResults] = useState<any[]>([]);
   const [replacementUnitPrice, setReplacementUnitPrice] = useState<number>(0);
@@ -196,8 +201,11 @@ export default function PackingDetail() {
   });
 
   const resolveExceptionMutation = trpc.orderException.resolve.useMutation({
-    onSuccess: () => {
-      toast.success("异常已处理");
+    onSuccess: (data: any) => {
+      const refund = data?.exception?.linkedRefund;
+      toast.success(refund?.refundNumber
+        ? translate(`已建立待处理退款 ${refund.refundNumber}，请到退款管理完成退款。`, `Pending refund ${refund.refundNumber} created. Complete it in Refund Management.`)
+        : translate("异常已处理", "Exception handled"));
       setExceptionDialogOpen(false);
       setExceptionDesc("");
       setExceptionItemId("");
@@ -206,6 +214,9 @@ export default function PackingDetail() {
       setExceptionQuantity(1);
       setCustomerAction("pending");
       setRefundMethod("credit");
+      setCustomerRefundDetails("");
+      setRefundAttachmentUrls([]);
+      setRefundInternalNotes("");
       setProductSearchQuery("");
       setProductSearchResults([]);
       setReplacementUnitPrice(0);
@@ -217,6 +228,35 @@ export default function PackingDetail() {
   });
 
   const { data: exceptions } = trpc.orderException.list.useQuery({ orderId }, { enabled: !!detail });
+
+  async function uploadRefundAttachment(file: File) {
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(translate("文件不能超过 10MB", "File must not exceed 10MB"));
+      return;
+    }
+    setUploadingRefundAttachment(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: dataUrl, filename: file.name, contentType: file.type }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.url) throw new Error(payload.error || "Upload failed");
+      setRefundAttachmentUrls((urls) => [...urls, payload.url]);
+      toast.success(translate("客户退款资料附件已上传", "Customer refund attachment uploaded"));
+    } catch (error: any) {
+      toast.error(error?.message || translate("上传失败", "Upload failed"));
+    } finally {
+      setUploadingRefundAttachment(false);
+    }
+  }
 
   const redownloadLabelMutation = trpc.shipping.redownloadLabel.useMutation({
     onSuccess: (data: any) => {
@@ -583,7 +623,7 @@ export default function PackingDetail() {
             {exceptions && (exceptions as any[]).length > 0 && (
               <div className="space-y-2">
                 {(exceptions as any[]).map((exc: any) => (
-                  <div key={exc.id} className="flex items-center justify-between border rounded-lg p-3 bg-orange-50 dark:bg-orange-950/20">
+                  <div key={exc.id} className="flex items-center justify-between gap-3 border rounded-lg p-3 bg-orange-50 dark:bg-orange-950/20">
                     <div className="text-sm flex-1">
                       <Badge variant={exc.status === "resolved" ? "secondary" : "destructive"} className="mr-2">
                         {exc.status === "resolved" ? translate("已处理", "Resolved") : translate("待处理", "Open")}
@@ -601,9 +641,22 @@ export default function PackingDetail() {
                         </span>
                       )}
                       {exc.description && <span className="text-muted-foreground ml-2">— {exc.description}</span>}
+                      {exc.linkedRefund && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                          <Badge className="border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-50">
+                            {translate("关联退款", "Linked refund")}: {exc.linkedRefund.refundNumber}
+                          </Badge>
+                          <Badge variant="outline" className={exc.linkedRefund.status === "processed" ? "border-emerald-200 text-emerald-700" : exc.linkedRefund.status === "pending" ? "border-amber-200 text-amber-700" : "border-slate-200 text-slate-700"}>
+                            {exc.linkedRefund.status === "pending" ? translate("未处理", "Pending") : exc.linkedRefund.status === "processed" ? translate("已处理", "Processed") : exc.linkedRefund.status === "awaiting_return" ? translate("待退货确认", "Awaiting return") : exc.linkedRefund.status}
+                          </Badge>
+                          <Link href="/admin/refunds" className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline">
+                            {translate("查看退款管理", "Open Refund Management")} <ExternalLink className="h-3 w-3" />
+                          </Link>
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1">
-                      {exc.status !== "resolved" && (
+                      {exc.status !== "resolved" && !exc.linkedRefund && (
                         <>
                           {/* V2.1.26补充6: Mark as resolved button (Issue 8) */}
                           <Button
@@ -817,7 +870,10 @@ export default function PackingDetail() {
 
                   {/* V2.1.26补充4: Step 6: Refund Method (Issue 6j) */}
                   {customerAction === "refund" && (
-                    <div className="space-y-2 border rounded-lg p-3 bg-orange-50 dark:bg-orange-950/20">
+                    <div className="space-y-3 border rounded-lg p-3 bg-orange-50 dark:bg-orange-950/20">
+                      <div className="rounded-md bg-amber-100/80 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+                        {translate("提交后只会建立“未处理”退款；库存、Credit、利润及客户通知均会在退款管理完成退款时才同步。", "Submitting creates a pending refund only. Inventory, Credit, profit and customer notification update only when Refund Management completes the refund.")}
+                      </div>
                       <Label>{translate("退款方式", "Refund Method")}</Label>
                       <Select value={refundMethod} onValueChange={(v: any) => setRefundMethod(v)}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
@@ -827,6 +883,22 @@ export default function PackingDetail() {
                           <SelectItem value="cash">{translate("退款Cash", "Refund to Cash")}</SelectItem>
                         </SelectContent>
                       </Select>
+                      <div className="space-y-2">
+                        <Label>{translate("客户退款资料", "Customer refund details")}</Label>
+                        <Textarea value={customerRefundDetails} onChange={(event) => setCustomerRefundDetails(event.target.value)} placeholder={translate("QR收款人、姓名、电话号码／DuitNow号码，或银行名称、户口姓名与号码", "QR recipient, name, phone/DuitNow number, or bank, account holder and account number")} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{translate("客户QR／问题照片／聊天截图", "Customer QR / issue photo / chat screenshot")}</Label>
+                        <div className="flex items-center gap-2">
+                          <Input type="file" accept="image/*,.pdf" disabled={uploadingRefundAttachment} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadRefundAttachment(file); }} />
+                          <FileUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        </div>
+                        {refundAttachmentUrls.length > 0 && <div className="space-y-1 text-xs">{refundAttachmentUrls.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block truncate text-primary hover:underline">{url}</a>)}</div>}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{translate("内部备注", "Internal notes")}</Label>
+                        <Textarea value={refundInternalNotes} onChange={(event) => setRefundInternalNotes(event.target.value)} placeholder={translate("仅供后台处理记录", "Internal processing notes only")} />
+                      </div>
                     </div>
                   )}
 
@@ -887,6 +959,9 @@ export default function PackingDetail() {
                                 replacementQuantity: customerAction === "replace_product" ? replacementQty : undefined,
                                 replacementUnitPrice: customerAction === "replace_product" ? replacementUnitPrice : undefined,
                                 refundMethod: customerAction === "refund" ? refundMethod : undefined,
+                                customerRefundDetails: customerAction === "refund" ? customerRefundDetails.trim() || undefined : undefined,
+                                attachmentUrls: customerAction === "refund" && refundAttachmentUrls.length ? JSON.stringify(refundAttachmentUrls) : undefined,
+                                internalNotes: customerAction === "refund" ? refundInternalNotes.trim() || undefined : undefined,
                                 scrapItems: exceptionType === "quality_issue" && exceptionItemId ? (d.items as any[])
                                   .filter((it: any) => it.id === exceptionItemId)
                                   .map((it: any) => ({
