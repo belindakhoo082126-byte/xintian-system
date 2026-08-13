@@ -156,13 +156,8 @@ export default function LiveRoomDetail(props: any) {
   const [blacklistReason, setBlacklistReason] = useState("");
   // V2.0: Order search state
   const [orderSearch, setOrderSearch] = useState("");
-  // V2.0.9: Product card display mode (大卡/紧凑)
-  const [cardMode, setCardMode] = useState<'large' | 'compact'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('liveCardMode') as 'large' | 'compact') || 'large';
-    }
-    return 'large';
-  });
+  // 直播操作优先采用大卡视图；如需提高可视密度，仍可手动切换紧凑视图。
+  const [cardMode, setCardMode] = useState<'large' | 'compact'>('large');
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('liveCardMode', cardMode);
@@ -681,7 +676,7 @@ export default function LiveRoomDetail(props: any) {
           </div>
 
           {/* Two-Column Layout: Products 45% | Comments 55% - flex-1 to fill remaining space */}
-          <div className="grid grid-cols-1 gap-2 flex-1 min-h-0" style={{ gridTemplateColumns: 'minmax(0, 45fr) minmax(0, 55fr)' }}>
+          <div className="grid grid-cols-1 gap-3 flex-1 min-h-0" style={{ gridTemplateColumns: 'minmax(0, 50fr) minmax(0, 50fr)' }}>
             {/* Region 2: Products Area (55%) */}
             <Card className="flex flex-col min-h-0">
               <CardHeader className="pb-2 py-2 flex-shrink-0">
@@ -1334,7 +1329,7 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
   const stockColor = totalAvailable > 10 ? "text-green-600" : totalAvailable > 0 ? "text-yellow-600" : "text-red-600";
   const stockBg = totalAvailable > 10 ? "bg-green-50" : totalAvailable > 0 ? "bg-yellow-50" : "bg-red-50";
   const isCompact = cardMode === 'compact';
-  const imgSize = isCompact ? 'w-14 h-14' : 'w-[128px] h-[128px]';
+  const imgSize = isCompact ? 'w-20 h-20' : 'w-[152px] h-[152px]';
   const imgUrl = group.coverImageUrl || variations[0]?.imageUrl;
 
   // Placeholder image component (no text, just icon)
@@ -1345,9 +1340,9 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
   );
 
   return (
-    <Card className={`${isCompact ? 'py-0' : ''}`}>
-      <CardContent className={isCompact ? 'p-2.5' : 'p-4'}>
-        <div className={`flex ${isCompact ? 'gap-2.5' : 'gap-4'}`}>
+    <Card className={`${isCompact ? 'py-1' : ''}`}>
+      <CardContent className={isCompact ? 'p-3' : 'p-5'}>
+        <div className={`flex ${isCompact ? 'gap-3' : 'gap-5'}`}>
           {/* Left: Product image (fixed ratio, no crop) */}
           <button
             type="button"
@@ -1380,15 +1375,15 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
             {isCompact ? (
               <>
                 <div className="flex items-center gap-1">
-                  <p className="font-bold truncate text-sm flex-1">{group.productName}</p>
-                  <span className="font-bold text-base whitespace-nowrap">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
+                  <p className="font-bold truncate text-base flex-1">{group.productName}</p>
+                  <span className="font-bold text-lg whitespace-nowrap">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
                   <code className="text-xs bg-primary/10 text-primary px-1 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
                   {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length} {t("live.spec")}</Badge>}
                   {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">{t("live.preorder")}</Badge>}
                 </div>
-                <div className="flex items-center gap-2 text-sm mt-1">
+                <div className="flex flex-wrap items-center gap-3 text-base mt-2">
                   <span className="text-muted-foreground">{t("live.inStock")}<b className="text-foreground ml-0.5">{onHand}</b></span>
                   <span className="text-muted-foreground">{t("live.called")}<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>
                   <span className="text-muted-foreground">{t("live.available")}<b className={`${stockColor} ml-0.5`}>{totalAvailable}</b></span>
@@ -1397,7 +1392,7 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
             ) : (
               <>
                 <div>
-                  <p className="font-bold truncate text-base">{group.productName}</p>
+                  <p className="font-bold truncate text-lg">{group.productName}</p>
                   <div className="flex items-center gap-1.5 mt-1">
                     <code className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
                     {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length} {t("live.spec")}</Badge>}
@@ -1406,11 +1401,11 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
                 </div>
                 <div className="flex items-baseline gap-2 mt-1">
                   {group.productSellingPrice != null && Number(variations[0]?.price || 0) !== Number(group.productSellingPrice) ? (
-                    <span className="text-lg font-bold text-orange-600">RM{Number(variations[0]?.price || 0).toFixed(2)}
+                    <span className="text-xl font-bold text-orange-600">RM{Number(variations[0]?.price || 0).toFixed(2)}
                       <span className="line-through text-xs text-muted-foreground/60 ml-1">RM{Number(group.productSellingPrice).toFixed(2)}</span>
                     </span>
                   ) : (
-                    <span className="text-lg font-bold">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
+                    <span className="text-xl font-bold">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
                   )}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">直播价只用于本场新建订单；订单利润按订单商品的成本快照／FIFO成本计算。</p>
@@ -1426,51 +1421,51 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
           {/* Right: Action buttons - horizontal in compact, vertical in large */}
           {isCompact ? (
             <div className="flex items-center gap-1 flex-shrink-0">
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0 justify-center" title={t("live.changePriceTitle")}
+              <Button variant="outline" size="sm" className="h-10 w-10 p-0 justify-center" title={t("live.changePriceTitle")}
                 onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
                 <DollarSign className="h-4 w-4" />
               </Button>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0 justify-center" title={t("live.adjustStockTitle")}
+              <Button variant="outline" size="sm" className="h-10 w-10 p-0 justify-center" title={t("live.adjustStockTitle")}
                 onClick={() => onAdjustStock(variations[0]?.id)}>
                 <Package className="h-4 w-4" />
               </Button>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0 justify-center" title={t("live.copyKeyword")}
+              <Button variant="outline" size="sm" className="h-10 w-10 p-0 justify-center" title={t("live.copyKeyword")}
                 onClick={() => onCopyKeyword(variations[0]?.id)}>
                 <Copy className="h-4 w-4" />
               </Button>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0 justify-center text-destructive" title={t("live.removeProduct")}
+              <Button variant="outline" size="sm" className="h-10 w-10 p-0 justify-center text-destructive" title={t("live.removeProduct")}
                 onClick={() => onDelete(variations[0]?.id)}>
                 <Trash2 className="h-4 w-4" />
               </Button>
               <Switch
                 checked={variations[0]?.allowPreorder || false}
                 onCheckedChange={(val) => onTogglePreorder(variations[0]?.id, val)}
-                className="scale-[0.5]"
+                className="scale-75"
               />
             </div>
           ) : (
             <div className="flex flex-col gap-1 flex-shrink-0">
-              <Button variant="outline" size="sm" className="h-9 w-10 p-0 justify-center" title={t("live.changePriceTitle")}
+              <Button variant="outline" size="sm" className="h-11 w-12 p-0 justify-center" title={t("live.changePriceTitle")}
                 onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
                 <DollarSign className="h-4 w-4" />
               </Button>
-              <Button variant="outline" size="sm" className="h-9 w-10 p-0 justify-center" title={t("live.adjustStockTitle")}
+              <Button variant="outline" size="sm" className="h-11 w-12 p-0 justify-center" title={t("live.adjustStockTitle")}
                 onClick={() => onAdjustStock(variations[0]?.id)}>
                 <Package className="h-4 w-4" />
               </Button>
-              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center" title={t("live.copyKeyword")}
+              <Button variant="outline" size="sm" className="h-10 w-12 p-0 justify-center" title={t("live.copyKeyword")}
                 onClick={() => onCopyKeyword(variations[0]?.id)}>
-                <Copy className="h-3.5 w-3.5" />
+                <Copy className="h-4 w-4" />
               </Button>
-              <Button variant="outline" size="sm" className="h-7 w-8 p-0 justify-center text-destructive" title={t("live.removeProduct")}
+              <Button variant="outline" size="sm" className="h-10 w-12 p-0 justify-center text-destructive" title={t("live.removeProduct")}
                 onClick={() => onDelete(variations[0]?.id)}>
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 className="h-4 w-4" />
               </Button>
               <div className="flex items-center justify-center mt-0.5">
                 <Switch
                   checked={variations[0]?.allowPreorder || false}
                   onCheckedChange={(val) => onTogglePreorder(variations[0]?.id, val)}
-                  className="scale-[0.6]"
+                  className="scale-75"
                 />
               </div>
             </div>

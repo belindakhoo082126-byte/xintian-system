@@ -1045,6 +1045,62 @@ export async function reserveProductStocksForOrder(items: Array<{ productId: num
   }
 }
 
+type SpecialPriceSnapshotItem = {
+  productId: number;
+  quantity: number;
+  unitPrice: string;
+  subtotal: string;
+  priceType?: string;
+  originalUnitPrice?: string | null;
+  isSpecial?: boolean;
+  bundleId?: number;
+};
+
+/**
+ * Browser payloads are only a shopping selection, not a source of truth for
+ * price type. Refresh every regular item from the product master so special
+ * prices are consistently excluded from the RM150 free-shipping threshold.
+ */
+async function applyTrustedSpecialPriceSnapshots(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  items: SpecialPriceSnapshotItem[],
+  options: { useProductSpecialPrice?: boolean } = {},
+) {
+  const productIds = items
+    .filter((item) => item.productId && !item.bundleId)
+    .map((item) => item.productId);
+  if (productIds.length === 0) return;
+
+  const uniqueProductIds = Array.from(new Set(productIds));
+  const productRows = await db
+    .select({
+      id: products.id,
+      isSpecial: products.isSpecial,
+      specialPrice: products.specialPrice,
+      sellingPrice: products.sellingPrice,
+    })
+    .from(products)
+    .where(inArray(products.id, uniqueProductIds));
+  const productsById = new Map(productRows.map((product) => [product.id, product]));
+
+  for (const item of items) {
+    if (item.bundleId) continue;
+    const product = productsById.get(item.productId);
+    const specialPrice = Number(product?.specialPrice ?? 0);
+    const isActiveSpecialPrice = Boolean(product?.isSpecial) && specialPrice > 0;
+    item.priceType = isActiveSpecialPrice ? "special" : "retail";
+    item.isSpecial = isActiveSpecialPrice;
+    item.originalUnitPrice = isActiveSpecialPrice && product?.sellingPrice != null
+      ? String(product.sellingPrice)
+      : null;
+
+    if (isActiveSpecialPrice && options.useProductSpecialPrice) {
+      item.unitPrice = specialPrice.toFixed(2);
+      item.subtotal = (specialPrice * item.quantity).toFixed(2);
+    }
+  }
+}
+
 export async function createOrderWithSplit(data: {
   customerId: number;
   facebookName?: string;
@@ -1062,6 +1118,7 @@ export async function createOrderWithSplit(data: {
     priceType?: string;
     unitCost?: string;
     originalUnitPrice?: string;
+    isSpecial?: boolean;
   }>;
   shippingAddress?: string;
   shippingMethod?: string;
@@ -1111,6 +1168,8 @@ export async function createOrderWithSplit(data: {
   if (data.orderCategory === "import") {
     await assertChinaImportOrderItemsEligible(data.items.map((item) => item.productId));
   }
+
+  await applyTrustedSpecialPriceSnapshots(db, data.items);
 
   // V2.2: Calculate shipping using new West Malaysia rules
   let shippingFee = 0;
@@ -1425,6 +1484,7 @@ export async function updateOrderItems(orderId: number, items: Array<{
   variationName?: string | null;
   itemSource?: string;
   priceType?: string;
+  originalUnitPrice?: string | null;
 }>, operator?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -1454,6 +1514,26 @@ export async function updateOrderItems(orderId: number, items: Array<{
   const newItems = items.filter(i => !i.id);
   const updatedItems = items.filter(i => i.id && oldItemsMap.has(i.id));
   const deletedItems = oldItems.filter((i: any) => !items.some(ni => ni.id === i.id));
+
+  // New rows added from the order editor must follow the same trusted special
+  // price snapshot path as all new orders. The UI can suggest a price, but it
+  // may not decide whether a product is eligible for RM150 free shipping.
+  const specialSnapshotCandidates: Array<SpecialPriceSnapshotItem & { source: (typeof newItems)[number] }> = newItems
+    .filter((item) => typeof item.productId === "number" && item.productId > 0)
+    .map((item) => ({
+      source: item,
+      productId: item.productId!,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      subtotal: (parseFloat(item.unitPrice) * item.quantity).toFixed(2),
+    }));
+  if (specialSnapshotCandidates.length > 0) {
+    await applyTrustedSpecialPriceSnapshots(db, specialSnapshotCandidates);
+    for (const candidate of specialSnapshotCandidates) {
+      candidate.source.priceType = candidate.priceType;
+      candidate.source.originalUnitPrice = candidate.originalUnitPrice;
+    }
+  }
 
   // Reserve every newly-added unit and positive quantity difference with a
   // conditional UPDATE. This prevents order editing from bypassing the same
@@ -1541,6 +1621,7 @@ export async function updateOrderItems(orderId: number, items: Array<{
       variationId: ni.variationId || null,
       variationName: ni.variationName || null,
       priceType: (ni.priceType as "retail" | "wholesale" | "agent" | "special" | "manual") || "retail",
+      originalUnitPrice: ni.originalUnitPrice || null,
       discount: "0.00",
       itemSource: (ni.itemSource as "admin" | "facebook_live" | "messenger" | "mall") || "admin",
     });
@@ -5966,6 +6047,8 @@ export async function mallCheckout(data: {
     discount?: string;
     isSpecial?: boolean;
     isStandalone?: boolean;
+    priceType?: string;
+    originalUnitPrice?: string | null;
   }>;
   paymentMethodId?: number;
   paymentMethodName?: string;
@@ -5994,6 +6077,7 @@ export async function mallCheckout(data: {
     item.subtotal = (trustedPrice * item.quantity).toFixed(2);
     item.isSpecial = true;
   }
+  await applyTrustedSpecialPriceSnapshots(db, data.items, { useProductSpecialPrice: true });
   const regularItems = data.items.filter((item) => !item.bundleId);
 
   // Find or create customer
@@ -6091,6 +6175,8 @@ export async function mallCheckout(data: {
         variationName: item.variationName || null,
         facebookKeyword: item.facebookKeyword || null,
         discount: item.discount || "0.00",
+        priceType: item.isSpecial ? "special" : "retail",
+        originalUnitPrice: item.originalUnitPrice || null,
       });
     }
 
@@ -6202,6 +6288,8 @@ export async function mallCheckout(data: {
       variationName: item.variationName || null,
       facebookKeyword: item.facebookKeyword || null,
       discount: item.discount || "0.00",
+      priceType: item.isSpecial ? "special" : "retail",
+      originalUnitPrice: item.originalUnitPrice || null,
     });
   }
 
@@ -7908,6 +7996,8 @@ export async function createOrderFromLiveCapture(data: {
     unitPrice: string;
     liveRoomProductId?: number;
     isPreorder?: boolean;
+    priceType?: "retail" | "special";
+    originalUnitPrice?: string | null;
   }>;
   sourceName?: string;
   campaignId?: number;
@@ -7916,6 +8006,31 @@ export async function createOrderFromLiveCapture(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // 不接受直播前端自行决定特价分类：以商品资料库内已启用的特价设定为准，
+  // 把特价价及原售价一并固定为订单快照，供订单明细与 V2.2 免邮资格统一使用。
+  const matchedProductIds = Array.from(new Set(data.matchedProducts.map((item) => item.productId).filter(Boolean)));
+  if (matchedProductIds.length > 0) {
+    const productPriceRows = await db.select({
+      id: products.id,
+      sellingPrice: products.sellingPrice,
+      isSpecial: products.isSpecial,
+      specialPrice: products.specialPrice,
+    }).from(products).where(inArray(products.id, matchedProductIds));
+    const priceByProductId = new Map(productPriceRows.map((product) => [product.id, product]));
+    for (const item of data.matchedProducts) {
+      const product = priceByProductId.get(item.productId);
+      const specialPrice = Number(product?.specialPrice || 0);
+      if (product?.isSpecial && specialPrice > 0) {
+        item.unitPrice = specialPrice.toFixed(2);
+        item.priceType = "special";
+        item.originalUnitPrice = product.sellingPrice ? String(product.sellingPrice) : null;
+      } else {
+        item.priceType = "retail";
+        item.originalUnitPrice = null;
+      }
+    }
+  }
 
   // 已开启直播预售的商品只记录预售，不占用现货库存；其余商品仍按原子库存保留处理。
   const inStockProducts = data.matchedProducts.filter((p) => !p.isPreorder);
@@ -8018,6 +8133,8 @@ export async function createOrderFromLiveCapture(data: {
         discount: "0.00",
         itemSource: "facebook_live",
         salesMode: p.isPreorder ? (isImportOrder ? "import_preorder" : "presale") : "normal",
+        priceType: p.priceType || "retail",
+        originalUnitPrice: p.originalUnitPrice || null,
       });
       // Product stock was atomically reserved before the item was inserted.
     }
@@ -8119,6 +8236,8 @@ export async function createOrderFromLiveCapture(data: {
       discount: "0.00",
       itemSource: "facebook_live",
       salesMode: p.isPreorder ? (isImportOrder ? "import_preorder" : "presale") : "normal",
+      priceType: p.priceType || "retail",
+      originalUnitPrice: p.originalUnitPrice || null,
     });
     // Product stock was atomically reserved before order creation.
     if (p.productId && !p.isPreorder) {

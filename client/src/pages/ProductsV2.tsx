@@ -656,7 +656,7 @@ export default function ProductsV2() {
                 <TableHead>{translate("状态", "Status")}</TableHead>
                 <TableHead>{translate("库存", "Stock")}</TableHead>
                 <TableHead>{translate("允许超卖", "Allow Oversold")}</TableHead>
-                <TableHead>{translate("推荐", "Featured")}</TableHead>
+                <TableHead>{translate("商品标记", "Product Flags")}</TableHead>
                 <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
@@ -784,9 +784,12 @@ export default function ProductsV2() {
                     ) : translate("—", "—")}
                   </TableCell>
                   <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {p.isFeatured && <Badge variant="default">{translate("推荐", "Featured")}</Badge>}
-                      {p.isSpecial && <Badge className="bg-orange-100 text-orange-700">{translate("特价", "Special")}</Badge>}
+                    <div className="flex min-w-[160px] flex-wrap gap-1.5">
+                      {p.isFeatured && <Badge className="border border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-100">{translate("推荐", "Featured")}</Badge>}
+                      {p.isSpecial && <Badge className="border border-orange-200 bg-orange-100 text-orange-800 hover:bg-orange-100">{translate("特价", "Special")}</Badge>}
+                      {p.type === "gift" && <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{translate("赠品", "Gift")}</Badge>}
+                      {p.type === "virtual" && <Badge className="border border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{translate("虚拟商品", "Virtual")}</Badge>}
+                      {!p.isFeatured && !p.isSpecial && p.type !== "gift" && p.type !== "virtual" && <span className="text-sm text-muted-foreground">{translate("—", "—")}</span>}
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
