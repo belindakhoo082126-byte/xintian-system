@@ -27,10 +27,19 @@ describe("本地订单七天付款期限Heartbeat", () => {
     expect(dbSource).toContain("export async function processExpiredLocalOrders()");
     expect(dbSource).toContain("o.createdAt < DATE_SUB(NOW(), INTERVAL 7 DAY)");
     expect(dbSource).toContain("o.physicalStatus IN ('pending', 'hold_order')");
+    expect(dbSource).toContain("COALESCE(o.cancelProtection, 0) = 0");
     expect(dbSource).toContain("COALESCE(o.paidAmount, 0) <= 0");
     expect(dbSource).toContain("(o.receiptUrl IS NULL OR TRIM(o.receiptUrl) = '')");
     expect(dbSource).toContain("pending_proof.reviewStatus = 'pending'");
     expect(dbSource).toContain("approved_payment.reviewStatus = 'approved'");
+  });
+
+  it("建立开放包货异常时写入订单取消保护，必须由管理员另行处理", () => {
+    expect(dbSource).toContain("await db.update(orders).set({ cancelProtection: true }).where(eq(orders.id, data.orderId))");
+  });
+
+  it("建立未处理退款时同样启用订单取消保护，避免破坏退款与库存账本", () => {
+    expect(dbSource).toContain("await tx.update(orders).set({ cancelProtection: true }).where(eq(orders.id, data.orderId))");
   });
 
   it("经统一取消服务完成状态取消、库存释放与审计，不另行重复扣减库存", () => {

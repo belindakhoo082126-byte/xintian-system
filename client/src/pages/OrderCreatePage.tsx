@@ -286,12 +286,18 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   });
 
   const quickRestockMutation = trpc.purchaseOrders.quickRestock.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       utils.inventoryAdjustment.invalidate();
       utils.purchaseOrders.invalidate();
       utils.orders.searchProductsForOrder.invalidate();
       utils.productsV2.invalidate();
-      toast.success(translate("补货已登记，库存、厂家批次与成本记录已同步", "Restock recorded; stock, supplier lot, and cost are synchronized"));
+      const allocationSuffix = result.allocatedQuantity > 0
+        ? translate("；已自动分配 {quantity} 件等待补货商品（{count} 笔异常）", "; automatically allocated {quantity} waiting-restock item(s) across {count} exception(s)", {
+            quantity: result.allocatedQuantity,
+            count: result.allocatedExceptionIds.length,
+          })
+        : "";
+      toast.success(translate("补货已登记，库存、厂家批次与成本记录已同步", "Restock recorded; stock, supplier lot, and cost are synchronized") + allocationSuffix);
       setQuickRestockProduct(null);
       setQuickRestockQuantity("1");
       setQuickRestockSupplierId("");

@@ -7,10 +7,12 @@ const routerSource = fs.readFileSync(path.resolve(process.cwd(), "server/routers
 const detailSource = fs.readFileSync(path.resolve(process.cwd(), "client/src/pages/OrderDetail.tsx"), "utf8");
 
 describe("未付款订单拆单", () => {
-  it("仅提供本地未付款实体订单的按商品数量拆单服务", () => {
+  it("仅提供本地未付款实体订单的按商品数量拆单服务，并拒绝已履约或已结算订单", () => {
     expect(dbSource).toContain("export async function splitUnpaidPhysicalOrder");
     expect(dbSource).toContain('source.orderType !== "physical" || source.orderCategory === "import"');
     expect(dbSource).toContain("['pending', 'receipt_uploaded', 'hold_order']");
+    expect(dbSource).toContain("只有未确认付款或保留中的订单可以拆单");
+    expect(dbSource).toContain("含已确认付款或已使用 Credit 的订单不可拆单");
     expect(dbSource).toContain("请至少保留一项商品在原订单");
     expect(dbSource).toContain("requestedQuantities");
     expect(routerSource).toContain("orderItemId: z.number().int().positive()");

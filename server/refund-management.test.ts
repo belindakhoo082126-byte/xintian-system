@@ -53,10 +53,16 @@ describe("退款管理业务规则", () => {
     expect(completeRefund).toContain("退款必须上传退款凭证");
     expect(completeRefund).toContain("customerCreditLedger");
     expect(completeRefund).toContain("Credit 退款入账失败");
-    expect(completeRefund).toContain("item.inventoryTreatment !== 'return_to_sale'");
+    expect(completeRefund).toContain("item.inventoryTreatment === 'return_to_sale'");
+    expect(completeRefund).toContain("item.inventoryTreatment === 'write_off'");
     expect(completeRefund).toContain("inventoryAdjustments");
     expect(completeRefund).toContain("status: awaitingReturn ? 'awaiting_return' : 'processed'");
     expect(completeRefund).toContain("退款退库｜订单");
+    expect(completeRefund).toContain("售后退款不退库／报损｜订单");
+    expect(completeRefund).toContain("quantityChange: 0");
+    expect(completeRefund).toContain("inventoryActionStatus: 'written_off'");
+    expect(completeRefund).toContain("refund[0].sourceExceptionId");
+    expect(completeRefund).toContain("status: awaitingReturn ? 'open' : 'resolved'");
   });
 
   it("拒绝或取消仅限未处理记录，且不会改变库存或客户 Credit", () => {

@@ -16,7 +16,7 @@ import {
   // Mall imports
   mallSettings, mallBanners, mallQuickContacts, mallNotices, mallThemeSchedules, mallProductDetailImages,
   // Packing & Shipping imports
-  packages, packageItems, liveOrderCaptures,
+  packages, packageItems, packageOrderLinks, liveOrderCaptures,
   // V1.1 imports
   orderItemRepots, orderRemarks,
   // V1.2 imports
@@ -2239,6 +2239,9 @@ export async function createRefundRequest(data: {
       refundQuantity: item.refundQuantity, unitPrice: item.unitPrice.toFixed(2), unitCost: item.unitCost.toFixed(2), refundAmount: item.refundAmount.toFixed(2),
       inventoryTreatment: item.inventoryTreatment, inventoryActionStatus: item.inventoryTreatment === 'pending_return' ? 'pending' : 'not_required',
     })));
+    // 未处理退款不可由付款期限任务自动取消；实际结束、拒绝或取消须由退款流程
+    // 及管理员的审计动作处理，避免破坏退款与库存账本。
+    await tx.update(orders).set({ cancelProtection: true }).where(eq(orders.id, data.orderId));
     return id;
   });
   await logOrderOperation(data.orderId, 'refund_request', `建立退款申请 ${refundNumber}，申请金额 RM${data.requestedAmount.toFixed(2)}`, null, data.requestedBy);
@@ -2339,16 +2342,29 @@ export async function completeRefundRequest(data: { refundId: number; actualAmou
       if (!creditLedgerId) throw new Error('Credit 退款入账失败');
     }
     for (const item of items) {
-      if (item.inventoryTreatment !== 'return_to_sale' || !item.productId) continue;
-      const product = await tx.select().from(products).where(eq(products.id, item.productId)).limit(1);
-      if (!product[0]) throw new Error(`商品 ${item.productName} 不存在，无法退回库存`);
-      await tx.update(products).set({ stockQuantity: (product[0].stockQuantity || 0) + item.refundQuantity }).where(eq(products.id, item.productId));
-      const adjustment = await tx.insert(inventoryAdjustments).values({
-        productId: item.productId, adjustmentType: 'other', quantityChange: item.refundQuantity, unitCost: item.unitCost,
-        totalCost: (Number(item.unitCost) * item.refundQuantity).toFixed(2), adjustedBy: data.processedBy,
-        reason: `退款退库｜订单 ${refund[0].orderId}｜退款 ${refund[0].refundNumber || data.refundId}`, remark: '退款退回可售库存',
-      });
-      await tx.update(orderRefundItems).set({ inventoryActionStatus: 'returned', inventoryAdjustmentId: Number((adjustment as any)[0]?.insertId) || null, inventoryHandledBy: data.processedBy, inventoryHandledAt: new Date() }).where(eq(orderRefundItems.id, item.id));
+      if (item.inventoryTreatment === 'return_to_sale' && item.productId) {
+        const product = await tx.select().from(products).where(eq(products.id, item.productId)).limit(1);
+        if (!product[0]) throw new Error(`商品 ${item.productName} 不存在，无法退回库存`);
+        await tx.update(products).set({ stockQuantity: (product[0].stockQuantity || 0) + item.refundQuantity }).where(eq(products.id, item.productId));
+        const adjustment = await tx.insert(inventoryAdjustments).values({
+          productId: item.productId, adjustmentType: 'other', quantityChange: item.refundQuantity, unitCost: item.unitCost,
+          totalCost: (Number(item.unitCost) * item.refundQuantity).toFixed(2), adjustedBy: data.processedBy,
+          reason: `退款退库｜订单 ${refund[0].orderId}｜退款 ${refund[0].refundNumber || data.refundId}`, remark: '退款退回可售库存',
+        });
+        await tx.update(orderRefundItems).set({ inventoryActionStatus: 'returned', inventoryAdjustmentId: Number((adjustment as any)[0]?.insertId) || null, inventoryHandledBy: data.processedBy, inventoryHandledAt: new Date() }).where(eq(orderRefundItems.id, item.id));
+        continue;
+      }
+      if (item.inventoryTreatment === 'write_off' && item.productId) {
+        // The customer keeps or receives an unsaleable item. Available inventory must
+        // not rise, but an explicit zero-delta ledger entry preserves after-sales cost traceability.
+        const adjustment = await tx.insert(inventoryAdjustments).values({
+          productId: item.productId, adjustmentType: 'other', quantityChange: 0, unitCost: item.unitCost,
+          totalCost: (Number(item.unitCost) * item.refundQuantity).toFixed(2), adjustedBy: data.processedBy,
+          reason: `售后退款不退库／报损｜订单 ${refund[0].orderId}｜退款 ${refund[0].refundNumber || data.refundId}`,
+          remark: `商品 ${item.productName} 不退回可售库存`,
+        });
+        await tx.update(orderRefundItems).set({ inventoryActionStatus: 'written_off', inventoryAdjustmentId: Number((adjustment as any)[0]?.insertId) || null, inventoryHandledBy: data.processedBy, inventoryHandledAt: new Date() }).where(eq(orderRefundItems.id, item.id));
+      }
     }
     await tx.update(orderRefunds).set({ status: awaitingReturn ? 'awaiting_return' : 'processed', amount: data.actualAmount.toFixed(2), receiptUrl: data.receiptUrl || null, processedBy: data.processedBy, processedAt: new Date(), inventoryFinalizedAt: awaitingReturn ? null : new Date(), creditLedgerId }).where(eq(orderRefunds.id, data.refundId));
     if (refund[0].sourceExceptionId) {
@@ -3470,6 +3486,14 @@ export async function quickRestockProduct(data: {
     VALUES (${data.productId}, NULL, ${lotId}, 'purchase', 'quick_restock', ${poId}, ${quantity}, ${balanceAfter}, ${unitCost.toFixed(2)}, ${data.adjustedBy || 'admin'})
   `);
 
+  // 已下单商品的库存占用在建单时已经成立。补货入库后只按本次入库数量
+  // 分配最早的完整等待补货异常，不再次改变可售库存，避免重复扣减。
+  const restockAllocation = await autoAllocateWaitingRestockForProduct(
+    data.productId,
+    quantity,
+    data.adjustedBy || 'admin',
+  );
+
   return {
     poId,
     poNumber,
@@ -3480,6 +3504,9 @@ export async function quickRestockProduct(data: {
     unitCost: unitCost.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
     stockQuantity: balanceAfter,
+    allocatedExceptionIds: restockAllocation.allocatedExceptionIds,
+    allocatedQuantity: restockAllocation.allocatedQuantity,
+    unallocatedRestockQuantity: restockAllocation.remainingQuantity,
   };
 }
 
@@ -6424,8 +6451,9 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
     paidAmount: orders.paidAmount,
   }).from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!target[0]) throw new Error("Order not found");
-  // V2.1.14: Allow add-on for pending, hold_order, and partial_payment (all open/mergeable statuses)
-  const mergeableStatuses = ["pending", "hold_order", "partial_payment"];
+  // 仅允许尚未履约完成的可编辑订单继续加单。packing 对应后台的
+  // 「待包货／待备货」，仍未产生发货批次；partial_shipped 及其后的状态一律禁止。
+  const mergeableStatuses = ["pending", "receipt_uploaded", "hold_order", "partial_payment", "packing"];
   const currentPhysicalStatus = target[0].physicalStatus || "pending";
   if (!mergeableStatuses.includes(currentPhysicalStatus)) throw new Error("当前订单状态不允许加单");
   // 中国代购可加中国进口代购商品，以及肥料和花盆；本地订单仍不能加入中国代购商品。
@@ -7432,6 +7460,12 @@ export async function createPackage(data: {
   shippingCost?: string;
   itemIds?: number[]; // For partial shipping: which order items are in this package
   itemQuantities?: { itemId: string; quantity: number }[]; // V2.1.26补充4: Per-item shipped quantity (Issue 7)
+  // V3.3: Every physical package is also a fulfilment batch. Merged packages
+  // retain a primary order for legacy callers and use package_order_links for
+  // the full set of participating orders.
+  batchNo?: number;
+  isMerged?: boolean;
+  mergedOrderIds?: number[];
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -7443,6 +7477,9 @@ export async function createPackage(data: {
   const result = await db.insert(packages).values({
     orderId: data.orderId,
     packageNumber,
+    batchNo: data.batchNo ?? packageNumber,
+    isMerged: data.isMerged ?? false,
+    mergedOrderIds: data.mergedOrderIds?.length ? JSON.stringify(data.mergedOrderIds) : null,
     courier: data.courier,
     shippingType: data.shippingType,
     trackingNumber: data.trackingNumber || null,
@@ -7515,15 +7552,18 @@ export function calculateShipmentSummary(packagesForOrder: ShipmentSummaryPackag
 }
 
 async function syncOrderShipmentSummary(db: any, orderId: number, physicalStatus: "partial_shipped" | "shipped") {
-  const packageRows = await db.select({
+  const packageRows = await getPackagesForOrderDb(db, orderId, {
     courier: packages.courier,
     trackingNumber: packages.trackingNumber,
     weight: packages.weight,
     shippingCost: packages.shippingCost,
     shippedAt: packages.shippedAt,
-  }).from(packages).where(eq(packages.orderId, orderId));
-  const summary = calculateShipmentSummary(packageRows);
+  });
+  const summary = calculateShipmentSummary(packageRows as unknown as ShipmentSummaryPackage[]);
   const update: Record<string, unknown> = { physicalStatus };
+  // Once any part of an order has shipped, expiry/automatic cancellation must
+  // never release its reservation. It remains protected after full shipment.
+  if (physicalStatus === "partial_shipped") update.cancelProtection = true;
   if (summary.courierCompany) update.courierCompany = summary.courierCompany;
   if (summary.trackingNumber) update.trackingNumber = summary.trackingNumber;
   if (summary.actualWeight !== undefined) update.actualWeight = String(summary.actualWeight);
@@ -7531,6 +7571,49 @@ async function syncOrderShipmentSummary(db: any, orderId: number, physicalStatus
   if (summary.firstShippedAt) update.shippedAt = summary.firstShippedAt;
   await db.update(orders).set(update).where(eq(orders.id, orderId));
   return summary;
+}
+
+/**
+ * Gets direct packages and packages linked through merged delivery without
+ * duplicating the primary order package. The package_items table remains the
+ * only source of truth for item-level dispatched quantities.
+ */
+async function getPackagesForOrderDb<T extends Record<string, unknown>>(
+  db: any,
+  orderId: number,
+  selection: T,
+): Promise<T[]> {
+  const selectionWithId = { ...selection, _packageId: packages.id };
+  const direct = await db.select(selectionWithId).from(packages).where(eq(packages.orderId, orderId));
+  const linked = await db.select(selectionWithId)
+    .from(packageOrderLinks)
+    .innerJoin(packages, eq(packageOrderLinks.packageId, packages.id))
+    .where(eq(packageOrderLinks.orderId, orderId));
+  const unique = new Map<number, T>();
+  for (const row of [...direct, ...linked]) {
+    const { _packageId, ...selected } = row as any;
+    unique.set(Number(_packageId), selected as T);
+  }
+  return Array.from(unique.values());
+}
+
+async function getOrderFulfilmentQuantitiesDb(db: any, orderId: number) {
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const packageRows = await getPackagesForOrderDb(db, orderId, { id: packages.id });
+  const packageIds = packageRows.map((row: any) => row.id).filter(Boolean);
+  const quantities = new Map<number, number>();
+  if (packageIds.length) {
+    const rows = await db.select().from(packageItems).where(inArray(packageItems.packageId, packageIds));
+    for (const row of rows) quantities.set(row.orderItemId, (quantities.get(row.orderItemId) || 0) + Number(row.quantity || 0));
+  }
+  return { items, quantities };
+}
+
+async function syncOrderFulfilmentStateDb(db: any, orderId: number) {
+  const { items, quantities } = await getOrderFulfilmentQuantitiesDb(db, orderId);
+  const allShipped = items.length > 0 && items.every((item: any) => (quantities.get(item.id) || 0) >= item.quantity);
+  await syncOrderShipmentSummary(db, orderId, allShipped ? "shipped" : "partial_shipped");
+  return { allShipped, quantities };
 }
 
 // --- Full Shipping: Mark order as shipped ---
@@ -7611,7 +7694,7 @@ export async function partialShipping(orderId: number, itemIds: number[], packag
   }
 
   // V2.1.26补充4: Check already shipped quantities (not just IDs)
-  const existingPackages = await db.select().from(packages).where(eq(packages.orderId, orderId));
+  const existingPackages = await getPackagesForOrderDb(db, orderId, { id: packages.id });
   const alreadyShippedQty: Map<number, number> = new Map();
   for (const pkg of existingPackages) {
     const pkgItems = await db.select().from(packageItems).where(eq(packageItems.packageId, pkg.id));
@@ -7639,22 +7722,7 @@ export async function partialShipping(orderId: number, itemIds: number[], packag
     itemQuantities,
   });
   
-  // Check if all items are now fully shipped
-  const allPackages = await db.select().from(packages).where(eq(packages.orderId, orderId));
-  
-  // Get total shipped quantities per item
-  const totalShippedQty: Map<number, number> = new Map();
-  for (const pkg of allPackages) {
-    const pkgItems = await db.select().from(packageItems).where(eq(packageItems.packageId, pkg.id));
-    for (const pi of pkgItems) {
-      totalShippedQty.set(pi.orderItemId, (totalShippedQty.get(pi.orderItemId) || 0) + pi.quantity);
-    }
-  }
-  
-  // Check if all items are fully shipped (shipped qty >= order qty)
-  const allShipped = allItems.every((item) => (totalShippedQty.get(item.id) || 0) >= item.quantity);
-  
-  await syncOrderShipmentSummary(db, orderId, allShipped ? "shipped" : "partial_shipped");
+  const { allShipped } = await syncOrderFulfilmentStateDb(db, orderId);
   
   return { success: true, allShipped };
 }
@@ -7664,7 +7732,25 @@ export async function getOrderPackages(orderId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const pkgs = await db.select().from(packages).where(eq(packages.orderId, orderId)).orderBy(asc(packages.packageNumber));
+  const pkgs = await getPackagesForOrderDb(db, orderId, {
+    id: packages.id,
+    orderId: packages.orderId,
+    packageNumber: packages.packageNumber,
+    batchNo: packages.batchNo,
+    isMerged: packages.isMerged,
+    mergedOrderIds: packages.mergedOrderIds,
+    courier: packages.courier,
+    shippingType: packages.shippingType,
+    trackingNumber: packages.trackingNumber,
+    shippingLabelUrl: packages.shippingLabelUrl,
+    providerOrderId: packages.providerOrderId,
+    weight: packages.weight,
+    shippingCost: packages.shippingCost,
+    status: packages.status,
+    shippedAt: packages.shippedAt,
+    createdAt: packages.createdAt,
+  });
+  pkgs.sort((a: any, b: any) => Number(a.batchNo || a.packageNumber || 0) - Number(b.batchNo || b.packageNumber || 0));
   
   // Get items for each package
   const enriched = await Promise.all(pkgs.map(async (p) => {
@@ -7678,10 +7764,150 @@ export async function getOrderPackages(orderId: number) {
       .leftJoin(orderItems, eq(packageItems.orderItemId, orderItems.id))
       .where(eq(packageItems.packageId, p.id));
     
-    return { ...p, items };
+    const linkedOrders = await db.select().from(packageOrderLinks).where(eq(packageOrderLinks.packageId, p.id));
+    return { ...p, items, linkedOrders };
   }));
   
   return enriched;
+}
+
+/**
+ * 建立一个跨订单的实体包裹。所有参与订单必须是同一客户、相同配送方式和地址；
+ * 每张订单仍按本订单商品的实际发货数量维护状态，运费只作为包裹关联的分摊审计值。
+ */
+export async function shipMergedOrders(data: {
+  orderIds: number[];
+  itemQuantities: { itemId: string; quantity: number }[];
+  packageData: {
+    courier: string;
+    shippingType: "auto" | "manual";
+    trackingNumber?: string;
+    shippingLabelUrl?: string;
+    providerOrderId?: string;
+    weight?: string;
+    shippingCost?: string;
+  };
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const orderIds = Array.from(new Set(data.orderIds.map(Number).filter(Number.isInteger)));
+  if (orderIds.length < 2) throw new Error("PACKING_MERGE_REQUIRES_TWO_ORDERS");
+  if (!data.itemQuantities.length) throw new Error("PACKING_MERGE_ITEMS_REQUIRED");
+
+  const selectedOrders = await db.select().from(orders).where(inArray(orders.id, orderIds));
+  if (selectedOrders.length !== orderIds.length) throw new Error("PACKING_MERGE_ORDER_NOT_FOUND");
+  const first = selectedOrders[0];
+  if (!selectedOrders.every(order => order.customerId === first.customerId && order.shippingMethod === first.shippingMethod && (order.shippingAddress || "") === (first.shippingAddress || ""))) {
+    throw new Error("PACKING_MERGE_RECIPIENT_MISMATCH");
+  }
+  if (!selectedOrders.every(order => order.physicalStatus === "packing" || order.physicalStatus === "partial_shipped")) {
+    throw new Error("PACKING_MERGE_ORDER_NOT_READY");
+  }
+
+  const requestedItemIds = Array.from(new Set(data.itemQuantities.map(item => Number(item.itemId)).filter(Number.isInteger)));
+  const selectedItems = await db.select().from(orderItems).where(inArray(orderItems.id, requestedItemIds));
+  if (!requestedItemIds.length || selectedItems.length !== requestedItemIds.length || selectedItems.some(item => !orderIds.includes(item.orderId))) {
+    throw new Error("PACKING_MERGE_ITEM_NOT_IN_ORDER");
+  }
+  const requestedQuantities = new Map(data.itemQuantities.map(item => [Number(item.itemId), Math.trunc(Number(item.quantity))]));
+  if (Array.from(requestedQuantities.values()).some(quantity => !Number.isFinite(quantity) || quantity <= 0)) throw new Error("PACKING_QUANTITY_REQUIRED");
+  for (const orderId of orderIds) {
+    const { quantities } = await getOrderFulfilmentQuantitiesDb(db, orderId);
+    for (const item of selectedItems.filter(row => row.orderId === orderId)) {
+      const quantity = requestedQuantities.get(item.id) || 0;
+      if ((quantities.get(item.id) || 0) + quantity > item.quantity) throw new Error(`PACKING_QUANTITY_EXCEEDED: item ${item.id}`);
+    }
+  }
+
+  const cost = Math.max(0, Number(data.packageData.shippingCost || 0));
+  const orderValue = new Map<number, number>();
+  for (const item of selectedItems) {
+    const value = Number(item.unitPrice || 0) * (requestedQuantities.get(item.id) || 0);
+    orderValue.set(item.orderId, (orderValue.get(item.orderId) || 0) + value);
+  }
+  const totalValue = Array.from(orderValue.values()).reduce((sum, value) => sum + value, 0);
+  const shares = new Map<number, number>();
+  let allocated = 0;
+  orderIds.forEach((orderId, index) => {
+    const share = index === orderIds.length - 1
+      ? Math.max(0, cost - allocated)
+      : Number((cost * ((orderValue.get(orderId) || 0) / (totalValue || orderIds.length))).toFixed(2));
+    shares.set(orderId, share);
+    allocated += share;
+  });
+
+  const created = await createPackage({
+    orderId: orderIds[0],
+    ...data.packageData,
+    itemIds: requestedItemIds,
+    itemQuantities: data.itemQuantities,
+    isMerged: true,
+    mergedOrderIds: orderIds,
+  });
+  for (const orderId of orderIds) {
+    const shippingCostShare = (shares.get(orderId) || 0).toFixed(2);
+    await db.insert(packageOrderLinks).values({ packageId: created.packageId, orderId, shippingCostShare });
+    await syncOrderFulfilmentStateDb(db, orderId);
+  }
+  return { success: true, packageId: created.packageId, batchNo: created.packageNumber, shippingCostShares: Object.fromEntries(shares) };
+}
+
+export async function getOrderFulfilmentSummary(orderId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const { items, quantities } = await getOrderFulfilmentQuantitiesDb(db, orderId);
+  return items.map((item: any) => ({
+    orderItemId: item.id,
+    orderedQuantity: item.quantity,
+    shippedQuantity: quantities.get(item.id) || 0,
+    remainingQuantity: Math.max(0, item.quantity - (quantities.get(item.id) || 0)),
+  }));
+}
+
+// Orders may only share an AWB when the recipient and delivery method are
+// identical. Return remaining quantities from package_items so the UI never
+// proposes a quantity that has already shipped in an earlier batch.
+export async function getMergeShippingCandidates(orderId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const sourceRows = await db.select({
+    id: orders.id,
+    customerId: orders.customerId,
+    shippingAddress: orders.shippingAddress,
+    shippingMethod: orders.shippingMethod,
+  }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  const source = sourceRows[0];
+  if (!source) throw new Error("订单不存在");
+  // Historical walk-in / incomplete orders cannot be merged safely because
+  // recipient equality cannot be established from an empty address/method.
+  if (!source.shippingMethod || !source.shippingAddress) return [];
+
+  const candidates = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    physicalStatus: orders.physicalStatus,
+    totalAmount: orders.totalAmount,
+  }).from(orders).where(and(
+    eq(orders.customerId, source.customerId),
+    eq(orders.shippingMethod, source.shippingMethod),
+    eq(orders.shippingAddress, source.shippingAddress),
+    or(eq(orders.physicalStatus, "packing"), eq(orders.physicalStatus, "partial_shipped")),
+  )).orderBy(desc(orders.createdAt));
+
+  const compatible = await Promise.all(candidates.map(async (candidate) => {
+    const { items, quantities } = await getOrderFulfilmentQuantitiesDb(db, candidate.id);
+    const remainingItems = items.map((item: any) => ({
+      id: item.id,
+      productName: item.productName,
+      variationName: item.variationName,
+      orderedQuantity: item.quantity,
+      shippedQuantity: quantities.get(item.id) || 0,
+      remainingQuantity: Math.max(0, item.quantity - (quantities.get(item.id) || 0)),
+    })).filter((item: { remainingQuantity: number }) => item.remainingQuantity > 0);
+    return { ...candidate, items: remainingItems };
+  }));
+
+  return compatible.filter((candidate) => candidate.items.length > 0);
 }
 
 // --- Customer Order Tracking (public) ---
@@ -9126,8 +9352,9 @@ export async function getOrderExceptions(orderId: number) {
     .from(orderExceptions)
     .leftJoin(orderRefunds, eq(orderExceptions.refundId, orderRefunds.id))
     .where(eq(orderExceptions.orderId, orderId));
-  return rows.map(({ exception, refund }) => ({
+  return await Promise.all(rows.map(async ({ exception, refund }) => ({
     ...exception,
+    items: await db.select().from(orderExceptionItems).where(eq(orderExceptionItems.exceptionId, exception.id)),
     linkedRefund: refund ? {
       id: refund.id,
       refundNumber: refund.refundNumber,
@@ -9136,13 +9363,13 @@ export async function getOrderExceptions(orderId: number) {
       customerRefundDetails: refund.customerRefundDetails,
       attachmentUrls: refund.attachmentUrls,
     } : null,
-  }));
+  })));
 }
 
 export async function createOrderException(data: {
   orderId: number;
   orderItemId?: number | null;
-  exceptionType: 'out_of_stock' | 'quality_issue' | 'overcharged_shipping' | 'other';
+  exceptionType: 'out_of_stock' | 'quality_issue' | 'overcharged_shipping' | 'delivery_delay' | 'cancelled_item' | 'other';
   description?: string;
   createdBy?: string;
   // V2.1.26补充4: New fields for enhanced exception handling
@@ -9160,18 +9387,41 @@ export async function createOrderException(data: {
     // V2.1.26补充4: New fields
     quantity: data.quantity ?? 0,
     customerAction: data.customerAction ?? 'pending',
+    itemLevel: Boolean(data.orderItemId),
+    waitingForRestock: false,
   });
   const newId = (inserted as any).insertId;
+  let created: typeof orderExceptions.$inferSelect | undefined;
   if (!newId || isNaN(Number(newId))) {
     // Fallback: query the latest record for this order
     const rows = await db.select().from(orderExceptions)
       .where(eq(orderExceptions.orderId, data.orderId))
       .orderBy(desc(orderExceptions.id))
       .limit(1);
-    return rows[0];
+    created = rows[0];
+  } else {
+    const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, Number(newId))).limit(1);
+    created = rows[0];
   }
-  const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, Number(newId))).limit(1);
-  return rows[0];
+  if (created && data.orderItemId && Number(data.quantity || 0) > 0) {
+    const item = await db.select().from(orderItems).where(eq(orderItems.id, data.orderItemId)).limit(1);
+    if (item[0]) {
+      await db.insert(orderExceptionItems).values({
+        exceptionId: created.id,
+        orderItemId: item[0].id,
+        productId: item[0].productId,
+        productName: item[0].productName,
+        quantity: Number(data.quantity),
+        unitCost: String(item[0].unitCost || 0),
+        totalScrapCost: '0',
+        isScrapped: false,
+      });
+    }
+  }
+  // 开放包货异常（包括等待补货、替换与待退款）须由管理员明确处理，
+  // 因此一律启用订单级取消保护，避免付款期限任务误取消原有库存占用。
+  await db.update(orders).set({ cancelProtection: true }).where(eq(orders.id, data.orderId));
+  return created;
 }
 
 /**
@@ -9183,7 +9433,7 @@ export async function updateOrderException(
   exceptionId: number,
   data: {
     orderItemId?: number | null;
-    exceptionType?: 'out_of_stock' | 'quality_issue' | 'overcharged_shipping' | 'other';
+    exceptionType?: 'out_of_stock' | 'quality_issue' | 'overcharged_shipping' | 'delivery_delay' | 'cancelled_item' | 'other';
     description?: string;
     quantity?: number;
     customerAction?: 'replace_product' | 'wait_restock' | 'refund' | 'pending';
@@ -9232,6 +9482,39 @@ export async function resolveOrderException(
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // 订单原有库存占用持续有效；等待补货不是库存扣减或退款结算。
+  // 实际补货入库后由 allocateRestockedOrderException 执行可追溯的分配关闭。
+  if (resolutionType === 'wait_restock') {
+    const current = await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1);
+    const exception = current[0];
+    const quantity = Number(options?.quantity ?? exception?.quantity ?? 0);
+    if (!exception) throw new Error('异常记录不存在');
+    if (!exception.orderItemId || !Number.isInteger(quantity) || quantity <= 0) {
+      throw new Error('等待补货必须选择商品并填写正整数数量');
+    }
+    await db.update(orderExceptions).set({
+      itemLevel: true,
+      quantity,
+      resolutionType: 'wait_restock',
+      customerAction: 'wait_restock',
+      waitingForRestock: true,
+      status: 'open',
+      resolvedAt: null,
+      resolvedBy: null,
+      closedAt: null,
+      closedBy: null,
+    }).where(eq(orderExceptions.id, exceptionId));
+    await createOrderSpecialStatus({
+      orderId: exception.orderId,
+      type: 'stock_exception',
+      reason: `等待补货 - 异常#${exceptionId}`,
+      source: 'manual',
+      createdBy: resolvedBy,
+    });
+    await logOrderOperation(exception.orderId, 'packing_exception', `包货异常 #${exceptionId} 标记等待补货（数量 ${quantity}）`, null, resolvedBy);
+    broadcastChanges(['orders', 'dashboard']);
+    return (await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1))[0];
+  }
   if (resolutionType === 'refund') {
     const refund = await createPackingExceptionRefund({
       exceptionId,
@@ -9465,12 +9748,122 @@ export async function resolveOrderException(
   return rows[0];
 }
 
-// V2.1.26补充6: Delete an order exception (Issue 2)
-export async function deleteOrderException(exceptionId: number): Promise<void> {
+/** 补货实际入库后，将指定等待补货数量明确分配给原订单并关闭对应异常。 */
+export async function allocateRestockedOrderException(exceptionId: number, allocatedBy: string) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1);
+  const exception = rows[0];
+  if (!exception) throw new Error('异常记录不存在');
+  if (!exception.waitingForRestock || exception.status !== 'open') {
+    throw new Error('此异常并非等待补货状态，不能重复分配');
+  }
+  if (!exception.orderItemId || Number(exception.quantity || 0) <= 0) {
+    throw new Error('等待补货异常缺少商品或数量');
+  }
+
+  await db.update(orderExceptions).set({
+    waitingForRestock: false,
+    status: 'resolved',
+    resolutionType: 'wait_restock',
+    customerAction: 'wait_restock',
+    resolvedBy: allocatedBy,
+    resolvedAt: new Date(),
+    closedBy: allocatedBy,
+    closedAt: new Date(),
+  }).where(eq(orderExceptions.id, exceptionId));
+  const statuses = await db.select().from(orderSpecialStatuses).where(and(
+    eq(orderSpecialStatuses.orderId, exception.orderId),
+    eq(orderSpecialStatuses.type, 'stock_exception'),
+    eq(orderSpecialStatuses.status, 'pending'),
+  ));
+  for (const status of statuses.filter(status => String(status.reason || '').includes(`异常#${exceptionId}`))) {
+    await resolveOrderSpecialStatus({
+      specialStatusId: status.id,
+      resolutionMethod: 'data_corrected',
+      resolutionRemark: `补货已分配给等待补货异常 #${exceptionId}`,
+      resolvedBy: allocatedBy,
+    });
+  }
+  await logOrderOperation(exception.orderId, 'packing_exception', `包货异常 #${exceptionId} 已完成补货分配（数量 ${exception.quantity}）`, null, allocatedBy);
+  broadcastChanges(['orders', 'dashboard']);
+  return (await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1))[0];
+}
+
+/**
+ * 将一笔实际补货的数量依时间顺序分配给同商品的等待补货异常。
+ * 仅当一条异常的完整缺货数量能够满足时才关闭该异常；不足部分保留开放状态，
+ * 由下一笔补货继续分配，避免把未到齐的商品错误标记为可发货。
+ */
+export async function autoAllocateWaitingRestockForProduct(
+  productId: number,
+  incomingQuantity: number,
+  allocatedBy: string,
+) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  let remainingQuantity = Math.max(0, Math.floor(Number(incomingQuantity) || 0));
+  const allocatedExceptionIds: number[] = [];
+  if (remainingQuantity < 1) {
+    return { allocatedExceptionIds, allocatedQuantity: 0, remainingQuantity };
+  }
+
+  const [rows] = await db.execute(sql`
+    SELECT oe.id AS id, oe.quantity AS quantity
+    FROM order_exceptions oe
+    INNER JOIN order_exception_items oei ON oei.exceptionId = oe.id
+    WHERE oe.waitingForRestock = 1
+      AND oe.status = 'open'
+      AND oei.productId = ${productId}
+      AND oe.quantity > 0
+    GROUP BY oe.id, oe.quantity, oe.createdAt
+    ORDER BY oe.createdAt ASC, oe.id ASC
+  `);
+  const candidates = rows as unknown as Array<{ id: number; quantity: number | string }>;
+  for (const candidate of candidates) {
+    const requiredQuantity = Math.max(0, Math.floor(Number(candidate.quantity) || 0));
+    if (!requiredQuantity || requiredQuantity > remainingQuantity) continue;
+    await allocateRestockedOrderException(Number(candidate.id), allocatedBy);
+    allocatedExceptionIds.push(Number(candidate.id));
+    remainingQuantity -= requiredQuantity;
+  }
+
+  return {
+    allocatedExceptionIds,
+    allocatedQuantity: Math.max(0, Math.floor(Number(incomingQuantity) || 0) - remainingQuantity),
+    remainingQuantity,
+  };
+}
+
+// V3.3: Packing exceptions are part of the fulfilment audit trail. They are
+// cancelled instead of physically deleted so later refunds, stock entries and
+// operator actions remain traceable.
+export async function cancelOrderException(exceptionId: number, cancelledBy: string): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(orderExceptions).where(eq(orderExceptions.id, exceptionId));
+  const [exception] = await db.select({ id: orderExceptions.id, status: orderExceptions.status })
+    .from(orderExceptions)
+    .where(eq(orderExceptions.id, exceptionId))
+    .limit(1);
+  if (!exception) throw new Error("异常记录不存在");
+  if (exception.status === "resolved") throw new Error("已完成的异常不可取消，请通过退款或库存更正流程处理");
+  if (exception.status === "cancelled") return;
+
+  await db.update(orderExceptions)
+    .set({
+      status: "cancelled",
+      waitingForRestock: false,
+      closedAt: new Date(),
+      closedBy: cancelledBy,
+    })
+    .where(eq(orderExceptions.id, exceptionId));
   broadcastChanges(["orders", "dashboard"]);
+}
+
+// Backward-compatible name for older callers. It intentionally no longer
+// removes a record from the database.
+export async function deleteOrderException(exceptionId: number): Promise<void> {
+  await cancelOrderException(exceptionId, "Legacy cancellation");
 }
 
 // V2.1.26补充6: Add an order item (used by exception replacement logic)
@@ -10844,6 +11237,7 @@ export async function processExpiredLocalOrders() {
     WHERE (o.orderCategory IS NULL OR o.orderCategory = 'local')
       AND o.createdAt < DATE_SUB(NOW(), INTERVAL 7 DAY)
       AND o.physicalStatus IN ('pending', 'hold_order')
+      AND COALESCE(o.cancelProtection, 0) = 0
       AND COALESCE(o.paidAmount, 0) <= 0
       AND (o.receiptUrl IS NULL OR TRIM(o.receiptUrl) = '')
       AND NOT EXISTS (

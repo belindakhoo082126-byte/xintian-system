@@ -4,6 +4,7 @@ import type { TrpcContext } from "./_core/context";
 vi.mock("./db", () => ({
   fullShipping: vi.fn(),
   partialShipping: vi.fn(),
+  shipMergedOrders: vi.fn(),
   getOrderById: vi.fn(),
   getCustomerById: vi.fn(),
   getSystemSettings: vi.fn(),
@@ -148,6 +149,19 @@ describe("shipping router safety checks", () => {
       partialShipmentInput.packageData,
       partialShipmentInput.itemQuantities
     );
+  });
+
+  it("passes compatible multi-order package data through the merged-shipment service", async () => {
+    vi.mocked(dbMock.shipMergedOrders).mockResolvedValue({ success: true, packageId: 88, batchNo: 4 } as any);
+    const caller = appRouter.createCaller(createAuthContext());
+    const input = {
+      orderIds: [90001, 90002],
+      itemQuantities: [{ itemId: "1001", quantity: 1 }, { itemId: "1002", quantity: 2 }],
+      packageData: { courier: "Line Clear", shippingType: "manual" as const, trackingNumber: "MERGED-001", weight: "2.5", shippingCost: "18.00" },
+    };
+
+    await expect(caller.shipping.mergeShip(input)).resolves.toMatchObject({ success: true, packageId: 88, batchNo: 4 });
+    expect(dbMock.shipMergedOrders).toHaveBeenCalledWith(input);
   });
 
   it("sends and audits a customer notification after a manual full shipment", async () => {

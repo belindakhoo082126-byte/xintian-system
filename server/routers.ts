@@ -4049,8 +4049,9 @@ export const appRouter = router({
     })).mutation(async ({ input }) => {
       const order = await db.getOrderBySecureToken(input.orderNumber, input.token);
       if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "订单不存在或链接无效" });
-      // V2.1.14: Allow add-on for pending, hold_order, and partial_payment
-      const mergeableStatuses = ["pending", "hold_order", "partial_payment"];
+      // 与服务层同一白名单：待包货／待备货尚未履约，可继续加单；
+      // 已部分发货、已发货、完成、取消及其他关闭状态不可绕过此入口。
+      const mergeableStatuses = ["pending", "receipt_uploaded", "hold_order", "partial_payment", "packing"];
       if (!mergeableStatuses.includes(order.physicalStatus || "pending")) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "当前订单状态不允许加单" });
       }
@@ -4223,6 +4224,18 @@ export const appRouter = router({
     slipData: shippingProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
       return await db.getPackingSlipData(input.orderId);
     }),
+
+    // Per-order-item dispatched and remaining quantities. package_items is the
+    // source of truth, so this stays correct for both ordinary and merged AWBs.
+    fulfilmentSummary: shippingProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+      return await db.getOrderFulfilmentSummary(input.orderId);
+    }),
+
+    // Only exposes compatible orders (same recipient and shipping method) and
+    // their remaining quantities for a single shared physical package.
+    mergeCandidates: shippingProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
+      return await db.getMergeShippingCandidates(input.orderId);
+    }),
   }),
   
   shipping: router({
@@ -4392,6 +4405,31 @@ export const appRouter = router({
     // Get packages for an order
     packages: shippingProcedure.input(z.object({ orderId: z.number() })).query(async ({ input }) => {
       return await db.getOrderPackages(input.orderId);
+    }),
+
+    // Merge compatible orders into one physical package. Delivery costs are
+    // persisted per linked order; no inventory change is made at shipping time.
+    mergeShip: shippingProcedure.input(z.object({
+      orderIds: z.array(z.number()).min(2),
+      itemQuantities: z.array(z.object({ itemId: z.string(), quantity: z.number().int().positive() })).min(1),
+      packageData: z.object({
+        courier: z.string().min(1),
+        shippingType: z.enum(["auto", "manual"]),
+        trackingNumber: z.string().optional(),
+        shippingLabelUrl: z.string().optional(),
+        providerOrderId: z.string().optional(),
+        weight: z.string().optional(),
+        shippingCost: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      try {
+        const result = await db.shipMergedOrders(input);
+        const primaryOrderId = input.orderIds[0];
+        await recordManualShipmentNotification(primaryOrderId, [input.packageData], true);
+        return result;
+      } catch (error) {
+        return rethrowPackingShippingError(error);
+      }
     }),
     
     // Create ParcelDaily shipment (auto)
@@ -4802,7 +4840,7 @@ export const appRouter = router({
     create: protectedProcedure.input(z.object({
       orderId: z.number(),
       orderItemId: z.number().nullable().optional(),
-      exceptionType: z.enum(["out_of_stock", "quality_issue", "overcharged_shipping", "other"]),
+      exceptionType: z.enum(["out_of_stock", "quality_issue", "overcharged_shipping", "delivery_delay", "cancelled_item", "other"]),
       description: z.string().optional(),
       // V2.1.26补充4: New fields for enhanced exception handling
       quantity: z.number().optional(),
@@ -4824,7 +4862,7 @@ export const appRouter = router({
     update: protectedProcedure.input(z.object({
       exceptionId: z.number(),
       orderItemId: z.number().nullable().optional(),
-      exceptionType: z.enum(["out_of_stock", "quality_issue", "overcharged_shipping", "other"]).optional(),
+      exceptionType: z.enum(["out_of_stock", "quality_issue", "overcharged_shipping", "delivery_delay", "cancelled_item", "other"]).optional(),
       description: z.string().optional(),
       quantity: z.number().min(0).optional(),
       customerAction: z.enum(["replace_product", "wait_restock", "refund", "pending"]).optional(),
@@ -4967,24 +5005,25 @@ export const appRouter = router({
       return await db.getOrderExceptionReplacements(input.exceptionId);
     }),
 
-    // V2.1.26补充6: Delete an exception (Issue 2)
-    delete: protectedProcedure.input(z.object({ exceptionId: z.number() })).mutation(async ({ input }) => {
-      await db.deleteOrderException(input.exceptionId);
-      return { success: true };
+    // V3.3: Exceptions must remain in the audit trail. Keep the legacy RPC
+    // name below for existing clients, but perform a traceable cancellation.
+    cancel: protectedProcedure.input(z.object({ exceptionId: z.number() })).mutation(async ({ input, ctx }) => {
+      const userName = ctx.user?.name || ctx.user?.email || "Unknown";
+      await db.cancelOrderException(input.exceptionId, userName);
+      return { success: true, status: "cancelled" as const };
+    }),
+    delete: protectedProcedure.input(z.object({ exceptionId: z.number() })).mutation(async ({ input, ctx }) => {
+      const userName = ctx.user?.name || ctx.user?.email || "Unknown";
+      await db.cancelOrderException(input.exceptionId, userName);
+      return { success: true, status: "cancelled" as const };
     }),
 
-    // V2.1.26补充6: Mark an exception as resolved/processed (Issue 8)
+    // 补货到货后，明确将已入库的数量分配给等待订单并关闭该商品级异常。
     markResolved: protectedProcedure.input(z.object({
       exceptionId: z.number(),
-      orderId: z.number().optional(),
     })).mutation(async ({ input, ctx }) => {
       const userName = ctx.user?.name || ctx.user?.email || 'Unknown';
-      const exception = await db.resolveOrderException(
-        input.exceptionId,
-        'wait_restock',
-        userName,
-        { orderId: input.orderId || 0, customerAction: 'pending' },
-      );
+      const exception = await db.allocateRestockedOrderException(input.exceptionId, userName);
       return { success: true, exception };
     }),
   }),

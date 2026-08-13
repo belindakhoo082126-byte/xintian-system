@@ -48,13 +48,14 @@ export default function PackingDetail() {
   const { data: detail, isLoading } = trpc.packing.detail.useQuery({ orderId });
   const { data: slipData } = trpc.packing.slipData.useQuery({ orderId });
   const { data: existingPackages } = trpc.shipping.packages.useQuery({ orderId });
+  const { data: fulfilmentSummary } = trpc.packing.fulfilmentSummary.useQuery({ orderId }, { enabled: !!orderId });
   const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
   const { data: repots } = trpc.repots.list.useQuery({ orderId });
 
   const [shippingMode, setShippingMode] = useState<"full" | "partial">("full");
   const [exceptionDialogOpen, setExceptionDialogOpen] = useState(false);
   const [editingExceptionId, setEditingExceptionId] = useState<number | null>(null);
-  const [exceptionType, setExceptionType] = useState<"out_of_stock" | "quality_issue" | "overcharged_shipping" | "other">("quality_issue");
+  const [exceptionType, setExceptionType] = useState<"out_of_stock" | "quality_issue" | "overcharged_shipping" | "delivery_delay" | "cancelled_item" | "other">("quality_issue");
   const [exceptionDesc, setExceptionDesc] = useState("");
   const [resolutionType, setResolutionType] = useState<"replace" | "wait_restock" | "refund">("replace");
   const [exceptionItemId, setExceptionItemId] = useState<number | "">("");
@@ -85,6 +86,18 @@ export default function PackingDetail() {
   }>>([{ courier: "Line Clear", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
   const [actualWeightInput, setActualWeightInput] = useState("");
   const [uploadingAwbIndex, setUploadingAwbIndex] = useState<number | null>(null);
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [mergeOrderIds, setMergeOrderIds] = useState<number[]>([orderId]);
+  const [mergeShippingCost, setMergeShippingCost] = useState("0");
+  const [mergeCourier, setMergeCourier] = useState("Line Clear");
+  const [mergeTrackingNumber, setMergeTrackingNumber] = useState("");
+  const [mergeWeight, setMergeWeight] = useState("1");
+  const [mergeAwbUrl, setMergeAwbUrl] = useState("");
+  const [uploadingMergeAwb, setUploadingMergeAwb] = useState(false);
+  const { data: mergeCandidates } = trpc.packing.mergeCandidates.useQuery(
+    { orderId },
+    { enabled: mergeDialogOpen && !!detail },
+  );
 
   const { data: specialActions } = trpc.shippingV2.specialOrderActions.useQuery({ orderId }, { enabled: !!detail });
 
@@ -98,6 +111,7 @@ export default function PackingDetail() {
         courier: autoCourier,
         shippingType: shippingMethod === "west_malaysia" || shippingMethod === "east_malaysia_poslaju" ? "auto" : p.shippingType,
       })));
+      setMergeCourier(autoCourier);
     }
   }, [detail]);
   const updateWeightMutation = trpc.shippingV2.updateActualWeight.useMutation({
@@ -180,26 +194,44 @@ export default function PackingDetail() {
     onError: (err) => toast.error(translate("更新异常失败: ", "Failed to update exception: ") + err.message),
   });
 
-  // V2.1.26补充6: Delete exception mutation (Issue 2)
-  const deleteExceptionMutation = trpc.orderException.delete.useMutation({
+  // V3.3: A packing exception is cancelled rather than physically deleted.
+  const cancelExceptionMutation = trpc.orderException.cancel.useMutation({
     onSuccess: () => {
-      toast.success("异常已删除");
+      toast.success(translate("异常已取消，历史记录已保留", "Exception cancelled; its history is retained"));
       utils.packing.detail.invalidate({ orderId });
       utils.orderException.list.invalidate({ orderId });
       utils.packing.list.invalidate();
     },
-    onError: (err) => toast.error("删除失败: " + err.message),
+    onError: (err) => toast.error(translate("取消异常失败: ", "Failed to cancel exception: ") + err.message),
   });
 
   // V2.1.26补充6: Mark exception as resolved (Issue 8)
   const markResolvedMutation = trpc.orderException.markResolved.useMutation({
     onSuccess: () => {
-      toast.success("异常已处理");
+      toast.success(translate("异常已关闭", "Exception closed"));
       utils.packing.detail.invalidate({ orderId });
       utils.orderException.list.invalidate({ orderId });
       utils.packing.list.invalidate();
     },
     onError: (err) => toast.error("处理失败: " + err.message),
+  });
+
+  const mergeShipMutation = trpc.shipping.mergeShip.useMutation({
+    onSuccess: (result: any) => {
+      toast.success(translate(
+        `已合并为发货批次 #${result.batchNo}，运费已按商品金额分摊。`,
+        `Merged into shipment batch #${result.batchNo}; shipping cost has been apportioned by item value.`,
+      ));
+      setMergeDialogOpen(false);
+      setMergeOrderIds([orderId]);
+      setMergeShippingCost("0");
+      utils.packing.detail.invalidate({ orderId });
+      utils.packing.fulfilmentSummary.invalidate({ orderId });
+      utils.packing.mergeCandidates.invalidate({ orderId });
+      utils.packing.list.invalidate();
+      utils.shipping.packages.invalidate({ orderId });
+    },
+    onError: (err: any) => toast.error(translate("合并邮寄失败：", "Merged shipment failed: ") + err.message),
   });
 
   const resolveExceptionMutation = trpc.orderException.resolve.useMutation({
@@ -474,6 +506,35 @@ export default function PackingDetail() {
     }
   }
 
+  async function uploadMergeShippingLabel(file: File) {
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(translate("AWB 文件不能超过 10MB", "AWB file must not exceed 10MB"));
+      return;
+    }
+    setUploadingMergeAwb(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: dataUrl, filename: file.name, contentType: file.type }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.url) throw new Error(payload.error || "Upload failed");
+      setMergeAwbUrl(payload.url);
+      toast.success(translate("合并包裹 AWB 已上传", "Merged-package AWB uploaded"));
+    } catch (error: any) {
+      toast.error(error?.message || translate("上传 AWB 失败", "Failed to upload AWB"));
+    } finally {
+      setUploadingMergeAwb(false);
+    }
+  }
+
   const handlePrint = () => {
     window.print();
   };
@@ -493,12 +554,15 @@ export default function PackingDetail() {
     d.shippingMethod === "east_malaysia_poslaju" ? translate("东马 POSLAJU", "East Malaysia POSLAJU") : "";
   const canShip = d.physicalStatus === "packing" || d.physicalStatus === "partial_shipped";
   const activeShippingMode = d.physicalStatus === "partial_shipped" ? "partial" : shippingMode;
-  const shippedItemIds = new Set(
-    ((existingPackages || []) as any[]).flatMap((pkg) =>
-      ((pkg.items || []) as any[]).map((item) => Number(item.orderItemId))
-    )
+  const fulfilmentByItem = new Map(
+    ((fulfilmentSummary || []) as any[]).map((row) => [Number(row.orderItemId), row]),
   );
-  const shippableItems = (d.items as any[]).filter((item) => !shippedItemIds.has(Number(item.id)));
+  const shippableItems = (d.items as any[]).map((item) => {
+    const summary = fulfilmentByItem.get(Number(item.id));
+    const remainingQuantity = summary ? Number(summary.remainingQuantity || 0) : Number(item.quantity || 0);
+    const shippedQuantity = summary ? Number(summary.shippedQuantity || 0) : 0;
+    return { ...item, remainingQuantity, shippedQuantity };
+  }).filter((item) => item.remainingQuantity > 0);
   const trackedPackageNumbers = ((existingPackages || []) as any[])
     .map((pkg) => String(pkg.trackingNumber || "").trim())
     .filter(Boolean);
@@ -616,6 +680,10 @@ export default function PackingDetail() {
                   <Package className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <div className="font-medium text-sm">{translate("包裹", "Package")} {pkg.packageNumber} - {pkg.courier}</div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {pkg.batchNo && <Badge variant="outline" className="text-[11px]">{translate(`履约批次 #${pkg.batchNo}`, `Fulfilment batch #${pkg.batchNo}`)}</Badge>}
+                      {pkg.isMerged && <Badge className="bg-violet-100 text-violet-800 hover:bg-violet-100 text-[11px]">{translate("合并邮寄", "Merged shipment")}</Badge>}
+                    </div>
                     <div className="text-xs text-muted-foreground">{translate("追踪号:", "Tracking:")} {pkg.trackingNumber || translate("未填写", "Not filled")}</div>
                     {pkg.weight && <div className="text-xs text-muted-foreground">{translate("重量", "Weight")}: {pkg.weight} kg</div>}
                   </div>
@@ -666,6 +734,94 @@ export default function PackingDetail() {
         </Card>
       )}
 
+      {/* Shipment batch and merged-mailing workbench. */}
+      {canShip && (
+        <Card className="print-hide border-violet-200">
+          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base"><Package className="h-4 w-4 text-violet-600" />{translate("履约批次与合并邮寄", "Fulfilment Batches & Merged Shipping")}</CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">{translate("部分发货以每项实际已发数量计算；合并邮寄仅适用于相同收件资料及配送方式。", "Partial shipping uses actual shipped quantities; merged shipping is restricted to matching recipient details and delivery method.")}</p>
+            </div>
+            <Dialog open={mergeDialogOpen} onOpenChange={(open) => {
+              setMergeDialogOpen(open);
+              if (open) setMergeOrderIds([orderId]);
+            }}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="border-violet-300 text-violet-700 hover:bg-violet-50">
+                  <Package className="mr-2 h-4 w-4" />{translate("合并邮寄", "Merge Shipping")}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+                <DialogHeader><DialogTitle>{translate("合并多个订单为一个包裹", "Merge Orders into One Package")}</DialogTitle></DialogHeader>
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-950">
+                    {translate("系统只显示同一客户、相同收件地址和配送方式，并且仍有待发商品的订单。确认后会建立一个共享包裹，运费按本次合并商品金额比例分摊。", "Only orders for the same customer, recipient address and delivery method with remaining items are shown. Confirmation creates one shared package and apportions its shipping cost by the merged item value.")}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{translate("选择订单与本次待发商品", "Select Orders and Remaining Items")}</Label>
+                    {((mergeCandidates || []) as any[]).length === 0 ? (
+                      <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{translate("没有可与此订单合并邮寄的订单。", "No compatible orders are available for merged shipping.")}</div>
+                    ) : ((mergeCandidates || []) as any[]).map((candidate: any) => {
+                      const isPrimary = Number(candidate.id) === orderId;
+                      const selected = mergeOrderIds.includes(Number(candidate.id));
+                      return <label key={candidate.id} className={`block rounded-lg border p-3 ${selected ? "border-violet-400 bg-violet-50" : "border-border"}`}>
+                        <div className="flex items-start gap-3">
+                          <Checkbox
+                            checked={selected}
+                            disabled={isPrimary}
+                            onCheckedChange={() => {
+                              if (isPrimary) return;
+                              setMergeOrderIds((previous) => previous.includes(Number(candidate.id))
+                                ? previous.filter((id) => id !== Number(candidate.id))
+                                : [...previous, Number(candidate.id)]);
+                            }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium">{candidate.orderNumber}{isPrimary && <Badge variant="outline" className="ml-2 text-[11px]">{translate("当前订单", "Current order")}</Badge>}</div>
+                            <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+                              {(candidate.items || []).map((item: any) => <div key={item.id}>{item.productName}{item.variationName ? ` (${item.variationName})` : ""} — {translate(`待发 ${item.remainingQuantity}`, `${item.remainingQuantity} remaining`)}</div>)}
+                            </div>
+                          </div>
+                        </div>
+                      </label>;
+                    })}
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-2"><Label>{translate("快递公司", "Courier")}</Label><Select value={mergeCourier} onValueChange={setMergeCourier}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{COURIERS.map((courier) => <SelectItem key={courier.zh} value={courier.zh}>{lang === "en" ? courier.en : courier.zh}</SelectItem>)}</SelectContent></Select></div>
+                    <div className="space-y-2"><Label>{translate("合并包裹重量（kg）", "Merged Package Weight (kg)")}</Label><Input type="number" min="0.01" step="0.01" value={mergeWeight} onChange={(event) => setMergeWeight(event.target.value)} /></div>
+                    <div className="space-y-2"><Label>{translate("追踪号码", "Tracking Number")}</Label><Input value={mergeTrackingNumber} onChange={(event) => setMergeTrackingNumber(event.target.value)} placeholder={translate("必填", "Required")} /></div>
+                    <div className="space-y-2"><Label>{translate("实际运费（RM，用于分摊）", "Actual Shipping Cost (RM, for allocation)")}</Label><Input type="number" min="0" step="0.01" value={mergeShippingCost} onChange={(event) => setMergeShippingCost(event.target.value)} /></div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{translate("合并包裹 AWB", "Merged Package AWB")}</Label>
+                    <Input type="file" accept="image/*,.pdf" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadMergeShippingLabel(file); }} disabled={uploadingMergeAwb} />
+                    {mergeAwbUrl && <a className="text-xs text-primary underline" href={mergeAwbUrl} target="_blank" rel="noreferrer">{translate("查看已上传 AWB", "View uploaded AWB")}</a>}
+                  </div>
+                  <Button className="w-full" onClick={() => {
+                    const selectedOrders = ((mergeCandidates || []) as any[]).filter((candidate: any) => mergeOrderIds.includes(Number(candidate.id)));
+                    const itemQuantities = selectedOrders.flatMap((candidate: any) => (candidate.items || []).map((item: any) => ({ itemId: String(item.id), quantity: Number(item.remainingQuantity) })));
+                    if (mergeOrderIds.length < 2) { toast.error(translate("请至少选择两张订单", "Select at least two orders")); return; }
+                    if (!mergeTrackingNumber.trim() || !mergeAwbUrl) { toast.error(translate("合并邮寄必须填写追踪号码并上传 AWB", "Merged shipping requires a tracking number and AWB upload")); return; }
+                    if (!Number.isFinite(Number(mergeWeight)) || Number(mergeWeight) <= 0) { toast.error(translate("请填写有效包裹重量", "Enter a valid package weight")); return; }
+                    mergeShipMutation.mutate({ orderIds: mergeOrderIds, itemQuantities, packageData: { courier: mergeCourier, shippingType: "manual", trackingNumber: mergeTrackingNumber.trim(), shippingLabelUrl: mergeAwbUrl, weight: mergeWeight, shippingCost: mergeShippingCost } });
+                  }} disabled={mergeShipMutation.isPending || uploadingMergeAwb}>
+                    {mergeShipMutation.isPending ? translate("正在建立合并包裹…", "Creating merged package…") : translate("确认合并并发货", "Confirm Merge and Ship")}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {(fulfilmentSummary || []).map((item: any) => {
+                const orderItem = (d.items || []).find((row: any) => Number(row.id) === Number(item.orderItemId));
+                return <div key={item.orderItemId} className="rounded-md border p-2 text-sm"><div className="truncate font-medium">{orderItem?.productName || translate("商品", "Item")}</div><div className="mt-1 text-xs text-muted-foreground">{translate(`已发 ${item.shippedQuantity} · 待发 ${item.remainingQuantity}`, `Shipped ${item.shippedQuantity} · Remaining ${item.remainingQuantity}`)}</div></div>;
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Exception Handling - only show for packing/partial_shipped status */}
       {canShip && (
         <Card className="print-hide border-orange-200">
@@ -688,6 +844,8 @@ export default function PackingDetail() {
                       {exc.exceptionType === "out_of_stock" ? translate("商品缺货", "Out of Stock") :
                        exc.exceptionType === "quality_issue" ? translate("植物品质异常", "Quality Issue") :
                        exc.exceptionType === "overcharged_shipping" ? translate("运费多收", "Overcharged Shipping") :
+                       exc.exceptionType === "delivery_delay" ? translate("配送／到货延迟", "Delivery Delay") :
+                       exc.exceptionType === "cancelled_item" ? translate("商品取消", "Cancelled Item") :
                        translate("其他异常", "Other")}
                       {exc.quantity > 0 && <span className="text-muted-foreground ml-2">×{exc.quantity}</span>}
                       {exc.customerAction && exc.customerAction !== "pending" && (
@@ -697,7 +855,21 @@ export default function PackingDetail() {
                            exc.customerAction === "refund" ? translate("退款", "Refund") : ""}
                         </span>
                       )}
+                      {exc.waitingForRestock && exc.status !== "resolved" && (
+                        <Badge className="ml-2 border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                          {translate("等待补货", "Waiting for restock")}
+                        </Badge>
+                      )}
                       {exc.description && <span className="text-muted-foreground ml-2">— {exc.description}</span>}
+                      {(exc.items || []).length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1 text-xs">
+                          {(exc.items || []).map((item: any) => (
+                            <Badge key={item.id} variant="outline" className="border-orange-200 text-orange-800">
+                              {item.productName} ×{item.quantity}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                       {exc.linkedRefund && (
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                           <Badge className="border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-50">
@@ -720,10 +892,13 @@ export default function PackingDetail() {
                             size="sm"
                             variant="outline"
                             className="border-green-300 text-green-600 hover:bg-green-50"
-                            onClick={() => markResolvedMutation.mutate({ exceptionId: exc.id })}
+                            onClick={() => {
+                              if (exc.waitingForRestock && !confirm(translate("确认补货已经到货并分配给此订单？此操作会关闭该商品级等待补货异常。", "Confirm that restock has arrived and been allocated to this order? This closes the item-level waiting-restock exception."))) return;
+                              markResolvedMutation.mutate({ exceptionId: exc.id });
+                            }}
                             disabled={markResolvedMutation.isPending}
                           >
-                            {translate("已处理", "Resolved")}
+                            {exc.waitingForRestock ? translate("补货已到，分配并关闭", "Allocate Restock & Close") : translate("已处理", "Resolved")}
                           </Button>
                           <Button
                             size="sm"
@@ -742,20 +917,21 @@ export default function PackingDetail() {
                           </Button>
                         </>
                       )}
-                      {/* V2.1.26补充6: Delete button (Issue 2) */}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="border-red-300 text-red-600 hover:bg-red-50"
-                        onClick={() => {
-                          if (confirm("确定删除此异常记录?")) {
-                            deleteExceptionMutation.mutate({ exceptionId: exc.id });
-                          }
-                        }}
-                        disabled={deleteExceptionMutation.isPending}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                      {exc.status === "open" && !exc.linkedRefund && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-red-300 text-red-600 hover:bg-red-50"
+                          onClick={() => {
+                            if (confirm(translate("确定取消此异常？取消后会保留完整历史记录，且不能恢复为原异常。", "Cancel this exception? Its full history is retained and it cannot be restored to the original exception."))) {
+                              cancelExceptionMutation.mutate({ exceptionId: exc.id });
+                            }
+                          }}
+                          disabled={cancelExceptionMutation.isPending}
+                        >
+                          <X className="h-4 w-4" /> {translate("取消异常", "Cancel")}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -790,6 +966,8 @@ export default function PackingDetail() {
                         <SelectItem value="out_of_stock">{translate("商品缺货", "Out of Stock")}</SelectItem>
                         <SelectItem value="quality_issue">{translate("植物品质异常", "Quality Issue")}</SelectItem>
                         <SelectItem value="overcharged_shipping">{translate("运费多收", "Overcharged Shipping")}</SelectItem>
+                        <SelectItem value="delivery_delay">{translate("配送／到货延迟", "Delivery Delay")}</SelectItem>
+                        <SelectItem value="cancelled_item">{translate("商品取消", "Cancelled Item")}</SelectItem>
                         <SelectItem value="other">{translate("其他异常", "Other")}</SelectItem>
                       </SelectContent>
                     </Select>
@@ -1355,9 +1533,9 @@ export default function PackingDetail() {
                           checked={selectedItems.includes(item.id)}
                           onCheckedChange={() => {
                             toggleItem(item.id);
-                            // Initialize ship quantity to full quantity when first selected
+                            // Initialize to the actual unshipped balance, never the original order quantity.
                             if (!selectedItems.includes(item.id)) {
-                              setShipQuantities((prev) => ({ ...prev, [item.id]: item.quantity }));
+                              setShipQuantities((prev) => ({ ...prev, [item.id]: item.remainingQuantity }));
                             }
                           }}
                         />
@@ -1365,21 +1543,24 @@ export default function PackingDetail() {
                           htmlFor={`item-${item.id}`}
                           className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                         >
-                          {item.productName} {item.variationName && `(${item.variationName})`} x {item.quantity}
+                          {item.productName} {item.variationName && `(${item.variationName})`}
+                          <span className="ml-1 text-muted-foreground">
+                            {translate(`已发 ${item.shippedQuantity}／待发 ${item.remainingQuantity}`, `Shipped ${item.shippedQuantity} / Remaining ${item.remainingQuantity}`)}
+                          </span>
                         </label>
                         {/* V2.1.26补充4: Quantity input for partial shipping (Issue 7) */}
-                        {selectedItems.includes(item.id) && item.quantity > 1 && (
+                        {selectedItems.includes(item.id) && item.remainingQuantity > 1 && (
                           <div className="flex items-center gap-1 ml-auto">
                             <Label className="text-xs text-muted-foreground">{translate("发货数量", "Ship Qty")}:</Label>
                             <Input
                               type="number"
                               min={1}
-                              max={item.quantity}
-                              value={shipQuantities[item.id] ?? item.quantity}
-                              onChange={(e) => updateShipQuantity(item.id, Number(e.target.value), item.quantity)}
+                              max={item.remainingQuantity}
+                              value={shipQuantities[item.id] ?? item.remainingQuantity}
+                              onChange={(e) => updateShipQuantity(item.id, Number(e.target.value), item.remainingQuantity)}
                               className="w-16 h-8 text-sm"
                             />
-                            <span className="text-xs text-muted-foreground">/ {item.quantity}</span>
+                            <span className="text-xs text-muted-foreground">/ {item.remainingQuantity}</span>
                           </div>
                         )}
                       </div>

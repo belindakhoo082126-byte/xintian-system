@@ -659,6 +659,9 @@ export const orders = mysqlTable("orders", {
   notificationStatus: mysqlEnum("notificationStatus", ["pending", "sent", "failed"]).default("pending"),
   notificationError: text("notificationError"),
   notificationSentAt: timestamp("notificationSentAt"),
+  // V3.3: Once any physical quantity has shipped, scheduled / automatic
+  // cancellation must not void the remaining fulfilment without an Admin action.
+  cancelProtection: boolean("cancelProtection").default(false).notNull(),
 });
 export type Order = typeof orders.$inferSelect;
 export type InsertOrder = typeof orders.$inferInsert;
@@ -1494,6 +1497,13 @@ export const packages = mysqlTable("packages", {
   orderId: int("orderId").notNull(),
   // Package number within the order (1, 2, 3...)
   packageNumber: int("packageNumber").notNull(),
+  // V3.3: Fulfilment batch within the primary order. Existing packages safely
+  // default to batch 1, while package_items remains the sole shipped-quantity ledger.
+  batchNo: int("batchNo").default(1).notNull(),
+  // V3.3: A merged parcel retains its primary orderId for legacy screens and
+  // links every participating order through package_order_links below.
+  isMerged: boolean("isMerged").default(false).notNull(),
+  mergedOrderIds: text("mergedOrderIds"),
   // Courier selection
   courier: varchar("courier", { length: 100 }).notNull(),
   // Shipping method: auto (ParcelDaily API) or manual
@@ -1518,6 +1528,26 @@ export const packages = mysqlTable("packages", {
 
 export type Package = typeof packages.$inferSelect;
 export type InsertPackage = typeof packages.$inferInsert;
+
+// ============================================================================
+// Package Order Links (合并邮寄订单分摊)
+// ============================================================================
+
+export const packageOrderLinks = mysqlTable("package_order_links", {
+  id: int("id").autoincrement().primaryKey(),
+  packageId: int("packageId").notNull(),
+  orderId: int("orderId").notNull(),
+  // The customer-facing share of the merged parcel's actual shipping cost.
+  // Stored explicitly so later edits never silently recalculate historic shares.
+  shippingCostShare: decimal("shippingCostShare", { precision: 10, scale: 2 }).default("0").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  packageOrderUnique: uniqueIndex("uq_package_order_links_package_order").on(table.packageId, table.orderId),
+  orderLookup: index("idx_package_order_links_order").on(table.orderId),
+}));
+
+export type PackageOrderLink = typeof packageOrderLinks.$inferSelect;
+export type InsertPackageOrderLink = typeof packageOrderLinks.$inferInsert;
 
 // ============================================================================
 // Package Items (包裹商品) - For partial shipping tracking
@@ -1637,6 +1667,8 @@ export const orderExceptions = mysqlTable("order_exceptions", {
     "out_of_stock",       // 商品缺货
     "quality_issue",      // 植物品质异常
     "overcharged_shipping", // 运费多收
+    "delivery_delay",     // 配送／到货延迟
+    "cancelled_item",     // 商品取消
     "other",              // 其他异常
   ]).notNull(),
   // Customer resolution preference (for quality_issue)
@@ -1684,6 +1716,14 @@ export const orderExceptions = mysqlTable("order_exceptions", {
   createdBy: varchar("createdBy", { length: 255 }),
   // Who resolved it
   resolvedBy: varchar("resolvedBy", { length: 255 }),
+  // V3.3: Each packing exception can be a single affected order item. Legacy
+  // exception records retain false and remain readable by the previous UI.
+  itemLevel: boolean("itemLevel").default(false).notNull(),
+  // Waiting for replenishment is an open fulfilment state, not a refund or
+  // stock adjustment. Allocation is only recorded when stock is later assigned.
+  waitingForRestock: boolean("waitingForRestock").default(false).notNull(),
+  closedAt: timestamp("closedAt"),
+  closedBy: varchar("closedBy", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   resolvedAt: timestamp("resolvedAt"),
