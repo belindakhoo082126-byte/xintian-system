@@ -11,6 +11,7 @@ import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useI18n } from "@/contexts/I18nContext";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
 
 function translateMallNotice(notice: string, translate: (zh: string, en: string) => string) {
   const normalized = notice.replace(/\s+/g, "").toLowerCase();
@@ -232,21 +233,30 @@ export default function MallHome() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {bundles.map((b: any) => (
-              <Link key={b.id} href={`/mall/bundle/${b.id}`}>
-                <Card className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90" style={{ borderRadius: "16px" }}>
+              <Card
+                key={b.id}
+                role="link"
+                tabIndex={0}
+                onClick={() => setLocation(`/mall/bundle/${b.id}`)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setLocation(`/mall/bundle/${b.id}`);
+                  }
+                }}
+                className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                style={{ borderRadius: "16px" }}
+              >
                   <div className="aspect-square overflow-hidden bg-gray-50 relative">
                     {b.coverImage ? (
                       <>
-                        <img
+                        <ProductImagePreview
                           src={b.coverImage}
                           alt={b.name}
-                          className="w-full h-full object-cover mall-img-zoom"
-                          onError={(event) => {
-                            event.currentTarget.classList.add("hidden");
-                            event.currentTarget.parentElement?.querySelector("[data-image-fallback]")?.classList.remove("hidden");
-                          }}
+                          label={translate("放大查看组合包封面", "Zoom bundle cover")}
+                          className="h-full w-full rounded-none border-0 bg-transparent"
+                          imageClassName="mall-img-zoom"
                         />
-                        <div data-image-fallback className="hidden absolute inset-0 items-center justify-center text-gray-300"><Boxes className="h-12 w-12" /></div>
                       </>
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-gray-300"><Boxes className="h-12 w-12" /></div>
@@ -284,8 +294,7 @@ export default function MallHome() {
                       {translate("查看组合详情", "View bundle details")}
                     </div>
                   </CardContent>
-                </Card>
-              </Link>
+              </Card>
             ))}
           </div>
         </main>
@@ -313,34 +322,40 @@ export default function MallHome() {
             </Card>
           ))}
           {!isProductsLoading && products?.map((p: any) => (
-            <Link key={p.id} href={productDetailHref(p.id)}>
-              <Card className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90" style={{ borderRadius: "16px" }}>
+              <Card
+                key={p.id}
+                role="link"
+                tabIndex={0}
+                onClick={() => setLocation(productDetailHref(p.id))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setLocation(productDetailHref(p.id));
+                  }
+                }}
+                className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                style={{ borderRadius: "16px" }}
+              >
                 <div className="aspect-square overflow-hidden bg-gray-50 relative">
                   {p.coverImageUrl ? (
                     <>
-                      <img
+                      <ProductImagePreview
                         src={p.coverImageUrl}
                         alt={p.name}
-                        className="w-full h-full object-cover mall-img-zoom"
-                        onError={(event) => {
-                          event.currentTarget.classList.add("hidden");
-                          event.currentTarget.parentElement?.querySelector("[data-image-fallback]")?.classList.remove("hidden");
-                        }}
+                        label={translate("放大查看商品照片", "Zoom product photo")}
+                        className="h-full w-full rounded-none border-0 bg-transparent"
+                        imageClassName="mall-img-zoom"
                       />
-                      <div data-image-fallback className="hidden absolute inset-0 items-center justify-center text-gray-300"><Package className="h-12 w-12" /></div>
                     </>
                   ) : p.images ? (
                     <>
-                      <img
+                      <ProductImagePreview
                         src={p.images}
                         alt={p.name}
-                        className="w-full h-full object-cover mall-img-zoom"
-                        onError={(event) => {
-                          event.currentTarget.classList.add("hidden");
-                          event.currentTarget.parentElement?.querySelector("[data-image-fallback]")?.classList.remove("hidden");
-                        }}
+                        label={translate("放大查看商品照片", "Zoom product photo")}
+                        className="h-full w-full rounded-none border-0 bg-transparent"
+                        imageClassName="mall-img-zoom"
                       />
-                      <div data-image-fallback className="hidden absolute inset-0 items-center justify-center text-gray-300"><Package className="h-12 w-12" /></div>
                     </>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-300"><Package className="h-12 w-12" /></div>
@@ -383,7 +398,6 @@ export default function MallHome() {
                   </div>
                 </CardContent>
               </Card>
-            </Link>
           ))}
         </div>
         {!isProductsLoading && products?.length === 0 && (

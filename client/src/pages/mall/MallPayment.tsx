@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
 import { toast } from "sonner";
 import { QrCode, University, Banknote, Package, Copy, ZoomIn, Download, Upload, CheckCircle, ChevronLeft } from "lucide-react";
 
@@ -291,7 +292,12 @@ export default function MallPayment() {
                       <input type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
                     </label>
                     {receiptPreview && (
-                      <img src={receiptPreview} alt="Receipt Preview" className="h-20 w-20 rounded border object-cover" />
+                      <ProductImagePreview
+                        src={receiptPreview}
+                        alt="付款凭证预览"
+                        label="放大查看付款凭证"
+                        className="h-20 w-20 rounded border"
+                      />
                     )}
                   </div>
                   {receiptFile && (

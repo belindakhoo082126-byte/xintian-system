@@ -14,7 +14,7 @@ describe("商城公开组合商品详情", () => {
   const productDetail = fs.readFileSync(path.join(root, "client/src/pages/mall/MallProductDetail.tsx"), "utf8");
 
   it("从商城组合卡进入公开组合详情页，不会落入后台 404 路由", () => {
-    expect(mallHome).toContain('href={`/mall/bundle/${b.id}`}');
+    expect(mallHome).toContain('onClick={() => setLocation(`/mall/bundle/${b.id}`)}');
     expect(app).toContain('path={"/mall/bundle/:id"} component={MallBundleDetail}');
     expect(router).toContain("mallDetail: publicProcedure");
   });
@@ -25,7 +25,8 @@ describe("商城公开组合商品详情", () => {
     expect(mallHome).toContain('alt={b.name}');
     expect(detail).toContain("trpc.productBundles.mallDetail.useQuery");
     expect(detail).toContain("bundle.coverImage");
-    expect(detail).toContain('<img src={bundle.coverImage}');
+    expect(detail).toContain('src={bundle.coverImage}');
+    expect(detail).toContain('label={t("放大查看组合包封面", "Zoom bundle cover")}');
     expect(detail).toContain("组合内容");
   });
 
@@ -36,6 +37,7 @@ describe("商城公开组合商品详情", () => {
     expect(detail).toContain("item.imageUrl ? (");
     expect(detail).toContain('src={item.imageUrl}');
     expect(detail).toContain('alt={item.productName}');
+    expect(detail).toContain('label={t("放大查看组成商品照片", "Zoom included product photo")}');
   });
 
   it("组合优惠可进入购物车并携带受控组合标识至结账流程", () => {
@@ -83,7 +85,7 @@ describe("商城公开组合商品详情", () => {
   it("商品详情保留分类与搜索来源，并在英文模式优先展示英文商品介绍与养护资料", () => {
     expect(mallHome).toContain('browseContextParams.set("categoryId", String(categoryId))');
     expect(mallHome).toContain('browseContextParams.set("q", searchQuery.trim())');
-    expect(mallHome).toContain('href={productDetailHref(p.id)}');
+    expect(mallHome).toContain('onClick={() => setLocation(productDetailHref(p.id))}');
     expect(mallHome).toContain('if (searchQuery.trim()) nextParams.set("q", searchQuery.trim())');
     expect(mallHome).toContain('if (categoryId) nextParams.set("categoryId", String(categoryId))');
     expect(productDetail).toContain('const mallReturnHref = `/mall${mallReturnParams.size ? `?${mallReturnParams.toString()}` : ""}`');
@@ -101,7 +103,7 @@ describe("商城公开组合商品详情", () => {
     expect(mallHome).toContain('View product details');
     expect(mallHome).toContain('max-w-6xl mx-auto px-4 py-2');
     expect(mallHome).toContain('rounded-xl border bg-white/80 px-3 py-2');
-    expect(mallHome).toContain('data-image-fallback');
-    expect(mallHome).toContain('event.currentTarget.classList.add("hidden")');
+    expect(mallHome).toContain('label={translate("放大查看组合包封面", "Zoom bundle cover")}');
+    expect(mallHome).toContain('label={translate("放大查看商品照片", "Zoom product photo")}');
   });
 });

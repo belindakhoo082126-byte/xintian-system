@@ -9,6 +9,7 @@ import { useI18n } from "@/contexts/I18nContext";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { MALL_FAVORITES_STORAGE_KEY, readMallFavoriteIds } from "@/lib/mallInteractions";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
 
 export default function MallFavorites() {
   const { translate } = useI18n();
@@ -82,12 +83,10 @@ export default function MallFavorites() {
                 const imageUrl = product.images?.[0]?.imageUrl || product.imageUrl;
                 return (
                   <Card key={product.id} className="overflow-hidden border-white/80 bg-white/95 shadow-sm transition-transform duration-200 hover:-translate-y-1" style={{ borderColor: `${theme.secondary}96` }}>
-                    <Link href={`/mall/product/${product.id}`} className="block">
-                      <div className="relative aspect-square overflow-hidden bg-muted">
-                        {imageUrl ? <img src={imageUrl} alt={product.nameZh || product.name} className="h-full w-full object-cover transition-transform duration-300 hover:scale-105" /> : <PackageOpen className="absolute inset-0 m-auto h-10 w-10 text-muted-foreground/40" />}
+                    <div className="relative aspect-square overflow-hidden bg-muted">
+                        {imageUrl ? <ProductImagePreview src={imageUrl} alt={product.nameZh || product.name} label={t("放大查看收藏商品照片", "Zoom saved product photo")} className="h-full w-full rounded-none border-0 bg-transparent" imageClassName="transition-transform duration-300 hover:scale-105" /> : <PackageOpen className="absolute inset-0 m-auto h-10 w-10 text-muted-foreground/40" />}
                         {isSoldOut && <Badge className="absolute left-2 top-2 bg-slate-800/90">{t("已售罄", "SOLD OUT")}</Badge>}
-                      </div>
-                    </Link>
+                    </div>
                     <CardContent className="p-3">
                       <Link href={`/mall/product/${product.id}`} className="block">
                         <p className="line-clamp-1 font-semibold">{product.nameZh || product.name}</p>

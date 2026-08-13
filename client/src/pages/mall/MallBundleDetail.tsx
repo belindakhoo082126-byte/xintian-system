@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
 
 export default function MallBundleDetail() {
   const [location] = useLocation();
@@ -94,7 +95,12 @@ export default function MallBundleDetail() {
             <Card className="overflow-hidden border-white/90 bg-white/94" style={{ borderColor: `${theme.secondary}a8`, boxShadow: `0 10px 28px ${theme.primary}14` }}>
               <div className="aspect-square bg-stone-100">
                 {bundle.coverImage ? (
-                  <img src={bundle.coverImage} alt={displayName} className="h-full w-full object-cover" />
+                  <ProductImagePreview
+                    src={bundle.coverImage}
+                    alt={displayName}
+                    label={t("放大查看组合包封面", "Zoom bundle cover")}
+                    className="h-full w-full rounded-none border-0 bg-transparent"
+                  />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-muted-foreground"><Package className="h-20 w-20" /></div>
                 )}
@@ -123,7 +129,12 @@ export default function MallBundleDetail() {
                       <li key={item.id} className="flex items-center justify-between gap-3 border-b border-stone-200/80 pb-2 last:border-0 last:pb-0">
                         <div className="flex min-w-0 items-center gap-3">
                           {item.imageUrl ? (
-                            <img src={item.imageUrl} alt={item.productName} className="h-12 w-12 shrink-0 rounded-lg border border-stone-200 bg-white object-cover" />
+                            <ProductImagePreview
+                              src={item.imageUrl}
+                              alt={item.productName}
+                              label={t("放大查看组成商品照片", "Zoom included product photo")}
+                              className="h-12 w-12 shrink-0 rounded-lg border border-stone-200 bg-white"
+                            />
                           ) : (
                             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-white text-muted-foreground"><Package className="h-5 w-5" /></div>
                           )}

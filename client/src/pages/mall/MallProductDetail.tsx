@@ -13,6 +13,7 @@ import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { MallCartFlyAnimation, type MallCartFlight } from "@/components/MallCartFlyAnimation";
 import { getMallShareLinks, MALL_FAVORITES_STORAGE_KEY, readMallFavoriteIds, toggleMallFavoriteId } from "@/lib/mallInteractions";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
 
 function getMallNoticeText(
   announcement: string,
@@ -243,7 +244,12 @@ export default function MallProductDetail() {
             <Card className="overflow-hidden border-white/80 bg-white/90" style={{ borderColor: `${theme.secondary}a8`, boxShadow: `0 10px 28px ${theme.primary}14` }}>
               <div className="aspect-square bg-gray-100">
                 {product.coverImageUrl ? (
-                  <img src={product.coverImageUrl} alt={product.name} className="w-full h-full object-cover" />
+                  <ProductImagePreview
+                    src={product.coverImageUrl}
+                    alt={product.name}
+                    label={t("放大查看商品主图", "Zoom product main photo")}
+                    className="h-full w-full rounded-none border-0 bg-transparent"
+                  />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-gray-400"><Package className="h-20 w-20" /></div>
                 )}
@@ -252,7 +258,13 @@ export default function MallProductDetail() {
             {images.length > 0 && (
               <div className="flex gap-2 overflow-x-auto">
                 {images.map((img: any) => (
-                  <img key={img.id} src={img.imageUrl} alt="" className="h-20 w-20 rounded border object-cover cursor-pointer" />
+                  <ProductImagePreview
+                    key={img.id}
+                    src={img.imageUrl}
+                    alt={`${product.name} ${t("附加照片", "additional photo")}`}
+                    label={t("放大查看商品附加照片", "Zoom product additional photo")}
+                    className="h-20 w-20 rounded border"
+                  />
                 ))}
               </div>
             )}
@@ -300,7 +312,12 @@ export default function MallProductDetail() {
                   </SelectContent>
                 </Select>
                 {selectedVariant?.imageUrl && (
-                  <img src={selectedVariant.imageUrl} alt={selectedVariant.name} className="mt-2 h-24 w-24 rounded-lg border object-cover" />
+                  <ProductImagePreview
+                    src={selectedVariant.imageUrl}
+                    alt={selectedVariant.name}
+                    label={t("放大查看规格照片", "Zoom variant photo")}
+                    className="mt-2 h-24 w-24 rounded-lg border"
+                  />
                 )}
               </div>
             )}
@@ -441,7 +458,14 @@ export default function MallProductDetail() {
           <div className="mt-6 space-y-3">
             <h3 className="font-semibold">{t("商品详情", "Product Details")}</h3>
             {detailImages.map((img: any) => (
-              <img key={img.id} src={img.imageUrl} alt="detail" className="w-full rounded-lg" />
+              <ProductImagePreview
+                key={img.id}
+                src={img.imageUrl}
+                alt={`${product.name} ${t("详情照片", "detail photo")}`}
+                label={t("放大查看商品详情照片", "Zoom product detail photo")}
+                className="h-auto w-full rounded-lg border-0 bg-transparent"
+                imageClassName="h-auto w-full object-contain"
+              />
             ))}
           </div>
         )}

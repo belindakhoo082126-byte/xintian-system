@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Trash2, Minus, Plus, ShoppingCart, ChevronLeft, Package, Sparkles, Gift, Target } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
 
 export default function MallCart() {
   const [cart, setCart] = useState<any[]>([]);
@@ -90,7 +91,7 @@ export default function MallCart() {
               <Card key={i}>
                 <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-3 p-3 sm:flex-nowrap sm:gap-4 sm:p-4">
                   <div className="w-16 h-16 overflow-hidden rounded border bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    {item.imageUrl ? <img src={item.imageUrl} alt="" className="h-full w-full object-cover" /> : <Package className="h-8 w-8 text-muted-foreground" />}
+                    {item.imageUrl ? <ProductImagePreview src={item.imageUrl} alt={item.productName} label="放大查看购物车商品照片" className="h-full w-full rounded-none border-0 bg-transparent" /> : <Package className="h-8 w-8 text-muted-foreground" />}
                   </div>
                   <div className="min-w-0 flex-1 basis-[calc(100%-5rem)] sm:basis-auto">
                     <p className="font-medium text-sm line-clamp-1">{item.productName}</p>
