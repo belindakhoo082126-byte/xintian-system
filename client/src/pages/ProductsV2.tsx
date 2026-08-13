@@ -666,16 +666,16 @@ export default function ProductsV2() {
               ) : products.length === 0 ? (
                 <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
               ) : products.map(p => (
-                <TableRow key={p.id} className="[&>td]:py-3 [&>td]:text-sm">
+                <TableRow key={p.id} className="[&>td]:py-5 [&>td]:text-base">
                   <TableCell className="font-medium">
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-[250px] items-center gap-4">
                       <ProductImagePreview
                         src={p.coverImageUrl}
                         alt={p.name}
-                        className="h-14 w-14"
+                        className="h-20 w-20"
                         label={translate("预览商品图片", "Preview product image")}
                       />
-                      <span className="text-base font-semibold leading-snug">{p.name}</span>
+                      <span className="text-lg font-semibold leading-snug">{p.name}</span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -690,7 +690,7 @@ export default function ProductsV2() {
                     {categories?.find(c => c.id === p.categoryId)?.[lang === "zh" ? "nameZh" : "nameEn"] || translate("—", "—")}
                   </TableCell>
                   <TableCell>
-                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{p.keyword}</code>
+                    <code className="rounded bg-muted px-2 py-1 text-sm">{p.keyword}</code>
                   </TableCell>
                   <TableCell>
                     {p.type === "gift" ? translate("免费", "Free") : `RM ${p.sellingPrice || "0"}`}
@@ -703,7 +703,7 @@ export default function ProductsV2() {
                   <TableCell>
                     {p.type === "physical" ? (
                       <TooltipProvider>
-                        <div className="text-sm space-y-0.5">
+                        <div className="space-y-1 text-base">
                           <div>{translate("存库", "Stock")}: <span className="font-medium">{p.stockQuantity ?? 0}</span></div>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -777,7 +777,7 @@ export default function ProductsV2() {
                           onCheckedChange={(allowOversold) => updateMutation.mutate({ id: p.id, allowOversold })}
                           aria-label={translate(`允许「{name}」超卖`, `Allow oversold for "{name}"`, { name: p.name })}
                         />
-                        <span className={`text-xs font-medium ${p.allowOversold ? "text-amber-700" : "text-muted-foreground"}`}>
+                        <span className={`text-sm font-medium ${p.allowOversold ? "text-amber-700" : "text-muted-foreground"}`}>
                           {p.allowOversold ? translate("已开启", "On") : translate("未开启", "Off")}
                         </span>
                       </div>
@@ -790,39 +790,39 @@ export default function ProductsV2() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(p)} title={translate("编辑", "Edit")}>
-                        <Edit2 className="h-4 w-4" />
+                    <div className="flex items-center justify-end gap-2">
+                      <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => openEdit(p)} title={translate("编辑", "Edit")}>
+                        <Edit2 className="h-5 w-5" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => duplicateMutation.mutate({ id: p.id })} title={translate("复制", "Duplicate")}>
-                        <Copy className="h-4 w-4" />
+                      <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => duplicateMutation.mutate({ id: p.id })} title={translate("复制", "Duplicate")}>
+                        <Copy className="h-5 w-5" />
                       </Button>
                       {p.type === "physical" && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8"
+                          className="h-10 w-10"
                           onClick={() => setStockLogTarget({ productId: p.id, productName: p.name })}
                           title={translate("库存操作日志", "Stock operation log")}
                         >
-                          <History className="h-4 w-4" />
+                          <History className="h-5 w-5" />
                         </Button>
                       )}
                       {p.type === "membership" && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8"
+                          className="h-10 w-10"
                           onClick={() => { setCurrentProductId(p.id); setShowMemberLinkDialog(true); }}
                           title={translate("会员链接", "Member Link")}
                         >
-                          <LinkIcon className="h-4 w-4" />
+                          <LinkIcon className="h-5 w-5" />
                         </Button>
                       )}
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-10 w-10"
                         onClick={() => {
                           if (confirm(translate(`确定删除「{name}」吗？`, `Are you sure you want to delete "{name}"?`, { name: p.name }))) {
                             deleteMutation.mutate({ id: p.id });
@@ -830,7 +830,7 @@ export default function ProductsV2() {
                         }}
                         title={translate("删除", "Delete")}
                       >
-                        <Trash2 className="h-4 w-4 text-destructive" />
+                        <Trash2 className="h-5 w-5 text-destructive" />
                       </Button>
                     </div>
                   </TableCell>
@@ -952,7 +952,7 @@ export default function ProductsV2() {
 
       {/* Product Editor Dialog - Step Wizard */}
       <Dialog open={dialogOpen} onOpenChange={(v) => { setDialogOpen(v); if (!v) resetForm(); }}>
-        <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto">
+        <DialogContent className="max-h-[94vh] w-[calc(100vw-2rem)] max-w-[96rem] overflow-y-auto px-6 py-6 sm:px-8">
           <DialogHeader>
             <DialogTitle>{editingId ? translate("编辑商品", "Edit Product") : translate("新增商品", "Add Product")}</DialogTitle>
           </DialogHeader>
