@@ -35,6 +35,7 @@ type BundleItem = {
   variantId?: number;
   productName: string;
   variantName?: string;
+  imageUrl?: string;
   qtyPerBundle: number;
   unitCost: string;
   unitPrice: string;
@@ -151,6 +152,7 @@ export default function ProductBundles() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-20">封面</TableHead>
                 <TableHead>组合包名称</TableHead>
                 <TableHead>关键词</TableHead>
                 <TableHead className="text-right">售价</TableHead>
@@ -165,19 +167,26 @@ export default function ProductBundles() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     加载中...
                   </TableCell>
                 </TableRow>
               ) : !bundles || bundles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     暂无组合包，点击「创建组合包」开始
                   </TableCell>
                 </TableRow>
               ) : (
                 bundles.map((bundle: any) => (
                   <TableRow key={bundle.id}>
+                    <TableCell>
+                      {bundle.coverImage ? (
+                        <ProductImagePreview src={bundle.coverImage} alt={`${bundle.name} 封面`} className="h-12 w-12" label="放大查看组合包封面" />
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded border bg-muted text-muted-foreground"><Package className="h-5 w-5" /></div>
+                      )}
+                    </TableCell>
                     <TableCell className="font-medium">{bundle.name}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">{bundle.keyword}</Badge>
@@ -395,6 +404,7 @@ export default function ProductBundles() {
                 <Table className="mt-2">
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-16">图片</TableHead>
                       <TableHead>商品</TableHead>
                       <TableHead>规格</TableHead>
                       <TableHead className="text-right">每组数量</TableHead>
@@ -405,6 +415,13 @@ export default function ProductBundles() {
                   <TableBody>
                     {selectedBundle && (selectedBundle as any).items?.map((item: any) => (
                       <TableRow key={item.id}>
+                        <TableCell>
+                          {item.imageUrl ? (
+                            <ProductImagePreview src={item.imageUrl} alt={item.productName} className="h-10 w-10" label="放大查看组成商品图片" />
+                          ) : (
+                            <div className="flex h-10 w-10 items-center justify-center rounded border bg-muted text-muted-foreground"><Package className="h-4 w-4" /></div>
+                          )}
+                        </TableCell>
                         <TableCell>{item.productName}</TableCell>
                         <TableCell>{item.variantName || "-"}</TableCell>
                         <TableCell className="text-right">{item.qtyPerBundle}</TableCell>
@@ -560,6 +577,7 @@ function CreateBundleDialog({
     setItems([...items, {
       productId: product.id,
       productName: product.name,
+      imageUrl: product.coverImageUrl || product.coverImage || undefined,
       qtyPerBundle: 1,
       unitCost: String(product.currentCost || product.estimatedCost || "0"),
       unitPrice: String(product.sellingPrice || "0"),
@@ -653,7 +671,7 @@ function CreateBundleDialog({
                   }} />
                 </label>
               </div>
-              {coverImage && <img src={coverImage} alt="preview" className="w-full rounded border max-h-40 object-cover" />}
+              {coverImage && <ProductImagePreview src={coverImage} alt="组合包封面预览" className="h-40 w-full" label="放大查看组合包封面" />}
             </div>
             <div className="flex items-center gap-2 pt-6">
               <Switch checked={showInMall} onCheckedChange={setShowInMall} />
@@ -718,6 +736,7 @@ function CreateBundleDialog({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-16">图片</TableHead>
                   <TableHead>商品</TableHead>
                   <TableHead className="text-right">每组数量</TableHead>
                   <TableHead className="text-right">单价</TableHead>
@@ -729,7 +748,7 @@ function CreateBundleDialog({
               <TableBody>
                 {items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-4 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-4 text-muted-foreground">
                       点击「添加」选择商品加入组合包
                     </TableCell>
                   </TableRow>
@@ -738,6 +757,13 @@ function CreateBundleDialog({
                   const stock = product?.stockQuantity || 0;
                   return (
                     <TableRow key={idx}>
+                      <TableCell>
+                        {item.imageUrl ? (
+                          <ProductImagePreview src={item.imageUrl} alt={item.productName} className="h-10 w-10" label="放大查看组成商品图片" />
+                        ) : (
+                          <div className="flex h-10 w-10 items-center justify-center rounded border bg-muted text-muted-foreground"><Package className="h-4 w-4" /></div>
+                        )}
+                      </TableCell>
                       <TableCell>{item.productName}</TableCell>
                       <TableCell>
                         <Input
@@ -913,7 +939,7 @@ function EditBundleDialog({
                 }} />
               </label>
             </div>
-            {coverImage && <img src={coverImage} alt="preview" className="w-full rounded border max-h-40 object-cover" />}
+            {coverImage && <ProductImagePreview src={coverImage} alt="组合包封面预览" className="h-40 w-full" label="放大查看组合包封面" />}
           </div>
           <div className="flex items-center gap-2 pt-6">
             <Switch checked={showInMall} onCheckedChange={setShowInMall} />

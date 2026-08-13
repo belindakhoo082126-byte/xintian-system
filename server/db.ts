@@ -11404,6 +11404,25 @@ export async function getProductBundles(filters?: {
   return await query.orderBy(desc(productBundles.createdAt));
 }
 
+// Attach the current product cover image to bundle component rows for display only.
+// The persisted bundle composition, stock, price and checkout logic remain unchanged.
+async function attachBundleItemImages(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, items: any[]) {
+  if (items.length === 0) return items;
+  const productIds = Array.from(new Set(items.map((item) => Number(item.productId)).filter((id) => Number.isInteger(id) && id > 0)));
+  if (productIds.length === 0) return items;
+
+  const imageRows = await db.select({
+    id: products.id,
+    imageUrl: products.coverImageUrl,
+  }).from(products).where(inArray(products.id, productIds));
+  const imageByProductId = new Map(imageRows.map((row) => [row.id, row.imageUrl]));
+
+  return items.map((item) => ({
+    ...item,
+    imageUrl: imageByProductId.get(item.productId) || undefined,
+  }));
+}
+
 // Get single bundle with items
 export async function getBundleById(id: number) {
   const db = await getDb();
@@ -11411,7 +11430,7 @@ export async function getBundleById(id: number) {
   const bundle = (await db.select().from(productBundles).where(eq(productBundles.id, id)).limit(1))[0];
   if (!bundle) return undefined;
   const items = await db.select().from(productBundleItems).where(eq(productBundleItems.bundleId, id));
-  return { ...bundle, items };
+  return { ...bundle, items: await attachBundleItemImages(db, items) };
 }
 
 // Get bundle items only
@@ -11815,7 +11834,7 @@ export async function getMallBundles() {
   for (const bundle of bundles) {
     if (bundle.bundleStock <= 0) continue;
     const items = await db.select().from(productBundleItems).where(eq(productBundleItems.bundleId, bundle.id));
-    result.push({ ...bundle, items });
+    result.push({ ...bundle, items: await attachBundleItemImages(db, items) });
   }
   return result;
 }

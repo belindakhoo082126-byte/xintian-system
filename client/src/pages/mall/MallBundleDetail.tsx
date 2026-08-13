@@ -121,7 +121,14 @@ export default function MallBundleDetail() {
                   <ul className="mt-3 space-y-2 text-sm">
                     {(bundle.items || []).map((item: any) => (
                       <li key={item.id} className="flex items-center justify-between gap-3 border-b border-stone-200/80 pb-2 last:border-0 last:pb-0">
-                        <span>{item.productName}{item.variantName ? ` · ${item.variantName}` : ""}</span>
+                        <div className="flex min-w-0 items-center gap-3">
+                          {item.imageUrl ? (
+                            <img src={item.imageUrl} alt={item.productName} className="h-12 w-12 shrink-0 rounded-lg border border-stone-200 bg-white object-cover" />
+                          ) : (
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-white text-muted-foreground"><Package className="h-5 w-5" /></div>
+                          )}
+                          <span className="min-w-0">{item.productName}{item.variantName ? ` · ${item.variantName}` : ""}</span>
+                        </div>
                         <span className="shrink-0 font-medium">× {item.qtyPerBundle}</span>
                       </li>
                     ))}

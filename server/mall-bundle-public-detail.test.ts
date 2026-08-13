@@ -29,6 +29,15 @@ describe("商城公开组合商品详情", () => {
     expect(detail).toContain("组合内容");
   });
 
+  it("组合内容读取单品封面图，并在商城明细中显示每个组成商品的照片", () => {
+    expect(db).toContain("async function attachBundleItemImages");
+    expect(db).toContain("imageUrl: products.coverImageUrl");
+    expect(db).toContain("items: await attachBundleItemImages(db, items)");
+    expect(detail).toContain("item.imageUrl ? (");
+    expect(detail).toContain('src={item.imageUrl}');
+    expect(detail).toContain('alt={item.productName}');
+  });
+
   it("组合优惠可进入购物车并携带受控组合标识至结账流程", () => {
     expect(detail).toContain("bundleId: bundle.id");
     expect(detail).toContain("isBundle: true");
