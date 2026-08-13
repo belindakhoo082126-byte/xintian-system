@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useI18n } from "@/contexts/I18nContext";
+import { ImageZoomDialog } from "@/components/ImageZoomDialog";
 
 const productStatusLabels: Record<string, string> = {
   active: "正常",
@@ -990,7 +991,18 @@ onClick={() => setOrderViewMode("byCustomer")}>
                           className="h-4 w-4"
                         />
                         {p.coverImageUrl ? (
-                          <img src={p.coverImageUrl} alt="" className="h-10 w-10 rounded object-cover flex-shrink-0" />
+                          <button
+                            type="button"
+                            className="h-10 w-10 rounded overflow-hidden flex-shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setPreviewImage({ url: p.coverImageUrl, name: p.name || "商品照片" });
+                            }}
+                            aria-label={`预览并缩放商品图片：${p.name || "商品"}`}
+                            title="点击预览并缩放"
+                          >
+                            <img src={p.coverImageUrl} alt="" className="h-full w-full object-cover" />
+                          </button>
                         ) : (
                           <div className="h-10 w-10 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground flex-shrink-0">{t("live.noImage")}</div>
                         )}
@@ -1061,16 +1073,13 @@ onClick={() => setOrderViewMode("byCustomer")}>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!previewImage} onOpenChange={(open) => !open && setPreviewImage(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{previewImage?.name || "商品照片预览"}</DialogTitle>
-          </DialogHeader>
-          {previewImage?.url ? (
-            <img src={previewImage.url} alt={previewImage.name} className="max-h-[70vh] w-full rounded-lg object-contain" />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <ImageZoomDialog
+        open={!!previewImage}
+        onOpenChange={(open) => !open && setPreviewImage(null)}
+        src={previewImage?.url}
+        alt={previewImage?.name || "商品照片"}
+        title={previewImage?.name || "商品照片预览"}
+      />
 
       {/* Stock Adjustment Dialog */}
       <Dialog open={stockDialogOpen} onOpenChange={setStockDialogOpen}>
@@ -1453,14 +1462,21 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
               const vColor = vAvail > 10 ? "text-green-600" : vAvail > 0 ? "text-yellow-600" : "text-red-600";
               return (
                 <div key={v.id} className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center">
+                  <button
+                    type="button"
+                    disabled={!v.specImage}
+                    onClick={() => v.specImage && onPreview(v.specImage, v.displayName || group.productName || "商品规格图片")}
+                    className="w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+                    aria-label={v.specImage ? `预览并缩放规格图片：${v.displayName || group.productName || "商品"}` : "暂无规格图片"}
+                    title={v.specImage ? "点击预览并缩放" : "暂无规格图片"}
+                  >
                     {v.specImage ? (
                       <img src={v.specImage} alt="" className="w-full h-full object-cover"
                         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                     ) : (
                       <ImageIcon className="h-3.5 w-3.5 text-green-300" />
                     )}
-                  </div>
+                  </button>
                   <div className="flex-1 min-w-0">
                     <span className="text-xs font-medium truncate">{v.displayName}</span>
                     <div className="flex items-center gap-1.5 text-xs">

@@ -1479,9 +1479,12 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                 {orderDetail.receiptUrl && (
                   <div>
                     <p className="text-sm text-muted-foreground mb-2">{translate("付款凭证", "Payment Receipt")}</p>
-                    <a href={orderDetail.receiptUrl} target="_blank" rel="noreferrer" className="inline-block rounded-lg border bg-muted/30 p-1 transition-opacity hover:opacity-80">
-                      <img src={orderDetail.receiptUrl} alt={translate("付款凭证", "Payment Receipt")} className="h-32 w-48 rounded object-cover" />
-                    </a>
+                    <ProductImagePreview
+                      src={orderDetail.receiptUrl}
+                      alt={translate("付款凭证", "Payment Receipt")}
+                      className="h-32 w-48 rounded-lg"
+                      label={translate("预览并缩放付款凭证", "Preview and zoom payment receipt")}
+                    />
                   </div>
                 )}
               </TabsContent>

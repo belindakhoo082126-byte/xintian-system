@@ -1262,7 +1262,12 @@ export default function ProductsV2() {
                       )}
                       {/* 上传完成后显示服务器图片 */}
                       {!uploadingCover && form.coverImageUrl && (
-                        <img src={form.coverImageUrl} alt={translate("封面预览", "Cover Preview")} className="mt-2 h-32 w-32 rounded-lg object-cover border" />
+                        <ProductImagePreview
+                          src={form.coverImageUrl}
+                          alt={translate("封面预览", "Cover Preview")}
+                          className="mt-2 h-32 w-32"
+                          label={translate("预览并缩放封面图片", "Preview and zoom cover image")}
+                        />
                       )}
                     </div>
 
@@ -1272,7 +1277,12 @@ export default function ProductsV2() {
                       <div className="flex flex-wrap gap-2 mt-2">
                         {form.productImages.map((img, idx) => (
                           <div key={idx} className="relative group">
-                            <img src={img} alt="" className="h-20 w-20 rounded-lg border object-cover" />
+                            <ProductImagePreview
+                              src={img}
+                              alt={`${form.name || translate("商品", "Product")} ${idx + 1}`}
+                              className="h-20 w-20"
+                              label={translate("预览并缩放商品图片", "Preview and zoom product image")}
+                            />
                             <button
                               type="button"
                               onClick={() => setForm({ ...form, productImages: form.productImages.filter((_, i) => i !== idx) })}
@@ -1860,7 +1870,12 @@ export default function ProductsV2() {
                       <CardContent className="space-y-3">
                         <div className="flex items-start gap-4">
                           {form.coverImageUrl && (
-                            <img src={form.coverImageUrl} alt="" className="h-24 w-24 rounded-lg object-cover border" />
+                            <ProductImagePreview
+                              src={form.coverImageUrl}
+                              alt={form.name || translate("商品封面", "Product cover")}
+                              className="h-24 w-24"
+                              label={translate("预览并缩放商品封面", "Preview and zoom product cover")}
+                            />
                           )}
                           <div className="flex-1 space-y-1">
                             <div className="flex items-center gap-2">
@@ -2069,7 +2084,12 @@ export default function ProductsV2() {
               )}
               {/* 上传完成后显示服务器图片 */}
               {!uploadingVariant && variantForm.imageUrl && (
-                <img src={variantForm.imageUrl} alt="" className="mt-2 h-20 w-20 rounded-lg object-cover border" />
+                <ProductImagePreview
+                  src={variantForm.imageUrl}
+                  alt={variantForm.name || translate("规格图片", "Variant image")}
+                  className="mt-2 h-20 w-20"
+                  label={translate("预览并缩放规格图片", "Preview and zoom variant image")}
+                />
               )}
             </div>
           </div>

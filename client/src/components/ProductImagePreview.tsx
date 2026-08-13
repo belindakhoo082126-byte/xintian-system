@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Eye, ImageOff } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ImageZoomDialog } from "@/components/ImageZoomDialog";
 import { cn } from "@/lib/utils";
 
 type ProductImagePreviewProps = {
@@ -54,16 +54,7 @@ export function ProductImagePreview({
         </span>
       </button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[92vh] max-w-3xl overflow-hidden p-0 sm:rounded-xl">
-          <DialogHeader className="border-b px-5 py-4 pr-12">
-            <DialogTitle className="truncate text-base">{alt}</DialogTitle>
-          </DialogHeader>
-          <div className="flex min-h-[18rem] max-h-[70vh] items-center justify-center bg-muted/35 p-4">
-            <img src={src} alt={alt} className="max-h-[62vh] max-w-full rounded-lg object-contain shadow-sm" />
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ImageZoomDialog open={open} onOpenChange={setOpen} src={src} alt={alt} />
     </>
   );
 }
