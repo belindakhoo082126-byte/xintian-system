@@ -10723,9 +10723,10 @@ export async function processExpiredLocalOrders() {
     SELECT o.id, o.orderNumber
     FROM orders o
     WHERE (o.orderCategory IS NULL OR o.orderCategory = 'local')
-      AND o.physicalStatus <> 'cancelled'
       AND o.createdAt < DATE_SUB(NOW(), INTERVAL 7 DAY)
-      AND COALESCE(o.paymentStatus, '') IN ('pending', 'unpaid', 'partial')
+      AND o.physicalStatus IN ('pending', 'hold_order')
+      AND COALESCE(o.paidAmount, 0) <= 0
+      AND (o.receiptUrl IS NULL OR TRIM(o.receiptUrl) = '')
       AND NOT EXISTS (
         SELECT 1 FROM order_payments pending_proof
         WHERE pending_proof.orderId = o.id

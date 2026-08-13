@@ -5,6 +5,7 @@ import { join } from "node:path";
 describe("本地订单七天付款期限Heartbeat", () => {
   const serverEntrySource = readFileSync(join(process.cwd(), "server/_core/index.ts"), "utf8");
   const schemaSource = readFileSync(join(process.cwd(), "drizzle/schema.ts"), "utf8");
+  const dbSource = readFileSync(join(process.cwd(), "server/db.ts"), "utf8");
 
   it("只暴露平台规定的受认证scheduled回调路径", () => {
     expect(serverEntrySource).toContain('app.post("/api/scheduled/local-payment-expiry"');
@@ -20,5 +21,24 @@ describe("本地订单七天付款期限Heartbeat", () => {
   it("由既有幂等业务服务执行本地订单取消", () => {
     expect(serverEntrySource).toContain("await db.processExpiredLocalOrders()");
     expect(serverEntrySource).toContain("本地订单付款期限巡检失败");
+  });
+
+  it("仅处理符合付款期限条件的本地订单，并保护待审核或已确认付款", () => {
+    expect(dbSource).toContain("export async function processExpiredLocalOrders()");
+    expect(dbSource).toContain("o.createdAt < DATE_SUB(NOW(), INTERVAL 7 DAY)");
+    expect(dbSource).toContain("o.physicalStatus IN ('pending', 'hold_order')");
+    expect(dbSource).toContain("COALESCE(o.paidAmount, 0) <= 0");
+    expect(dbSource).toContain("(o.receiptUrl IS NULL OR TRIM(o.receiptUrl) = '')");
+    expect(dbSource).toContain("pending_proof.reviewStatus = 'pending'");
+    expect(dbSource).toContain("approved_payment.reviewStatus = 'approved'");
+  });
+
+  it("经统一取消服务完成状态取消、库存释放与审计，不另行重复扣减库存", () => {
+    expect(dbSource).toContain("await cancelOrderWithReason(order.id, '本地订单下单满7天仍未有有效付款凭证，系统自动取消', '系统自动')");
+    expect(dbSource).toContain('physicalStatus: "cancelled"');
+    expect(dbSource).toContain("stockQuantity: sql`${productVariations.stockQuantity} + ${item.quantity}`");
+    expect(dbSource).toContain("stockQuantity: sql`${products.stockQuantity} + ${item.quantity}`");
+    expect(dbSource).toContain('await logOrderOperation(id, "cancel"');
+    expect(dbSource).toContain('broadcastChanges(["orders", "dashboard", "inventory"])');
   });
 });
