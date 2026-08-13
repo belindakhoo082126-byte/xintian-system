@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TrendingUp, TrendingDown, DollarSign, ShoppingBag, Percent } from "lucide-react";
+import { ReportMethodologyCard } from "@/components/ReportMethodologyCard";
 
 const MONTHS = [
   "一月", "二月", "三月", "四月", "五月", "六月",
@@ -55,7 +56,7 @@ export default function ProfitReport() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">利润报表</h1>
-          <p className="text-sm text-muted-foreground mt-1">按进货成本计算每月精准利润</p>
+          <p className="text-sm text-muted-foreground mt-1">月度已完成订单的旧版利润估算</p>
         </div>
         <div className="flex gap-2">
           <Select value={year.toString()} onValueChange={(v) => setYear(parseInt(v))}>
@@ -72,6 +73,8 @@ export default function ProfitReport() {
           </Select>
         </div>
       </div>
+
+      <ReportMethodologyCard kind="legacyMonthlyProfit" />
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

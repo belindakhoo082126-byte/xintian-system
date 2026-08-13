@@ -32,8 +32,12 @@ vi.mock("./db", () => ({
   findOrCreateCustomer: vi.fn(() => Promise.resolve({ id: 1, name: "Test" })),
   updateCustomer: vi.fn(() => Promise.resolve()),
   findPotentialDuplicateCustomers: vi.fn(() => Promise.resolve([])),
+  getCustomerMergePreview: vi.fn(() => Promise.resolve(null)),
   mergeCustomers: vi.fn(() => Promise.resolve()),
   getMergeSuggestions: vi.fn(() => Promise.resolve([])),
+  getChatCustomerInfo: vi.fn(() => Promise.resolve(null)),
+  createChatTrainingFeedback: vi.fn(() => Promise.resolve({ id: 1, status: "draft", isEnabled: false })),
+  approveChatTrainingFeedback: vi.fn(() => Promise.resolve({ success: true, status: "published" })),
 
   // Orders
   getOrders: vi.fn(() => Promise.resolve([])),
@@ -482,12 +486,29 @@ describe("customers router - identity merge", () => {
   });
 
   it("merge calls mergeCustomers with correct ids", async () => {
+    vi.mocked(dbMock.mergeCustomers).mockResolvedValue({ success: true, result: { creditBalance: "15.00" } } as any);
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.customers.merge({ sourceId: 2, targetId: 1 });
 
     expect(result.success).toBe(true);
     expect(dbMock.mergeCustomers).toHaveBeenCalledWith(2, 1, 1);
+  });
+
+  it("returns a read-only merge impact preview before executing an irreversible merge", async () => {
+    const preview = {
+      source: { id: 2, name: "副客户", creditBalance: "5.00" },
+      target: { id: 1, name: "主客户", creditBalance: "10.00" },
+      transfer: { orderCount: 3, creditLedgerCount: 2, creditBalance: "5.00" },
+      result: { totalOrders: 7, creditBalance: "15.00", totalSpent: "100.00" },
+    };
+    vi.mocked(dbMock.getCustomerMergePreview).mockResolvedValue(preview as any);
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(caller.customers.getMergePreview({ sourceId: 2, targetId: 1 })).resolves.toEqual(preview);
+    expect(dbMock.getCustomerMergePreview).toHaveBeenCalledWith(2, 1);
+    expect(dbMock.mergeCustomers).not.toHaveBeenCalled();
   });
 
   it("findDuplicates returns potential duplicates", async () => {
@@ -632,5 +653,44 @@ describe("shippingProviders router", () => {
     const result = await caller.shippingProviders.update({ providerKey: "parceldaily", isEnabled: false });
     expect(result).toMatchObject({ providerKey: "parceldaily", isEnabled: false });
     expect(dbMock.updateShippingProvider).toHaveBeenCalled();
+  });
+});
+
+describe("chat router - training feedback", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("stores corrected AI chat content as an inactive, reviewable training draft", async () => {
+    const savedDraft = { id: 21, status: "draft", isEnabled: false };
+    vi.mocked(dbMock.createChatTrainingFeedback).mockResolvedValue(savedDraft as any);
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const input = {
+      conversationId: 8,
+      messageId: 22,
+      category: "customer_service",
+      topic: "聊天训练｜运费咨询",
+      triggerKeywords: "西马运费是多少",
+      content: "西马消费满 RM150，10kg 内免邮。",
+      sourceNote: "人工修订 AI 聊天回复",
+    };
+
+    await expect(caller.chat.createTrainingFeedback(input)).resolves.toEqual(savedDraft);
+    expect(dbMock.createChatTrainingFeedback).toHaveBeenCalledWith({ ...input, staffName: "Test Admin" });
+  });
+});
+
+describe("AI知识库训练草稿审核", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("仅通过管理员路由将草稿发布和审核人写入服务层", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(caller.aiKnowledge.approveChatTrainingFeedback({ id: 21 })).resolves.toEqual({ success: true, status: "published" });
+    expect(dbMock.approveChatTrainingFeedback).toHaveBeenCalledWith(21, "Test Admin");
   });
 });

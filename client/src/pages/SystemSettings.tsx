@@ -9,19 +9,31 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Building2, Hash, Bell, Shield, Save } from "lucide-react";
+import { buildSystemLink, getCompanyLogoChange, getPersistedCompanyLogoUrl, isSupportedCompanyLogo } from "@/lib/settingsLinks";
+import { Building2, Hash, Bell, Shield, Save, Upload, Copy, ExternalLink, Package } from "lucide-react";
 
 export default function SystemSettings() {
   const { data: settings, isLoading, refetch } = trpc.settings.get.useQuery();
+  const [form, setForm] = useState<any>({});
+  const [isLogoUploading, setIsLogoUploading] = useState(false);
+  const [savedLogoUrl, setSavedLogoUrl] = useState("");
   const updateMutation = trpc.settings.update.useMutation({
-    onSuccess: () => { toast.success("设置已保存"); refetch(); },
+    onSuccess: (saved) => {
+      const confirmedLogoUrl = getPersistedCompanyLogoUrl(saved);
+      setSavedLogoUrl(confirmedLogoUrl);
+      setForm(saved ?? {});
+      toast.success("设置已保存，Logo 已按服务器确认结果更新");
+      void refetch();
+    },
     onError: (e) => toast.error("保存失败: " + e.message),
   });
-
-  const [form, setForm] = useState<any>({});
+  const packingWorkspaceUrl = buildSystemLink(typeof window === "undefined" ? undefined : window.location.origin, "/packing");
 
   useEffect(() => {
-    if (settings) setForm(settings);
+    if (settings) {
+      setForm(settings);
+      setSavedLogoUrl(getPersistedCompanyLogoUrl(settings));
+    }
   }, [settings]);
 
   const handleSave = () => {
@@ -30,6 +42,48 @@ export default function SystemSettings() {
 
   const update = (key: string, value: any) => {
     setForm((prev: any) => ({ ...prev, [key]: value }));
+  };
+
+  const copyLink = async (url: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(`${label}已复制`);
+    } catch {
+      toast.error("无法自动复制，请手动选择链接");
+    }
+  };
+
+  const handleLogoUpload = async (file?: File) => {
+    if (!file) return;
+    if (!isSupportedCompanyLogo(file)) {
+      toast.error("请上传图片格式的 Logo");
+      return;
+    }
+    setIsLogoUploading(true);
+    try {
+      const fileData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("无法读取图片"));
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: fileData, filename: file.name, contentType: file.type }),
+      });
+      if (!response.ok) throw new Error("上传失败");
+      const result = await response.json();
+      const logoChange = getCompanyLogoChange(savedLogoUrl, result.url);
+      update("companyLogoUrl", result.url);
+      toast.success(logoChange === "replace"
+        ? "新 Logo 已上传，将替换目前 Logo；请点击页面右上角「保存」正式更新公司资料"
+        : "Logo 已上传，请点击页面右上角「保存」正式更新公司资料");
+    } catch (error: any) {
+      toast.error(error?.message || "Logo 上传失败");
+    } finally {
+      setIsLogoUploading(false);
+    }
   };
 
   if (isLoading) return <Skeleton className="h-96 w-full" />;
@@ -64,9 +118,39 @@ export default function SystemSettings() {
                 <Label>公司名称</Label>
                 <Input value={form.companyName || ""} onChange={(e) => update("companyName", e.target.value)} />
               </div>
-              <div className="space-y-2">
-                <Label>公司 Logo URL</Label>
-                <Input value={form.companyLogoUrl || ""} onChange={(e) => update("companyLogoUrl", e.target.value)} />
+              <div className="space-y-2 md:col-span-2">
+                <Label>公司 Logo</Label>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted">
+                    {form.companyLogoUrl ? (
+                      <img src={form.companyLogoUrl} alt="公司 Logo 预览" className="h-full w-full object-contain" />
+                    ) : (
+                      <Building2 className="h-7 w-7 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input value={form.companyLogoUrl || ""} onChange={(e) => update("companyLogoUrl", e.target.value)} placeholder="上传图片或填写 Logo URL" />
+                      <label className="shrink-0">
+                        <Button type="button" variant="outline" disabled={isLogoUploading} asChild>
+                          <span><Upload className="mr-2 h-4 w-4" />{isLogoUploading ? "上传中..." : "上传图片"}</span>
+                        </Button>
+                        <input type="file" accept="image/*" className="sr-only" onChange={(event) => {
+                          void handleLogoUpload(event.target.files?.[0]);
+                          event.currentTarget.value = "";
+                        }} />
+                      </label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">上传后会先显示预览；请点击页面右上角「保存」后，才会写入公司资料并用于订单单据与前台展示。保存成功后页面会以服务器确认的Logo回填；如已有Logo，上传新图片会明确提示替换。</p>
+                    {getCompanyLogoChange(savedLogoUrl, form.companyLogoUrl) === "replace" ? (
+                      <p className="text-xs font-medium text-amber-700">尚未保存：新 Logo 将替换目前已保存的 Logo。</p>
+                    ) : getCompanyLogoChange(savedLogoUrl, form.companyLogoUrl) === "new" ? (
+                      <p className="text-xs font-medium text-emerald-700">尚未保存：请点击页面右上角「保存」以启用新 Logo。</p>
+                    ) : form.companyLogoUrl && savedLogoUrl === form.companyLogoUrl ? (
+                      <p className="text-xs font-medium text-emerald-700">当前 Logo 已保存，并会在重新进入此页面时回显。</p>
+                    ) : null}
+                  </div>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>公司电话</Label>
@@ -87,6 +171,20 @@ export default function SystemSettings() {
               <div className="space-y-2 md:col-span-2">
                 <Label>公司地址</Label>
                 <Textarea value={form.companyAddress || ""} onChange={(e) => update("companyAddress", e.target.value)} />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base"><Package className="h-4 w-4" />包货工作台系统链接</CardTitle>
+              <CardDescription>此链接仅供已登录的后台员工使用；复制后可发送给有权限的包货同事，未登录者仍需先完成登录。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input value={packingWorkspaceUrl} readOnly aria-label="包货工作台系统链接" />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={() => void copyLink(packingWorkspaceUrl, "包货工作台链接")}><Copy className="mr-2 h-4 w-4" />复制链接</Button>
+                <Button type="button" variant="outline" asChild><a href={packingWorkspaceUrl} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />直接打开</a></Button>
               </div>
             </CardContent>
           </Card>
@@ -205,26 +303,29 @@ export default function SystemSettings() {
         {/* Notification Settings */}
         <TabsContent value="notification" className="space-y-4">
           <Card>
-            <CardHeader><CardTitle className="text-base">通知设置</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base">通知设置</CardTitle>
+              <CardDescription>控制订单事件是否触发系统通知。开关只控制对应事件的发送资格；实际送达渠道和内容仍以已连接的通知服务及模板配置为准。</CardDescription>
+            </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <Label>新订单通知</Label>
-                  <p className="text-xs text-muted-foreground">收到新订单时发送通知</p>
+                  <p className="text-xs text-muted-foreground">产生新订单时，向通知邮箱或已连接的通知渠道提示后台跟进。</p>
                 </div>
                 <Switch checked={form.notifyOnNewOrder ?? true} onCheckedChange={(v) => update("notifyOnNewOrder", v)} />
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <Label>付款通知</Label>
-                  <p className="text-xs text-muted-foreground">客户上传付款凭证时通知</p>
+                  <p className="text-xs text-muted-foreground">客户上传付款凭证时，提示后台审核；不会自动核准付款。</p>
                 </div>
                 <Switch checked={form.notifyOnPayment ?? true} onCheckedChange={(v) => update("notifyOnPayment", v)} />
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <Label>发货通知</Label>
-                  <p className="text-xs text-muted-foreground">订单发货时通知客户</p>
+                  <p className="text-xs text-muted-foreground">订单完成发货流程时，按已配置的客户通知渠道发送发货提示。</p>
                 </div>
                 <Switch checked={form.notifyOnShipment ?? true} onCheckedChange={(v) => update("notifyOnShipment", v)} />
               </div>
@@ -270,9 +371,7 @@ export default function SystemSettings() {
                   rows={3}
                   placeholder="例如: 👇 留言关键词即可自动下单"
                 />
-                <p className="text-xs text-muted-foreground">
-                  在直播详情页点击「复制关键词」时，自动附加在文案末尾的固定文字
-                </p>
+                <p className="text-xs text-muted-foreground">仅在直播详情页管理员点击「复制关键词」时附加在复制文案末尾，不会自动发布到 Facebook 留言，也不会自动发送给客户。</p>
               </div>
             </CardContent>
           </Card>

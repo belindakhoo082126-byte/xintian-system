@@ -2816,14 +2816,19 @@ export const appRouter = router({
         return await db.findPotentialDuplicateCustomers(input.customerId);
       }),
 
+    getMergePreview: adminProcedure
+      .input(z.object({ sourceId: z.number(), targetId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCustomerMergePreview(input.sourceId, input.targetId);
+      }),
+
     merge: adminProcedure
       .input(z.object({
         sourceId: z.number(),
         targetId: z.number(),
       }))
       .mutation(async ({ input, ctx }) => {
-        await db.mergeCustomers(input.sourceId, input.targetId, ctx.user.id);
-        return { success: true };
+        return await db.mergeCustomers(input.sourceId, input.targetId, ctx.user.id);
       }),
 
     getMergeSuggestions: adminProcedure
@@ -6261,6 +6266,23 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getChatCustomerInfo(input.customerId);
       }),
+
+    createTrainingFeedback: adminProcedure
+      .input(z.object({
+        conversationId: z.number(),
+        messageId: z.number(),
+        category: z.string().trim().min(1, "分类必填"),
+        topic: z.string().trim().min(1, "主题必填"),
+        triggerKeywords: z.string().trim().min(1, "触发关键词必填"),
+        content: z.string().trim().min(1, "修订回复必填"),
+        sourceNote: z.string().trim().max(1000).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.createChatTrainingFeedback({
+          ...input,
+          staffName: ctx.user?.name || `Admin #${ctx.user?.id || ""}`,
+        });
+      }),
   }),
 
   aiHandover: router({
@@ -6356,6 +6378,9 @@ export const appRouter = router({
     })).mutation(async ({ input }) => {
       const { id, ...data } = input;
       return await db.updateAiKnowledge(id, data);
+    }),
+    approveChatTrainingFeedback: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+      return await db.approveChatTrainingFeedback(input.id, ctx.user?.name || `Admin #${ctx.user?.id || ""}`);
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       return await db.deleteAiKnowledge(input.id);

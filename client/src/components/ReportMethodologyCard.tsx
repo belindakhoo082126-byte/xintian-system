@@ -9,7 +9,8 @@ type ReportKind =
   | "customerSpending"
   | "purchaseInventory"
   | "profitAnalysis"
-  | "lossAnalysis";
+  | "lossAnalysis"
+  | "legacyMonthlyProfit";
 
 const methodology: Record<ReportKind, Record<"zh" | "en", { title: string; description: string }>> = {
   businessOverview: {
@@ -35,6 +36,10 @@ const methodology: Record<ReportKind, Record<"zh" | "en", { title: string; descr
   profitAnalysis: {
     zh: { title: "统计口径｜利润分析", description: "销售按订单建立日；实际毛利 = 商品销售额 − FIFO 商品成本 + 运费收入 − 实际运费成本 − 报废损失 − 退款，退款按退款业务日期。" },
     en: { title: "Methodology | Profit analysis", description: "Sales follow order-created date. Gross profit = item sales − FIFO item cost + shipping income − actual shipping cost − wastage − refunds; refunds follow refund business date." },
+  },
+  legacyMonthlyProfit: {
+    zh: { title: "统计口径｜月度利润（旧版）", description: "按所选月份建立且实体订单或会员订单状态为已完成的订单计算；收入为商品、会员和订单运费合计，商品成本暂按当前商品成本估算。此页不扣退款、实际运费与损耗，不应与经营报告的实际利润直接比较。" },
+    en: { title: "Methodology | Monthly profit (legacy)", description: "Uses orders created in the selected month whose physical or membership status is completed. Revenue totals product, membership and order shipping fees; product cost uses the current product cost estimate. Refunds, actual shipping costs and losses are excluded, so it is not directly comparable with Business Report actual profit." },
   },
   lossAnalysis: {
     zh: { title: "统计口径｜损耗分析", description: "统计所选期间建立的库存调整记录；损耗数量为库存减少绝对值合计，损耗成本为记录成本合计，损耗率以当前实体库存为分母。" },

@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
+import { buildCheckoutNotification, buildShippingNotification } from "@/lib/chatNotifications";
+import { dedupeAndSortConversations, dedupeAndSortMessages } from "@/lib/chatSynchronization";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -11,6 +13,9 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 import {
   MessageSquare, Send, Bot, User, Phone, Facebook,
   ShoppingBag, AlertCircle, CheckCircle2, Clock, Zap, Search,
@@ -32,11 +37,13 @@ export default function Chat() {
   const [sseConnected, setSseConnected] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [copiedCheckoutOrderId, setCopiedCheckoutOrderId] = useState<number | null>(null);
+  const [copiedShippingOrderId, setCopiedShippingOrderId] = useState<number | null>(null);
+  const [trainingDraft, setTrainingDraft] = useState<any>(null);
+  const [notificationPreview, setNotificationPreview] = useState<{ title: string; content: string } | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sseRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const processedMessageIds = useRef<Set<number>>(new Set());
 
   // SSE real-time connection for chat updates
   useEffect(() => {
@@ -130,18 +137,36 @@ export default function Chat() {
     return input;
   }, [filter, searchDebounced]);
 
-  const { data: conversations, isLoading: convsLoading } = trpc.chat.listConversations.useQuery(queryInput, {
+  const {
+    data: conversations,
+    isLoading: convsLoading,
+    isError: conversationsError,
+    error: conversationsErrorDetail,
+    refetch: refetchConversations,
+  } = trpc.chat.listConversations.useQuery(queryInput, {
     staleTime: 0, // Always refetch when invalidated by SSE
     refetchOnWindowFocus: true,
   });
-  const { data: messages } = trpc.chat.getMessages.useQuery(
+  const {
+    data: messages,
+    isError: messagesError,
+    error: messagesErrorDetail,
+    refetch: refetchMessages,
+  } = trpc.chat.getMessages.useQuery(
     { conversationId: selectedConvId || 0 },
     { enabled: !!selectedConvId, staleTime: 0, refetchOnWindowFocus: true }
   );
 
-  const selectedConv = conversations?.find((c: any) => c.id === selectedConvId);
+  const visibleConversations = useMemo(() => dedupeAndSortConversations(conversations), [conversations]);
+  const visibleMessages = useMemo(() => dedupeAndSortMessages(messages), [messages]);
+  const selectedConv = visibleConversations.find((c: any) => c.id === selectedConvId);
 
-  const { data: customerInfo } = trpc.chat.getCustomerInfo.useQuery(
+  const {
+    data: customerInfo,
+    isError: customerInfoError,
+    error: customerInfoErrorDetail,
+    refetch: refetchCustomerInfo,
+  } = trpc.chat.getCustomerInfo.useQuery(
     { customerId: selectedConv?.customerId || 0 },
     { enabled: !!selectedConv?.customerId }
   );
@@ -156,6 +181,13 @@ export default function Chat() {
   const toggleAIMut = trpc.chat.toggleAI.useMutation();
   const handoverMut = trpc.chat.handover.useMutation();
   const resumeAIMut = trpc.chat.resumeAI.useMutation();
+  const createTrainingFeedbackMut = trpc.chat.createTrainingFeedback.useMutation({
+    onSuccess: () => {
+      toast.success("已保存为知识库训练草稿", { description: "草稿未启用，需在 AI 知识库审核发布后才会影响自动回复。" });
+      setTrainingDraft(null);
+    },
+    onError: (error) => toast.error(`保存训练草稿失败：${error.message}`),
+  });
 
   // Mark as read when selecting a conversation
   useEffect(() => {
@@ -171,16 +203,13 @@ export default function Chat() {
     }
   }, [messages]);
 
-  // Track processed message IDs to prevent duplicates
-  useEffect(() => {
-    if (messages) {
-      for (const msg of messages) {
-        if (!processedMessageIds.current.has(msg.id)) {
-          processedMessageIds.current.add(msg.id);
-        }
-      }
-    }
-  }, [messages]);
+  const retryChatSync = async () => {
+    const requests: Promise<unknown>[] = [refetchConversations()];
+    if (selectedConvId) requests.push(refetchMessages());
+    if (selectedConv?.customerId) requests.push(refetchCustomerInfo());
+    await Promise.all(requests);
+    toast.success("已重新加载聊天资料");
+  };
 
   const handleSend = () => {
     if (!messageInput.trim() || !selectedConvId) return;
@@ -205,14 +234,12 @@ export default function Chat() {
     resumeAIMut.mutate({ conversationId: selectedConvId });
   };
 
-  const handleCopyCheckoutLink = async (order: { id: number; orderNumber: string; secureToken?: string | null }) => {
-    if (!order.secureToken) return;
-    const checkoutLink = `${window.location.origin}/order/${order.orderNumber}/${order.secureToken}`;
+  const copyText = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(checkoutLink);
+      await navigator.clipboard.writeText(text);
     } catch {
       const textarea = document.createElement("textarea");
-      textarea.value = checkoutLink;
+      textarea.value = text;
       textarea.style.position = "fixed";
       textarea.style.opacity = "0";
       document.body.appendChild(textarea);
@@ -220,8 +247,56 @@ export default function Chat() {
       document.execCommand("copy");
       document.body.removeChild(textarea);
     }
+  };
+
+  const getCheckoutNotification = (order: { orderNumber: string; secureToken?: string | null }) => {
+    return buildCheckoutNotification(order, window.location.origin);
+  };
+
+  const getShippingNotification = (order: { orderNumber: string; courierCompany?: string | null; trackingNumber?: string | null }) => {
+    return buildShippingNotification(order);
+  };
+
+  const handleCopyCheckoutLink = async (order: { id: number; orderNumber: string; secureToken?: string | null }) => {
+    const notification = getCheckoutNotification(order);
+    if (!notification) return;
+    await copyText(notification);
     setCopiedCheckoutOrderId(order.id);
     window.setTimeout(() => setCopiedCheckoutOrderId((current) => current === order.id ? null : current), 2000);
+  };
+
+  const handleCopyShippingNotification = async (order: { id: number; orderNumber: string; courierCompany?: string | null; trackingNumber?: string | null }) => {
+    await copyText(getShippingNotification(order));
+    setCopiedShippingOrderId(order.id);
+    window.setTimeout(() => setCopiedShippingOrderId((current) => current === order.id ? null : current), 2000);
+  };
+
+  const openTrainingFeedback = (aiMessage: any) => {
+    const messageIndex = messages?.findIndex((message: any) => message.id === aiMessage.id) ?? -1;
+    const customerPrompt = messageIndex > -1
+      ? [...(messages || []).slice(0, messageIndex)].reverse().find((message: any) => message.senderType === "customer")?.content || ""
+      : "";
+    setTrainingDraft({
+      messageId: aiMessage.id,
+      category: "customer_service",
+      topic: `聊天训练｜${selectedConv?.customerName || selectedConv?.platformId || "客户咨询"}`,
+      triggerKeywords: customerPrompt.slice(0, 160) || "客户咨询",
+      content: aiMessage.content || "",
+      sourceNote: "人工审核并修订 AI 聊天回复",
+    });
+  };
+
+  const submitTrainingFeedback = () => {
+    if (!selectedConvId || !trainingDraft) return;
+    createTrainingFeedbackMut.mutate({
+      conversationId: selectedConvId,
+      messageId: trainingDraft.messageId,
+      category: trainingDraft.category,
+      topic: trainingDraft.topic,
+      triggerKeywords: trainingDraft.triggerKeywords,
+      content: trainingDraft.content,
+      sourceNote: trainingDraft.sourceNote,
+    });
   };
 
   const getSenderIcon = (senderType: string) => {
@@ -258,6 +333,7 @@ export default function Chat() {
   };
 
   return (
+    <>
     <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
       {/* Left Column — Conversation List */}
       <div className="w-80 border-r flex flex-col shrink-0">
@@ -294,13 +370,18 @@ export default function Chat() {
         </div>
 
         <ScrollArea className="flex-1" ref={scrollAreaRef as any}>
-          {convsLoading ? (
+          {conversationsError ? (
+            <div className="m-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive space-y-2">
+              <p>对话同步失败：{conversationsErrorDetail?.message || "请检查网络后重试"}</p>
+              <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => void retryChatSync()}>重新加载</Button>
+            </div>
+          ) : convsLoading ? (
             <div className="p-4 text-center text-sm text-muted-foreground">加载中...</div>
-          ) : !conversations || conversations.length === 0 ? (
+          ) : visibleConversations.length === 0 ? (
             <div className="p-4 text-center text-sm text-muted-foreground">暂无对话</div>
           ) : (
             <div className="divide-y">
-              {conversations.map((conv: any) => (
+              {visibleConversations.map((conv: any) => (
                 <div
                   key={conv.id}
                   onClick={() => setSelectedConvId(conv.id)}
@@ -387,6 +468,7 @@ export default function Chat() {
                       AI由{selectedConv.aiToggledBy}于{selectedConv.aiToggledAt ? new Date(selectedConv.aiToggledAt).toLocaleString("zh-CN") : ""}切换
                     </span>
                   )}
+                  <span className="text-[10px] text-muted-foreground">语音讯息会保留为附件；当前未启用自动语音转文字或自动训练。</span>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -416,10 +498,15 @@ export default function Chat() {
 
             <ScrollArea className="flex-1">
               <div className="p-4 space-y-3">
-                {!messages || messages.length === 0 ? (
+                {messagesError ? (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive space-y-2">
+                    <p>消息同步失败：{messagesErrorDetail?.message || "请检查网络后重试"}</p>
+                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => void retryChatSync()}>重新加载</Button>
+                  </div>
+                ) : visibleMessages.length === 0 ? (
                   <div className="text-center text-sm text-muted-foreground py-8">暂无消息记录</div>
                 ) : (
-                  messages.map((msg: any) => (
+                  visibleMessages.map((msg: any) => (
                     <div
                       key={msg.id}
                       className={`flex gap-2 ${msg.senderType === "customer" ? "justify-start" : "justify-end"}`}
@@ -462,6 +549,11 @@ export default function Chat() {
                           )}
                           {msg.content}
                         </div>
+                        {msg.senderType === "ai" && (
+                          <Button type="button" variant="ghost" size="sm" className="mt-1 h-6 px-1.5 text-[11px]" onClick={() => openTrainingFeedback(msg)}>
+                            <FileText className="mr-1 h-3 w-3" />标记为训练草稿
+                          </Button>
+                        )}
                       </div>
                       {msg.senderType !== "customer" && (
                         <Avatar className="h-7 w-7 shrink-0">
@@ -518,7 +610,12 @@ export default function Chat() {
             <div>
               <h3 className="text-sm font-semibold mb-2">客户资料</h3>
               {selectedConv.customerId ? (
-                customerInfo ? (
+                customerInfoError ? (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive space-y-2">
+                    <p>客户资料同步失败：{customerInfoErrorDetail?.message || "请重新加载"}</p>
+                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => void retryChatSync()}>重新加载</Button>
+                  </div>
+                ) : customerInfo ? (
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">姓名</span>
@@ -561,6 +658,43 @@ export default function Chat() {
               ) : (
                 <p className="text-sm text-muted-foreground">未关联客户（仅平台ID: {selectedConv.platformId}）</p>
               )}
+            </div>
+
+            <Separator />
+
+            <div>
+              <h3 className="text-sm font-semibold mb-2">未结账订单</h3>
+              {customerInfo?.unpaidOrders?.length ? (
+                <div className="space-y-2">
+                  {customerInfo.unpaidOrders.map((order: any) => (
+                    <div key={order.id} className="rounded border p-2 text-sm">
+                      <div className="flex justify-between gap-2"><b>{order.orderNumber}</b><Badge variant="outline" className="text-[10px]">{order.customerStatus}</Badge></div>
+                      <p className="mt-1 text-xs text-muted-foreground">RM {order.totalAmount}</p>
+                      <div className="mt-1.5 flex flex-wrap gap-1"><Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs" disabled={!order.secureToken} onClick={() => { const content = getCheckoutNotification(order); if (content) setNotificationPreview({ title: `${order.orderNumber} 结账通知预览`, content }); }}><Eye className="mr-1 h-3 w-3" />通知预览</Button><Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs" disabled={!order.secureToken} onClick={() => void handleCopyCheckoutLink(order)}><Copy className="mr-1 h-3 w-3" />{copiedCheckoutOrderId === order.id ? "已复制" : "复制结账通知"}</Button><Link href={`/orders/${order.id}`}><Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs"><Eye className="mr-1 h-3 w-3" />订单</Button></Link></div>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-sm text-muted-foreground">暂无未结账订单</p>}
+            </div>
+
+            <Separator />
+
+            <div>
+              <h3 className="text-sm font-semibold mb-2">已发货订单</h3>
+              {customerInfo?.shippedOrders?.length ? (
+                <div className="space-y-2">
+                  {customerInfo.shippedOrders.map((order: any) => (
+                    <div key={order.id} className="rounded border p-2 text-sm"><div className="flex justify-between gap-2"><b>{order.orderNumber}</b><Badge variant="outline" className="text-[10px]">{order.customerStatus}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{order.courierCompany || "快递待更新"}{order.trackingNumber ? ` · ${order.trackingNumber}` : ""}</p><div className="mt-1.5 flex flex-wrap gap-1"><Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs" onClick={() => setNotificationPreview({ title: `${order.orderNumber} 发货通知预览`, content: getShippingNotification(order) })}><Eye className="mr-1 h-3 w-3" />通知预览</Button><Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs" onClick={() => void handleCopyShippingNotification(order)}><Copy className="mr-1 h-3 w-3" />{copiedShippingOrderId === order.id ? "已复制" : "复制发货通知"}</Button><Link href={`/orders/${order.id}`}><Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs"><Eye className="mr-1 h-3 w-3" />订单</Button></Link></div></div>
+                  ))}
+                </div>
+              ) : <p className="text-sm text-muted-foreground">暂无已发货订单</p>}
+            </div>
+
+            <Separator />
+
+            <div>
+              <h3 className="text-sm font-semibold mb-2">最近 Credit 流水</h3>
+              {customerInfo?.creditTransactions?.length ? <div className="space-y-1.5">{customerInfo.creditTransactions.map((entry: any) => <div key={entry.id} className="rounded bg-muted/60 p-2 text-xs"><div className="flex justify-between"><span className={Number(entry.amount) >= 0 ? "text-emerald-700" : "text-red-700"}>{Number(entry.amount) >= 0 ? "+" : ""}RM {entry.amount}</span><span>余额 RM {entry.balanceAfter}</span></div><p className="mt-1 text-muted-foreground">{entry.reason}{entry.orderNumber ? ` · ${entry.orderNumber}` : ""}</p></div>)}</div> : <p className="text-sm text-muted-foreground">暂无 Credit 流水</p>}
             </div>
 
             <Separator />
@@ -685,5 +819,20 @@ export default function Chat() {
         )}
       </div>
     </div>
+    <Dialog open={!!trainingDraft} onOpenChange={(open) => !open && setTrainingDraft(null)}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>保存 AI 训练草稿</DialogTitle></DialogHeader>
+        {trainingDraft && <div className="space-y-3"><p className="text-sm text-muted-foreground">人工修订后将以<strong>未启用草稿</strong>存入知识库；发布审核前不会改变任何自动回复。</p><div><label className="text-sm font-medium">分类</label><Input value={trainingDraft.category} onChange={(event) => setTrainingDraft({ ...trainingDraft, category: event.target.value })} /></div><div><label className="text-sm font-medium">主题</label><Input value={trainingDraft.topic} onChange={(event) => setTrainingDraft({ ...trainingDraft, topic: event.target.value })} /></div><div><label className="text-sm font-medium">触发关键词／客户问题</label><Textarea rows={2} value={trainingDraft.triggerKeywords} onChange={(event) => setTrainingDraft({ ...trainingDraft, triggerKeywords: event.target.value })} /></div><div><label className="text-sm font-medium">修订后的建议回复</label><Textarea rows={5} value={trainingDraft.content} onChange={(event) => setTrainingDraft({ ...trainingDraft, content: event.target.value })} /></div><div><label className="text-sm font-medium">内部说明</label><Textarea rows={2} value={trainingDraft.sourceNote} onChange={(event) => setTrainingDraft({ ...trainingDraft, sourceNote: event.target.value })} /></div></div>}
+        <DialogFooter><Button variant="outline" onClick={() => setTrainingDraft(null)}>取消</Button><Button onClick={submitTrainingFeedback} disabled={createTrainingFeedbackMut.isPending}>{createTrainingFeedbackMut.isPending ? "保存中..." : "保存训练草稿"}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={!!notificationPreview} onOpenChange={(open) => !open && setNotificationPreview(null)}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{notificationPreview?.title || "客户通知预览"}</DialogTitle></DialogHeader>
+        <p className="rounded-md bg-muted p-3 text-sm whitespace-pre-wrap leading-6">{notificationPreview?.content}</p>
+        <DialogFooter><Button variant="outline" onClick={() => setNotificationPreview(null)}>关闭</Button><Button onClick={() => notificationPreview && void copyText(notificationPreview.content)}>复制此通知</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

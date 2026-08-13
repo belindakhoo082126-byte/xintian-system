@@ -2766,6 +2766,9 @@ export const aiKnowledge = mysqlTable("ai_knowledge", {
   // Source tracking: if this knowledge was created from an AI test run
   sourceAiTestRunId: int("sourceAiTestRunId"),
   sourceNote: text("sourceNote"),
+  // Training feedback review audit. Only approved drafts are published to AI matching.
+  approvedBy: varchar("approvedBy", { length: 255 }),
+  approvedAt: timestamp("approvedAt"),
   // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

@@ -1,0 +1,3 @@
+ALTER TABLE ai_knowledge
+  ADD COLUMN approvedBy VARCHAR(255) NULL,
+  ADD COLUMN approvedAt TIMESTAMP NULL;

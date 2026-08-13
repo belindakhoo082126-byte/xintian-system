@@ -68,6 +68,7 @@ export default function Customers() {
   const [mergeSource, setMergeSource] = useState<any>(null);
   const [mergeTarget, setMergeTarget] = useState<any>(null);
   const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
+  const [mergeResult, setMergeResult] = useState<any>(null);
   // V2.0.83: Checkbox-based merge selection
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<Set<number>>(new Set());
   const [mergeSelectMode, setMergeSelectMode] = useState(false);
@@ -80,6 +81,11 @@ export default function Customers() {
   });
 
   const { data: mergeSuggestions } = trpc.customers.getMergeSuggestions.useQuery({ status: "pending" });
+
+  const { data: mergePreview, isLoading: mergePreviewLoading, error: mergePreviewError } = trpc.customers.getMergePreview.useQuery(
+    { sourceId: mergeSource?.id || 0, targetId: mergeTarget?.id || 0 },
+    { enabled: !!mergeSource?.id && !!mergeTarget?.id && mergeSource.id !== mergeTarget.id, staleTime: 0 }
+  );
 
   const { data: duplicatesData } = trpc.customers.findDuplicates.useQuery(
     { customerId: detailCustomer?.id ?? 0 },
@@ -108,10 +114,12 @@ export default function Customers() {
   }, [duplicatesData]);
 
   const mergeMutation = trpc.customers.merge.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       utils.customers.invalidate();
       toast.success(translate("客户档案已合并", "Customer profiles merged"));
       setDetailOpen(false);
+      setMergeResult(data);
+      exitMergeMode();
     },
     onError: (e) => toast.error(translate("合并失败: {message}", "Merge failed: {message}", { message: e.message })),
   });
@@ -285,8 +293,11 @@ export default function Customers() {
     const primary = selectedList.find(c => c.id === mergePrimaryId);
     if (!primary) return;
     const others = selectedList.filter(c => c.id !== mergePrimaryId);
-    if (others.length === 0) return;
-    // Set up merge dialog with first non-primary as source, primary as target
+    if (others.length !== 1) {
+      toast.error(translate("为避免资料误并入，一次只能选择一位副客户合并。", "For data safety, merge one secondary customer at a time."));
+      return;
+    }
+    // Preview the single secondary customer against the selected primary.
     setMergeSource(others[0]);
     setMergeTarget(primary);
     setMergeDialogOpen(true);
@@ -1082,9 +1093,9 @@ export default function Customers() {
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">{translate("订单数", "Orders")}</TableCell>
-                      <TableCell>{mergeSource.totalOrders || 0}</TableCell>
+                      <TableCell>{mergePreviewLoading ? "…" : (mergePreview?.transfer.orderCount ?? "-")}</TableCell>
                       <TableCell>{mergeTarget.totalOrders || 0}</TableCell>
-                      <TableCell className="font-bold">{(mergeSource.totalOrders || 0) + (mergeTarget.totalOrders || 0)}</TableCell>
+                      <TableCell className="font-bold">{mergePreview?.result.totalOrders ?? "-"}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">{translate("消费总额", "Total Spent")}</TableCell>
@@ -1094,9 +1105,9 @@ export default function Customers() {
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">{translate("Credit", "Credit")}</TableCell>
-                      <TableCell>RM {parseFloat(mergeSource.creditBalance || "0").toFixed(2)}</TableCell>
-                      <TableCell>RM {parseFloat(mergeTarget.creditBalance || "0").toFixed(2)}</TableCell>
-                      <TableCell className="font-bold text-blue-600">RM {(parseFloat(mergeSource.creditBalance || "0") + parseFloat(mergeTarget.creditBalance || "0")).toFixed(2)}</TableCell>
+                      <TableCell>RM {mergePreview?.source.creditBalance ?? "…"}</TableCell>
+                      <TableCell>RM {mergePreview?.target.creditBalance ?? "…"}</TableCell>
+                      <TableCell className="font-bold text-blue-600">RM {mergePreview?.result.creditBalance ?? "…"}</TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -1109,8 +1120,10 @@ export default function Customers() {
                   <li>{translate("Credit 余额将合并到目标客户", "Credit balance will be merged to target customer")}</li>
                   <li>{translate("缺失的资料将从来源客户填充到目标客户", "Missing fields will be filled from source customer")}</li>
                   <li>{translate("来源客户将被标记为已合并，不再显示", "Source customer will be marked as merged and hidden")}</li>
+                  {mergePreview && <li>{translate("本次会转移 {orders} 张订单及 {ledgers} 笔 Credit 流水", "This will move {orders} orders and {ledgers} Credit ledger entries", { orders: mergePreview.transfer.orderCount, ledgers: mergePreview.transfer.creditLedgerCount })}</li>}
                 </ul>
               </div>
+              {mergePreviewError && <p className="text-sm text-destructive">{mergePreviewError.message}</p>}
             </div>
           )}
           <DialogFooter>
@@ -1118,11 +1131,30 @@ export default function Customers() {
             <Button
               variant="destructive"
               onClick={() => setMergeConfirmOpen(true)}
+              disabled={mergePreviewLoading || !mergePreview}
             >
               <GitMerge className="h-4 w-4 mr-2" />
               {translate("确认合并", "Confirm Merge")}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!mergeResult} onOpenChange={(open) => !open && setMergeResult(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{translate("合并完成摘要", "Merge Complete")}</DialogTitle></DialogHeader>
+          {mergeResult && (
+            <div className="space-y-3 text-sm">
+              <p>{translate("已保留主客户：", "Primary customer retained: ")}<span className="font-medium">{mergeResult.target?.name}</span></p>
+              <p>{translate("已合并副客户：", "Secondary customer merged: ")}<span className="font-medium">{mergeResult.source?.name}</span></p>
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-1">
+                <p>{translate("已转移订单", "Orders moved")}: <b>{mergeResult.transfer?.orderCount ?? 0}</b></p>
+                <p>{translate("已转移 Credit 流水", "Credit ledger entries moved")}: <b>{mergeResult.transfer?.creditLedgerCount ?? 0}</b></p>
+                <p>{translate("合并后 Credit", "Combined Credit")}: <b>RM {mergeResult.result?.creditBalance}</b></p>
+              </div>
+            </div>
+          )}
+          <DialogFooter><Button onClick={() => setMergeResult(null)}>{translate("完成", "Done")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

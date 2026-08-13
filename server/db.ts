@@ -460,9 +460,64 @@ export async function findPotentialDuplicateCustomers(customerId: number) {
   return results;
 }
 
+/**
+ * Calculates a merge impact without writing data. The UI uses this snapshot
+ * before presenting the irreversible customer merge confirmation.
+ */
+export async function getCustomerMergePreview(sourceId: number, targetId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (sourceId === targetId) throw new Error("来源客户与主客户不可相同");
+
+  const [source, target] = await Promise.all([
+    getCustomerById(sourceId),
+    getCustomerById(targetId),
+  ]);
+  if (!source || !target) throw new Error("Customer not found");
+  if (source.mergedIntoCustomerId) throw new Error("副客户已合并，不能再次合并");
+  if (target.mergedIntoCustomerId) throw new Error("主客户已合并，不能作为保留客户");
+
+  const [orderCountRows, ledgerCountRows] = await Promise.all([
+    db.select({ count: sql<number>`count(*)` }).from(orders).where(eq(orders.customerId, sourceId)),
+    db.select({ count: sql<number>`count(*)` }).from(customerCreditLedger).where(eq(customerCreditLedger.customerId, sourceId)),
+  ]);
+  const sourceCredit = parseFloat(String(source.creditBalance || "0"));
+  const targetCredit = parseFloat(String(target.creditBalance || "0"));
+  const sourceSpent = parseFloat(String(source.totalSpent || "0"));
+  const targetSpent = parseFloat(String(target.totalSpent || "0"));
+
+  return {
+    source: {
+      id: source.id,
+      name: source.name || source.facebookName || `客户 #${source.id}`,
+      phoneNumber: source.phoneNumber || null,
+      creditBalance: sourceCredit.toFixed(2),
+      totalSpent: sourceSpent.toFixed(2),
+    },
+    target: {
+      id: target.id,
+      name: target.name || target.facebookName || `客户 #${target.id}`,
+      phoneNumber: target.phoneNumber || null,
+      creditBalance: targetCredit.toFixed(2),
+      totalSpent: targetSpent.toFixed(2),
+    },
+    transfer: {
+      orderCount: Number(orderCountRows[0]?.count || 0),
+      creditLedgerCount: Number(ledgerCountRows[0]?.count || 0),
+      creditBalance: sourceCredit.toFixed(2),
+    },
+    result: {
+      creditBalance: (sourceCredit + targetCredit).toFixed(2),
+      totalSpent: (sourceSpent + targetSpent).toFixed(2),
+      totalOrders: (source.totalOrders || 0) + (target.totalOrders || 0),
+    },
+  };
+}
+
 export async function mergeCustomers(sourceId: number, targetId: number, staffId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const preview = await getCustomerMergePreview(sourceId, targetId);
 
   // Get both customers to merge data
   const [source, target] = await Promise.all([
@@ -541,6 +596,14 @@ export async function mergeCustomers(sourceId: number, targetId: number, staffId
     and(eq(customerMergeSuggestions.customerAId, sourceId), eq(customerMergeSuggestions.customerBId, targetId)),
     and(eq(customerMergeSuggestions.customerAId, targetId), eq(customerMergeSuggestions.customerBId, sourceId))
   ));
+
+  return {
+    success: true,
+    source: preview.source,
+    target: preview.target,
+    transfer: preview.transfer,
+    result: preview.result,
+  };
 }
 
 // V2.0.81: Get customer timeline — combines orders, credit ledger, blacklist changes, and merge events
@@ -4682,7 +4745,7 @@ export async function getBusinessOverview(dateRange: DateRange) {
     SELECT 
       COALESCE(SUM(o.physicalSubtotal), 0) as total_revenue,
       COALESCE(SUM(CASE WHEN o.paidAmount > 0 THEN o.paidAmount ELSE 0 END), 0) as total_paid,
-      COALESCE(SUM(CASE WHEN o.physicalStatus != 'cancelled' THEN o.totalAmount - o.paidAmount ELSE 0 END), 0) as total_unpaid,
+      COALESCE(SUM(CASE WHEN COALESCE(o.physicalStatus, '') <> 'cancelled' THEN o.totalAmount - o.paidAmount ELSE 0 END), 0) as total_unpaid,
       COUNT(*) as total_orders,
       SUM(CASE WHEN o.paidAmount > 0 AND o.paidAmount >= o.totalAmount THEN 1 ELSE 0 END) as paid_orders,
       SUM(CASE WHEN o.paidAmount = 0 THEN 1 ELSE 0 END) as unpaid_orders,
@@ -4690,8 +4753,8 @@ export async function getBusinessOverview(dateRange: DateRange) {
       COALESCE(SUM(o.shippingFee), 0) as shipping_income
     FROM orders o
     WHERE o.createdAt >= ${startTimestamp} AND o.createdAt <= ${endTimestamp}
-      AND o.physicalStatus != 'cancelled'
-      AND o.orderType != 'membership'
+      AND COALESCE(o.physicalStatus, '') <> 'cancelled'
+      AND COALESCE(o.orderType, '') <> 'membership'
   `);
 
   // 2. Refund total
@@ -4712,7 +4775,7 @@ export async function getBusinessOverview(dateRange: DateRange) {
       SUM(CASE WHEN physicalStatus = 'shipped' THEN 1 ELSE 0 END) as shipped
     FROM orders
     WHERE createdAt >= ${startTimestamp} AND createdAt <= ${endTimestamp}
-      AND orderType != 'membership'
+      AND COALESCE(orderType, '') <> 'membership'
   `);
 
   // 4. FIFO cost (from inventory_ledger where transaction_type = 'sale')
@@ -4784,9 +4847,9 @@ export async function getTopProductsByQuantity(dateRange: DateRange, limit = 10)
     FROM order_items oi
     INNER JOIN orders o ON oi.orderId = o.id
     WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
-      AND o.physicalStatus != 'cancelled'
-      AND oi.productType = 'physical'
-    GROUP BY oi.productId, oi.variationId
+      AND COALESCE(o.physicalStatus, '') <> 'cancelled'
+      AND COALESCE(oi.productType, 'physical') = 'physical'
+    GROUP BY oi.productId, oi.productName, oi.variationId, oi.variationName
     ORDER BY total_quantity DESC
     LIMIT ${limit}
   `);
@@ -4815,9 +4878,9 @@ export async function getTopProductsByRevenue(dateRange: DateRange, limit = 10) 
     FROM order_items oi
     INNER JOIN orders o ON oi.orderId = o.id
     WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
-      AND o.physicalStatus != 'cancelled'
-      AND oi.productType = 'physical'
-    GROUP BY oi.productId, oi.variationId
+      AND COALESCE(o.physicalStatus, '') <> 'cancelled'
+      AND COALESCE(oi.productType, 'physical') = 'physical'
+    GROUP BY oi.productId, oi.productName, oi.variationId, oi.variationName
     ORDER BY total_sales DESC
     LIMIT ${limit}
   `);
@@ -4841,8 +4904,8 @@ export async function getTopProductsByProfit(dateRange: DateRange, limit = 10) {
             il.product_id,
       p.name as product_name,
       SUM(ABS(il.quantity_change) * il.unit_cost) as fifo_cost,
-      COALESCE(oi_sum.total_sales, 0) as total_sales,
-      COALESCE(oi_sum.total_sales, 0) - SUM(ABS(il.quantity_change) * il.unit_cost) as gross_profit
+      MAX(COALESCE(oi_sum.total_sales, 0)) as total_sales,
+      MAX(COALESCE(oi_sum.total_sales, 0)) - SUM(ABS(il.quantity_change) * il.unit_cost) as gross_profit
     FROM inventory_ledger il
     LEFT JOIN products p ON il.product_id = p.id
     LEFT JOIN (
@@ -4850,13 +4913,13 @@ export async function getTopProductsByProfit(dateRange: DateRange, limit = 10) {
       FROM order_items oi
       INNER JOIN orders o ON oi.orderId = o.id
       WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
-        AND o.physicalStatus != 'cancelled'
-        AND oi.productType = 'physical'
+        AND COALESCE(o.physicalStatus, '') <> 'cancelled'
+        AND COALESCE(oi.productType, 'physical') = 'physical'
       GROUP BY oi.productId
     ) oi_sum ON il.product_id = oi_sum.productId
     WHERE il.transaction_type = 'sale'
       AND il.created_at >= ${toReportTimestamp(start)} AND il.created_at <= ${toReportTimestamp(end)}
-    GROUP BY il.product_id
+    GROUP BY il.product_id, p.name
     ORDER BY gross_profit DESC
     LIMIT ${limit}
   `);
@@ -4889,9 +4952,9 @@ export async function getTopCustomersBySpending(dateRange: DateRange, limit = 10
     FROM orders o
     INNER JOIN customers c ON o.customerId = c.id
     WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
-      AND o.physicalStatus != 'cancelled'
-      AND o.orderType != 'membership'
-    GROUP BY c.id
+      AND COALESCE(o.physicalStatus, '') <> 'cancelled'
+      AND COALESCE(o.orderType, '') <> 'membership'
+    GROUP BY c.id, c.customerId, c.displayName, c.facebookName, c.avatarUrl
     ORDER BY total_paid DESC
     LIMIT ${limit}
   `);
@@ -4929,7 +4992,7 @@ export async function getSalesPaymentReport(dateRange: DateRange) {
       o.completedAt
     FROM orders o
     WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
-      AND o.orderType != 'membership'
+      AND COALESCE(o.orderType, '') <> 'membership'
     ORDER BY o.createdAt DESC
   `);
 
@@ -4964,8 +5027,8 @@ export async function getProductSalesReport(dateRange: DateRange) {
       SUM(oi.quantity) as total_quantity,
       SUM(oi.subtotal) as total_sales,
       COUNT(DISTINCT o.id) as order_count,
-      COALESCE(il_sum.fifo_cost, 0) as fifo_cost,
-      COALESCE(SUM(oi.subtotal), 0) - COALESCE(il_sum.fifo_cost, 0) as gross_profit
+      MAX(COALESCE(il_sum.fifo_cost, 0)) as fifo_cost,
+      COALESCE(SUM(oi.subtotal), 0) - MAX(COALESCE(il_sum.fifo_cost, 0)) as gross_profit
     FROM order_items oi
     INNER JOIN orders o ON oi.orderId = o.id
     LEFT JOIN (
@@ -4976,9 +5039,9 @@ export async function getProductSalesReport(dateRange: DateRange) {
       GROUP BY product_id
     ) il_sum ON oi.productId = il_sum.product_id
     WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
-      AND o.physicalStatus != 'cancelled'
-      AND oi.productType = 'physical'
-    GROUP BY oi.productId, oi.variationId
+      AND COALESCE(o.physicalStatus, '') <> 'cancelled'
+      AND COALESCE(oi.productType, 'physical') = 'physical'
+    GROUP BY oi.productId, oi.productName, oi.variationId, oi.variationName
     ORDER BY total_sales DESC
   `);
 
@@ -5017,9 +5080,9 @@ export async function getCustomerSpendingReport(dateRange: DateRange) {
     FROM customers c
     LEFT JOIN orders o ON c.id = o.customerId
       AND o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
-      AND o.physicalStatus != 'cancelled'
-      AND o.orderType != 'membership'
-    GROUP BY c.id
+      AND COALESCE(o.physicalStatus, '') <> 'cancelled'
+      AND COALESCE(o.orderType, '') <> 'membership'
+    GROUP BY c.id, c.customerId, c.displayName, c.facebookName, c.phoneNumber, c.whatsappPhone
     HAVING order_count > 0
     ORDER BY total_paid DESC
   `);
@@ -5050,10 +5113,12 @@ export async function getPurchaseInventoryReport(dateRange: DateRange) {
     SELECT 
       COUNT(*) as total_orders,
       COALESCE(SUM(totalAmount), 0) as total_amount,
-      SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmed_count,
+      SUM(CASE WHEN status IN ('ordered', 'received') THEN 1 ELSE 0 END) as confirmed_count,
       SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as draft_count
     FROM purchase_orders
-    WHERE purchase_date >= ${toReportTimestamp(start)} AND purchase_date <= ${toReportTimestamp(end)}
+    WHERE COALESCE(receivedAt, orderedAt, createdAt) >= ${toReportTimestamp(start)}
+      AND COALESCE(receivedAt, orderedAt, createdAt) <= ${toReportTimestamp(end)}
+      AND status <> 'cancelled'
   `);
 
   // Inventory summary
@@ -9403,8 +9468,8 @@ export async function correctInventoryAdjustment(data: {
 export async function getProfitAnalysisReport(dateRange: { start: Date; end: Date }) {
   const db = await getDb();
   if (!db) return null;
-  const startMs = dateRange.start.getTime();
-  const endMs = dateRange.end.getTime();
+  const startAt = toReportTimestamp(dateRange.start);
+  const endAt = toReportTimestamp(dateRange.end);
 
   // Sales revenue
   const [revenueRows] = await db.execute(sql`
@@ -9412,9 +9477,9 @@ export async function getProfitAnalysisReport(dateRange: { start: Date; end: Dat
       COALESCE(SUM(o.physicalSubtotal), 0) as sales_revenue,
       COALESCE(SUM(o.shippingFee), 0) as shipping_income
     FROM orders o
-    WHERE o.createdAt >= ${startMs} AND o.createdAt <= ${endMs}
-      AND o.physicalStatus != 'cancelled'
-      AND o.orderType != 'membership'
+    WHERE o.createdAt >= ${startAt} AND o.createdAt <= ${endAt}
+      AND COALESCE(o.physicalStatus, '') <> 'cancelled'
+      AND COALESCE(o.orderType, '') <> 'membership'
   `);
 
   // FIFO cost
@@ -9422,14 +9487,14 @@ export async function getProfitAnalysisReport(dateRange: { start: Date; end: Dat
     SELECT COALESCE(SUM(ABS(quantity_change) * unit_cost), 0) as product_cost
     FROM inventory_ledger
     WHERE transaction_type = 'sale'
-      AND created_at >= ${startMs} AND created_at <= ${endMs}
+      AND created_at >= ${startAt} AND created_at <= ${endAt}
   `);
 
   // Shipping cost (from shipments)
   const [shippingCostRows] = await db.execute(sql`
     SELECT COALESCE(SUM(shippingCost), 0) as shipping_cost
     FROM shipments
-    WHERE createdAt >= ${startMs} AND createdAt <= ${endMs}
+    WHERE createdAt >= ${startAt} AND createdAt <= ${endAt}
   `);
 
   // Scrap cost (from order_exceptions)
@@ -9437,14 +9502,14 @@ export async function getProfitAnalysisReport(dateRange: { start: Date; end: Dat
     SELECT COALESCE(SUM(scrapCost), 0) as scrap_cost
     FROM order_exceptions
     WHERE status = 'resolved'
-      AND createdAt >= ${startMs} AND createdAt <= ${endMs}
+      AND createdAt >= ${startAt} AND createdAt <= ${endAt}
   `);
 
   // Refund loss (from customer_refunds)
   const [refundRows] = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) as refund_loss
     FROM customer_refunds
-    WHERE refundDate >= ${startMs} AND refundDate <= ${endMs}
+    WHERE refundDate >= ${startAt} AND refundDate <= ${endAt}
   `);
 
   const rev = (revenueRows as unknown as any[])[0] ?? {};
@@ -9483,8 +9548,8 @@ export async function getProfitAnalysisReport(dateRange: { start: Date; end: Dat
 export async function getLossAnalysisReport(dateRange: { start: Date; end: Date }) {
   const db = await getDb();
   if (!db) return null;
-  const startMs = dateRange.start.getTime();
-  const endMs = dateRange.end.getTime();
+  const startAt = toReportTimestamp(dateRange.start);
+  const endAt = toReportTimestamp(dateRange.end);
 
   // Summary by adjustment type
   const [typeRows] = await db.execute(sql`
@@ -9493,7 +9558,8 @@ export async function getLossAnalysisReport(dateRange: { start: Date; end: Date 
       COALESCE(SUM(ABS(quantityChange)), 0) as total_units,
       COALESCE(SUM(totalCost), 0) as total_cost
     FROM inventory_adjustments
-    WHERE createdAt >= ${startMs} AND createdAt <= ${endMs}
+    WHERE createdAt >= ${startAt} AND createdAt <= ${endAt}
+      AND quantityChange < 0
     GROUP BY adjustmentType
   `);
 
@@ -9506,7 +9572,8 @@ export async function getLossAnalysisReport(dateRange: { start: Date; end: Date 
       COALESCE(SUM(ia.totalCost), 0) as loss_cost
     FROM inventory_adjustments ia
     LEFT JOIN products p ON ia.productId = p.id
-    WHERE ia.createdAt >= ${startMs} AND ia.createdAt <= ${endMs}
+    WHERE ia.createdAt >= ${startAt} AND ia.createdAt <= ${endAt}
+      AND ia.quantityChange < 0
     GROUP BY ia.productId, p.name
     ORDER BY loss_cost DESC
     LIMIT 20
@@ -9521,7 +9588,8 @@ export async function getLossAnalysisReport(dateRange: { start: Date; end: Date 
     FROM inventory_adjustments ia
     LEFT JOIN products p ON ia.productId = p.id
     LEFT JOIN categories c ON p.categoryId = c.id
-    WHERE ia.createdAt >= ${startMs} AND ia.createdAt <= ${endMs}
+    WHERE ia.createdAt >= ${startAt} AND ia.createdAt <= ${endAt}
+      AND ia.quantityChange < 0
     GROUP BY c.id, c.nameZh
     ORDER BY loss_cost DESC
     LIMIT 20
@@ -12992,8 +13060,7 @@ export async function getChatCustomerInfo(customerId: number): Promise<any> {
   
   if (customer.length === 0) return null;
   
-  // Get recent orders with special status
-  const recentOrders = await db.select({
+  const orderSummaryColumns = {
     id: orders.id,
     orderNumber: orders.orderNumber,
     secureToken: orders.secureToken,
@@ -13002,11 +13069,51 @@ export async function getChatCustomerInfo(customerId: number): Promise<any> {
     createdAt: orders.createdAt,
     specialOrderType: orders.specialOrderType,
     specialOrderReason: orders.specialOrderReason,
-  })
+    shippingMethod: orders.shippingMethod,
+    courierCompany: orders.courierCompany,
+    trackingNumber: orders.trackingNumber,
+  };
+
+  // Keep the existing recent-order card, then provide focused operational
+  // lists so staff do not need to scan historical orders in a live chat.
+  const recentOrders = await db.select(orderSummaryColumns)
   .from(orders)
   .where(eq(orders.customerId, customerId))
   .orderBy(desc(orders.createdAt))
   .limit(5);
+
+  const [unpaidOrders, shippedOrders, creditTransactions] = await Promise.all([
+    db.select(orderSummaryColumns)
+      .from(orders)
+      .where(and(
+        eq(orders.customerId, customerId),
+        inArray(orders.physicalStatus, ["pending", "receipt_uploaded", "partial_payment", "hold_order"])
+      ))
+      .orderBy(desc(orders.createdAt))
+      .limit(5),
+    db.select(orderSummaryColumns)
+      .from(orders)
+      .where(and(
+        eq(orders.customerId, customerId),
+        inArray(orders.physicalStatus, ["partial_shipped", "shipped", "completed"])
+      ))
+      .orderBy(desc(orders.createdAt))
+      .limit(5),
+    db.select({
+      id: customerCreditLedger.id,
+      amount: customerCreditLedger.amount,
+      balanceAfter: customerCreditLedger.balanceAfter,
+      type: customerCreditLedger.type,
+      reason: customerCreditLedger.reason,
+      orderNumber: customerCreditLedger.orderNumber,
+      performedBy: customerCreditLedger.performedBy,
+      createdAt: customerCreditLedger.createdAt,
+    })
+      .from(customerCreditLedger)
+      .where(eq(customerCreditLedger.customerId, customerId))
+      .orderBy(desc(customerCreditLedger.createdAt))
+      .limit(5),
+  ]);
 
   // Get remarks for these orders
   const orderIds = recentOrders.map((o: any) => o.id);
@@ -13035,6 +13142,9 @@ export async function getChatCustomerInfo(customerId: number): Promise<any> {
   return {
     ...customer[0],
     recentOrders: ordersWithRemarks,
+    unpaidOrders,
+    shippedOrders,
+    creditTransactions,
   };
 }
 
@@ -13200,6 +13310,46 @@ export async function createAiKnowledge(data: {
   return row;
 }
 
+/** Save a staff-corrected AI reply as a non-live knowledge draft with source context. */
+export async function createChatTrainingFeedback(data: {
+  conversationId: number;
+  messageId: number;
+  category: string;
+  topic: string;
+  triggerKeywords: string;
+  content: string;
+  sourceNote?: string;
+  staffName?: string;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+
+  const messages = await database.select({
+    id: chatMessages.id,
+    senderType: chatMessages.senderType,
+    content: chatMessages.content,
+  })
+    .from(chatMessages)
+    .where(and(eq(chatMessages.id, data.messageId), eq(chatMessages.conversationId, data.conversationId)))
+    .limit(1);
+  const message = messages[0];
+  if (!message) throw new Error("找不到对应聊天消息");
+  if (message.senderType !== "ai") throw new Error("只有 AI 回复可保存为训练反馈");
+
+  const [result] = await database.insert(aiKnowledge).values({
+    category: data.category.trim(),
+    topic: data.topic.trim(),
+    triggerKeywords: data.triggerKeywords.trim(),
+    content: data.content.trim(),
+    priority: 100,
+    useLLM: false,
+    isEnabled: false,
+    status: "draft",
+    sourceNote: `聊天训练草稿｜会话 #${data.conversationId}｜AI消息 #${data.messageId}｜提交人 ${data.staffName || "Staff"}${data.sourceNote ? `｜${data.sourceNote.trim()}` : ""}`,
+  });
+  return { success: true, insertId: (result as any).insertId ?? null, status: "draft" as const };
+}
+
 export async function updateAiKnowledge(id: number, data: {
   category?: string;
   topic?: string;
@@ -13214,6 +13364,30 @@ export async function updateAiKnowledge(id: number, data: {
   const { aiKnowledge } = await import("../drizzle/schema");
   await database.update(aiKnowledge).set(data).where(eq(aiKnowledge.id, id));
   return { success: true };
+}
+
+/** Publish an audited chat-training draft. Arbitrary knowledge entries keep using the existing edit workflow. */
+export async function approveChatTrainingFeedback(id: number, approverName: string) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const { aiKnowledge } = await import("../drizzle/schema");
+  const rows = await database.select({
+    id: aiKnowledge.id,
+    status: aiKnowledge.status,
+    sourceNote: aiKnowledge.sourceNote,
+  }).from(aiKnowledge).where(eq(aiKnowledge.id, id)).limit(1);
+  const trainingDraft = rows[0];
+  if (!trainingDraft || trainingDraft.status !== "draft" || !trainingDraft.sourceNote?.startsWith("聊天训练草稿｜")) {
+    throw new Error("仅可审核发布来自聊天训练的草稿");
+  }
+
+  await database.update(aiKnowledge).set({
+    status: "published",
+    isEnabled: true,
+    approvedBy: approverName,
+    approvedAt: new Date(),
+  }).where(eq(aiKnowledge.id, id));
+  return { success: true, status: "published" as const };
 }
 
 export async function deleteAiKnowledge(id: number) {

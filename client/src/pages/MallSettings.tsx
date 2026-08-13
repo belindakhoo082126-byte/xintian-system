@@ -13,7 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Upload, Image as ImageIcon, Palette, Bell, Phone, FileText, Settings, Calendar } from "lucide-react";
+import { buildSystemLink } from "@/lib/settingsLinks";
+import { Plus, Pencil, Trash2, Upload, Image as ImageIcon, Palette, Bell, Phone, FileText, Settings, Calendar, Copy, ExternalLink } from "lucide-react";
 import { MALL_THEMES } from "@/lib/mallTheme";
 import { MallThemePreview } from "@/components/MallThemeArtwork";
 
@@ -78,6 +79,16 @@ export default function MallSettings() {
 
   const [settingsForm, setSettingsForm] = useState<any>({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const mallUrl = buildSystemLink(typeof window === "undefined" ? undefined : window.location.origin, "/mall");
+
+  const copyMallUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(mallUrl);
+      toast.success(translate("商城链接已复制", "Storefront link copied"));
+    } catch {
+      toast.error(translate("无法自动复制，请手动选择链接", "Unable to copy automatically; please select the link manually"));
+    }
+  };
 
   if (settings && !settingsLoaded) {
     setSettingsForm({ ...settings, logoUrl: settings.logoUrl || import.meta.env.VITE_APP_LOGO || "" });
@@ -205,6 +216,19 @@ export default function MallSettings() {
 
         {/* Basic Info */}
         <TabsContent value="basic" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>{translate("商城公开链接", "Storefront Link")}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">{translate("这是客户可直接访问的商城首页。可复制发送到 Facebook、Messenger 或其他宣传渠道。", "This is the public storefront homepage. Copy it for Facebook, Messenger, or other promotion channels.")}</p>
+              <Input value={mallUrl} readOnly aria-label={translate("商城公开链接", "Storefront link")} />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={() => void copyMallUrl()}><Copy className="mr-2 h-4 w-4" />{translate("复制链接", "Copy link")}</Button>
+                <Button type="button" variant="outline" asChild><a href={mallUrl} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />{translate("直接打开", "Open")}</a></Button>
+              </div>
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader><CardTitle>{translate("基本信息", "Basic Information")}</CardTitle></CardHeader>
             <CardContent className="space-y-4">

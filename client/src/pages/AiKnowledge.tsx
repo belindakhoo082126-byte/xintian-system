@@ -49,6 +49,11 @@ export default function AiKnowledge() {
     onSuccess: () => refetch(),
   });
 
+  const approveTrainingMutation = trpc.aiKnowledge.approveChatTrainingFeedback.useMutation({
+    onSuccess: () => { refetch(); toast.success("训练草稿已审核发布", { description: "此回复现在可参与 AI 自动回复匹配。" }); },
+    onError: (error) => toast.error(`审核发布失败：${error.message}`),
+  });
+
   const filtered = filterCategory === "all" ? knowledge : knowledge.filter((k: any) => k.category === filterCategory);
 
   const handleEdit = (item: any) => {
@@ -122,6 +127,8 @@ export default function AiKnowledge() {
                       <Badge variant="outline">优先级: {item.priority}</Badge>
                       {item.useLLM && <Badge variant="default">LLM</Badge>}
                       {!item.isEnabled && <Badge variant="destructive">已停用</Badge>}
+                      {item.status === "draft" && <Badge variant="outline" className="border-amber-400 text-amber-700">待审核草稿</Badge>}
+                      {item.approvedBy && <span className="text-xs text-muted-foreground">审核：{item.approvedBy}{item.approvedAt ? ` · ${new Date(item.approvedAt).toLocaleString()}` : ""}</span>}
                       <Badge variant="outline" className="text-blue-600">
                         使用 {Number(item.usageCount ?? 0)} 次
                       </Badge>
@@ -137,6 +144,11 @@ export default function AiKnowledge() {
                     <p className="text-sm text-muted-foreground whitespace-pre-wrap line-clamp-3">{item.content}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {item.status === "draft" && String(item.sourceNote || "").startsWith("聊天训练草稿｜") && (
+                      <Button variant="outline" size="sm" disabled={approveTrainingMutation.isPending} onClick={() => approveTrainingMutation.mutate({ id: item.id })}>
+                        审核发布
+                      </Button>
+                    )}
                     <Switch
                       checked={item.isEnabled}
                       onCheckedChange={(checked) => toggleMutation.mutate({ id: item.id, isEnabled: checked })}
