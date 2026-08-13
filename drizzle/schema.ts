@@ -1757,6 +1757,9 @@ export const inventoryAdjustments = mysqlTable("inventory_adjustments", {
   totalCost: decimal("totalCost", { precision: 10, scale: 2 }).default("0"),
   // Related exception (if triggered from order exception)
   orderExceptionId: int("orderExceptionId"),
+  // Correction records never overwrite the original adjustment; they point back
+  // to it so inventory and profit history remain fully auditable.
+  correctsAdjustmentId: int("correctsAdjustmentId"),
   // Who made the adjustment
   adjustedBy: varchar("adjustedBy", { length: 255 }),
   // Reason note

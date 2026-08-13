@@ -78,6 +78,25 @@ describe("product source-of-truth safeguards", () => {
     expect(detailBlock).toContain("customerName");
   });
 
+  it("keeps procurement lots and inventory corrections outside the three order-quantity stages", () => {
+    const productsBlock = source.slice(
+      source.indexOf("export async function getProductsEnhanced"),
+      source.indexOf("export async function getProductByIdEnhanced"),
+    );
+    const correctionBlock = source.slice(
+      source.indexOf("export async function correctInventoryAdjustment"),
+      source.indexOf("// V1.2: Profit Analysis Report"),
+    );
+
+    expect(productsBlock).toContain("o.physicalStatus IN ('pending', 'hold_order', 'partial_payment', 'receipt_uploaded')");
+    expect(productsBlock).toContain("o.physicalStatus IN ('packing', 'scheduled', 'partial_shipped')");
+    expect(productsBlock).toContain("o.physicalStatus IN ('partial_shipped', 'shipped', 'completed')");
+    expect(productsBlock).not.toContain("inventory_lots");
+    expect(productsBlock).not.toContain("inventory_adjustments");
+    expect(correctionBlock).toContain("correctsAdjustmentId: original.id");
+    expect(correctionBlock).toContain("更正库存记录");
+  });
+
   it("reads live-room product identity from products and ignores orphaned live-room rows", () => {
     const liveProductsBlock = source.slice(
       source.indexOf("export async function getLiveRoomProducts"),

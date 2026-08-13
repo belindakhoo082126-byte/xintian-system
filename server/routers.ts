@@ -4961,6 +4961,17 @@ export const appRouter = router({
         remark: input.remark,
       });
     }),
+
+    // A correction is an additional linked movement, never an overwrite of the
+    // historical adjustment, so both stock and loss reporting stay auditable.
+    correct: adminProcedure.input(z.object({
+      adjustmentId: z.number().int().positive(),
+      desiredQuantityChange: z.number().int(),
+      reason: z.string().trim().min(1, "请填写更正原因").max(1000),
+    })).mutation(async ({ input, ctx }) => {
+      const userName = ctx.user?.name || ctx.user?.email || "Unknown";
+      return await db.correctInventoryAdjustment({ ...input, adjustedBy: userName });
+    }),
   }),
 
   // ===========================================================================

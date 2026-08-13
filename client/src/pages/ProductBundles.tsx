@@ -62,7 +62,7 @@ export default function ProductBundles() {
     { enabled: selectedBundleId !== null }
   );
 
-  const { data: stockLogs } = trpc.productBundles.stockLogs.useQuery(
+  const { data: stockLogs, error: stockLogsError, refetch: refetchStockLogs } = trpc.productBundles.stockLogs.useQuery(
     { bundleId: selectedBundleId! },
     { enabled: selectedBundleId !== null && showLogs }
   );
@@ -439,14 +439,31 @@ export default function ProductBundles() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {!stockLogs || stockLogs.length === 0 ? (
+              {stockLogsError ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-8 text-center">
+                    <div className="space-y-3">
+                      <p className="text-sm text-destructive">读取库存日志失败：{stockLogsError.message}</p>
+                      <Button variant="outline" size="sm" onClick={() => refetchStockLogs()}>
+                        重新读取
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : !stockLogs || stockLogs.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     暂无库存日志
                   </TableCell>
                 </TableRow>
               ) : (
-                stockLogs.map((log: any) => (
+                stockLogs.map((log: any) => {
+                  const qtyChange = Number(log.qtyChange ?? 0);
+                  const recordedAt = log.createdAt ? new Date(log.createdAt) : null;
+                  const displayTime = recordedAt && !Number.isNaN(recordedAt.getTime())
+                    ? recordedAt.toLocaleString("zh-CN")
+                    : "—";
+                  return (
                   <TableRow key={log.id}>
                     <TableCell>
                       <Badge variant={
@@ -463,18 +480,19 @@ export default function ProductBundles() {
                          "调整"}
                       </Badge>
                     </TableCell>
-                    <TableCell className={`text-right font-medium ${log.qtyChange > 0 ? "text-green-600" : "text-red-600"}`}>
-                      {log.qtyChange > 0 ? "+" : ""}{log.qtyChange}
+                    <TableCell className={`text-right font-medium ${qtyChange > 0 ? "text-green-600" : qtyChange < 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                      {qtyChange > 0 ? "+" : ""}{qtyChange}
                     </TableCell>
-                    <TableCell className="text-right">{log.stockBefore}</TableCell>
-                    <TableCell className="text-right">{log.stockAfter}</TableCell>
-                    <TableCell className="text-sm">{log.reason || log.notes}</TableCell>
-                    <TableCell className="text-sm">{log.operator}</TableCell>
+                    <TableCell className="text-right">{log.stockBefore ?? "—"}</TableCell>
+                    <TableCell className="text-right">{log.stockAfter ?? "—"}</TableCell>
+                    <TableCell className="text-sm">{log.reason || log.notes || "—"}</TableCell>
+                    <TableCell className="text-sm">{log.operator || "系统"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {new Date(log.createdAt).toLocaleString("zh-CN")}
+                      {displayTime}
                     </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>

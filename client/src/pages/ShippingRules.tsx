@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { Truck, Save, Plus, Trash2 } from "lucide-react";
+import { WEST_MALAYSIA_V22_SHIPPING, getWestMalaysiaV22Specification } from "../../../shared/shippingV22";
 
 function formatRM(n: string | number | null | undefined): string {
   if (n === null || n === undefined || n === "") return "-";
@@ -78,6 +79,7 @@ export default function ShippingRules() {
       <div className="grid grid-cols-1 gap-4">
         {rules?.map((rule: any) => {
           const edit = editing[rule.id] || rule;
+          const isWestMalaysia = rule.zone === "west_malaysia";
           return (
             <Card key={rule.id}>
               <CardHeader>
@@ -94,6 +96,12 @@ export default function ShippingRules() {
                   </Button>
                 </div>
               </CardHeader>
+              {isWestMalaysia && (
+                <div className="mx-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                  <p className="font-semibold">正式运费规则 V2.2（系统计算口径）</p>
+                  <p className="mt-1 leading-6">{getWestMalaysiaV22Specification()}</p>
+                </div>
+              )}
               <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>显示名称</Label>
@@ -106,6 +114,7 @@ export default function ShippingRules() {
                     value={edit.freeShippingThreshold ?? ""}
                     onChange={(e) => update(rule.id, "freeShippingThreshold", e.target.value)}
                     placeholder="如: 150"
+                    disabled={isWestMalaysia}
                   />
                 </div>
                 <div className="space-y-2">
@@ -115,6 +124,7 @@ export default function ShippingRules() {
                     value={edit.freeShippingMaxWeight ?? ""}
                     onChange={(e) => update(rule.id, "freeShippingMaxWeight", e.target.value)}
                     placeholder="如: 10"
+                    disabled={isWestMalaysia}
                   />
                 </div>
                 <div className="space-y-2">
@@ -124,6 +134,7 @@ export default function ShippingRules() {
                     value={edit.additionalKgPrice ?? ""}
                     onChange={(e) => update(rule.id, "additionalKgPrice", e.target.value)}
                     placeholder="如: 3"
+                    disabled={isWestMalaysia}
                   />
                 </div>
                 <div className="space-y-2">
@@ -146,9 +157,10 @@ export default function ShippingRules() {
                 <div className="space-y-2 md:col-span-2">
                   <Label>特殊说明</Label>
                   <Textarea
-                    value={edit.specialInstruction ?? ""}
+                    value={isWestMalaysia ? getWestMalaysiaV22Specification() : edit.specialInstruction ?? ""}
                     onChange={(e) => update(rule.id, "specialInstruction", e.target.value)}
                     placeholder="如: 其余运费请到 Shopee 下单支付运费。"
+                    disabled={isWestMalaysia}
                   />
                 </div>
                 <div className="space-y-2">

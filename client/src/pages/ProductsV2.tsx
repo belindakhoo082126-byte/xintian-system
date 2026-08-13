@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Upload, Bot, Loader2 } from "lucide-react";
+import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Upload, Bot, Loader2, History } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
@@ -203,6 +203,7 @@ export default function ProductsV2() {
     productName: string;
     type: "ordered" | "paid" | "completed";
   } | null>(null);
+  const [stockLogTarget, setStockLogTarget] = useState<{ productId: number; productName: string } | null>(null);
   const hydratedEditingIdRef = useRef<number | null>(null);
   const utils = trpc.useUtils();
 
@@ -229,6 +230,10 @@ export default function ProductsV2() {
       type: orderDetailsTarget?.type ?? "ordered",
     },
     { enabled: !!orderDetailsTarget },
+  );
+  const stockLogQuery = trpc.inventoryAdjustment.list.useQuery(
+    { productId: stockLogTarget?.productId ?? 0 },
+    { enabled: !!stockLogTarget },
   );
 
   // Detail query for editing
@@ -412,6 +417,17 @@ export default function ProductsV2() {
     { productId: currentProductId! },
     { enabled: !!currentProductId && showMemberLinkDialog }
   );
+
+  const getMemberLinkUrl = (token: string) => `${window.location.origin}/m/${token}`;
+  const copyMemberLink = async (token: string) => {
+    const url = getMemberLinkUrl(token);
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(translate("会员链接已复制", "Member link copied"));
+    } catch {
+      toast.error(translate("无法自动复制，请手动复制链接", "Unable to copy automatically. Please copy the link manually."));
+    }
+  };
 
   function resetForm() {
     hydratedEditingIdRef.current = null;
@@ -781,6 +797,17 @@ export default function ProductsV2() {
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => duplicateMutation.mutate({ id: p.id })} title={translate("复制", "Duplicate")}>
                         <Copy className="h-4 w-4" />
                       </Button>
+                      {p.type === "physical" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setStockLogTarget({ productId: p.id, productName: p.name })}
+                          title={translate("库存操作日志", "Stock operation log")}
+                        >
+                          <History className="h-4 w-4" />
+                        </Button>
+                      )}
                       {p.type === "membership" && (
                         <Button
                           variant="ghost"
@@ -861,6 +888,46 @@ export default function ProductsV2() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setOrderDetailsTarget(null)}>{translate("关闭", "Close")}</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!stockLogTarget} onOpenChange={(open) => { if (!open) setStockLogTarget(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{stockLogTarget?.productName} · {translate("库存操作日志", "Stock Operation Log")}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {translate("此处为只读审计记录。库存数量只能通过进货批次、订单、退款或获授权的库存异常流程变动。", "This is a read-only audit record. Stock can only change through purchase batches, orders, refunds, or authorized stock-exception workflows.")}
+          </p>
+          {stockLogQuery.isLoading ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">{translate("加载库存日志中...", "Loading stock log...")}</div>
+          ) : stockLogQuery.isError ? (
+            <div className="py-10 text-center text-sm text-destructive">{translate("无法读取库存日志，请稍后重试。", "Unable to load stock log. Please try again.")}</div>
+          ) : (stockLogQuery.data?.length ?? 0) === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">{translate("暂时没有可显示的库存异常或售后调整记录。", "There are no stock-exception or after-sales adjustment records yet.")}</div>
+          ) : (
+            <div className="max-h-[55vh] overflow-y-auto rounded-md border">
+              <Table>
+                <TableHeader><TableRow>
+                  <TableHead>{translate("时间", "Time")}</TableHead>
+                  <TableHead>{translate("变动", "Change")}</TableHead>
+                  <TableHead>{translate("原因", "Reason")}</TableHead>
+                  <TableHead>{translate("操作人", "Operator")}</TableHead>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {(stockLogQuery.data ?? []).map((entry: any) => (
+                    <TableRow key={entry.id}>
+                      <TableCell className="whitespace-nowrap text-xs">{entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "—"}</TableCell>
+                      <TableCell className={Number(entry.quantityChange) >= 0 ? "font-medium text-emerald-700" : "font-medium text-destructive"}>{Number(entry.quantityChange) >= 0 ? "+" : ""}{entry.quantityChange}</TableCell>
+                      <TableCell className="max-w-[280px] whitespace-normal break-words">{entry.reason || entry.remark || entry.adjustmentType || "—"}</TableCell>
+                      <TableCell>{entry.adjustedBy || "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <DialogFooter><Button variant="outline" onClick={() => setStockLogTarget(null)}>{translate("关闭", "Close")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1931,8 +1998,10 @@ export default function ProductsV2() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>{translate("库存", "Stock")}</Label>
-                <Input type="number" value={variantForm.stockQuantity}
-                  onChange={(e) => setVariantForm({ ...variantForm, stockQuantity: parseInt(e.target.value) || 0 })} />
+                <Input type="number" value={variantForm.stockQuantity} readOnly aria-describedby="variant-stock-help" className="bg-muted" />
+                <p id="variant-stock-help" className="mt-1 text-xs text-muted-foreground">
+                  {translate("规格库存由进货批次、订单与库存流水同步，不能在此直接修改。", "Variant stock is synced from purchase batches, orders and inventory records and cannot be edited here.")}
+                </p>
               </div>
               <div>
                 <Label>{translate("状态", "Status")}</Label>
@@ -2033,18 +2102,29 @@ export default function ProductsV2() {
               {memberLinksQuery.isLoading ? (
                 <p className="text-center text-muted-foreground py-4">{translate("加载中...", "Loading...")}</p>
               ) : memberLinksQuery.data?.length === 0 ? (
-                <p className="text-center text-muted-foreground py-4">{translate("暂无链接", "No links yet")}</p>
+                <p className="text-center text-muted-foreground py-4">{translate("暂无有效会员链接。生成链接后，只有持有链接的会员可进入购买页。", "No member link exists yet. After generating one, only members with the link can enter the purchase page.")}</p>
               ) : memberLinksQuery.data?.map(link => (
                 <div key={link.id} className="flex items-center gap-3 p-3 border rounded-lg">
                   <div className="flex-1 min-w-0">
-                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded break-all">/m/{link.token}</code>
+                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded break-all">{getMemberLinkUrl(link.token)}</code>
                     <p className="text-xs text-muted-foreground mt-1">
-                      创建于 {translate("创建于", "Created on")} {new Date(link.createdAt).toLocaleString()}
+                      {translate("创建于", "Created on")} {new Date(link.createdAt).toLocaleString()}
                     </p>
                   </div>
                   <Badge variant={link.isActive ? "default" : "outline"}>
                     {link.isActive ? translate("活跃", "Active") : translate("已停用", "Deactivated")}
                   </Badge>
+                  {link.isActive && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void copyMemberLink(link.token)}
+                      aria-label={translate("复制会员链接", "Copy member link")}
+                    >
+                      <Copy className="h-4 w-4 mr-1" />
+                      {translate("复制", "Copy")}
+                    </Button>
+                  )}
                   {link.isActive && (
                     <Button
                       variant="ghost"

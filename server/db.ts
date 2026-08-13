@@ -68,6 +68,7 @@ import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
 import { evaluateMarketingCampaign } from './marketingEngine';
 import { SPECIAL_ORDER_FOLLOW_UP_TYPES, isSpecialOrderFollowUpType } from '../shared/specialOrderDisplay';
+import { WEST_MALAYSIA_V22_SHIPPING } from '../shared/shippingV22';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -4308,7 +4309,7 @@ export async function createVariant(data: {
     visibility: (data.visibility as any) || 'public',
     sortOrder: data.sortOrder ?? 0,
     imageUrl: data.imageUrl,
-    stockQuantity: data.stockQuantity ?? 0,
+    stockQuantity: 0,
   });
   return { id: result[0].insertId, sku };
 }
@@ -4332,6 +4333,8 @@ export async function updateVariant(id: number, data: Partial<{
   const db = await getDb();
   if (!db) throw new Error('Database not available');
   const updateData: any = { ...data };
+  // Variant quantities are maintained by purchase, order and inventory-ledger flows only.
+  delete updateData.stockQuantity;
   if (data.keyword) {
     updateData.keyword = data.keyword.toUpperCase().replace(/\s+/g, '');
   }
@@ -6811,22 +6814,19 @@ export function calculateWestMalaysiaShipping(totalWeight: number, orderTotal: n
   // V2.2 West Malaysia shipping rules per requirement document:
   // Order total >= RM150: first 10kg free, extra RM3/kg
   // Order total < RM150: first 10kg RM15, extra RM3/kg
-  const FREE_SHIPPING_THRESHOLD = 150; // RM
-  const BASE_WEIGHT = 10; // kg
-  const BASE_FEE_UNDER = 15; // RM (when order < RM150)
-  const EXTRA_PER_KG = 3; // RM
+  const { freeShippingThreshold, includedWeightKg, baseFeeBelowThreshold, additionalKgFee } = WEST_MALAYSIA_V22_SHIPPING;
   
-  if (totalWeight <= 0) return { shippingFee: 0, freeShipping: orderTotal >= FREE_SHIPPING_THRESHOLD, extraWeightCharge: 0 };
+  if (totalWeight <= 0) return { shippingFee: 0, freeShipping: orderTotal >= freeShippingThreshold, extraWeightCharge: 0 };
   
-  const isFreeShipping = orderTotal >= FREE_SHIPPING_THRESHOLD;
-  const baseFee = isFreeShipping ? 0 : BASE_FEE_UNDER;
+  const isFreeShipping = orderTotal >= freeShippingThreshold;
+  const baseFee = isFreeShipping ? 0 : baseFeeBelowThreshold;
   
-  if (totalWeight <= BASE_WEIGHT) {
+  if (totalWeight <= includedWeightKg) {
     return { shippingFee: baseFee, freeShipping: isFreeShipping, extraWeightCharge: 0 };
   }
   
-  const extraWeight = Math.ceil(totalWeight - BASE_WEIGHT);
-  const extraCharge = extraWeight * EXTRA_PER_KG;
+  const extraWeight = Math.ceil(totalWeight - includedWeightKg);
+  const extraCharge = extraWeight * additionalKgFee;
   return { shippingFee: baseFee + extraCharge, freeShipping: isFreeShipping, extraWeightCharge: extraCharge };
 }
 
@@ -9263,10 +9263,26 @@ export async function getInventoryAdjustments(filters?: { productId?: number; ad
     .from(products)
     .where(inArray(products.id, Array.from(new Set(adjustments.map((item) => item.productId)))));
   const productNameById = new Map(productRows.map((product) => [product.id, product.name]));
-  return adjustments.map((adjustment) => ({
-    ...adjustment,
-    productName: productNameById.get(adjustment.productId) || `商品 #${adjustment.productId}`,
-  }));
+  const correctionDeltaByOriginalId = new Map<number, number>();
+  for (const adjustment of adjustments) {
+    if (!adjustment.correctsAdjustmentId) continue;
+    const originalId = Number(adjustment.correctsAdjustmentId);
+    correctionDeltaByOriginalId.set(
+      originalId,
+      (correctionDeltaByOriginalId.get(originalId) ?? 0) + Number(adjustment.quantityChange),
+    );
+  }
+  return adjustments.map((adjustment) => {
+    const isCorrection = Boolean(adjustment.correctsAdjustmentId);
+    const correctionDelta = isCorrection ? 0 : (correctionDeltaByOriginalId.get(adjustment.id) ?? 0);
+    return {
+      ...adjustment,
+      isCorrection,
+      correctionCount: isCorrection ? 0 : Array.from(correctionDeltaByOriginalId.keys()).includes(adjustment.id) ? 1 : 0,
+      effectiveQuantityChange: Number(adjustment.quantityChange) + correctionDelta,
+      productName: productNameById.get(adjustment.productId) || `商品 #${adjustment.productId}`,
+    };
+  });
 }
 
 export async function createInventoryAdjustment(data: {
@@ -9278,6 +9294,7 @@ export async function createInventoryAdjustment(data: {
   unitCost?: number;
   totalCost?: number;
   orderExceptionId?: number;
+  correctsAdjustmentId?: number;
   adjustedBy?: string;
   reason?: string;
   remark?: string;
@@ -9317,6 +9334,7 @@ export async function createInventoryAdjustment(data: {
     unitCost: (data.unitCost ?? 0).toString(),
     totalCost: (data.totalCost ?? 0).toString(),
     orderExceptionId: data.orderExceptionId ?? null,
+    correctsAdjustmentId: data.correctsAdjustmentId ?? null,
     adjustedBy: data.adjustedBy ?? null,
     reason: data.reason ?? null,
     remark: data.remark ?? null,
@@ -9326,6 +9344,56 @@ export async function createInventoryAdjustment(data: {
   const rows = await db.select().from(inventoryAdjustments).where(eq(inventoryAdjustments.id, Number(id))).limit(1);
   const [product] = await db.select({ name: products.name }).from(products).where(eq(products.id, data.productId)).limit(1);
   return { ...rows[0], productName: product?.name || `商品 #${data.productId}` };
+}
+
+/**
+ * Correct a historical manual stock adjustment without rewriting it. A signed
+ * correction row brings the original record's effective quantity to the requested
+ * final amount; its signed cost reverses or extends the historical loss impact.
+ */
+export async function correctInventoryAdjustment(data: {
+  adjustmentId: number;
+  desiredQuantityChange: number;
+  reason: string;
+  adjustedBy?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const desiredQuantityChange = Math.trunc(Number(data.desiredQuantityChange));
+  if (!Number.isFinite(desiredQuantityChange)) {
+    throw new Error("更正后的库存数量必须为整数");
+  }
+  const [original] = await db.select().from(inventoryAdjustments)
+    .where(eq(inventoryAdjustments.id, data.adjustmentId)).limit(1);
+  if (!original) throw new Error("找不到要更正的库存记录");
+  if (original.correctsAdjustmentId) throw new Error("更正记录不可再次直接更正，请回到原始记录操作");
+  if (original.orderExceptionId) throw new Error("订单异常产生的库存记录请在订单异常流程中处理");
+
+  const priorCorrections = await db.select().from(inventoryAdjustments)
+    .where(eq(inventoryAdjustments.correctsAdjustmentId, original.id));
+  const currentEffectiveQuantity = Number(original.quantityChange) + priorCorrections.reduce(
+    (total, correction) => total + Number(correction.quantityChange),
+    0,
+  );
+  const correctionDelta = desiredQuantityChange - currentEffectiveQuantity;
+  if (correctionDelta === 0) throw new Error("更正后的数量与当前有效数量相同");
+
+  const unitCost = Number(original.unitCost ?? 0);
+  return await createInventoryAdjustment({
+    productId: original.productId,
+    supplierId: original.supplierId ?? undefined,
+    supplierName: original.supplierName ?? undefined,
+    adjustmentType: "other",
+    quantityChange: correctionDelta,
+    // Positive delta restores stock and must reverse the corresponding loss cost.
+    totalCost: -correctionDelta * unitCost,
+    unitCost,
+    correctsAdjustmentId: original.id,
+    adjustedBy: data.adjustedBy,
+    reason: data.reason.trim(),
+    remark: `更正库存记录 #${original.id}：原有效数量 ${currentEffectiveQuantity}，更正为 ${desiredQuantityChange}`,
+  });
 }
 
 // ============================================================================
