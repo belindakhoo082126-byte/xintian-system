@@ -12,6 +12,7 @@ import {
 } from "./db";
 import { AiProcessingContext } from "./aiLogContext";
 import { processChatAI } from "./aiEngines";
+import { calculateMerchandiseNotificationBreakdown } from "../shared/orderPricing";
 
 const FB_GRAPH_API = "https://graph.facebook.com/v21.0";
 
@@ -695,7 +696,24 @@ export async function handlePageFeedEvent(change: any, pageId: string): Promise<
                 // Send settlement notification via Messenger
                 try {
                 const { sendTextMessage, sendButtonMessage } = require("./messenger");
-                const msg = `直播已结束！\n\n您的订单 ${order.orderNumber} 已整理完毕。\n总额: RM ${order.totalAmount}\n\n请尽快完成付款哦~\n如需加单，欢迎到我们的商城继续选购！`;
+                const amountBreakdown = calculateMerchandiseNotificationBreakdown(order.items || []);
+                const settlementItemList = (order.items || []).map((item: any) => {
+                  const variation = item.variationName ? `（${item.variationName}）` : "";
+                  const priceLabel = item.priceType === "special" ? "【特价】" : "【普通】";
+                  return `• ${priceLabel}${item.productName}${variation} x${item.quantity}｜RM${Number(item.subtotal || 0).toFixed(2)}`;
+                }).join("\n");
+                const msg = [
+                  `直播已结束！您的订单 ${order.orderNumber} 已整理完毕。`,
+                  "",
+                  settlementItemList || "商品明细请点击下方按钮查看。",
+                  "",
+                  `普通商品小计：RM${amountBreakdown.normalSubtotal.toFixed(2)}`,
+                  `特价商品小计：RM${amountBreakdown.specialSubtotal.toFixed(2)}（不计入 RM150 免邮）`,
+                  `免邮计算基数：RM${amountBreakdown.freeShippingEligibleSubtotal.toFixed(2)}`,
+                  "运费：待填写配送资料后计算（目前金额未含运费）",
+                  "",
+                  "请点击下方按钮查看订单、填写配送资料及完成付款。",
+                ].join("\n");
                 // Try to get customer's PSID for Messenger
                 if (order.facebookId) {
                   const checkoutUrl = order.secureToken

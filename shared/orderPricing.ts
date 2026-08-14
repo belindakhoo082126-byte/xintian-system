@@ -14,6 +14,12 @@ export type OrderPriceBreakdown = {
   freeShippingEligibleSubtotal: number;
 };
 
+export type MerchandiseNotificationBreakdown = {
+  normalSubtotal: number;
+  specialSubtotal: number;
+  freeShippingEligibleSubtotal: number;
+};
+
 const asMoney = (value: number | string | null | undefined) => {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -64,5 +70,22 @@ export function calculateOrderPriceBreakdown(
     specialSubtotal,
     originalSpecialSubtotal,
     freeShippingEligibleSubtotal: Math.max(0, eligiblePhysicalSubtotal - Math.min(eligiblePhysicalSubtotal, totalDiscount)),
+  };
+}
+
+/**
+ * Produces the three merchandise figures that must be shown together in
+ * customer-facing notifications.  Special-price merchandise is deliberately
+ * kept separate because it never contributes to the RM150 shipping threshold.
+ */
+export function calculateMerchandiseNotificationBreakdown(
+  items: OrderPricingItem[],
+  options: { promotionDiscount?: number | string | null; discountAmount?: number | string | null } = {},
+): MerchandiseNotificationBreakdown {
+  const breakdown = calculateOrderPriceBreakdown(items, options);
+  return {
+    normalSubtotal: Math.max(0, breakdown.physicalSubtotal - breakdown.specialSubtotal),
+    specialSubtotal: breakdown.specialSubtotal,
+    freeShippingEligibleSubtotal: breakdown.freeShippingEligibleSubtotal,
   };
 }

@@ -11,7 +11,7 @@ describe("直播得标通知模板", () => {
     expect(readSource("server/routers.ts")).toContain("liveWinNoticeTemplate: z.string().nullable().optional()");
   });
 
-  it("得标通知以设置模板替换客户、订单、商品与金额变量", () => {
+  it("得标通知以设置模板替换客户、订单、商品与分列金额变量", () => {
     const source = readSource("server/db.ts");
     const captureSlice = source.slice(source.indexOf("export async function executeAutoOrderCapture"), source.indexOf("// =============================================================================\n// Campaign CRUD helpers"));
     expect(captureSlice).toContain("liveWinNoticeTemplate");
@@ -19,6 +19,11 @@ describe("直播得标通知模板", () => {
     expect(captureSlice).toContain(".replace(/\\{order_number\\}/g");
     expect(captureSlice).toContain(".replace(/\\{item_list\\}/g");
     expect(captureSlice).toContain(".replace(/\\{total_amount\\}/g");
+    expect(captureSlice).toContain("calculateMerchandiseNotificationBreakdown");
+    expect(captureSlice).toContain("{amount_breakdown}");
+    expect(captureSlice).toContain("普通商品小计");
+    expect(captureSlice).toContain("特价商品小计");
+    expect(captureSlice).toContain("运费：待填写配送资料后计算");
     expect(captureSlice).toContain("查询订单及结账");
   });
 
@@ -26,7 +31,8 @@ describe("直播得标通知模板", () => {
     const source = readSource("client/src/pages/SystemSettings.tsx");
     expect(source).toContain("直播得标通知模板");
     expect(source).toContain("liveWinNoticeTemplate");
+    expect(source).toContain("{amount_breakdown}");
+    expect(source).toContain("{free_shipping_eligible_subtotal}");
     expect(source).toContain("专属的「查询订单及结账」按钮");
   });
 });
-

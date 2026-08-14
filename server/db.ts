@@ -69,7 +69,7 @@ import { broadcastChange, broadcastChanges } from './_core/realtime';
 import { evaluateMarketingCampaign } from './marketingEngine';
 import { SPECIAL_ORDER_FOLLOW_UP_TYPES, isSpecialOrderFollowUpType } from '../shared/specialOrderDisplay';
 import { WEST_MALAYSIA_V22_SHIPPING } from '../shared/shippingV22';
-import { calculateOrderPriceBreakdown } from "../shared/orderPricing";
+import { calculateMerchandiseNotificationBreakdown, calculateOrderPriceBreakdown } from "../shared/orderPricing";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -13073,10 +13073,13 @@ export async function getLiveRoomOrders(liveRoomId: number, limit = 100) {
       facebookId: customerRows[0]?.facebookId || '',
       items: itemRows.map((item: any) => ({
         productName: item.productName,
+        productType: item.productType,
         variationName: item.variationName,
         quantity: item.quantity,
         unitPrice: Number(item.unitPrice),
         subtotal: Number(item.subtotal),
+        priceType: item.priceType,
+        originalUnitPrice: item.originalUnitPrice,
       })),
       totalAmount: Number(order.totalAmount),
       physicalStatus: order.physicalStatus,
@@ -16538,7 +16541,16 @@ export async function executeAutoOrderCapture(params: {
   const { parseCommentKeywords, matchKeywordsToProducts, createOrderFromLiveCapture } = exports;
 
   // If pre-matched products (e.g., from campaign button click), skip keyword parsing
-  let matchedProducts: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string }> = [];
+  let matchedProducts: Array<{
+    keyword: string;
+    quantity: number;
+    productId: number;
+    productName: string;
+    productSku: string;
+    unitPrice: string;
+    priceType?: "retail" | "special";
+    originalUnitPrice?: string | null;
+  }> = [];
   let unmatchedKeywords: string[] = [];
 
   if (params.preMatchedProducts && params.preMatchedProducts.length > 0) {
@@ -16596,23 +16608,49 @@ export async function executeAutoOrderCapture(params: {
 
   // Build reply message with order details. The checkout action itself stays a
   // Messenger button so every customer receives their own secure order link.
-  const itemList = matchedProducts.map((m) => `${m.productName} x${m.quantity} (RM${m.unitPrice})`).join("\n");
-  const totalAmount = orderResult.totalAmount || "0";
+  const itemList = matchedProducts.map((m) => `${m.priceType === "special" ? "【特价】" : "【普通】"}${m.productName} x${m.quantity} (RM${m.unitPrice})`).join("\n");
+  const notificationBreakdown = calculateMerchandiseNotificationBreakdown(
+    matchedProducts.map((item) => ({
+      productType: "physical" as const,
+      priceType: item.priceType || "retail",
+      quantity: item.quantity,
+      subtotal: Number(item.unitPrice || 0) * item.quantity,
+      originalUnitPrice: item.originalUnitPrice || null,
+    })),
+  );
+  const totalAmount = (notificationBreakdown.normalSubtotal + notificationBreakdown.specialSubtotal).toFixed(2);
+  const amountBreakdown = [
+    `普通商品小计：RM${notificationBreakdown.normalSubtotal.toFixed(2)}`,
+    `特价商品小计：RM${notificationBreakdown.specialSubtotal.toFixed(2)}（不计入 RM150 免邮）`,
+    `免邮计算基数：RM${notificationBreakdown.freeShippingEligibleSubtotal.toFixed(2)}`,
+    "运费：待填写配送资料后计算（目前金额未含运费）",
+  ].join("\n");
   const settings = await getSystemSettings();
   const liveWinNoticeTemplate = String((settings as any)?.liveWinNoticeTemplate || "").trim() || [
     "🎉 得标通知！",
     "",
     "{item_list}",
     "",
-    "小计：RM{total_amount}",
+    "{amount_breakdown}",
     "",
     "请点击下方【查询订单及结账】按钮查看订单详情并完成付款。",
   ].join("\n");
-  const replyMessage = liveWinNoticeTemplate
+  const templateWithRequiredBreakdown = liveWinNoticeTemplate.includes("{amount_breakdown}")
+    || (liveWinNoticeTemplate.includes("{normal_subtotal}")
+      && liveWinNoticeTemplate.includes("{special_subtotal}")
+      && liveWinNoticeTemplate.includes("{free_shipping_eligible_subtotal}"))
+    ? liveWinNoticeTemplate
+    : `${liveWinNoticeTemplate}\n\n{amount_breakdown}`;
+  const replyMessage = templateWithRequiredBreakdown
     .replace(/\{customer_name\}/g, params.customerName || "")
     .replace(/\{order_number\}/g, orderResult.orderNumber || "")
     .replace(/\{item_list\}/g, itemList)
     .replace(/\{total_amount\}/g, String(totalAmount))
+    .replace(/\{normal_subtotal\}/g, notificationBreakdown.normalSubtotal.toFixed(2))
+    .replace(/\{special_subtotal\}/g, notificationBreakdown.specialSubtotal.toFixed(2))
+    .replace(/\{free_shipping_eligible_subtotal\}/g, notificationBreakdown.freeShippingEligibleSubtotal.toFixed(2))
+    .replace(/\{shipping_status\}/g, "待填写配送资料后计算（目前金额未含运费）")
+    .replace(/\{amount_breakdown\}/g, amountBreakdown)
     .replace(/\{checkout_link\}/g, "下方【查询订单及结账】按钮");
 
   return {

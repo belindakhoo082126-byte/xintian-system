@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { calculateOrderPriceBreakdown } from "../shared/orderPricing";
+import { calculateMerchandiseNotificationBreakdown, calculateOrderPriceBreakdown } from "../shared/orderPricing";
 
 const dbSource = fs.readFileSync(path.resolve(process.cwd(), "server/db.ts"), "utf8");
 
@@ -33,8 +33,22 @@ describe("订单金额与V2.2免邮资格", () => {
     expect(breakdown.freeShippingEligibleSubtotal).toBe(135);
   });
 
+  it("客户通知将普通与特价商品分列，并以相同口径显示免邮计算基数", () => {
+    const breakdown = calculateMerchandiseNotificationBreakdown([
+      { productType: "physical", priceType: "retail", subtotal: "160.00" },
+      { productType: "physical", priceType: "special", subtotal: "70.00" },
+      { productType: "membership", subtotal: "50.00" },
+    ], { promotionDiscount: "10.00" });
+
+    expect(breakdown).toEqual({
+      normalSubtotal: 160,
+      specialSubtotal: 70,
+      freeShippingEligibleSubtotal: 150,
+    });
+  });
+
   it("在新建订单、后台加商品与商城加单三处复用同一资格计算", () => {
-    expect(dbSource).toContain('import { calculateOrderPriceBreakdown } from "../shared/orderPricing"');
+    expect(dbSource).toContain('calculateOrderPriceBreakdown } from "../shared/orderPricing"');
     expect((dbSource.match(/calculateOrderPriceBreakdown\(/g) || []).length).toBeGreaterThanOrEqual(3);
   });
 });

@@ -418,7 +418,7 @@ export default function SystemSettings() {
                   value={form.liveWinNoticeTemplate || ""}
                   onChange={(e) => update("liveWinNoticeTemplate", e.target.value)}
                   rows={10}
-                  placeholder={"🎉 得标通知！\n\n{item_list}\n\n小计：RM{total_amount}\n\n请点击下方【查询订单及结账】按钮查看订单详情并完成付款。"}
+                  placeholder={"🎉 得标通知！\n\n{item_list}\n\n{amount_breakdown}\n\n请点击下方【查询订单及结账】按钮查看订单详情并完成付款。"}
                 />
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">可用占位符：</p>
@@ -427,6 +427,11 @@ export default function SystemSettings() {
                     <code className="ml-2 rounded bg-muted px-2 py-1">{"{order_number}"}</code><span className="text-muted-foreground">订单号</span>
                     <code className="ml-2 rounded bg-muted px-2 py-1">{"{item_list}"}</code><span className="text-muted-foreground">商品列表</span>
                     <code className="ml-2 rounded bg-muted px-2 py-1">{"{total_amount}"}</code><span className="text-muted-foreground">小计金额</span>
+                    <code className="rounded bg-muted px-2 py-1">{"{amount_breakdown}"}</code><span className="text-muted-foreground">普通／特价小计、免邮基数及运费待确认说明</span>
+                    <code className="ml-2 rounded bg-muted px-2 py-1">{"{normal_subtotal}"}</code><span className="text-muted-foreground">普通商品小计</span>
+                    <code className="ml-2 rounded bg-muted px-2 py-1">{"{special_subtotal}"}</code><span className="text-muted-foreground">特价商品小计（不计入免邮）</span>
+                    <code className="ml-2 rounded bg-muted px-2 py-1">{"{free_shipping_eligible_subtotal}"}</code><span className="text-muted-foreground">RM150 免邮计算基数</span>
+                    <code className="ml-2 rounded bg-muted px-2 py-1">{"{shipping_status}"}</code><span className="text-muted-foreground">运费待填写配送资料后计算</span>
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">无需填写结单链接；系统会在每一位客户的消息下方自动附加其专属的「查询订单及结账」按钮。</p>
