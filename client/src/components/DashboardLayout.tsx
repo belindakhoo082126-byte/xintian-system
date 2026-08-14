@@ -334,6 +334,7 @@ function DashboardLayoutContent({
     typeof label === "string" ? t(label) : (lang === "zh" ? label.zh : label.en);
 
   const isMobile = useIsMobile();
+  const topBarTitle = location === "/" ? t("dashboard.title") : null;
 
   useEffect(() => {
     if (isCollapsed) {
@@ -520,9 +521,12 @@ function DashboardLayoutContent({
 
       <SidebarInset className="w-full min-w-0 max-w-full overflow-x-hidden">
         <div className="sticky top-0 z-40 flex h-16 min-w-0 items-center justify-between gap-3 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:backdrop-blur no-print sm:px-4">
-          <div className="flex min-w-0 items-center">
+          <div className="flex min-w-0 items-center gap-2">
             {isMobile && (
               <SidebarTrigger className="h-11 w-11 shrink-0 rounded-lg bg-background" />
+            )}
+            {topBarTitle && (
+              <h1 className="truncate text-2xl font-bold tracking-tight">{topBarTitle}</h1>
             )}
           </div>
 
