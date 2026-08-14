@@ -662,29 +662,28 @@ export default function ProductsV2() {
         )}
       </div>
 
-      {/* Desktop: the table uses only the eight operational columns and never exceeds its container. */}
-      <Card className="hidden overflow-hidden lg:block">
-        <CardContent className="p-0">
-          <Table className="table-fixed">
-            <colgroup>
-              <col className="w-[30%]" /><col className="w-[10%]" /><col className="w-[10%]" /><col className="w-[9%]" />
-              <col className="w-[9%]" /><col className="w-[15%]" /><col className="w-[12%]" /><col className="w-[5%]" />
-            </colgroup>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="whitespace-normal">{translate("商品资料", "Product")}</TableHead>
-                <TableHead className="whitespace-normal">{translate("类型／模式", "Type / Mode")}</TableHead>
-                <TableHead className="whitespace-normal">{translate("分类", "Category")}</TableHead>
-                <TableHead className="whitespace-normal">{translate("售价", "Selling Price")}</TableHead>
-                <TableHead className="whitespace-normal">{translate("状态", "Status")}</TableHead>
-                <TableHead className="whitespace-normal">{translate("库存资料", "Inventory")}</TableHead>
+	      {/* Desktop: the table uses only the seven operational columns and never exceeds its container. */}
+	      <Card className="hidden overflow-hidden lg:block">
+	        <CardContent className="p-0">
+	          <Table className="table-fixed">
+	            <colgroup>
+	              <col className="w-[32%]" /><col className="w-[11%]" /><col className="w-[10%]" /><col className="w-[10%]" />
+	              <col className="w-[16%]" /><col className="w-[14%]" /><col className="w-[7%]" />
+	            </colgroup>
+	            <TableHeader>
+	              <TableRow>
+	                <TableHead className="whitespace-normal">{translate("商品资料", "Product")}</TableHead>
+	                <TableHead className="whitespace-normal">{translate("类型／模式", "Type / Mode")}</TableHead>
+	                <TableHead className="whitespace-normal">{translate("售价", "Selling Price")}</TableHead>
+	                <TableHead className="whitespace-normal">{translate("状态", "Status")}</TableHead>
+	                <TableHead className="whitespace-normal">{translate("库存资料", "Inventory")}</TableHead>
                 <TableHead className="whitespace-normal">{translate("销售设置", "Sales Settings")}</TableHead>
                 <TableHead className="sticky right-0 z-10 bg-card text-center shadow-[-5px_0_10px_-8px_rgba(0,0,0,0.45)]">{translate("操作", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? <TableRow><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
-                : products.length === 0 ? <TableRow><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
+	              {isLoading ? <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
+	                : products.length === 0 ? <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
                 : products.map(p => (
                   <TableRow key={p.id} className="[&>td]:py-5 [&>td]:text-base">
                     <TableCell className="font-medium">
@@ -692,10 +691,9 @@ export default function ProductsV2() {
                         <div className="shrink-0"><ProductImagePreview src={p.coverImageUrl} alt={p.name} className="h-20 w-20" label={translate("预览商品图片", "Preview product image")} /></div>
                         <div className="min-w-0 space-y-1.5"><p className="text-lg font-semibold leading-snug line-clamp-2" title={p.name}>{p.name}</p><code className="block truncate rounded bg-muted px-1.5 py-0.5 text-sm text-muted-foreground" title={p.keyword || undefined}>{p.keyword || translate("未设关键词", "No keyword")}</code></div>
                       </div>
-                    </TableCell>
-                    <TableCell><div className="space-y-1.5"><Badge className={TYPE_BADGES[p.type]} variant="secondary">{getProductTypeLabel(p.type)}</Badge><p className="text-sm text-muted-foreground">{p.productMode === "variant" ? translate("多规格", "Variant") : translate("单规格", "Simple")}</p></div></TableCell>
-                    <TableCell className="break-words">{categories?.find(c => c.id === p.categoryId)?.[lang === "zh" ? "nameZh" : "nameEn"] || translate("—", "—")}</TableCell>
-                    <TableCell>{p.type === "gift" ? translate("免费", "Free") : `RM ${p.sellingPrice || "0"}`}</TableCell>
+	                    </TableCell>
+	                    <TableCell><div className="space-y-1.5"><Badge className={TYPE_BADGES[p.type]} variant="secondary">{getProductTypeLabel(p.type)}</Badge><p className="text-sm text-muted-foreground">{p.productMode === "variant" ? translate("多规格", "Variant") : translate("单规格", "Simple")}</p></div></TableCell>
+	                    <TableCell>{p.type === "gift" ? translate("免费", "Free") : `RM ${p.sellingPrice || "0"}`}</TableCell>
                     <TableCell><Badge className={STATUS_BADGES[p.status]} variant="secondary">{translate(RAW_STATUS_LABELS[p.status]?.zh, RAW_STATUS_LABELS[p.status]?.en) || p.status}</Badge></TableCell>
                     <TableCell>{p.type === "physical" ? <div className="space-y-1.5"><p>{translate("库存", "Stock")}: <span className="font-semibold">{p.stockQuantity ?? 0}</span></p><div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">{(["ordered", "paid", "completed"] as const).map((type, index) => { const count = type === "ordered" ? p.orderedCount : type === "paid" ? p.paidCount : p.completedCount; const color = type === "ordered" ? "text-blue-600" : type === "paid" ? "text-amber-700" : "text-green-600"; const label = type === "ordered" ? translate("已下单", "Ordered") : type === "paid" ? translate("已汇款", "Paid") : translate("已完成", "Completed"); return <span key={type} className="inline-flex items-center gap-1">{index > 0 && <span className="text-muted-foreground">|</span>}<button type="button" className={`font-medium ${color} underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`} onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type })}>{label} {count ?? 0}</button></span>; })}</div></div> : translate("—", "—")}</TableCell>
                     <TableCell><div className="flex flex-wrap gap-1.5">{p.type === "physical" && p.allowPresale && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("预售", "Presale")}</Badge>}{p.isFeatured && <Badge className="border border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-100">{translate("推荐", "Featured")}</Badge>}{p.isSpecial && <Badge className="border border-orange-200 bg-orange-100 text-orange-800 hover:bg-orange-100">{translate("特价", "Special")}</Badge>}{p.type === "gift" && <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{translate("赠品", "Gift")}</Badge>}{p.type === "virtual" && <Badge className="border border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{translate("虚拟商品", "Virtual")}</Badge>}{p.salesMode === "import_preorder" && <Badge className="border border-sky-200 bg-sky-100 text-sky-800 hover:bg-sky-100">{translate("中国进口", "China Import")}</Badge>}{p.salesMode !== "import_preorder" && p.allowImportOrder && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("可入 XTC", "Eligible for XTC")}</Badge>}{!(p.type === "physical" && p.allowPresale) && !p.isFeatured && !p.isSpecial && p.type !== "gift" && p.type !== "virtual" && p.salesMode !== "import_preorder" && !p.allowImportOrder && <span className="text-muted-foreground">{translate("—", "—")}</span>}</div></TableCell>

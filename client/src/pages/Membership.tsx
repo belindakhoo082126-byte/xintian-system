@@ -159,8 +159,7 @@ export default function Membership() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{translate("会员订单管理", "Membership Order Management")}</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-sm text-muted-foreground">
           {translate("审核会员费汇款单据，确认后自动发送 Messenger 入群 Flow", "Review membership fee remittance documents, and automatically send Messenger group invitation Flow after confirmation")}
         </p>
       </div>

@@ -7475,6 +7475,102 @@ export async function splitUnpaidPhysicalOrder(input: { orderId: number; items: 
   return { originalOrderId: source.id, originalOrderNumber: source.orderNumber, newOrderId, newOrderNumber };
 }
 
+/**
+ * Lists other genuinely unpaid local XT orders for the same customer.  These
+ * are the only orders that an administrator may select as a manual merge
+ * target.  XTC is deliberately excluded because its merge rules depend on a
+ * live-window context rather than the local-order flow.
+ */
+export async function getManualOrderMergeCandidates(sourceOrderId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [source] = await db.select({ id: orders.id, customerId: orders.customerId })
+    .from(orders).where(eq(orders.id, sourceOrderId)).limit(1);
+  if (!source) throw new Error("订单不存在");
+
+  return unwrapMySqlRows<any>(await db.execute(sql`
+    SELECT o.id, o.orderNumber, o.physicalStatus, o.totalAmount, o.shippingMethod,
+           o.shippingAddress, o.createdAt
+    FROM orders o
+    WHERE o.customerId = ${source.customerId}
+      AND o.id <> ${sourceOrderId}
+      AND o.orderCategory = 'local'
+      AND o.orderType = 'physical'
+      AND o.physicalStatus IN ('pending', 'hold_order')
+      AND COALESCE(o.paidAmount, 0) = 0
+      AND COALESCE(o.creditUsed, 0) = 0
+      AND COALESCE(o.discountAmount, 0) = 0
+      AND COALESCE(o.promotionDiscount, 0) = 0
+      AND COALESCE(o.extraCharge, 0) = 0
+      AND o.receiptUrl IS NULL
+      AND o.paymentUploadedAt IS NULL
+      AND o.paymentConfirmedAt IS NULL
+      AND COALESCE(o.cancelProtection, 0) = 0
+      AND NOT EXISTS (
+        SELECT 1 FROM order_payments op
+        WHERE op.orderId = o.id AND op.reviewStatus IN ('pending', 'approved')
+      )
+    ORDER BY o.createdAt DESC, o.id DESC
+  `));
+}
+
+/**
+ * Combines one pending local XT order into another.  Inventory stays reserved
+ * exactly once because existing order-item snapshots are moved rather than
+ * recreated.  The target order retains its delivery details; the source is
+ * kept as a zero-value cancelled audit record instead of being deleted.
+ */
+export async function mergeUnpaidLocalOrders(input: { sourceOrderId: number; targetOrderId: number; operator: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (input.sourceOrderId === input.targetOrderId) throw new Error("请选择另一张订单作为合单目标");
+
+  const selected = await db.select().from(orders).where(inArray(orders.id, [input.sourceOrderId, input.targetOrderId]));
+  const source = selected.find((order) => order.id === input.sourceOrderId);
+  const target = selected.find((order) => order.id === input.targetOrderId);
+  const validate = async (order: typeof orders.$inferSelect | undefined, label: string) => {
+    if (!order) throw new Error(`${label}不存在`);
+    if (order.orderType !== "physical" || order.orderCategory !== "local") throw new Error(`${label}必须是本地实体订单`);
+    if (!["pending", "hold_order"].includes(order.physicalStatus || "")) throw new Error(`${label}不是可合并的未付款订单`);
+    if (Number(order.paidAmount || 0) > 0 || Number(order.creditUsed || 0) > 0) throw new Error(`${label}已有已确认付款或已使用 Credit，不能合单`);
+    if (Number(order.discountAmount || 0) > 0 || Number(order.promotionDiscount || 0) > 0 || Number(order.extraCharge || 0) > 0) {
+      throw new Error(`${label}含订单级折扣、促销或额外收费，不能直接合单`);
+    }
+    if (order.receiptUrl || order.paymentUploadedAt || order.paymentConfirmedAt || order.cancelProtection) throw new Error(`${label}已有付款凭证或取消保护，不能合单`);
+    const payments = await db.select({ id: orderPayments.id }).from(orderPayments).where(and(
+      eq(orderPayments.orderId, order.id),
+      inArray(orderPayments.reviewStatus, ["pending", "approved"]),
+    )).limit(1);
+    if (payments.length > 0) throw new Error(`${label}已有付款凭证或已确认付款，不能合单`);
+  };
+
+  await validate(source, "原订单");
+  await validate(target, "目标订单");
+  if (source!.customerId !== target!.customerId) throw new Error("仅可合并同一客户的订单");
+  const sourceItems = await db.select({ id: orderItems.id, productName: orderItems.productName, quantity: orderItems.quantity })
+    .from(orderItems).where(eq(orderItems.orderId, input.sourceOrderId));
+  if (sourceItems.length === 0) throw new Error("原订单没有可合并的商品");
+
+  await db.transaction(async (tx) => {
+    await tx.update(orderItems).set({ orderId: input.targetOrderId }).where(eq(orderItems.orderId, input.sourceOrderId));
+    await tx.update(orders).set({
+      physicalStatus: "cancelled",
+      physicalSubtotal: "0.00",
+      membershipSubtotal: "0.00",
+      shippingFee: "0.00",
+      totalWeight: "0.00",
+      totalAmount: "0.00",
+    }).where(eq(orders.id, input.sourceOrderId));
+  });
+
+  await recalculateOrderTotals(input.targetOrderId);
+  const itemSummary = sourceItems.map((item) => ({ orderItemId: item.id, productName: item.productName, quantity: item.quantity }));
+  await logOrderOperation(input.sourceOrderId, "manual_order_merge", `订单已合并至 ${target!.orderNumber}`, JSON.stringify({ targetOrderId: input.targetOrderId, targetOrderNumber: target!.orderNumber, items: itemSummary }), input.operator);
+  await logOrderOperation(input.targetOrderId, "manual_order_merge", `已合并订单 ${source!.orderNumber}`, JSON.stringify({ sourceOrderId: input.sourceOrderId, sourceOrderNumber: source!.orderNumber, items: itemSummary }), input.operator);
+  return { sourceOrderId: input.sourceOrderId, sourceOrderNumber: source!.orderNumber, targetOrderId: input.targetOrderId, targetOrderNumber: target!.orderNumber, movedItemCount: sourceItems.length };
+}
+
 // ============================================================================
 // PACKING & SHIPPING MODULE (包货发货模块)
 // ============================================================================

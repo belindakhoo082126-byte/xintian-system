@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
@@ -15,7 +15,7 @@ import {
   CreditCard, History, MessageSquare, PackageCheck, Calendar,
   Sprout, TreePine, AlertCircle, Download, Printer, Eye,
   Copy, MessageCircle, Bell, Send, Plus, Upload, Loader2, Trash2,
-  CheckCircle, Pencil, X,
+  CheckCircle, Pencil, X, GitFork, GitMerge,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -95,6 +95,10 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const [editPaymentDialogOpen, setEditPaymentDialogOpen] = useState(false);
   const [editPaymentId, setEditPaymentId] = useState<number | null>(null);
   const [editPaymentForm, setEditPaymentForm] = useState({ amount: "", paymentMethod: "", receiptUrl: "", notes: "" });
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitQuantities, setSplitQuantities] = useState<Record<number, number>>({});
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState<string>("");
 
   // Preload logo as dataURL for Preview — same asset as export/print
   useEffect(() => {
@@ -313,7 +317,31 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const { data: order, isLoading, error: orderError } = trpc.orders.getDetail.useQuery({ id: orderId });
   const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
   const { data: operationLogs } = trpc.orders.getOperationLogs.useQuery({ orderId });
+  const { data: mergeCandidates = [], isLoading: isLoadingMergeCandidates } = trpc.orders.mergeCandidates.useQuery(
+    { sourceOrderId: orderId },
+    { enabled: mergeOpen },
+  );
   const utils = trpc.useUtils();
+  const splitOrderMutation = trpc.orders.split.useMutation({
+    onSuccess: (result) => {
+      toast.success(translate("订单已拆分，已建立 {orderNumber}", "Order split. {orderNumber} created", { orderNumber: result.newOrderNumber }));
+      setSplitOpen(false);
+      setSplitQuantities({});
+      utils.orders.getDetail.invalidate({ id: orderId });
+      utils.orders.list.invalidate();
+    },
+    onError: (error: any) => toast.error(translate("拆单失败: {message}", "Split failed: {message}", { message: error.message })),
+  });
+  const mergeOrderMutation = trpc.orders.merge.useMutation({
+    onSuccess: (result) => {
+      toast.success(translate("订单已合并至 {orderNumber}", "Order merged into {orderNumber}", { orderNumber: result.targetOrderNumber }));
+      setMergeOpen(false);
+      setMergeTargetId("");
+      utils.orders.getDetail.invalidate({ id: orderId });
+      utils.orders.list.invalidate();
+    },
+    onError: (error: any) => toast.error(translate("合单失败: {message}", "Merge failed: {message}", { message: error.message })),
+  });
   const sendCheckoutMutation = trpc.orders.sendCheckout.useMutation({
     onSuccess: () => {
       toast.success(translate("结单通知已发送到 Messenger", "Checkout notification sent to Messenger"));
@@ -467,6 +495,15 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const paidAmount = parseFloat(o.paidAmount || "0");
   const balance = totalAmount - paidAmount;
   const discountAmount = parseFloat(o.discountAmount || "0");
+  const detailItems = (o.items || []) as any[];
+  const canSplitOrder = !isImportOrder && o.orderType === "physical" && ["pending", "receipt_uploaded", "hold_order"].includes(o.physicalStatus || "")
+    && paidAmount === 0 && creditUsed === 0 && discountAmount === 0 && promotionDiscount === 0 && extraCharge === 0 && detailItems.length > 1;
+  const canMergeOrder = !isImportOrder && o.orderType === "physical" && ["pending", "hold_order"].includes(o.physicalStatus || "")
+    && paidAmount === 0 && creditUsed === 0 && discountAmount === 0 && promotionDiscount === 0 && extraCharge === 0 && !o.receiptUrl;
+  const selectedSplitItems = detailItems
+    .filter((item) => Number(splitQuantities[item.id] || 0) > 0)
+    .map((item) => ({ orderItemId: item.id, quantity: Number(splitQuantities[item.id]) }));
+  const leavesItemsOnOriginalOrder = detailItems.some((item) => Number(splitQuantities[item.id] || 0) < Number(item.quantity));
 
   return (
     <div className="container max-w-5xl mx-auto px-4 py-6 space-y-4">
@@ -505,6 +542,16 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           <Button variant="outline" size="sm" onClick={() => setLocation(`/orders/${orderId}/edit`)}>
             <Edit className="h-3 w-3 mr-1" />{translate("编辑", "Edit")}
           </Button>
+          {canSplitOrder && (
+            <Button variant="outline" size="sm" onClick={() => setSplitOpen(true)}>
+              <GitFork className="h-3 w-3 mr-1" />{translate("拆分订单", "Split Order")}
+            </Button>
+          )}
+          {canMergeOrder && (
+            <Button variant="outline" size="sm" onClick={() => setMergeOpen(true)}>
+              <GitMerge className="h-3 w-3 mr-1" />{translate("合并订单", "Merge Order")}
+            </Button>
+          )}
           {o.checkoutLink && (
             <Button variant="outline" size="sm" onClick={() => {
               const fullLink = `${window.location.origin}${o.checkoutLink}`;
@@ -1046,6 +1093,75 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
               }}>
               {editPaymentMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
               {translate("保存", "Save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{translate("拆分订单", "Split Order")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">{translate("选择要拆到新订单的商品数量。原订单必须至少保留一项商品或数量；拆单只适用于未确认付款的本地实体订单。", "Choose quantities to move to a new order. The original order must retain at least one item or quantity; only unpaid local physical orders can be split.")}</p>
+            <div className="space-y-2 rounded-lg border p-3">
+              {detailItems.map((item) => {
+                const splitQuantity = Number(splitQuantities[item.id] || 0);
+                return (
+                  <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_96px] items-center gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{item.productName}</p>
+                      <p className="text-xs text-muted-foreground">{translate("原数量", "Original quantity")}: {item.quantity} · RM {Number(item.subtotal || 0).toFixed(2)}</p>
+                    </div>
+                    <Input type="number" min="0" max={item.quantity} value={splitQuantity || ""} onChange={(event) => {
+                      const quantity = Math.max(0, Math.min(Number(item.quantity), Number(event.target.value || 0)));
+                      setSplitQuantities((current) => ({ ...current, [item.id]: quantity }));
+                    }} />
+                  </div>
+                );
+              })}
+            </div>
+            {!leavesItemsOnOriginalOrder && <p className="text-sm text-destructive">{translate("原订单必须至少保留一项商品或数量。", "At least one item or quantity must remain on the original order.")}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSplitOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={() => splitOrderMutation.mutate({ orderId, items: selectedSplitItems })} disabled={selectedSplitItems.length === 0 || !leavesItemsOnOriginalOrder || splitOrderMutation.isPending}>
+              <GitFork className="h-4 w-4 mr-2" />{translate("确认拆分", "Confirm Split")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={mergeOpen} onOpenChange={(open) => { setMergeOpen(open); if (!open) setMergeTargetId(""); }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{translate("合并订单", "Merge Order")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              {translate("只可合并同一客户、未付款、无付款凭证且未进入包货的本地 XT 订单。合并后会保留所选目标订单的收件资料与配送方式，目前订单会保留为已取消的操作记录。", "Only same-customer, unpaid local XT orders with no payment proof and no fulfilment may be merged. The selected target keeps its recipient and shipping details; this order remains as a cancelled audit record.")}
+            </div>
+            {isLoadingMergeCandidates ? <p className="text-sm text-muted-foreground">{translate("正在查询可合并订单…", "Finding eligible orders…")}</p> : mergeCandidates.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{translate("没有符合条件的同客户未付款本地订单。", "No eligible unpaid local order was found for this customer.")}</p>
+            ) : (
+              <div className="space-y-2">
+                <Label>{translate("合并至订单", "Merge into order")}</Label>
+                <Select value={mergeTargetId} onValueChange={setMergeTargetId}>
+                  <SelectTrigger><SelectValue placeholder={translate("请选择保留的目标订单", "Select the order to keep")} /></SelectTrigger>
+                  <SelectContent>
+                    {mergeCandidates.map((candidate: any) => <SelectItem key={candidate.id} value={String(candidate.id)}>
+                      {candidate.orderNumber} · RM {Number(candidate.totalAmount || 0).toFixed(2)} · {candidate.physicalStatus === "hold_order" ? translate("保留订单", "Hold order") : translate("未汇款", "Unpaid")}
+                    </SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMergeOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={() => mergeOrderMutation.mutate({ sourceOrderId: orderId, targetOrderId: Number(mergeTargetId) })} disabled={!mergeTargetId || mergeOrderMutation.isPending}>
+              <GitMerge className="h-4 w-4 mr-2" />{translate("确认合并", "Confirm Merge")}
             </Button>
           </DialogFooter>
         </DialogContent>

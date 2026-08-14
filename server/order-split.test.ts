@@ -5,6 +5,8 @@ import path from "node:path";
 const dbSource = fs.readFileSync(path.resolve(process.cwd(), "server/db.ts"), "utf8");
 const routerSource = fs.readFileSync(path.resolve(process.cwd(), "server/routers.ts"), "utf8");
 const detailSource = fs.readFileSync(path.resolve(process.cwd(), "client/src/pages/OrderDetail.tsx"), "utf8");
+const browseSource = fs.readFileSync(path.resolve(process.cwd(), "client/src/pages/OrderBrowsePage.tsx"), "utf8");
+const ordersSource = fs.readFileSync(path.resolve(process.cwd(), "client/src/pages/Orders.tsx"), "utf8");
 
 describe("未付款订单拆单", () => {
   it("仅提供本地未付款实体订单的按商品数量拆单服务，并拒绝已履约或已结算订单", () => {
@@ -42,5 +44,34 @@ describe("未付款订单拆单", () => {
     expect(detailSource).toContain('item.priceType === "special"');
     expect(detailSource).toContain("splitQuantities");
     expect(detailSource).toContain("拆分数量");
+  });
+
+  it("后台订单详情恢复受限的拆单与合单入口，且复用同客户未付款本地订单边界", () => {
+    expect(browseSource).toContain("拆分订单");
+    expect(browseSource).toContain("合并订单");
+    expect(browseSource).toContain("trpc.orders.split.useMutation");
+    expect(browseSource).toContain("trpc.orders.merge.useMutation");
+    expect(browseSource).toContain("trpc.orders.mergeCandidates.useQuery");
+    expect(browseSource).toContain("only unpaid local physical orders can be split");
+    expect(browseSource).toContain("同一客户、未付款、无付款凭证");
+  });
+
+  it("手动合单只移动既有库存保留的订单项目，保留来源审计且拒绝跨客户、XTC或付款订单", () => {
+    expect(dbSource).toContain("export async function getManualOrderMergeCandidates");
+    expect(dbSource).toContain("export async function mergeUnpaidLocalOrders");
+    expect(dbSource).toContain("AND o.orderCategory = 'local'");
+    expect(dbSource).toContain("AND o.orderType = 'physical'");
+    expect(dbSource).toContain("仅可合并同一客户的订单");
+    expect(dbSource).toContain("tx.update(orderItems).set({ orderId: input.targetOrderId })");
+    expect(dbSource).toContain("await recalculateOrderTotals(input.targetOrderId)");
+    expect(dbSource).toContain('"manual_order_merge"');
+    expect(routerSource).toMatch(/mergeCandidates:\s*adminProcedure/);
+    expect(routerSource).toMatch(/merge:\s*adminProcedure/);
+    expect(routerSource).toContain("db.mergeUnpaidLocalOrders");
+  });
+
+  it("订单筛选栏保留全部备注筛选，并不再渲染其右侧无有效默认值的通知空白卡格", () => {
+    expect(ordersSource).toContain('translate("全部备注", "All Remarks")');
+    expect(ordersSource).not.toContain('translate("通知状态", "Notification")');
   });
 });

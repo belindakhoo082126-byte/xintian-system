@@ -6,14 +6,15 @@ describe("product management responsive layout", () => {
   const desktopBlock = source.slice(source.indexOf("{/* Desktop:"), source.indexOf("{/* Mobile:"));
   const mobileBlock = source.slice(source.indexOf("{/* Mobile:"), source.indexOf("<Dialog open={!!orderDetailsTarget}"));
 
-  it("keeps the desktop listing to the agreed eight operational columns", () => {
-    expect(desktopBlock).toContain("商品资料");
-    expect(desktopBlock).toContain("类型／模式");
-    expect(desktopBlock).toContain("库存资料");
-    expect(desktopBlock).toContain("销售设置");
-    expect(desktopBlock).toContain("<colgroup>");
-    expect(desktopBlock).toContain("table-fixed");
-    expect(desktopBlock).not.toContain("<TableHead>{translate(\"关键词\"");
+	  it("keeps the desktop listing to the agreed seven operational columns and leaves category to details", () => {
+	    expect(desktopBlock).toContain("商品资料");
+	    expect(desktopBlock).toContain("类型／模式");
+	    expect(desktopBlock).toContain("库存资料");
+	    expect(desktopBlock).toContain("销售设置");
+	    expect(desktopBlock).toContain("<colgroup>");
+	    expect(desktopBlock).toContain("table-fixed");
+	    expect(desktopBlock).not.toContain('translate("分类", "Category")');
+	    expect(desktopBlock).not.toContain("<TableHead>{translate(\"关键词\"");
     expect(desktopBlock).not.toContain("<TableHead>{translate(\"商品预售\"");
     expect(desktopBlock).not.toContain("<TableHead>{translate(\"商品标记\"");
   });
@@ -36,13 +37,20 @@ describe("product management responsive layout", () => {
     expect(source).toContain("<SelectTrigger className=\"w-full\">");
   });
 
-  it("uses cards rather than a horizontal table below the desktop breakpoint", () => {
-    expect(mobileBlock).toContain("lg:hidden");
-    expect(mobileBlock).toContain("ProductImagePreview");
+	  it("uses cards rather than a horizontal table below the desktop breakpoint", () => {
+	    expect(mobileBlock).toContain("lg:hidden");
+	    expect(mobileBlock).toContain("ProductImagePreview");
     expect(mobileBlock).toContain("已下单");
     expect(mobileBlock).toContain("已汇款");
     expect(mobileBlock).toContain("已完成");
-    expect(mobileBlock).toContain("查看详情");
-    expect(mobileBlock).toContain("DropdownMenu");
-  });
+	    expect(mobileBlock).toContain("查看详情");
+	    expect(mobileBlock).toContain('translate("分类", "Category")');
+	    expect(mobileBlock).toContain("DropdownMenu");
+	  });
+
+	  it("provides a previous-step action for product creation and editing after the first step", () => {
+	    expect(source).toContain('step > 0 ? setStep(step - 1) : setDialogOpen(false)');
+	    expect(source).toContain('step === 0 ? translate("取消", "Cancel") : translate("上一步", "Previous Step")');
+	    expect(source).toContain('translate("下一步", "Next Step")');
+	  });
 });

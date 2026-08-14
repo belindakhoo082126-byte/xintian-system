@@ -668,12 +668,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {orderCategory === "import" ? translate("中国代购订单", "Import Orders") :
-             orderCategory === "local" ? translate("本地订单", "Local Orders") :
-             translate("订单查询", "Order Search")}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground">
             {orderCategory === "import" ? translate("中国代购订单管理与处理", "Import order management & processing") :
              orderCategory === "local" ? translate("本地订单管理与处理", "Local order management & processing") :
              translate("搜索与筛选所有订单", "Search and filter all orders")}
@@ -737,16 +732,6 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             <SelectItem value="all">{translate("全部备注", "All Remarks")}</SelectItem>
             <SelectItem value="with">{translate("有备注", "With Remarks")}</SelectItem>
             <SelectItem value="without">{translate("无备注", "No Remarks")}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={notificationFilter} onValueChange={setNotificationFilter}>
-          <SelectTrigger className="w-[135px] shrink-0 sm:w-[150px]">
-            <SelectValue placeholder={translate("通知状态", "Notification")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="unsent">{translate("未发送", "Not Sent")}</SelectItem>
-            <SelectItem value="sent">{translate("已发送", "Sent")}</SelectItem>
-            <SelectItem value="failed">{translate("发送失败", "Failed")}</SelectItem>
           </SelectContent>
         </Select>
         <Button

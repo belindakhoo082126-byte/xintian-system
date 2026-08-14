@@ -347,9 +347,18 @@ function DashboardLayoutContent({
     const normalizedTopBarTitle = topBarTitle?.replace(/\s+/g, " ").trim().toLocaleLowerCase();
     if (!contentRoot || !normalizedTopBarTitle) return;
 
+    const stripPageHeaderSuffix = (title: string) => title
+      .replace(/(?:管理|列表|中心|设置|工作台|记录|日志|报表|总览|管理与处理|management|manager|list|center|settings|workspace|record|log|report|overview)$/i, "")
+      .replace(/直播间/g, "直播")
+      .replace(/\s+/g, " ")
+      .trim();
+    const normalizedBaseTitle = stripPageHeaderSuffix(normalizedTopBarTitle);
+
     const duplicateHeading = Array.from(contentRoot.querySelectorAll<HTMLElement>("h1")).find((heading) => {
       const headingText = heading.textContent?.replace(/\s+/g, " ").trim().toLocaleLowerCase();
-      return headingText === normalizedTopBarTitle;
+      if (!headingText) return false;
+      const normalizedHeading = stripPageHeaderSuffix(headingText);
+      return normalizedHeading === normalizedBaseTitle || normalizedHeading === normalizedTopBarTitle;
     });
 
     if (!duplicateHeading) return;

@@ -14,6 +14,14 @@ const productsSource = fs.readFileSync(
   path.resolve(process.cwd(), "client/src/pages/ProductsV2.tsx"),
   "utf8",
 );
+const membershipSource = fs.readFileSync(
+  path.resolve(process.cwd(), "client/src/pages/Membership.tsx"),
+  "utf8",
+);
+const ordersSource = fs.readFileSync(
+  path.resolve(process.cwd(), "client/src/pages/Orders.tsx"),
+  "utf8",
+);
 const indexCssSource = fs.readFileSync(
   path.resolve(process.cwd(), "client/src/index.css"),
   "utf8",
@@ -69,8 +77,14 @@ describe("侧边栏品牌区与导航分类配色", () => {
     expect(layoutSource).toContain('const menuLeaves = visibleMenu.flatMap((item) => {');
     expect(layoutSource).toContain('const activeMenuItem = menuLeaves.find((item) => isMenuPathActive(location, item.path));');
     expect(layoutSource).toContain('data-admin-menu-content');
+    expect(layoutSource).toContain('const stripPageHeaderSuffix = (title: string) => title');
+    expect(layoutSource).toContain('管理与处理');
     expect(layoutSource).toContain('duplicateHeading.dataset.menuTitleDuplicate = "true";');
     expect(indexCssSource).toContain('[data-admin-menu-content] [data-menu-title-duplicate="true"]');
+    expect(membershipSource).not.toContain('translate("会员订单管理", "Membership Order Management")');
+    expect(membershipSource).toContain('审核会员费汇款单据，确认后自动发送 Messenger 入群 Flow');
+    expect(ordersSource).not.toContain('translate("中国代购订单", "Import Orders")');
+    expect(ordersSource).toContain('中国代购订单管理与处理');
   });
 
   it("assigns distinct accents to primary menu categories while keeping submenu items neutral", () => {

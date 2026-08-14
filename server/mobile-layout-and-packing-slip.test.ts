@@ -38,7 +38,7 @@ describe("移动端商城、后台与A5包货单回归", () => {
 
   it("后台在手机上使用可收缩主内容区和移动顶栏，避免固定宽度裁切", () => {
     expect(dashboardLayoutSource).toContain('SidebarInset className="w-full min-w-0 max-w-full overflow-x-hidden"');
-    expect(dashboardLayoutSource).toContain('main className="min-w-0 max-w-full flex-1 overflow-x-hidden p-3 sm:p-4"');
+    expect(dashboardLayoutSource).toContain('data-admin-menu-content className="min-w-0 max-w-full flex-1 overflow-x-hidden p-3 sm:p-4"');
     expect(dashboardLayoutSource).toContain("isMobile && (");
     expect(ordersSource).toContain("overflow-x-auto");
     expect(packingSource).toContain("flex-col items-stretch");

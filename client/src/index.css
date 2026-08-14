@@ -259,7 +259,7 @@
   }
 }
 
-/* 后台菜单标题统一显示在顶部栏；内容区仅隐藏与其完全同名的一级标题。 */
+/* 后台菜单标题统一显示在顶部栏；内容区同页的「管理／列表」一级标题不再占用空间。 */
 [data-admin-menu-content] [data-menu-title-duplicate="true"] {
   display: none;
 }

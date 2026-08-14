@@ -1829,6 +1829,20 @@ export const appRouter = router({
         });
       }),
 
+    mergeCandidates: adminProcedure
+      .input(z.object({ sourceOrderId: z.number().int().positive() }))
+      .query(({ input }) => db.getManualOrderMergeCandidates(input.sourceOrderId)),
+
+    merge: adminProcedure
+      .input(z.object({
+        sourceOrderId: z.number().int().positive(),
+        targetOrderId: z.number().int().positive(),
+      }))
+      .mutation(({ input, ctx }) => db.mergeUnpaidLocalOrders({
+        ...input,
+        operator: ctx.user?.name || ctx.user?.openId || "admin",
+      })),
+
     // V2.0.92: Update order items (add/edit/delete) with auto recalculation
     updateItems: adminProcedure
       .input(z.object({
