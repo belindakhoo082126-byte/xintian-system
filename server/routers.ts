@@ -687,6 +687,7 @@ export const appRouter = router({
         visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
         type: z.enum(['physical', 'membership', 'gift']).optional(),
         isFeatured: z.boolean().optional(),
+        importEligibility: z.enum(['eligible', 'ineligible']).optional(),
         stockFilter: z.enum(['low', 'out', 'anomaly']).optional(),
         stockThreshold: z.number().int().min(1).optional(),
         limit: z.number().optional(),

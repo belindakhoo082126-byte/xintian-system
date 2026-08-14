@@ -4160,6 +4160,7 @@ export async function getProductsEnhanced(params: {
   visibility?: string;
   type?: string;
   isFeatured?: boolean;
+  importEligibility?: 'eligible' | 'ineligible';
   stockFilter?: string;
   stockThreshold?: number;
   limit?: number;
@@ -4189,6 +4190,19 @@ export async function getProductsEnhanced(params: {
   }
   if (params.isFeatured !== undefined) {
     conditions.push(eq(products.isFeatured, params.isFeatured));
+  }
+  if (params.importEligibility === 'eligible') {
+    // 中国进口商品固有可入 XTC；本地商品必须由管理员明确开启授权才可入 XTC。
+    conditions.push(or(
+      eq(products.salesMode, 'import_preorder'),
+      eq(products.allowImportOrder, true),
+    ));
+  }
+  if (params.importEligibility === 'ineligible') {
+    conditions.push(and(
+      ne(products.salesMode, 'import_preorder'),
+      or(isNull(products.allowImportOrder), eq(products.allowImportOrder, false)),
+    ));
   }
   if (params.stockFilter === 'low') {
     const stockThreshold = Math.max(1, Math.floor(params.stockThreshold ?? 5));
@@ -11163,6 +11177,8 @@ export async function getCNMergedProducts(liveSessionIds: number[]) {
     displayName: liveRoomProducts.displayName,
     productName: products.name,
     coverImageUrl: products.coverImageUrl,
+    salesMode: products.salesMode,
+    allowImportOrder: products.allowImportOrder,
   }).from(liveRoomProducts)
     .innerJoin(liveRooms, eq(liveRoomProducts.liveRoomId, liveRooms.id))
     .innerJoin(products, eq(liveRoomProducts.productId, products.id))
@@ -11176,6 +11192,8 @@ export async function getCNMergedProducts(liveSessionIds: number[]) {
       variantId: row.variantId,
       productName: row.productName || row.displayName,
       coverImageUrl: row.coverImageUrl,
+      salesMode: row.salesMode,
+      allowImportOrder: Boolean(row.allowImportOrder),
       liveSessionCount: 0,
       orderedQuantity: 0,
       paidQuantity: 0,

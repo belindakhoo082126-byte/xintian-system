@@ -8,6 +8,7 @@ const createSource = fs.readFileSync(path.join(process.cwd(), "client/src/pages/
 const businessAiSource = fs.readFileSync(path.join(process.cwd(), "server/businessAi.ts"), "utf8");
 const productSchemaSource = fs.readFileSync(path.join(process.cwd(), "drizzle/schema.ts"), "utf8");
 const productsPageSource = fs.readFileSync(path.join(process.cwd(), "client/src/pages/ProductsV2.tsx"), "utf8");
+const importBatchesPageSource = fs.readFileSync(path.join(process.cwd(), "client/src/pages/ImportBatches.tsx"), "utf8");
 
 describe("中国代购订单与Walk in范围", () => {
   it("在服务层以商品级资格执行中国进口与本地配套商品范围", () => {
@@ -32,6 +33,29 @@ describe("中国代购订单与Walk in范围", () => {
     expect(productsPageSource).toContain('allowImportOrder: false');
     expect(productsPageSource).toContain('Switch checked={form.allowImportOrder}');
     expect(productsPageSource).toContain('允许进入中国代购订单');
+  });
+
+  it("让商品列表按真实中国进口或本地授权资格筛选，并显示可辨识的来源标签", () => {
+    expect(dbSource).toContain("importEligibility?: 'eligible' | 'ineligible';");
+    expect(dbSource).toContain("if (params.importEligibility === 'eligible')");
+    expect(dbSource).toContain("eq(products.salesMode, 'import_preorder')");
+    expect(dbSource).toContain("eq(products.allowImportOrder, true)");
+    expect(routerSource).toContain("importEligibility: z.enum(['eligible', 'ineligible']).optional()");
+    expect(productsPageSource).toContain('value="eligible"');
+    expect(productsPageSource).toContain('中国进口');
+    expect(productsPageSource).toContain('可入 XTC');
+  });
+
+  it("让 CN 合并结果传递来源字段，并在选品时说明资格原因且阻止未授权本地商品", () => {
+    expect(dbSource).toContain('salesMode: products.salesMode');
+    expect(dbSource).toContain('allowImportOrder: products.allowImportOrder');
+    expect(dbSource).toContain('allowImportOrder: Boolean(row.allowImportOrder)');
+    expect(importBatchesPageSource).toContain('function getXtcEligibility(product: any)');
+    expect(importBatchesPageSource).toContain('中国进口商品（可加入 XTC）');
+    expect(importBatchesPageSource).toContain('本地配套（已授权，可加入 XTC）');
+    expect(importBatchesPageSource).toContain('本地商品（未授权进入代购）');
+    expect(importBatchesPageSource).toContain('disabled={!eligibility.eligible}');
+    expect(importBatchesPageSource).toContain('<TableHead>商品来源</TableHead>');
   });
 
   it("在商品搜索阶段按订单类别收窄中国代购可选商品", () => {

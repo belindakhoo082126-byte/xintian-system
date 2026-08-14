@@ -275,7 +275,18 @@ export default function ImportBatches() {
     return `${product.productId}:${product.variantId ?? "base"}`;
   }
 
+  function getXtcEligibility(product: any) {
+    if (product.salesMode === "import_preorder") {
+      return { eligible: true, source: "中国进口", reason: "中国进口商品（可加入 XTC）" };
+    }
+    if (product.allowImportOrder) {
+      return { eligible: true, source: "本地配套", reason: "本地配套（已授权，可加入 XTC）" };
+    }
+    return { eligible: false, source: "本地商品", reason: "本地商品（未授权进入代购）" };
+  }
+
   function toggleCnProduct(product: any, selected: boolean) {
+    if (selected && !getXtcEligibility(product).eligible) return;
     const key = productKey(product);
     setSelectedProductQuantities(previous => {
       const next = { ...previous };
@@ -433,16 +444,17 @@ export default function ImportBatches() {
 
               {cnStep === 2 && (
                 <div className="space-y-3 py-2">
-                  <p className="text-sm text-muted-foreground">同一商品 ID 已按所选直播自动合并；数字为互斥阶段，部分发货按实际发货数量拆分。展开可查看每场直播的贡献。</p>
+                  <p className="text-sm text-muted-foreground">同一商品 ID 已按所选直播自动合并；数字为互斥阶段，部分发货按实际发货数量拆分。中国进口商品可直接加入；本地商品仅在管理员已明确授权时可加入 XTC。展开可查看每场直播的贡献。</p>
                   {cnMergedProductsQuery.isLoading ? <p className="text-sm text-muted-foreground">正在合并商品…</p> : (cnMergedProductsQuery.data || []).length === 0 ? <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">所选直播没有可合并的商品。</p> : (
                     <div className="overflow-x-auto rounded-lg border">
                       <Table>
-                        <TableHeader><TableRow><TableHead>选择</TableHead><TableHead>商品／出现直播</TableHead><TableHead>已下单</TableHead><TableHead>已汇款</TableHead><TableHead>已完成</TableHead><TableHead>各场次明细</TableHead></TableRow></TableHeader>
+                        <TableHeader><TableRow><TableHead>选择</TableHead><TableHead>商品／出现直播</TableHead><TableHead>XTC 资格</TableHead><TableHead>已下单</TableHead><TableHead>已汇款</TableHead><TableHead>已完成</TableHead><TableHead>各场次明细</TableHead></TableRow></TableHeader>
                         <TableBody>{(cnMergedProductsQuery.data as any[]).map(product => {
-                          const key = productKey(product); const selected = key in selectedProductQuantities;
-                          return <TableRow key={key} className={selected ? 'bg-emerald-50/50' : ''}>
-                            <TableCell><input aria-label={`选择${product.productName}`} type="checkbox" checked={selected} onChange={e => toggleCnProduct(product, e.target.checked)} className="h-4 w-4 accent-emerald-700" /></TableCell>
+                          const key = productKey(product); const selected = key in selectedProductQuantities; const eligibility = getXtcEligibility(product);
+                          return <TableRow key={key} className={selected ? 'bg-emerald-50/50' : !eligibility.eligible ? 'bg-muted/40 text-muted-foreground' : ''}>
+                            <TableCell><input aria-label={`选择${product.productName}`} type="checkbox" checked={selected} disabled={!eligibility.eligible} onChange={e => toggleCnProduct(product, e.target.checked)} className="h-4 w-4 accent-emerald-700 disabled:cursor-not-allowed disabled:opacity-50" /></TableCell>
                             <TableCell><div className="font-medium">{product.productName}</div><div className="text-xs text-muted-foreground">{product.liveSessionCount} 场直播</div></TableCell>
+                            <TableCell><div className="space-y-1"><Badge className={eligibility.eligible ? eligibility.source === '中国进口' ? 'border border-sky-200 bg-sky-100 text-sky-800 hover:bg-sky-100' : 'border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100' : 'border border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-100'}>{eligibility.source}</Badge><div className={eligibility.eligible ? 'text-xs text-muted-foreground' : 'text-xs font-medium text-destructive'}>{eligibility.reason}</div></div></TableCell>
                             <TableCell>{product.orderedQuantity}</TableCell><TableCell className="font-semibold text-sky-700">{product.paidQuantity}</TableCell><TableCell className="text-emerald-700">{product.completedQuantity}</TableCell>
                             <TableCell><details><summary className="cursor-pointer text-xs text-muted-foreground">查看分场次</summary><div className="mt-2 space-y-1 text-xs">{product.sessions.map((session: any) => <div key={session.liveRoomId}>{session.liveRoomName}：下单 {session.orderedQuantity}／汇款 {session.paidQuantity}／完成 {session.completedQuantity}</div>)}</div></details></TableCell>
                           </TableRow>;
@@ -456,7 +468,7 @@ export default function ImportBatches() {
               {cnStep === 3 && (
                 <div className="space-y-4 py-2">
                   <div className="rounded-lg border border-sky-100 bg-sky-50/60 p-3 text-sm text-sky-900">本次采购数量已默认带入每项商品的「已汇款」数量。您可调整最终采购量；未勾选商品不会进入 CN，也不会改变本地库存。</div>
-                  <div className="overflow-x-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>商品</TableHead><TableHead>已下单</TableHead><TableHead>已汇款</TableHead><TableHead>已完成</TableHead><TableHead>本次采购数量</TableHead></TableRow></TableHeader><TableBody>{(cnMergedProductsQuery.data as any[] || []).filter(product => productKey(product) in selectedProductQuantities).map(product => { const key = productKey(product); return <TableRow key={key}><TableCell className="font-medium">{product.productName}</TableCell><TableCell>{product.orderedQuantity}</TableCell><TableCell>{product.paidQuantity}</TableCell><TableCell>{product.completedQuantity}</TableCell><TableCell><Input type="number" min="0" className="h-8 w-28" value={selectedProductQuantities[key]} onChange={e => setSelectedProductQuantities(prev => ({ ...prev, [key]: Math.max(0, Number(e.target.value) || 0) }))} /></TableCell></TableRow>; })}</TableBody></Table></div>
+                  <div className="overflow-x-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>商品</TableHead><TableHead>商品来源</TableHead><TableHead>已下单</TableHead><TableHead>已汇款</TableHead><TableHead>已完成</TableHead><TableHead>本次采购数量</TableHead></TableRow></TableHeader><TableBody>{(cnMergedProductsQuery.data as any[] || []).filter(product => productKey(product) in selectedProductQuantities).map(product => { const key = productKey(product); const eligibility = getXtcEligibility(product); return <TableRow key={key}><TableCell className="font-medium">{product.productName}</TableCell><TableCell><Badge className={eligibility.source === '中国进口' ? 'border border-sky-200 bg-sky-100 text-sky-800 hover:bg-sky-100' : 'border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100'}>{eligibility.source === '中国进口' ? '中国进口' : '本地配套'}</Badge></TableCell><TableCell>{product.orderedQuantity}</TableCell><TableCell>{product.paidQuantity}</TableCell><TableCell>{product.completedQuantity}</TableCell><TableCell><Input type="number" min="0" className="h-8 w-28" value={selectedProductQuantities[key]} onChange={e => setSelectedProductQuantities(prev => ({ ...prev, [key]: Math.max(0, Number(e.target.value) || 0) }))} /></TableCell></TableRow>; })}</TableBody></Table></div>
                   <p className="text-sm text-muted-foreground">汇款期限将自动设为截止日期后两天：<strong className="ml-1 text-foreground">{cnRange.endDate ? new Date(`${cnRange.endDate}T00:00:00`).toLocaleDateString('zh-MY', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '-'}</strong>（保存后可在 CN 编辑）。</p>
                 </div>
               )}

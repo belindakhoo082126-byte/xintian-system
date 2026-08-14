@@ -181,6 +181,7 @@ export default function ProductsV2() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [stockFilter, setStockFilter] = useState<string>(urlStock || "all");
+  const [xtcFilter, setXtcFilter] = useState<string>("all");
   const [lowStockThreshold, setLowStockThreshold] = useState("5");
   const [page, setPage] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -213,6 +214,7 @@ export default function ProductsV2() {
     search: search || undefined,
     type: typeFilter !== "all" ? (typeFilter as any) : undefined,
     status: statusFilter !== "all" ? (statusFilter as any) : undefined,
+    importEligibility: xtcFilter !== "all" ? (xtcFilter as "eligible" | "ineligible") : undefined,
     stockFilter: stockFilter !== "all" ? (stockFilter as "low" | "out" | "anomaly") : undefined,
     stockThreshold: stockFilter === "low" ? Math.max(1, Number(lowStockThreshold) || 5) : undefined,
     limit: PAGE_SIZE,
@@ -612,6 +614,16 @@ export default function ProductsV2() {
             <SelectItem value="out_of_stock">{translate("缺货", "Out of Stock")}</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={xtcFilter} onValueChange={(v) => { setXtcFilter(v); setPage(0); }}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder={translate("XTC 资格", "XTC Eligibility")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{translate("全部 XTC 资格", "All XTC Eligibility")}</SelectItem>
+            <SelectItem value="eligible">{translate("可入 XTC", "Eligible for XTC")}</SelectItem>
+            <SelectItem value="ineligible">{translate("不可入 XTC", "Not Eligible for XTC")}</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={stockFilter} onValueChange={(v) => { setStockFilter(v); setPage(0); }}>
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder={translate("库存筛选", "Stock Filter")} />
@@ -791,7 +803,9 @@ export default function ProductsV2() {
                       {p.isSpecial && <Badge className="border border-orange-200 bg-orange-100 text-orange-800 hover:bg-orange-100">{translate("特价", "Special")}</Badge>}
                       {p.type === "gift" && <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{translate("赠品", "Gift")}</Badge>}
                       {p.type === "virtual" && <Badge className="border border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{translate("虚拟商品", "Virtual")}</Badge>}
-                      {!p.isFeatured && !p.isSpecial && p.type !== "gift" && p.type !== "virtual" && <span className="text-sm text-muted-foreground">{translate("—", "—")}</span>}
+                      {p.salesMode === "import_preorder" && <Badge className="border border-sky-200 bg-sky-100 text-sky-800 hover:bg-sky-100">{translate("中国进口", "China Import")}</Badge>}
+                      {p.salesMode !== "import_preorder" && p.allowImportOrder && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("可入 XTC", "Eligible for XTC")}</Badge>}
+                      {!p.isFeatured && !p.isSpecial && p.type !== "gift" && p.type !== "virtual" && p.salesMode !== "import_preorder" && !p.allowImportOrder && <span className="text-sm text-muted-foreground">{translate("—", "—")}</span>}
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
