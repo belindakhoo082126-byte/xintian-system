@@ -20,6 +20,7 @@ import Chat from "@/pages/Chat";
 import AiHandover from "@/pages/AiHandover";
 import DraftOrders from "@/pages/DraftOrders";
 import OrderChangeRequests from "@/pages/OrderChangeRequests";
+import PaymentProofReviews from "@/pages/PaymentProofReviews";
 import ReplyRules from "@/pages/ReplyRules";
 import AiKnowledge from "@/pages/AiKnowledge";
 import AiBrain from "@/pages/AiBrain";
@@ -110,6 +111,7 @@ function DashboardRoutes() {
       <Route path={"/auto-notifications"} component={AiNotificationCenter} />
       <Route path={"/draft-orders"} component={DraftOrders} />
       <Route path={"/order-change-requests"} component={OrderChangeRequests} />
+      <Route path={"/payment-proof-reviews"} component={PaymentProofReviews} />
       <Route path={"/ai-brain"} component={AiBrain} />
       <Route path={"/reply-rules"} component={ReplyRules} />
       <Route path={"/ai-knowledge"} component={AiKnowledge} />

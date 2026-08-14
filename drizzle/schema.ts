@@ -3192,7 +3192,7 @@ export const orderChangeRequests = mysqlTable("order_change_requests", {
   // Change type
   requestType: mysqlEnum("requestType", [
     "add_item", "remove_item", "change_quantity",
-    "change_address", "change_phone", "cancel_item", "other",
+    "change_address", "change_phone", "change_variant", "cancel_item", "cancel_order", "other",
   ]).notNull(),
   // Change details (JSON — structure depends on requestType)
   changeDetails: json("changeDetails").notNull(),

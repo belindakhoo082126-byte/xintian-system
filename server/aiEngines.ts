@@ -19,6 +19,7 @@ import {
 } from "../drizzle/schema";
 import type { AiProcessingContext } from "./aiLogContext";
 import { classifyIntent, generateHandoverSummary } from "./businessAi";
+import { capturePrivateChatOrderIntent } from "./privateChatOrderActions";
 import { runProductAiRecommendation } from "./productAi";
 import type { CaseIntent, HandoverSummary } from "./businessAi";
 
@@ -65,6 +66,8 @@ export interface MessageContext {
   text: string;
   platform: "messenger" | "whatsapp";
   customerId?: number;
+  customerName?: string | null;
+  messengerId?: string | null;
   conversationId?: number;
   // For Flow Engine: identify if message comes from a FB Live/Post/Reel context
   sourceType?: "fb_live" | "fb_post" | "fb_reel" | "private_chat";
@@ -373,7 +376,60 @@ export async function processChatAI(
     };
   }
 
-  // Step 2.7: Flow source check (private chat skips Flow Engine)
+  // Step 2.7: Private-chat order actions are constrained to creating a
+  // reviewable draft/request. They never modify an official order here.
+  if (intent.workflow === "draft_order" || intent.workflow === "change_request") {
+    if (options.dryRun) {
+      if (logCtx) logCtx.addStep("private_order_action", "私聊订单受控动作", "干跑模式：已识别为待审核订单动作，未写入业务资料", "skipped");
+      return {
+        shouldReply: true,
+        reply: "测试模式：已识别订单操作意图；正式处理时将只建立待审核记录。",
+        source: "private_order_action_dry_run",
+        shouldHandover: false,
+        detectedIntent: intent.intent,
+      };
+    }
+    const action = await capturePrivateChatOrderIntent({
+      message: ctx.text,
+      customerId: ctx.customerId,
+      customerName: ctx.customerName,
+      messengerId: ctx.messengerId,
+      workflow: intent.workflow,
+    });
+    if (logCtx) {
+      logCtx.addStep(
+        "private_order_action",
+        "私聊订单受控动作",
+        action.shouldHandover ? `无法安全写入：${action.handoverReason}` : "已建立待审核业务记录，未改动正式订单",
+        action.shouldHandover ? "handover" : "hit",
+      );
+      logCtx.finalSource = action.shouldHandover ? "private_order_action_handover" : "private_order_action";
+      logCtx.isHandover = action.shouldHandover;
+      logCtx.handoverReason = action.handoverReason;
+      logCtx.aiReply = action.reply ?? null;
+    }
+    if (action.shouldHandover) {
+      const summary = generateHandoverSummary({
+        customerName: ctx.customerName || logCtx?.customerName || "客户",
+        customerMessage: ctx.text,
+        reason: action.handoverReason || "订单资料无法安全确认",
+        detectedIntent: intent.intent as CaseIntent,
+        aiAction: "AI未建立或修改订单，已转交人工核对",
+      });
+      return { shouldReply: false, reply: null, source: "private_order_action", shouldHandover: true, handoverReason: action.handoverReason, detectedIntent: intent.intent, handoverSummary: summary };
+    }
+    return {
+      shouldReply: Boolean(action.reply),
+      reply: action.reply || null,
+      source: "private_order_action",
+      shouldHandover: false,
+      detectedIntent: intent.intent,
+      draftOrderId: action.draftOrderId,
+      changeRequestId: action.changeRequestId,
+    };
+  }
+
+  // Step 2.8: Flow source check (private chat skips Flow Engine)
   if (logCtx) logCtx.addStep("flow_check", "Flow来源检查", "普通私聊，不进入Flow Engine", "skipped");
 
   // Step 2.8: Product AI Recommendation (AI Tags based)

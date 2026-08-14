@@ -12,6 +12,7 @@ import {
 } from "./db";
 import { AiProcessingContext } from "./aiLogContext";
 import { processChatAI } from "./aiEngines";
+import { captureMessengerPaymentProof } from "./privateChatOrderActions";
 import { calculateMerchandiseNotificationBreakdown } from "../shared/orderPricing";
 
 const FB_GRAPH_API = "https://graph.facebook.com/v21.0";
@@ -284,6 +285,58 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
     console.error("[Messenger] Failed to store chat message:", err);
   }
 
+  // Payment screenshots must be handled before text AI. This prevents an
+  // ordinary chat reply from returning early and silently leaving a receipt
+  // only inside chat history. The helper persists the image and uses the same
+  // order_payments review workflow as the mall checkout.
+  const imageAttachments = Array.isArray(attachments)
+    ? attachments.filter((attachment: any) => attachment?.type === "image")
+    : [];
+  if (imageAttachments.length > 0) {
+    const imageUrl = imageAttachments[0]?.payload?.url || imageAttachments[0]?.url;
+    if (typeof imageUrl === "string") {
+      try {
+        const proof = await captureMessengerPaymentProof({
+          imageUrl,
+          message: text || "",
+          customerId: storeResult?.customerId ?? conversation?.customerId ?? null,
+          conversationId: conversation?.id ?? null,
+          customerMessageId: storeResult?.customerMessageId ?? null,
+        });
+        if (proof.shouldHandover && conversation?.id) {
+          await createHandoverRequest({
+            conversationId: conversation.id,
+            customerId: storeResult?.customerId ?? conversation.customerId ?? undefined,
+            customerName: storeResult?.customerName ?? conversation.customerName ?? "客户",
+            platform: "messenger",
+            platformId: psid,
+            reason: proof.handoverReason || "付款凭据无法安全关联订单",
+            priority: "high",
+            aiSummary: JSON.stringify({ action: "payment_proof_handover", originalMessage: text || "[图片]" }),
+          });
+        }
+        await sendTextMessage(psid, proof.reply || "已收到您的图片。为保障订单安全，请补充订单编号；客服会协助核对。" );
+        return;
+      } catch (proofErr) {
+        console.error("[Messenger] Payment proof processing failed:", proofErr);
+        if (conversation?.id) {
+          await createHandoverRequest({
+            conversationId: conversation.id,
+            customerId: storeResult?.customerId ?? conversation.customerId ?? undefined,
+            customerName: storeResult?.customerName ?? conversation.customerName ?? "客户",
+            platform: "messenger",
+            platformId: psid,
+            reason: "付款凭据处理异常，需要人工核对",
+            priority: "high",
+            aiSummary: JSON.stringify({ action: "payment_proof_error", originalMessage: text || "[图片]" }),
+          });
+        }
+        await sendTextMessage(psid, "已收到您的图片，客服会尽快人工核对付款资料。" );
+        return;
+      }
+    }
+  }
+
   // === Unified Auto Order Engine: check for keyword+quantity pattern first ===
   // If the message matches keyword patterns (e.g. "MON+2", "J5+1"), execute auto order capture
   // before any AI reply logic. This ensures Messenger private chat uses the same Auto Order Engine
@@ -392,6 +445,9 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
           text,
           platform: "messenger",
           conversationId: conversation?.id,
+          customerId: storeResult?.customerId ?? undefined,
+          customerName: storeResult?.customerName ?? conversation?.customerName ?? null,
+          messengerId: psid,
           sourceType: "private_chat",
         },
         {
@@ -562,18 +618,6 @@ async function handleIncomingMessage(psid: string, message: any): Promise<void> 
     } catch { /* ignore log error */ }
   }
 
-  if (attachments) {
-    for (const attachment of attachments) {
-      if (attachment.type === "image") {
-        // Could be a payment receipt
-        console.log("[Messenger] Image attachment from PSID:", psid);
-        await sendTextMessage(
-          psid,
-          "已收到您的图片。如果是汇款单据，请告知订单编号，我们会尽快为您确认。"
-        );
-      }
-    }
-  }
 }
 
 /**

@@ -28,7 +28,7 @@ import {
   releaseInventory,
   convertInventory,
 } from "./businessAi";
-import { draftOrders, orderChangeRequests, reservationRecords } from "../drizzle/schema";
+import { draftOrders, orderChangeRequests, reservationRecords, orderPayments, orders } from "../drizzle/schema";
 import { and, desc, eq as eqB } from "drizzle-orm";
 import * as parceldaily from "./parceldaily";
 import * as parcelking from "./parcelking";
@@ -7525,7 +7525,42 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
           paymentMethodName: paymentMethod.name,
         });
         return { success: true };
-      }),
+    }),
+  }),
+
+  // Customer submitted payment proofs, including Messenger screenshots.
+  // Approval and rejection stay on order.reviewPayment so balance calculation
+  // and audit logging remain centralized.
+  paymentProofReviews: router({
+    list: adminProcedure.input(z.object({
+      status: z.enum(["pending", "approved", "rejected", "all"]).default("pending"),
+      limit: z.number().min(1).max(100).default(50),
+    })).query(async ({ input }) => {
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      const conditions = input.status === "all" ? [] : [eqB(orderPayments.reviewStatus, input.status)];
+      return await database.select({
+        id: orderPayments.id,
+        orderId: orderPayments.orderId,
+        orderNumber: orders.orderNumber,
+        customerName: orders.facebookName,
+        amount: orderPayments.amount,
+        paymentMethod: orderPayments.paymentMethod,
+        receiptUrl: orderPayments.receiptUrl,
+        notes: orderPayments.notes,
+        paymentSource: orderPayments.paymentSource,
+        paymentDate: orderPayments.paymentDate,
+        createdAt: orderPayments.createdAt,
+        reviewStatus: orderPayments.reviewStatus,
+        reviewedBy: orderPayments.reviewedBy,
+        reviewedAt: orderPayments.reviewedAt,
+        rejectReason: orderPayments.rejectReason,
+      }).from(orderPayments)
+        .innerJoin(orders, eqB(orderPayments.orderId, orders.id))
+        .where(and(...conditions))
+        .orderBy(desc(orderPayments.createdAt))
+        .limit(input.limit);
+    }),
   }),
 
   // ===========================================================================

@@ -1,5 +1,5 @@
-import { appendItemsToUnpaidLocalOrder, assertChinaImportOrderItemsEligible, assertImportLiveOrderWindow, findMergeableUnpaidImportLiveOrder, findMergeableUnpaidLocalOrder, getActiveImportLiveRoomId, getDb, resolveOrderCategory, recalculateOrderBalance, generateOrderNumber, generateSecureToken } from "./db";
-import { draftOrders, orderChangeRequests, reservationRecords, products, orders, orderItems, aiLogs, aiHandoverRequests } from "../drizzle/schema";
+import { appendItemsToUnpaidLocalOrder, assertChinaImportOrderItemsEligible, assertImportLiveOrderWindow, cancelOrderWithReason, findMergeableUnpaidImportLiveOrder, findMergeableUnpaidLocalOrder, getActiveImportLiveRoomId, getDb, resolveOrderCategory, recalculateOrderBalance, generateOrderNumber, generateSecureToken } from "./db";
+import { draftOrders, orderChangeRequests, reservationRecords, products, productVariations, orders, orderItems, aiLogs, aiHandoverRequests } from "../drizzle/schema";
 import { eq, sql, and, desc } from "drizzle-orm";
 import { SideEffectPolicy } from "./aiTestRunner";
 
@@ -485,7 +485,7 @@ export async function createOrderChangeRequest(params: {
   orderNumber: string;
   customerId?: number;
   customerName?: string;
-  requestType: "add_item" | "remove_item" | "change_quantity" | "change_address" | "change_phone" | "cancel_item" | "other";
+  requestType: "add_item" | "remove_item" | "change_quantity" | "change_address" | "change_phone" | "change_variant" | "cancel_item" | "cancel_order" | "other";
   changeDetails: any;
   aiLogId?: number;
   detectedIntent?: string;
@@ -550,7 +550,27 @@ export async function approveOrderChangeRequest(requestId: number, approvedBy: s
   if (!request) throw new Error("Change request not found");
   if (request.status !== "waiting_approval") throw new Error(`Change request status is ${request.status}`);
 
+  const [boundOrder] = await database.select().from(orders).where(eq(orders.id, request.orderId)).limit(1);
+  if (!boundOrder) throw new Error("原订单不存在");
+  if (["shipped", "completed", "cancelled", "partial_shipped"].includes(boundOrder.physicalStatus || "")) {
+    throw new Error("原订单已进入不可修改状态，无法批准此变更请求");
+  }
+
   const details = request.changeDetails as any;
+
+  const restoreOrderItemStock = async (item: any, quantity: number) => {
+    if (quantity <= 0) return;
+    if (item.variationId) {
+      await database.update(productVariations)
+        .set({ stockQuantity: sql`COALESCE(${productVariations.stockQuantity}, 0) + ${quantity}` })
+        .where(eq(productVariations.id, item.variationId));
+    }
+    if (item.productId) {
+      await database.update(products)
+        .set({ stockQuantity: sql`COALESCE(${products.stockQuantity}, 0) + ${quantity}` })
+        .where(eq(products.id, item.productId));
+    }
+  };
 
   switch (request.requestType) {
     case "add_item": {
@@ -573,14 +593,21 @@ export async function approveOrderChangeRequest(requestId: number, approvedBy: s
     }
     case "remove_item": {
       if (details.orderItemId) {
+        const [item] = await database.select().from(orderItems).where(and(eq(orderItems.id, details.orderItemId), eq(orderItems.orderId, request.orderId))).limit(1);
+        if (!item) throw new Error("原订单中找不到要移除的商品");
+        await restoreOrderItemStock(item, item.quantity);
         await database.delete(orderItems).where(eq(orderItems.id, details.orderItemId));
       }
       break;
     }
     case "change_quantity": {
-      if (details.orderItemId && details.newQuantity) {
+      if (details.orderItemId && Number.isInteger(details.newQuantity) && details.newQuantity > 0) {
+        const [item] = await database.select().from(orderItems).where(and(eq(orderItems.id, details.orderItemId), eq(orderItems.orderId, request.orderId))).limit(1);
+        if (!item) throw new Error("原订单中找不到要修改数量的商品");
+        const quantityChange = details.newQuantity - item.quantity;
+        if (quantityChange < 0) await restoreOrderItemStock(item, Math.abs(quantityChange));
         await database.update(orderItems)
-          .set({ quantity: details.newQuantity })
+          .set({ quantity: details.newQuantity, subtotal: (Number(item.unitPrice) * details.newQuantity).toFixed(2) })
           .where(eq(orderItems.id, details.orderItemId));
       }
       if (details.quantityChange > 0) {
@@ -600,9 +627,45 @@ export async function approveOrderChangeRequest(requestId: number, approvedBy: s
     }
     case "cancel_item": {
       if (details.orderItemId) {
+        const [item] = await database.select().from(orderItems).where(and(eq(orderItems.id, details.orderItemId), eq(orderItems.orderId, request.orderId))).limit(1);
+        if (!item) throw new Error("原订单中找不到要取消的商品");
+        await restoreOrderItemStock(item, item.quantity);
         await database.delete(orderItems).where(eq(orderItems.id, details.orderItemId));
       }
       break;
+    }
+    case "change_variant": {
+      if (!details.orderItemId || !details.newVariationId) throw new Error("规格变更资料不完整");
+      const [item] = await database.select().from(orderItems).where(and(eq(orderItems.id, details.orderItemId), eq(orderItems.orderId, request.orderId))).limit(1);
+      if (!item) throw new Error("原订单中找不到要修改规格的商品");
+      const [newVariation] = await database.select().from(productVariations)
+        .where(and(eq(productVariations.id, details.newVariationId), eq(productVariations.productId, item.productId!))).limit(1);
+      if (!newVariation) throw new Error("指定的新规格不存在或不属于该商品");
+      const variantUpdate = await database.update(productVariations)
+        .set({ stockQuantity: sql`COALESCE(${productVariations.stockQuantity}, 0) - ${item.quantity}` })
+        .where(and(eq(productVariations.id, newVariation.id), sql`COALESCE(${productVariations.stockQuantity}, 0) >= ${item.quantity}`));
+      const affectedRows = Number((variantUpdate as any)?.[0]?.affectedRows ?? (variantUpdate as any)?.affectedRows ?? 0);
+      if (affectedRows < 1) throw new Error(`新规格「${newVariation.name}」库存不足，无法批准变更`);
+      if (item.variationId) {
+        await database.update(productVariations)
+          .set({ stockQuantity: sql`COALESCE(${productVariations.stockQuantity}, 0) + ${item.quantity}` })
+          .where(eq(productVariations.id, item.variationId));
+      }
+      const nextPrice = Number(details.newPrice ?? newVariation.price);
+      await database.update(orderItems).set({
+        variationId: newVariation.id,
+        variationName: newVariation.name,
+        unitPrice: nextPrice.toFixed(2),
+        subtotal: (nextPrice * item.quantity).toFixed(2),
+      }).where(eq(orderItems.id, item.id));
+      break;
+    }
+    case "cancel_order": {
+      await cancelOrderWithReason(request.orderId, details.reason || "客户通过 Messenger 申请取消订单", approvedBy);
+      await database.update(orderChangeRequests)
+        .set({ status: "approved", approvedBy, approvedAt: new Date() })
+        .where(eq(orderChangeRequests.id, requestId));
+      return;
     }
     default:
       break;

@@ -10,8 +10,13 @@ vi.mock("./aiTestRunner", () => ({
   SideEffectPolicy: { allowAll: { allowSend: false, allowCreateConversation: false, allowCreateMessage: false, allowCreateHandover: false, allowModifyUsage: false, allowCreateOrder: false, allowCreateNotification: false, allowCreateFlow: false, allowWriteAiLog: false } },
 }));
 
+vi.mock("./privateChatOrderActions", () => ({
+  capturePrivateChatOrderIntent: vi.fn(),
+}));
+
 import { processChatAI } from "./aiEngines";
 import { classifyIntent } from "./businessAi";
+import { capturePrivateChatOrderIntent } from "./privateChatOrderActions";
 
 describe("classifyIntent Integration in processChatAI", () => {
   beforeEach(() => {
@@ -148,5 +153,48 @@ describe("classifyIntent Integration in processChatAI", () => {
     const r = classifyIntent("我要改地址");
     expect(r.intent).toBe("order_modification");
     expect(r.workflow).toBe("change_request");
+  });
+
+  it("creates only a reviewable draft action for a private-chat order", async () => {
+    vi.mocked(capturePrivateChatOrderIntent).mockResolvedValueOnce({
+      handled: true,
+      shouldHandover: false,
+      draftOrderId: 41,
+      reply: "已建立待审核订单草稿。",
+    });
+    const result = await processChatAI(
+      { text: "我要买玫瑰花 2", platform: "messenger", customerId: 9, customerName: "测试客户", messengerId: "PSID-9" },
+      { aiEnabled: true, handoverStatus: "none" },
+    );
+    expect(capturePrivateChatOrderIntent).toHaveBeenCalledWith(expect.objectContaining({
+      workflow: "draft_order", customerId: 9, customerName: "测试客户", messengerId: "PSID-9",
+    }));
+    expect(result).toMatchObject({ source: "private_order_action", draftOrderId: 41, shouldHandover: false });
+    expect(result.reply).toContain("待审核");
+  });
+
+  it("returns an actual handover result when a private-chat change cannot be safely identified", async () => {
+    vi.mocked(capturePrivateChatOrderIntent).mockResolvedValueOnce({
+      handled: true,
+      shouldHandover: true,
+      handoverReason: "客户有多张可处理订单，请先提供订单编号",
+    });
+    const result = await processChatAI(
+      { text: "我要改地址", platform: "messenger", customerId: 9 },
+      { aiEnabled: true, handoverStatus: "none" },
+    );
+    expect(capturePrivateChatOrderIntent).toHaveBeenCalledWith(expect.objectContaining({ workflow: "change_request" }));
+    expect(result).toMatchObject({ source: "private_order_action", shouldHandover: true });
+    expect(result.reply).toBeNull();
+    expect(result.handoverReason).toContain("多张可处理订单");
+  });
+
+  it("does not create private-chat business records in dry-run mode", async () => {
+    const result = await processChatAI(
+      { text: "我要买玫瑰花 2", platform: "messenger", customerId: 9 },
+      { aiEnabled: true, handoverStatus: "none", dryRun: true },
+    );
+    expect(capturePrivateChatOrderIntent).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ source: "private_order_action_dry_run", shouldHandover: false });
   });
 });

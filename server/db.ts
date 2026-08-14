@@ -2105,6 +2105,9 @@ export async function reviewPayment(data: {
   const payment = await db.select().from(orderPayments).where(eq(orderPayments.id, data.paymentId)).limit(1);
   if (payment.length === 0) throw new Error("Payment record not found");
   if (payment[0].reviewStatus !== 'pending') throw new Error("Payment already reviewed");
+  if (data.action === 'approve' && Number(payment[0].amount || 0) <= 0) {
+    throw new Error("付款凭据金额尚未核对，请先更正金额后再批准");
+  }
 
   const reviewStatus = data.action === 'approve' ? 'approved' : 'rejected';
   const reviewedAt = Date.now();

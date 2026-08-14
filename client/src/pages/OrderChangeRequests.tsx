@@ -93,18 +93,23 @@ export default function OrderChangeRequests() {
             AI 识别客户修改订单意图后创建的变更请求，需人工审批后执行
           </p>
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部</SelectItem>
-            <SelectItem value="waiting_approval">待审批</SelectItem>
-            <SelectItem value="approved">已批准</SelectItem>
-            <SelectItem value="rejected">已拒绝</SelectItem>
-            <SelectItem value="invalid">已失效</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Link href="/payment-proof-reviews">
+            <Button variant="outline">付款凭据审核</Button>
+          </Link>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部</SelectItem>
+              <SelectItem value="waiting_approval">待审批</SelectItem>
+              <SelectItem value="approved">已批准</SelectItem>
+              <SelectItem value="rejected">已拒绝</SelectItem>
+              <SelectItem value="invalid">已失效</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {isLoading ? (
