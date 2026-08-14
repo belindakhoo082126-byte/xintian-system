@@ -14,6 +14,10 @@ const productsSource = fs.readFileSync(
   path.resolve(process.cwd(), "client/src/pages/ProductsV2.tsx"),
   "utf8",
 );
+const indexCssSource = fs.readFileSync(
+  path.resolve(process.cwd(), "client/src/index.css"),
+  "utf8",
+);
 
 describe("侧边栏品牌区与导航分类配色", () => {
   it("uses the approved Xin Tian logo and keeps the sidebar header exclusively for navigation", () => {
@@ -59,6 +63,14 @@ describe("侧边栏品牌区与导航分类配色", () => {
     expect(sidebarInset).toContain('<h1 className="truncate text-2xl font-bold tracking-tight">{topBarTitle}</h1>');
     expect(dashboardSource).not.toContain('<h1 className="text-2xl font-bold">{t("dashboard.title")}</h1>');
     expect(productsSource).not.toContain('<h1 className="text-2xl font-semibold tracking-tight">{translate("商品管理", "Product Management")}</h1>');
+  });
+
+  it("uses the top bar as the single title source for every menu page", () => {
+    expect(layoutSource).toContain('const menuLeaves = visibleMenu.flatMap((item) => {');
+    expect(layoutSource).toContain('const activeMenuItem = menuLeaves.find((item) => isMenuPathActive(location, item.path));');
+    expect(layoutSource).toContain('data-admin-menu-content');
+    expect(layoutSource).toContain('duplicateHeading.dataset.menuTitleDuplicate = "true";');
+    expect(indexCssSource).toContain('[data-admin-menu-content] [data-menu-title-duplicate="true"]');
   });
 
   it("assigns distinct accents to primary menu categories while keeping submenu items neutral", () => {

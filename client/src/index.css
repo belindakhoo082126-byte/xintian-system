@@ -258,3 +258,8 @@
     padding: 0 !important;
   }
 }
+
+/* 后台菜单标题统一显示在顶部栏；内容区仅隐藏与其完全同名的一级标题。 */
+[data-admin-menu-content] [data-menu-title-duplicate="true"] {
+  display: none;
+}

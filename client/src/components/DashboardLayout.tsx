@@ -318,6 +318,7 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const mainContentRef = useRef<HTMLElement>(null);
   const isShippingStaff = user?.role !== "admin";
 
   // For shipping staff, only show packing and order-tracking
@@ -340,6 +341,24 @@ function DashboardLayoutContent({
   });
   const activeMenuItem = menuLeaves.find((item) => isMenuPathActive(location, item.path));
   const topBarTitle = activeMenuItem ? resolveLabel(activeMenuItem.label) : null;
+
+  useEffect(() => {
+    const contentRoot = mainContentRef.current;
+    const normalizedTopBarTitle = topBarTitle?.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+    if (!contentRoot || !normalizedTopBarTitle) return;
+
+    const duplicateHeading = Array.from(contentRoot.querySelectorAll<HTMLElement>("h1")).find((heading) => {
+      const headingText = heading.textContent?.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+      return headingText === normalizedTopBarTitle;
+    });
+
+    if (!duplicateHeading) return;
+    duplicateHeading.dataset.menuTitleDuplicate = "true";
+
+    return () => {
+      delete duplicateHeading.dataset.menuTitleDuplicate;
+    };
+  }, [lang, location, topBarTitle]);
 
   useEffect(() => {
     if (isCollapsed) {
@@ -559,7 +578,7 @@ function DashboardLayoutContent({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <main className="min-w-0 max-w-full flex-1 overflow-x-hidden p-3 sm:p-4">
+        <main ref={mainContentRef} data-admin-menu-content className="min-w-0 max-w-full flex-1 overflow-x-hidden p-3 sm:p-4">
           <BackendEnglishFallback>{children}</BackendEnglishFallback>
         </main>
       </SidebarInset>
