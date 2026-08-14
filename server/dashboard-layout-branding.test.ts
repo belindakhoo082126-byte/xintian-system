@@ -10,6 +10,10 @@ const dashboardSource = fs.readFileSync(
   path.resolve(process.cwd(), "client/src/pages/Dashboard.tsx"),
   "utf8",
 );
+const productsSource = fs.readFileSync(
+  path.resolve(process.cwd(), "client/src/pages/ProductsV2.tsx"),
+  "utf8",
+);
 
 describe("侧边栏品牌区与导航分类配色", () => {
   it("uses the approved Xin Tian logo and keeps the sidebar header exclusively for navigation", () => {
@@ -42,16 +46,19 @@ describe("侧边栏品牌区与导航分类配色", () => {
     expect(sidebarInset).toContain('onSelect={() => setLang("en")}');
   });
 
-  it("keeps the dashboard title in the top bar only, alongside the language selector", () => {
+  it("keeps the current menu title in the top bar, alongside the language selector", () => {
     const sidebarInset = layoutSource.slice(
       layoutSource.indexOf("<SidebarInset"),
       layoutSource.indexOf("<main className")
     );
 
-    expect(layoutSource).toContain('const topBarTitle = location === "/" ? t("dashboard.title") : null;');
+    expect(layoutSource).toContain('const menuLeaves = visibleMenu.flatMap((item) => {');
+    expect(layoutSource).toContain('const activeMenuItem = menuLeaves.find((item) => isMenuPathActive(location, item.path));');
+    expect(layoutSource).toContain('const topBarTitle = activeMenuItem ? resolveLabel(activeMenuItem.label) : null;');
     expect(sidebarInset).toContain("{topBarTitle && (");
     expect(sidebarInset).toContain('<h1 className="truncate text-2xl font-bold tracking-tight">{topBarTitle}</h1>');
     expect(dashboardSource).not.toContain('<h1 className="text-2xl font-bold">{t("dashboard.title")}</h1>');
+    expect(productsSource).not.toContain('<h1 className="text-2xl font-semibold tracking-tight">{translate("商品管理", "Product Management")}</h1>');
   });
 
   it("assigns distinct accents to primary menu categories while keeping submenu items neutral", () => {

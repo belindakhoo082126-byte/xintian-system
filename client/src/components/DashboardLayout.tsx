@@ -334,7 +334,12 @@ function DashboardLayoutContent({
     typeof label === "string" ? t(label) : (lang === "zh" ? label.zh : label.en);
 
   const isMobile = useIsMobile();
-  const topBarTitle = location === "/" ? t("dashboard.title") : null;
+  const menuLeaves = visibleMenu.flatMap((item) => {
+    if (!isGroup(item)) return [item];
+    return item.children.flatMap((child) => [child, ...(child.children ?? [])]);
+  });
+  const activeMenuItem = menuLeaves.find((item) => isMenuPathActive(location, item.path));
+  const topBarTitle = activeMenuItem ? resolveLabel(activeMenuItem.label) : null;
 
   useEffect(() => {
     if (isCollapsed) {

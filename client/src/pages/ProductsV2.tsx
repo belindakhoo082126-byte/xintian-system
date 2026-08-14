@@ -579,8 +579,7 @@ export default function ProductsV2() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{translate("商品管理", "Product Management")}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{translate("共 {count} 个商品", "{count} products total", { count: String(totalCount) })}</p>
+          <p className="text-sm text-muted-foreground">{translate("共 {count} 个商品", "{count} products total", { count: String(totalCount) })}</p>
         </div>
         <Button onClick={openCreate}>
           <Plus className="h-4 w-4 mr-2" />
