@@ -413,35 +413,27 @@ function DashboardLayoutContent({
           className="border-r-0 no-print"
           disableTransition={isResizing}
         >
-          <SidebarHeader className="h-16 justify-center">
-            <div className="flex items-center gap-2 px-2 transition-all w-full">
+          <SidebarHeader className="h-16 justify-center p-1">
+            <div className="flex h-full w-full items-center px-1 transition-all">
               <button
                 onClick={toggleSidebar}
-                className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label="Toggle navigation"
               >
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
-              <div className={`flex items-center min-w-0 ${isCollapsed ? "flex-1 justify-center" : "flex-1 gap-2"}`}>
+              {!isCollapsed && (
+                <div className="flex min-w-0 flex-1 items-center gap-2">
                 <img
                   src="/manus-storage/xintian-logo_701b1761.png"
                   alt="心田 Xin Tian"
                   className="h-8 w-8 rounded-full object-cover ring-1 ring-primary/20 shrink-0"
                 />
-                {!isCollapsed && (
-                  <span className="font-bold tracking-tight truncate text-primary">
+                  <span className="truncate font-bold tracking-tight text-primary">
                     心田 Xin Tian
                   </span>
-                )}
-              </div>
-              <button
-                onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-                className={`h-8 rounded-md border border-primary/20 bg-primary/5 px-2 text-[11px] font-semibold text-primary hover:bg-primary/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isCollapsed ? "absolute right-1 top-1" : "shrink-0"}`}
-                aria-label={lang === "zh" ? "Switch to English" : "切换为中文"}
-                title={lang === "zh" ? "English" : "中文"}
-              >
-                {lang === "zh" ? "EN" : "中文"}
-              </button>
+                </div>
+              )}
             </div>
           </SidebarHeader>
 
@@ -525,14 +517,6 @@ function DashboardLayoutContent({
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-                  className="cursor-pointer"
-                >
-                  <Languages className="mr-2 h-4 w-4" />
-                  <span>{lang === "zh" ? "English" : "中文"}</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
                   onClick={logout}
                   className="cursor-pointer text-destructive focus:text-destructive"
                 >
@@ -554,20 +538,40 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset className="w-full min-w-0 max-w-full overflow-x-hidden">
-        {isMobile && (
-          <div className="sticky top-0 z-40 flex h-14 min-w-0 items-center justify-between border-b bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur no-print">
-            <div className="flex min-w-0 items-center gap-2">
-              <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
-              <div className="min-w-0 flex items-center gap-3">
-                <div className="flex flex-col gap-1">
-                  <span className="truncate tracking-tight text-foreground">
-                    {activeLabel}
-                  </span>
-                </div>
-              </div>
-            </div>
+        <div className="sticky top-0 z-40 flex h-16 min-w-0 items-center justify-between gap-3 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:backdrop-blur no-print sm:px-4">
+          <div className="flex min-w-0 items-center gap-3">
+            {isMobile && (
+              <SidebarTrigger className="h-11 w-11 shrink-0 rounded-lg bg-background" />
+            )}
+            <span className="truncate text-sm font-medium tracking-tight text-foreground sm:text-base">
+              {activeLabel}
+            </span>
           </div>
-        )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={lang === "zh" ? "选择语言，目前为中文" : "Select language, currently English"}
+              >
+                <Languages className="h-4 w-4" aria-hidden="true" />
+                <span>{lang === "zh" ? "中文" : "EN"}</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={10} className="min-w-36">
+              <DropdownMenuLabel>语言 / Language</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setLang("zh")} className="cursor-pointer">
+                <span>中文</span>
+                {lang === "zh" && <span className="ml-auto text-primary">✓</span>}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setLang("en")} className="cursor-pointer">
+                <span>English</span>
+                {lang === "en" && <span className="ml-auto text-primary">✓</span>}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <main className="min-w-0 max-w-full flex-1 overflow-x-hidden p-3 sm:p-4">
           <BackendEnglishFallback>{children}</BackendEnglishFallback>
         </main>

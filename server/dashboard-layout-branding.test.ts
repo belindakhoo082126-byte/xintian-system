@@ -8,11 +8,34 @@ const layoutSource = fs.readFileSync(
 );
 
 describe("侧边栏品牌区与导航分类配色", () => {
-  it("uses the approved Xin Tian logo and keeps the language switch in the brand area", () => {
+  it("uses the approved Xin Tian logo and keeps the sidebar header exclusively for navigation", () => {
     expect(layoutSource).toContain('src="/manus-storage/xintian-logo_701b1761.png"');
     expect(layoutSource).toContain('alt="心田 Xin Tian"');
     expect(layoutSource).toContain("心田 Xin Tian");
-    expect(layoutSource).toContain('aria-label={lang === "zh" ? "Switch to English" : "切换为中文"}');
+    expect(layoutSource).toContain('aria-label="Toggle navigation"');
+    expect(layoutSource).toContain('className="flex h-11 w-11 shrink-0 items-center justify-center');
+
+    const sidebarHeader = layoutSource.slice(
+      layoutSource.indexOf("<SidebarHeader"),
+      layoutSource.indexOf("</SidebarHeader>")
+    );
+    expect(sidebarHeader).not.toContain("setLang(");
+    expect(sidebarHeader).not.toContain("Languages");
+  });
+
+  it("renders an independent 44px language menu in the page top bar for desktop and mobile", () => {
+    const sidebarInset = layoutSource.slice(
+      layoutSource.indexOf("<SidebarInset"),
+      layoutSource.indexOf("<main className")
+    );
+
+    expect(sidebarInset).toContain('className="sticky top-0 z-40 flex h-16');
+    expect(sidebarInset).toContain('<SidebarTrigger className="h-11 w-11 shrink-0 rounded-lg bg-background" />');
+    expect(sidebarInset).toContain('className="flex h-11 min-w-11 shrink-0 items-center justify-center');
+    expect(sidebarInset).toContain('aria-label={lang === "zh" ? "选择语言，目前为中文" : "Select language, currently English"}');
+    expect(sidebarInset).toContain('sideOffset={10}');
+    expect(sidebarInset).toContain('onSelect={() => setLang("zh")}');
+    expect(sidebarInset).toContain('onSelect={() => setLang("en")}');
   });
 
   it("assigns distinct accents to primary menu categories while keeping submenu items neutral", () => {
