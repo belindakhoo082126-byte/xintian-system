@@ -79,6 +79,7 @@ interface ManualOrderItem {
   sellingPrice?: string;
   availableStock?: number;
   allowOversold?: boolean;
+  allowPresale?: boolean;
   // V2.0.66: Product classification for repotting remarks filtering
   isPot?: boolean;
   categoryId?: number;
@@ -453,6 +454,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         productType: product.type || "physical",
         availableStock: Number((product as any).stockQuantity ?? 0),
         allowOversold: !!(product as any).allowOversold,
+        allowPresale: !!((product as any).allowPresale ?? (product as any).allowOversold),
         unitPrice,
         subtotal: (quantity * price).toFixed(2),
         unitCost: (product as any).costPrice || (product as any).supplierCost || "0",
@@ -586,7 +588,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const isSubmitting = findCustomerMutation.isPending || createOrderMutation.isPending || addPaymentMutation.isPending;
   const stockShortageItems = manualItems.filter((item) =>
     item.productType === "physical"
-    && !item.allowOversold
+    && !item.allowPresale
     && item.availableStock !== undefined
     && item.quantity > item.availableStock,
   );
@@ -952,7 +954,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             <ScrollArea className="h-[300px] border rounded-lg">
               <div className="p-3 space-y-2">
                 {(productSearchResults as any[]).slice(0, 20).map((p: any) => {
-                  const outOfStock = (p.stockQuantity ?? 0) <= 0 && !p.allowOversold;
+                  const outOfStock = (p.stockQuantity ?? 0) <= 0 && !((p as any).allowPresale ?? p.allowOversold);
                   return (
                   <div key={p.id} className={`rounded-lg border ${outOfStock ? "bg-muted/30" : "bg-card"}`}>
                     <button
@@ -975,6 +977,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                           sellingPrice: p.sellingPrice || p.regularPrice || "0",
                           availableStock: Number(p.stockQuantity ?? 0),
                           allowOversold: Boolean(p.allowOversold),
+                          allowPresale: Boolean((p as any).allowPresale ?? p.allowOversold),
                           isPot: p.isPot || false,
                           categoryId: p.categoryId,
                         }]);
@@ -1207,7 +1210,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                     <Input
                       type="number"
                       min="1"
-                      className={`h-9 ${item.productType === "physical" && !item.allowOversold && item.availableStock !== undefined && item.quantity > item.availableStock ? "border-destructive text-destructive focus-visible:ring-destructive" : ""}`}
+                      className={`h-9 ${item.productType === "physical" && !item.allowPresale && item.availableStock !== undefined && item.quantity > item.availableStock ? "border-destructive text-destructive focus-visible:ring-destructive" : ""}`}
                       value={item.quantity}
                       onChange={(e) => updateManualItem(idx, "quantity", e.target.value === "" ? "" : parseInt(e.target.value) || 0)}
                     />
@@ -1228,7 +1231,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                     )}
                   </div>
                 </div>
-                {item.productType === "physical" && !item.allowOversold && item.availableStock !== undefined && item.quantity > item.availableStock && (
+                {item.productType === "physical" && !item.allowPresale && item.availableStock !== undefined && item.quantity > item.availableStock && (
                   <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                     {translate("库存不足：可售库存只剩 {stock} 件，当前数量为 {quantity} 件。请调整数量后再提交。", "Insufficient stock: only {stock} unit(s) are available, but the quantity is {quantity}. Adjust it before submitting.", {
                       stock: String(Math.max(0, item.availableStock)),

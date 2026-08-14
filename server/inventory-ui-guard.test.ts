@@ -6,7 +6,7 @@ const orderCreateSource = fs.readFileSync(path.resolve(process.cwd(), "client/sr
 const productsSource = fs.readFileSync(path.resolve(process.cwd(), "client/src/pages/ProductsV2.tsx"), "utf8");
 const routerSource = fs.readFileSync(path.resolve(process.cwd(), "server/routers.ts"), "utf8");
 
-describe("库存提示与允许超卖快捷控制", () => {
+describe("库存提示与商品级预售快捷控制", () => {
   it("marks quantity inputs and disables preview and submission when an ordinary physical product exceeds available stock", () => {
     expect(orderCreateSource).toContain("const hasStockShortage = stockShortageItems.length > 0");
     expect(orderCreateSource).toContain("border-destructive text-destructive");
@@ -15,9 +15,9 @@ describe("库存提示与允许超卖快捷控制", () => {
     expect(orderCreateSource).toContain("disabled={isSubmitting || manualItems.length === 0 || hasStockShortage}");
   });
 
-  it("provides a persisted inline allow-oversold switch for physical products", () => {
+  it("provides a persisted inline product-level presale switch for physical products", () => {
     expect(routerSource).toContain("allowOversold: z.boolean().optional()");
-    expect(productsSource).toContain("updateMutation.mutate({ id: p.id, allowOversold })");
-    expect(productsSource).toContain("Allow Oversold");
+    expect(productsSource).toContain("updateMutation.mutate({ id: p.id, allowPresale })");
+    expect(productsSource).toContain("Allow presale");
   });
 });

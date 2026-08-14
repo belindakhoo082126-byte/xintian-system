@@ -112,11 +112,11 @@ export default function MallCheckout() {
     if (!item) return;
     const requested = Math.max(1, Number.isFinite(requestedQuantity) ? requestedQuantity : 1);
     const availableStock = Number(item.availableStock ?? item.stockQuantity ?? Number.POSITIVE_INFINITY);
-    const allowOversell = Boolean(item.allowOversell);
-    if (!allowOversell && requested > availableStock) {
+    const allowPresale = Boolean(item.allowPresale ?? item.allowOversell);
+    if (!allowPresale && requested > availableStock) {
       toast.error(`库存不足，目前最多可购买 ${Math.max(availableStock, 0)} 件。`);
     }
-    const quantity = !allowOversell && Number.isFinite(availableStock) ? Math.max(1, Math.min(requested, availableStock)) : requested;
+    const quantity = !allowPresale && Number.isFinite(availableStock) ? Math.max(1, Math.min(requested, availableStock)) : requested;
     const nextCart = cart.map((cartItem, index) => index === itemIndex
       ? { ...cartItem, quantity, subtotal: (parseFloat(cartItem.unitPrice) * quantity).toFixed(2) }
       : cartItem,

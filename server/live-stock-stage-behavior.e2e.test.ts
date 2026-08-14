@@ -3,8 +3,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   adjustLiveRoomProductStock,
   createOrderFromLiveCapture,
+  createPurchaseOrder,
   getDb,
   getProductOrderDetails,
+  receivePurchaseOrder,
   updateOrderStatus,
 } from "./db";
 import {
@@ -17,7 +19,10 @@ import {
   orderOperationLogs,
   orderStatusLogs,
   orders,
+  purchaseOrderItems,
+  purchaseOrders,
   products,
+  suppliers,
 } from "../drizzle/schema";
 
 /**
@@ -32,6 +37,8 @@ describe.sequential("直播库存与订单阶段隔离行为验证", () => {
   const productIds: number[] = [];
   const customerIds: number[] = [];
   const liveProductIds: number[] = [];
+  const purchaseOrderIds: number[] = [];
+  const supplierIds: number[] = [];
   let liveRoomId: number | undefined;
 
   const asInsertId = (result: any) => Number(result?.[0]?.insertId ?? result?.insertId);
@@ -49,10 +56,14 @@ describe.sequential("直播库存与订单阶段隔离行为验证", () => {
       `${qaKey} 预售商品`,
     ]));
     const markedRoomRows = await db.select({ id: liveRooms.id }).from(liveRooms).where(eq(liveRooms.notes, qaKey));
+    const markedPurchaseOrderRows = await db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(eq(purchaseOrders.notes, qaKey));
+    const markedSupplierRows = await db.select({ id: suppliers.id }).from(suppliers).where(eq(suppliers.name, `${qaKey} 供应商`));
     const targetOrderIds = [...new Set([...orderIds, ...markedOrderRows.map((row) => Number(row.id))])];
     const targetCustomerIds = [...new Set([...customerIds, ...markedCustomerRows.map((row) => Number(row.id))])];
     const targetProductIds = [...new Set([...productIds, ...markedProductRows.map((row) => Number(row.id))])];
     const targetRoomIds = [...new Set([...(liveRoomId ? [liveRoomId] : []), ...markedRoomRows.map((row) => Number(row.id))])];
+    const targetPurchaseOrderIds = [...new Set([...purchaseOrderIds, ...markedPurchaseOrderRows.map((row) => Number(row.id))])];
+    const targetSupplierIds = [...new Set([...supplierIds, ...markedSupplierRows.map((row) => Number(row.id))])];
     const targetLiveProductIds = [...new Set([
       ...liveProductIds,
       ...(targetRoomIds.length > 0
@@ -67,6 +78,10 @@ describe.sequential("直播库存与订单阶段隔离行为验证", () => {
       await db.delete(orderItems).where(inArray(orderItems.orderId, targetOrderIds));
       await db.delete(orders).where(inArray(orders.id, targetOrderIds));
     }
+    if (targetPurchaseOrderIds.length > 0) {
+      await db.delete(purchaseOrderItems).where(inArray(purchaseOrderItems.purchaseOrderId, targetPurchaseOrderIds));
+      await db.delete(purchaseOrders).where(inArray(purchaseOrders.id, targetPurchaseOrderIds));
+    }
     if (targetProductIds.length > 0) {
       await db.delete(inventoryAdjustments).where(inArray(inventoryAdjustments.productId, targetProductIds));
     }
@@ -76,13 +91,14 @@ describe.sequential("直播库存与订单阶段隔离行为验证", () => {
     if (targetRoomIds.length > 0) await db.delete(liveRooms).where(inArray(liveRooms.id, targetRoomIds));
     if (targetProductIds.length > 0) await db.delete(products).where(inArray(products.id, targetProductIds));
     if (targetCustomerIds.length > 0) await db.delete(customers).where(inArray(customers.id, targetCustomerIds));
+    if (targetSupplierIds.length > 0) await db.delete(suppliers).where(inArray(suppliers.id, targetSupplierIds));
   }
 
   afterEach(async () => {
     await cleanupQaRows();
   });
 
-  it("库存调整同步主库存；现货与预售按不同库存规则创建订单，并按状态在三阶段间迁移", async () => {
+  it("库存调整同步主库存；商品级预售允许负库存，进货入库按增量抵销，并按状态在三阶段间迁移", async () => {
     const db = await getDb();
     expect(db, "DATABASE_URL 必须可用，才可进行真实隔离演练").toBeTruthy();
     await cleanupQaRows();
@@ -100,6 +116,10 @@ describe.sequential("直播库存与订单阶段隔离行为验证", () => {
       customerIds.push(asInsertId(customerInsert));
     }
 
+    const supplierInsert = await db!.insert(suppliers).values({ name: `${qaKey} 供应商`, notes: qaKey });
+    const supplierId = asInsertId(supplierInsert);
+    supplierIds.push(supplierId);
+
     const normalProductInsert = await db!.insert(products).values({
       name: `${qaKey} 现货商品`, sku: `${qaKey}-N`.slice(0, 30), keyword: `${qaKey}-N`.slice(0, 50),
       type: "physical", status: "active", sellingPrice: "20.00", cost: "8.00", currentCost: "8.00",
@@ -108,7 +128,7 @@ describe.sequential("直播库存与订单阶段隔离行为验证", () => {
     const preorderProductInsert = await db!.insert(products).values({
       name: `${qaKey} 预售商品`, sku: `${qaKey}-P`.slice(0, 30), keyword: `${qaKey}-P`.slice(0, 50),
       type: "physical", status: "active", sellingPrice: "30.00", cost: "12.00", currentCost: "12.00",
-      stockQuantity: 5, reservedQuantity: 0, allowOversold: false, orderCategory: "local",
+      stockQuantity: 10, reservedQuantity: 0, allowPresale: true, allowOversold: true, orderCategory: "local",
     });
     const normalProductId = asInsertId(normalProductInsert);
     const preorderProductId = asInsertId(preorderProductInsert);
@@ -125,7 +145,7 @@ describe.sequential("直播库存与订单阶段隔离行为验证", () => {
     });
     const preorderLiveProductInsert = await db!.insert(liveRoomProducts).values({
       liveRoomId, productId: preorderProductId, keyword: "QAP", displayName: `${qaKey} 预售商品`, price: "30.00",
-      startStock: 5, availableStock: 5, reservedCount: 0, orderedCount: 0, allowPreorder: true, preorderCount: 0, status: "active",
+      startStock: 10, availableStock: 10, reservedCount: 0, orderedCount: 0, allowPreorder: true, preorderCount: 0, status: "active",
     });
     const normalLiveProductId = asInsertId(normalLiveProductInsert);
     const preorderLiveProductId = asInsertId(preorderLiveProductInsert);
@@ -152,31 +172,41 @@ describe.sequential("直播库存与订单阶段隔离行为验证", () => {
     orderIds.push(normalCapture.orderId);
 
     const preorderCapture = await createOrderFromLiveCapture({
-      commenterName: `${qaKey} 客户 2`, commenterPsid: `${qaKey}-PSID-2`, commentMessage: "QAP x3",
+      commenterName: `${qaKey} 客户 2`, commenterPsid: `${qaKey}-PSID-2`, commentMessage: "QAP x12",
       commentId: `${qaKey}-COMMENT-P`, liveRoomId, liveType: "normal",
-      matchedProducts: [{ keyword: "QAP", quantity: 3, productId: preorderProductId, productName: `${qaKey} 预售商品`, productSku: `${qaKey}-P`.slice(0, 30), unitPrice: "30.00", liveRoomProductId: preorderLiveProductId, isPreorder: true }],
+      matchedProducts: [{ keyword: "QAP", quantity: 12, productId: preorderProductId, productName: `${qaKey} 预售商品`, productSku: `${qaKey}-P`.slice(0, 30), unitPrice: "30.00", liveRoomProductId: preorderLiveProductId }],
     });
     orderIds.push(preorderCapture.orderId);
 
     const [normalProduct, preorderProduct] = await db!.select().from(products).where(inArray(products.id, productIds));
     expect(Number(normalProduct.stockQuantity)).toBe(5); // 5 + 2 直播补货 - 2 成功现货订单
-    expect(Number(preorderProduct.stockQuantity)).toBe(5); // 预售不扣现货库存
+    expect(Number(preorderProduct.stockQuantity)).toBe(-2); // 库存 10 成功下单 12，商品级预售允许负库存
 
     const [normalLiveProduct, preorderLiveProduct] = await db!.select().from(liveRoomProducts).where(inArray(liveRoomProducts.id, liveProductIds));
     expect(Number(normalLiveProduct.startStock)).toBe(7);
     expect(Number(normalLiveProduct.availableStock)).toBe(5);
     expect(Number(normalLiveProduct.reservedCount)).toBe(2);
     expect(Number(normalLiveProduct.orderedCount)).toBe(2);
-    expect(Number(preorderLiveProduct.startStock)).toBe(5);
-    expect(Number(preorderLiveProduct.availableStock)).toBe(5);
-    expect(Number(preorderLiveProduct.reservedCount)).toBe(0);
-    expect(Number(preorderLiveProduct.orderedCount)).toBe(3);
-    expect(Number(preorderLiveProduct.preorderCount)).toBe(3);
+    expect(Number(preorderLiveProduct.startStock)).toBe(10);
+    expect(Number(preorderLiveProduct.availableStock)).toBe(0);
+    expect(Number(preorderLiveProduct.reservedCount)).toBe(12);
+    expect(Number(preorderLiveProduct.orderedCount)).toBe(12);
+    expect(Number(preorderLiveProduct.preorderCount)).toBe(0);
+
+    const purchase = await createPurchaseOrder({
+      supplierId,
+      notes: qaKey,
+      items: [{ productId: preorderProductId, quantity: 15, unitCost: "12.00", subtotal: "180.00" }],
+    });
+    purchaseOrderIds.push(purchase.poId);
+    await receivePurchaseOrder(purchase.poId);
+    const [restockedProduct] = await db!.select({ stockQuantity: products.stockQuantity }).from(products).where(eq(products.id, preorderProductId));
+    expect(Number(restockedProduct.stockQuantity)).toBe(13); // -2 + 本次入库 15 = 13
 
     const hasStageRow = (rows: Array<{ orderId: number; quantity: number }>, orderId: number, quantity: number) =>
       rows.some((row) => Number(row.orderId) === orderId && Number(row.quantity) === quantity);
     expect(hasStageRow(await getProductOrderDetails(normalProductId, "ordered"), normalCapture.orderId, 2)).toBe(true);
-    expect(hasStageRow(await getProductOrderDetails(preorderProductId, "ordered"), preorderCapture.orderId, 3)).toBe(true);
+    expect(hasStageRow(await getProductOrderDetails(preorderProductId, "ordered"), preorderCapture.orderId, 12)).toBe(true);
 
     await updateOrderStatus(normalCapture.orderId, { physicalStatus: "packing" });
     expect(hasStageRow(await getProductOrderDetails(normalProductId, "paid"), normalCapture.orderId, 2)).toBe(true);

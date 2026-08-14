@@ -912,15 +912,16 @@ async function processComment(params: {
           for (const group of roomProductGroups) {
             for (const rp of group.variations || [group]) {
               if (rp.status === 'paused') continue;
-              if (rp.status === 'sold_out' && !rp.allowPreorder) continue;
-              roomProductMap.set(rp.keyword.toUpperCase().replace(/\s+/g, ''), rp);
+              const productAllowPresale = Boolean(group.productAllowPresale);
+              if (rp.status === 'sold_out' && !productAllowPresale) continue;
+              roomProductMap.set(rp.keyword.toUpperCase().replace(/\s+/g, ''), { ...rp, productAllowPresale });
             }
           }
           for (const kw of keywords) {
             const upperKw = kw.keyword.toUpperCase().replace(/\s+/g, '');
             const roomProduct = roomProductMap.get(upperKw);
             if (roomProduct) {
-              if (roomProduct.availableStock <= 0 && !roomProduct.allowPreorder) {
+              if (roomProduct.availableStock <= 0 && !roomProduct.productAllowPresale) {
                 unmatched.push({ keyword: kw.keyword, reason: 'sold_out' });
               } else {
                 matched.push({
@@ -931,7 +932,8 @@ async function processComment(params: {
                   productSku: '',
                   unitPrice: parseFloat(roomProduct.price),
                   liveRoomProductId: roomProduct.id,
-                  isPreorder: roomProduct.availableStock <= 0 && roomProduct.allowPreorder,
+                  // 统一预售仍扣减商品库存并允许负数，不建立现货／预售的订单项目区分。
+                  isPreorder: false,
                 });
               }
             } else {

@@ -103,11 +103,11 @@ export default function MallProductDetail() {
   const selectedVariant = variants.find((v: any) => v.id === selectedVariantId);
   const unitPrice = selectedVariant?.sellingPrice || product!.sellingPrice || "0";
   const subtotal = (parseFloat(unitPrice) * quantity).toFixed(2);
-  const selectedVariantStock = selectedVariant as (typeof selectedVariant & { availableStock?: number; allowOversold?: boolean }) | undefined;
-  const productStock = product as typeof product & { availableStock?: number; allowOversold?: boolean };
-  const allowOversell = Boolean(selectedVariantStock?.allowOversold ?? productStock.allowOversold);
+  const selectedVariantStock = selectedVariant as (typeof selectedVariant & { availableStock?: number; allowOversold?: boolean; allowPresale?: boolean }) | undefined;
+  const productStock = product as typeof product & { availableStock?: number; allowOversold?: boolean; allowPresale?: boolean };
+  const allowPresale = Boolean(selectedVariantStock?.allowPresale ?? productStock.allowPresale ?? selectedVariantStock?.allowOversold ?? productStock.allowOversold);
   const availableStock = Number(selectedVariantStock?.availableStock ?? selectedVariantStock?.stockQuantity ?? productStock.availableStock ?? productStock.stockQuantity ?? 0);
-  const isSoldOut = !allowOversell && availableStock <= 0;
+  const isSoldOut = !allowPresale && availableStock <= 0;
   const bilingualProductText = (zh?: string | null, en?: string | null) => {
     const preferred = lang === "en" ? en : zh;
     const fallback = lang === "en" ? zh : en;
@@ -119,7 +119,7 @@ export default function MallProductDetail() {
 
   function setSafeQuantity(nextQuantity: number) {
     const requested = Math.max(1, Number.isFinite(nextQuantity) ? nextQuantity : 1);
-    if (!allowOversell && requested > availableStock) {
+    if (!allowPresale && requested > availableStock) {
       toast.error(t(`库存不足，目前最多可购买 ${Math.max(availableStock, 0)} 件。`, `Insufficient stock. You can purchase up to ${Math.max(availableStock, 0)} item(s).`));
       setQuantity(Math.max(1, availableStock));
       return;
@@ -155,7 +155,7 @@ export default function MallProductDetail() {
       const cart = JSON.parse(localStorage.getItem("mall_cart") || "[]");
       const existing = cart.find((i: any) => i.productId === product!.id && i.variationId === selectedVariantId);
       if (existing) {
-        if (!allowOversell && existing.quantity + quantity > availableStock) {
+        if (!allowPresale && existing.quantity + quantity > availableStock) {
           toast.error(t(`库存不足，目前最多可购买 ${availableStock} 件。`, `Insufficient stock. You can purchase up to ${availableStock} item(s).`));
           return false;
         }
@@ -172,7 +172,7 @@ export default function MallProductDetail() {
           unitPrice,
           subtotal,
           availableStock,
-          allowOversell,
+          allowPresale,
         });
       }
       localStorage.setItem("mall_cart", JSON.stringify(cart));
@@ -359,7 +359,7 @@ export default function MallProductDetail() {
               <div className="flex items-center gap-3">
                 <Button variant="outline" size="icon" onClick={() => setQuantity(Math.max(1, quantity - 1))}><Minus className="h-4 w-4" /></Button>
                 <Input className="w-20 text-center" value={quantity} onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))} />
-                <Button variant="outline" size="icon" onClick={() => setSafeQuantity(quantity + 1)} disabled={isSoldOut || (!allowOversell && quantity >= availableStock)}><Plus className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" onClick={() => setSafeQuantity(quantity + 1)} disabled={isSoldOut || (!allowPresale && quantity >= availableStock)}><Plus className="h-4 w-4" /></Button>
               </div>
               {isSoldOut && <p className="mt-2 text-sm font-medium text-red-600">{t("商品已售罄", "Sold out")}</p>}
             </div>

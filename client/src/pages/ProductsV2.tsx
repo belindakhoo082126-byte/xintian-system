@@ -655,7 +655,7 @@ export default function ProductsV2() {
                 <TableHead>{translate("售价", "Selling Price")}</TableHead>
                 <TableHead>{translate("状态", "Status")}</TableHead>
                 <TableHead>{translate("库存", "Stock")}</TableHead>
-                <TableHead>{translate("允许超卖", "Allow Oversold")}</TableHead>
+                <TableHead>{translate("商品预售", "Product Presale")}</TableHead>
                 <TableHead>{translate("商品标记", "Product Flags")}</TableHead>
                 <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
               </TableRow>
@@ -772,13 +772,13 @@ export default function ProductsV2() {
                     {p.type === "physical" ? (
                       <div className="flex items-center gap-2">
                         <Switch
-                          checked={!!p.allowOversold}
+                          checked={!!p.allowPresale}
                           disabled={updateMutation.isPending}
-                          onCheckedChange={(allowOversold) => updateMutation.mutate({ id: p.id, allowOversold })}
-                          aria-label={translate(`允许「{name}」超卖`, `Allow oversold for "{name}"`, { name: p.name })}
+                          onCheckedChange={(allowPresale) => updateMutation.mutate({ id: p.id, allowPresale })}
+                          aria-label={translate(`允许「{name}」预售`, `Allow presale for "{name}"`, { name: p.name })}
                         />
-                        <span className={`text-sm font-medium ${p.allowOversold ? "text-amber-700" : "text-muted-foreground"}`}>
-                          {p.allowOversold ? translate("已开启", "On") : translate("未开启", "Off")}
+                        <span className={`text-sm font-medium ${p.allowPresale ? "text-amber-700" : "text-muted-foreground"}`}>
+                          {p.allowPresale ? translate("已开启预售", "Presale on") : translate("未开启", "Off")}
                         </span>
                       </div>
                     ) : translate("—", "—")}

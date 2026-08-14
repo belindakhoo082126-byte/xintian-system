@@ -1013,7 +1013,8 @@ export async function reserveProductStocksForOrder(items: Array<{ productId: num
       }).where(and(
         eq(products.id, productId),
         or(
-          eq(products.allowOversold, true),
+        eq(products.allowPresale, true),
+        eq(products.allowOversold, true),
           and(
             or(eq(products.allowOversold, false), isNull(products.allowOversold)),
             // 未转换的 AI 草稿也已经占用可售数，正式订单不可绕过它们。
@@ -4199,7 +4200,9 @@ export async function createProductEnhanced(data: {
     videoUrl: data.videoUrl,
     description: data.description,
     isSpecial: data.isSpecial ?? false,
+    // allowPresale 是商品级唯一业务开关；allowOversold 仅为历史库存守卫兼容字段。
     allowPresale: data.allowPresale ?? false,
+    allowOversold: data.allowPresale ?? false,
     allowStandaloneShipping: data.allowStandaloneShipping ?? false,
     standaloneShippingMethod: (data.standaloneShippingMethod as any) || 'fixed_fee',
     standaloneShippingFee: normalizedData.standaloneShippingFee,
@@ -4276,6 +4279,7 @@ export async function updateProductEnhanced(id: number, data: Partial<{
   description: string;
   isSpecial: boolean;
   allowPresale: boolean;
+  allowOversold: boolean;
   allowStandaloneShipping: boolean;
   standaloneShippingMethod: string;
   standaloneShippingFee: string;
@@ -4300,6 +4304,12 @@ export async function updateProductEnhanced(id: number, data: Partial<{
   const db = await getDb();
   if (!db) throw new Error('Database not available');
   const { productImages: imageUrls, ...updateData } = data;
+  // 统一预售语义：新界面只写 allowPresale；旧入口若仍写 allowOversold，则同步回商品级开关。
+  if (updateData.allowPresale !== undefined) {
+    (updateData as any).allowOversold = updateData.allowPresale;
+  } else if ((updateData as any).allowOversold !== undefined) {
+    (updateData as any).allowPresale = (updateData as any).allowOversold;
+  }
   if (data.keyword) {
     updateData.keyword = data.keyword.toUpperCase().replace(/\s+/g, '');
   }
@@ -8258,20 +8268,21 @@ export async function createOrderFromLiveCapture(data: {
     }
   }
 
-  // 已开启直播预售的商品只记录预售，不占用现货库存；其余商品仍按原子库存保留处理。
-  const inStockProducts = data.matchedProducts.filter((p) => !p.isPreorder);
+  // 商品级预售仍使用同一原子库存账本扣减，库存可显示为负数；不再维护直播房专属预售数量。
+  const reservableProducts = data.matchedProducts.map((p) => ({ productId: p.productId, quantity: p.quantity }));
 
-  // V2.1.30补充4: Unified stock check with allowOversold support
-  for (const p of inStockProducts) {
+  for (const p of reservableProducts) {
     const productRows = await db.select({
       id: products.id,
       stockQuantity: products.stockQuantity,
       name: products.name,
+      allowPresale: products.allowPresale,
       allowOversold: products.allowOversold,
     }).from(products).where(eq(products.id, p.productId)).limit(1);
     if (productRows.length > 0) {
       const product = productRows[0];
-      if (!product.allowOversold && product.stockQuantity !== null && product.stockQuantity < p.quantity) {
+      const allowsPresale = Boolean(product.allowPresale || product.allowOversold);
+      if (!allowsPresale && product.stockQuantity !== null && product.stockQuantity < p.quantity) {
         throw new Error(`STOCK_INSUFFICIENT: ${product.name} 库存不足，目前最多可下单 ${product.stockQuantity} 件`);
       }
     }
@@ -8343,7 +8354,7 @@ export async function createOrderFromLiveCapture(data: {
   
   if (existingOrderId) {
     // Merge into existing order: add new items
-    await reserveProductStocksForOrder(inStockProducts);
+    await reserveProductStocksForOrder(reservableProducts);
     for (const p of data.matchedProducts) {
       const itemSubtotal = (parseFloat(p.unitPrice) * p.quantity).toFixed(2);
       await db.insert(orderItems).values({
@@ -8358,7 +8369,7 @@ export async function createOrderFromLiveCapture(data: {
         facebookKeyword: p.keyword,
         discount: "0.00",
         itemSource: "facebook_live",
-        salesMode: p.isPreorder ? (isImportOrder ? "import_preorder" : "presale") : "normal",
+        salesMode: isImportOrder ? "import_preorder" : "normal",
         priceType: p.priceType || "retail",
         originalUnitPrice: p.originalUnitPrice || null,
       });
@@ -8403,7 +8414,7 @@ export async function createOrderFromLiveCapture(data: {
   const finalTotal = subtotal - autoCreditUsed;
 
   // V2.1.02: Use XTC prefix for import_preorder live rooms, XT for normal live rooms
-  await reserveProductStocksForOrder(inStockProducts);
+  await reserveProductStocksForOrder(reservableProducts);
   const prefix = isImportOrder ? "XTC" : "XT";
   const orderNumber = await generateOrderNumber(prefix);
   const secureToken = generateSecureToken();
@@ -8461,7 +8472,7 @@ export async function createOrderFromLiveCapture(data: {
       facebookKeyword: p.keyword,
       discount: "0.00",
       itemSource: "facebook_live",
-      salesMode: p.isPreorder ? (isImportOrder ? "import_preorder" : "presale") : "normal",
+      salesMode: isImportOrder ? "import_preorder" : "normal",
       priceType: p.priceType || "retail",
       originalUnitPrice: p.originalUnitPrice || null,
     });
@@ -8489,16 +8500,22 @@ export async function createOrderFromLiveCapture(data: {
     orderId,
     commentDate: new Date(),
   });
-  await syncLiveRoomProductCounts(data.liveRoomId, data.matchedProducts);
+  await syncLiveRoomProductCounts(
+    data.liveRoomId,
+    data.matchedProducts,
+  );
   
   broadcastChanges(["orders", "inventory", "dashboard", "customers"]);
   return { orderId, orderNumber, totalAmount: finalTotal.toFixed(2), secureToken, creditUsed: autoCreditUsed.toFixed(2) };
 }
 
-/** 直播现货成功捉单后更新卡片数量；预售只增加预售统计而不扣库存。 */
+/**
+ * 每次直播成功捉单都会进入同一数量账本。商品级预售只决定统一库存
+ * 预留能否穿透零库存；它不会再创建第二套直播数量、库存或订单统计逻辑。
+ */
 async function syncLiveRoomProductCounts(
   liveRoomId: number | undefined,
-  items: Array<{ liveRoomProductId?: number; productId: number; quantity: number; isPreorder?: boolean }>,
+  items: Array<{ liveRoomProductId?: number; productId: number; quantity: number }>,
 ) {
   if (!liveRoomId) return;
   const db = await getDb();
@@ -8508,21 +8525,13 @@ async function syncLiveRoomProductCounts(
     if (!item.liveRoomProductId) continue;
     const quantity = Number(item.quantity);
     if (!Number.isFinite(quantity) || quantity <= 0) continue;
-    const isPreorder = Boolean(item.isPreorder);
     const updated = await db.update(liveRoomProducts).set({
       orderedCount: sql`${liveRoomProducts.orderedCount} + ${quantity}`,
-      reservedCount: isPreorder
-        ? sql`${liveRoomProducts.reservedCount}`
-        : sql`${liveRoomProducts.reservedCount} + ${quantity}`,
-      preorderCount: isPreorder
-        ? sql`${liveRoomProducts.preorderCount} + ${quantity}`
-        : sql`${liveRoomProducts.preorderCount}`,
-      availableStock: isPreorder
-        ? sql`${liveRoomProducts.availableStock}`
-        : sql`GREATEST(0, ${liveRoomProducts.availableStock} - ${quantity})`,
-      status: isPreorder
-        ? sql`${liveRoomProducts.status}`
-        : sql`CASE WHEN ${liveRoomProducts.availableStock} - ${quantity} <= 0 AND ${liveRoomProducts.allowPreorder} = false THEN 'sold_out' ELSE ${liveRoomProducts.status} END`,
+      reservedCount: sql`${liveRoomProducts.reservedCount} + ${quantity}`,
+      preorderCount: sql`${liveRoomProducts.preorderCount}`,
+      // 直播卡片可售数不显示为负数；实际主商品库存会由统一预留账本显示负数。
+      availableStock: sql`GREATEST(0, ${liveRoomProducts.availableStock} - ${quantity})`,
+      status: sql`CASE WHEN ${liveRoomProducts.availableStock} - ${quantity} <= 0 AND ${liveRoomProducts.allowPreorder} = false THEN 'sold_out' ELSE ${liveRoomProducts.status} END`,
     }).where(and(
       eq(liveRoomProducts.id, item.liveRoomProductId),
       eq(liveRoomProducts.liveRoomId, liveRoomId),
@@ -12440,6 +12449,7 @@ export async function getLiveRoomProducts(liveRoomId: number) {
       stockQuantity: products.stockQuantity,
       status: products.status,
       isPreOrder: products.isPreOrder,
+      allowPresale: products.allowPresale,
       categoryId: products.categoryId,
       aiTags: products.aiTags,
       aiSellingPoints: products.aiSellingPoints,
@@ -12478,6 +12488,7 @@ export async function getLiveRoomProducts(liveRoomId: number) {
         productStockQuantity: product.stockQuantity,
         productStatus: product.status,
         productIsPreOrder: product.isPreOrder,
+        productAllowPresale: product.allowPresale,
         productCategoryId: product.categoryId,
         productAiTags: product.aiTags,
         productAiSellingPoints: product.aiSellingPoints,
@@ -13095,7 +13106,7 @@ export async function batchAddProductsToLiveRoom(liveRoomId: number, items: Arra
       reservedCount: 0,
       availableStock: Number(p.stockQuantity || 0),
       orderedCount: 0,
-      allowPreorder: false,
+      allowPreorder: Boolean(p.allowPresale),
       preorderCount: 0,
       status: "active",
       sortOrder: nextSort + i,
@@ -13112,7 +13123,14 @@ export async function batchAddProductsToLiveRoom(liveRoomId: number, items: Arra
 export async function toggleLiveRoomProductPreorder(id: number, allowPreorder: boolean) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(liveRoomProducts).set({ allowPreorder }).where(eq(liveRoomProducts.id, id));
+  const roomProduct = await db.select({ productId: liveRoomProducts.productId })
+    .from(liveRoomProducts).where(eq(liveRoomProducts.id, id)).limit(1);
+  if (!roomProduct[0]) throw new Error("Live room product not found");
+  // 直播中的开关即更新商品主档，其他下单入口立即遵循相同预售规则。
+  await db.update(products).set({ allowPresale: allowPreorder, allowOversold: allowPreorder })
+    .where(eq(products.id, roomProduct[0].productId));
+  await db.update(liveRoomProducts).set({ allowPreorder })
+    .where(eq(liveRoomProducts.productId, roomProduct[0].productId));
   broadcastChange("liveRooms");
   return { success: true };
 }
