@@ -18,6 +18,12 @@ import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
+import {
+  LargeOperationDialogBody,
+  LargeOperationDialogContent,
+  LargeOperationDialogFooter,
+  LargeOperationDialogHeader,
+} from "@/components/LargeOperationDialog";
 
 const RAW_PRODUCT_TYPES = [
   { value: "physical", zh: "实体商品", en: "Physical Product" },
@@ -842,33 +848,31 @@ export default function ProductsV2() {
 
       {/* Product Editor Dialog - Step Wizard */}
       <Dialog open={dialogOpen} onOpenChange={(v) => { setDialogOpen(v); if (!v) resetForm(); }}>
-        <DialogContent className="max-h-[94vh] w-[calc(100vw-2rem)] max-w-[96rem] overflow-y-auto px-6 py-6 sm:px-8">
-          <DialogHeader>
+        <LargeOperationDialogContent>
+          <LargeOperationDialogHeader>
             <DialogTitle>{editingId ? translate("编辑商品", "Edit Product") : translate("新增商品", "Add Product")}</DialogTitle>
-          </DialogHeader>
-
-          {/* Step Indicator */}
-          <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-2">
-            {RAW_STEPS.map((s, i) => (
-              <div key={i} className="flex items-center gap-1 shrink-0">
+            {/* Step Indicator */}
+            <div className="grid grid-cols-5 gap-2 pt-4">
+              {RAW_STEPS.map((s, i) => (
                 <button
+                  key={i}
                   type="button"
                   onClick={() => setStep(i)}
-                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-base transition-colors cursor-pointer hover:opacity-80 ${
+                  className={`flex min-w-0 items-center justify-center gap-2 rounded-lg px-3 py-2 text-base transition-colors cursor-pointer hover:opacity-80 ${
                     i === step ? "bg-primary text-primary-foreground" :
                     i < step ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
                   }`}
                 >
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full text-sm font-medium">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-sm font-medium">
                     {i < step ? <Check className="h-3 w-3" /> : i + 1}
                   </span>
-                  {translate(s.zh, s.en)}
+                  <span className="truncate">{translate(s.zh, s.en)}</span>
                 </button>
-                {i < RAW_STEPS.length - 1 && <div className="w-2 h-px bg-border" />}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </LargeOperationDialogHeader>
 
+          <LargeOperationDialogBody>
           {/* Loading state for edit */}
           {editingId && detailQuery.isLoading ? (
             <div className="text-center py-12 text-muted-foreground">{translate("加载商品详情中...", "Loading product details...")}</div>
@@ -1843,24 +1847,26 @@ export default function ProductsV2() {
                 )}
               </div>
 
-              {/* Navigation Buttons */}
-              <div className="flex items-center justify-between pt-4 border-t">
-                <Button variant="outline" onClick={() => step > 0 ? setStep(step - 1) : setDialogOpen(false)}>
-                  {step === 0 ? translate("取消", "Cancel") : translate("上一步", "Previous Step")}
-                </Button>
-                {step < RAW_STEPS.length - 1 ? (
-                  <Button onClick={() => setStep(step + 1)} disabled={step === 0 && (!form.name.trim() || !form.keyword.trim() || !keywordAvailable)}>
-                    {translate("下一步", "Next Step")}
-                  </Button>
-                ) : (
-                  <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
-                    {editingId ? translate("保存", "Save") : translate("创建商品", "Create Product")}
-                  </Button>
-                )}
-              </div>
             </>
           )}
-        </DialogContent>
+          </LargeOperationDialogBody>
+          <LargeOperationDialogFooter>
+            <div className="flex w-full items-center justify-between">
+              <Button variant="outline" onClick={() => step > 0 ? setStep(step - 1) : setDialogOpen(false)}>
+                {step === 0 ? translate("取消", "Cancel") : translate("上一步", "Previous Step")}
+              </Button>
+              {step < RAW_STEPS.length - 1 ? (
+                <Button onClick={() => setStep(step + 1)} disabled={step === 0 && (!form.name.trim() || !form.keyword.trim() || !keywordAvailable)}>
+                  {translate("下一步", "Next Step")}
+                </Button>
+              ) : (
+                <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
+                  {editingId ? translate("保存", "Save") : translate("创建商品", "Create Product")}
+                </Button>
+              )}
+            </div>
+          </LargeOperationDialogFooter>
+        </LargeOperationDialogContent>
       </Dialog>
 
       {/* Variant Dialog */}

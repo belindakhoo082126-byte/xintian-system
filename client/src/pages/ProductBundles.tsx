@@ -20,6 +20,12 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  LargeOperationDialogBody,
+  LargeOperationDialogContent,
+  LargeOperationDialogFooter,
+  LargeOperationDialogHeader,
+} from "@/components/LargeOperationDialog";
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
@@ -609,13 +615,14 @@ function CreateBundleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      <LargeOperationDialogContent>
+        <LargeOperationDialogHeader>
           <DialogTitle>创建组合包</DialogTitle>
-        </DialogHeader>
+        </LargeOperationDialogHeader>
+        <LargeOperationDialogBody>
         <div className="space-y-4">
           {/* Basic Info */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <div>
               <Label>组合包名称 *</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="如：J5 营养组合" />
@@ -690,7 +697,7 @@ function CreateBundleDialog({
           {/* Price Summary */}
           <Card className="bg-muted/50">
             <CardContent className="p-4">
-              <div className="grid grid-cols-4 gap-4 text-center">
+              <div className="grid grid-cols-1 gap-4 text-center sm:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <p className="text-xs text-muted-foreground">单品原价合计</p>
                   <p className="text-lg font-semibold">RM {originalTotal.toFixed(2)}</p>
@@ -733,15 +740,15 @@ function CreateBundleDialog({
                 </Button>
               </div>
             </div>
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-16">图片</TableHead>
-                  <TableHead>商品</TableHead>
-                  <TableHead className="text-right">每组数量</TableHead>
-                  <TableHead className="text-right">单价</TableHead>
-                  <TableHead className="text-right">成本</TableHead>
-                  <TableHead className="text-right">可用库存</TableHead>
+                  <TableHead className="w-[28%]">商品</TableHead>
+                  <TableHead className="w-[14%] text-right">每组数量</TableHead>
+                  <TableHead className="w-[13%] text-right">单价</TableHead>
+                  <TableHead className="w-[13%] text-right">成本</TableHead>
+                  <TableHead className="w-[13%] text-right">可用库存</TableHead>
                   <TableHead className="text-center">操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -819,14 +826,15 @@ function CreateBundleDialog({
             )}
           </div>
         </div>
-        <DialogFooter>
+        </LargeOperationDialogBody>
+        <LargeOperationDialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
           <Button onClick={handleSubmit} disabled={isSubmitting}>
             <Save className="h-4 w-4 mr-2" />
             {isSubmitting ? "创建中..." : "创建组合包"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </LargeOperationDialogFooter>
+      </LargeOperationDialogContent>
     </Dialog>
   );
 }
@@ -873,17 +881,18 @@ function EditBundleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
+      <LargeOperationDialogContent>
+        <LargeOperationDialogHeader>
           <DialogTitle>编辑组合包</DialogTitle>
-        </DialogHeader>
+        </LargeOperationDialogHeader>
+        <LargeOperationDialogBody>
         {bundle?.bundleStock > 0 && (
           <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg text-sm">
             <AlertTriangle className="h-4 w-4 text-yellow-600" />
             <span>组合包有剩余库存 ({bundle.bundleStock}组)，只能修改基本资料，不能修改组合内容。如需修改内容请先拆除现有库存。</span>
           </div>
         )}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <div>
             <Label>组合包名称</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -964,7 +973,8 @@ function EditBundleDialog({
           <Label>内部备注</Label>
           <Textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={2} />
         </div>
-        <DialogFooter>
+        </LargeOperationDialogBody>
+        <LargeOperationDialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
           <Button onClick={() => onSave({
             name, nameEn: nameEn || undefined, keyword,
@@ -975,8 +985,8 @@ function EditBundleDialog({
             <Save className="h-4 w-4 mr-2" />
             {isSubmitting ? "保存中..." : "保存"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </LargeOperationDialogFooter>
+      </LargeOperationDialogContent>
     </Dialog>
   );
 }

@@ -7,6 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  LargeOperationDialogBody,
+  LargeOperationDialogContent,
+  LargeOperationDialogFooter,
+  LargeOperationDialogHeader,
+} from "@/components/LargeOperationDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -948,10 +954,11 @@ export default function PackingDetail() {
                   {translate("新增异常处理", "New Exception")}
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
+              <LargeOperationDialogContent>
+                <LargeOperationDialogHeader>
                   <DialogTitle>{editingExceptionId ? translate("修改异常处理", "Edit Exception") : translate("异常处理", "Exception Handling")}</DialogTitle>
-                </DialogHeader>
+                </LargeOperationDialogHeader>
+                <LargeOperationDialogBody>
                 <div className="space-y-4">
                   {/* Step 1: Exception Type */}
                   <div className="space-y-2">
@@ -1137,8 +1144,11 @@ export default function PackingDetail() {
                     </div>
                   )}
 
-                  {/* Actions */}
-                  <div className="flex justify-end gap-2 pt-2">
+                  {/* Actions remain fixed below the scrollable content. */}
+                </div>
+                </LargeOperationDialogBody>
+                <LargeOperationDialogFooter>
+                  <div className="flex w-full justify-end gap-2">
                     <Button variant="outline" onClick={() => setExceptionDialogOpen(false)}>
                       {translate("取消", "Cancel")}
                     </Button>
@@ -1249,8 +1259,8 @@ export default function PackingDetail() {
                       {editingExceptionId ? translate("保存修改", "Save changes") : translate("确认", "Confirm")}
                     </Button>
                   </div>
-                </div>
-              </DialogContent>
+                </LargeOperationDialogFooter>
+              </LargeOperationDialogContent>
             </Dialog>
           </CardContent>
         </Card>
