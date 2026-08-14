@@ -11,9 +11,7 @@ function isIpAddress(host: string) {
 function isSecureRequest(req: Request) {
   const hostname = req.hostname?.toLowerCase();
   // Public preview and custom-domain traffic is HTTPS at the browser edge.
-  // The Node process can still see HTTP after TLS terminates at the proxy. A
-  // SameSite=None cookie without Secure is rejected by browsers, which leaves
-  // users stuck on the sign-in screen after a successful OAuth callback.
+  // The Node process can still see HTTP after TLS terminates at the proxy.
   if (hostname && !LOCAL_HOSTS.has(hostname) && !isIpAddress(hostname)) {
     return true;
   }
@@ -51,7 +49,11 @@ export function getSessionCookieOptions(
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
+    // The app is revisited by a top-level GET after external OAuth completes.
+    // Lax permits that safe return navigation without relying on cookies that
+    // browsers may classify as third-party, while keeping normal cross-site
+    // subresource and unsafe-request sends blocked.
+    sameSite: "lax",
     secure: isSecureRequest(req),
   };
 }

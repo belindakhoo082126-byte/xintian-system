@@ -18,7 +18,10 @@ export const startLogin = () => {
   const redirectUri = `${window.location.origin}/api/oauth/callback`;
 
   const nonce = crypto.randomUUID();
-  document.cookie = `${OAUTH_STATE_COOKIE}=${nonce}; Path=/; Max-Age=600; SameSite=None; Secure`;
+  // OAuth returns through a top-level GET navigation. Lax keeps the one-time
+  // state cookie available on that safe callback while avoiding third-party
+  // cookie restrictions that can prevent a browser from completing sign-in.
+  document.cookie = `${OAUTH_STATE_COOKIE}=${nonce}; Path=/; Max-Age=600; SameSite=Lax; Secure`;
   const state = encodeOAuthState({ redirectUri, nonce });
 
   const url = new URL(`${oauthPortalUrl}/app-auth`);

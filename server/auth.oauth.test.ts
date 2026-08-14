@@ -76,7 +76,7 @@ describe("OAuth callback", () => {
     expect(exchangeCode).not.toHaveBeenCalled();
   });
 
-  it("sets a secure cross-site session cookie and returns to the app on the public custom domain", async () => {
+  it("sets a secure session cookie compatible with the OAuth top-level return and redirects to the app", async () => {
     vi.spyOn(sdk, "exchangeCodeForToken").mockResolvedValue({ accessToken: "test-token" } as never);
     vi.spyOn(sdk, "getUserInfo").mockResolvedValue({
       openId: "oauth-test-user",
@@ -103,6 +103,6 @@ describe("OAuth callback", () => {
     expect(response.setCookie.join("\n")).toContain("Path=/");
     expect(response.setCookie.join("\n")).toContain("HttpOnly");
     expect(response.setCookie.join("\n")).toContain("Secure");
-    expect(response.setCookie.join("\n")).toContain("SameSite=None");
+    expect(response.setCookie.join("\n")).toContain("SameSite=Lax");
   });
 });

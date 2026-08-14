@@ -32,7 +32,7 @@ describe("startLogin", () => {
     startLogin();
 
     expect(writtenCookie).toBe(
-      `${OAUTH_STATE_COOKIE}=nonce-for-login-test; Path=/; Max-Age=600; SameSite=None; Secure`
+      `${OAUTH_STATE_COOKIE}=nonce-for-login-test; Path=/; Max-Age=600; SameSite=Lax; Secure`
     );
 
     const destination = new URL(location.href);

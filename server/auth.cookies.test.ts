@@ -15,7 +15,7 @@ function requestFor(options: {
 }
 
 describe("认证会话 Cookie", () => {
-  it("在HTTPS反向代理后的公开预览与自定义域名始终写入Secure Cookie", () => {
+  it("在HTTPS反向代理后的公开预览与自定义域名写入Secure且兼容OAuth顶层回跳的Cookie", () => {
     const options = getSessionCookieOptions(requestFor({
       hostname: "www.xintian.com.my",
       protocol: "http",
@@ -23,7 +23,7 @@ describe("认证会话 Cookie", () => {
 
     expect(options).toMatchObject({
       secure: true,
-      sameSite: "none",
+      sameSite: "lax",
       httpOnly: true,
       path: "/",
     });

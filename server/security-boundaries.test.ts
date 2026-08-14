@@ -20,7 +20,7 @@ describe("后台安全边界", () => {
 
   it("会话Cookie保持HttpOnly、SameSite及HTTPS安全属性", () => {
     expect(cookieSource).toContain("httpOnly: true");
-    expect(cookieSource).toContain('sameSite: "none"');
+    expect(cookieSource).toContain('sameSite: "lax"');
     expect(cookieSource).toContain("secure: isSecureRequest(req)");
   });
 });
