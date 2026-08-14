@@ -43,11 +43,13 @@ export async function runMarketingAutomationRule(input: {
   ruleId: number;
   customerIds?: number[];
   dryRun?: boolean;
+  /** Enables read-only validation for rules that have not been activated yet. */
+  allowPausedDryRun?: boolean;
   limit?: number;
 }) : Promise<MarketingAutomationRunSummary> {
   const rule = await getMarketingAutomationRuleById(input.ruleId);
   if (!rule) throw new Error("营销自动规则不存在");
-  if (rule.status !== "active") throw new Error("营销自动规则目前已暂停，管理员启用后才可发送");
+  if (rule.status !== "active" && !(input.dryRun && input.allowPausedDryRun)) throw new Error("营销自动规则目前已暂停，管理员启用后才可发送");
   const template = await getMarketingMessageTemplateById(rule.templateId);
   if (!template?.isActive) throw new Error("营销消息模板不存在或未启用");
   const customers = await resolveMarketingSegmentCustomers({

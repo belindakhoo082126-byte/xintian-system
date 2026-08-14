@@ -45,6 +45,15 @@ describe("marketingAutomationService", () => {
     expect(mocks.sendText).not.toHaveBeenCalled();
   });
 
+  it("allows a paused rule to run a read-only preflight without delivery audit or provider sending", async () => {
+    mocks.getRuleById.mockResolvedValue({ ...activeRule, status: "paused" });
+    const result = await runMarketingAutomationRule({ ruleId: 22, dryRun: true, allowPausedDryRun: true });
+    expect(result).toMatchObject({ ruleId: 22, queued: 1, sent: 0, manualCopy: 0, deliveryIds: [] });
+    expect(mocks.claimDelivery).not.toHaveBeenCalled();
+    expect(mocks.sendText).not.toHaveBeenCalled();
+    expect(mocks.updateRule).not.toHaveBeenCalled();
+  });
+
   it("sends only within the Messenger interaction window and writes delivery audit data", async () => {
     const result = await runMarketingAutomationRule({ ruleId: 22 });
     expect(result).toMatchObject({ queued: 1, sent: 1, manualCopy: 0, failed: 0, deliveryIds: [31] });

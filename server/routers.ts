@@ -369,20 +369,78 @@ export const appRouter = router({
     previewAutomationRun: adminProcedure
       .input(z.object({ ruleId: z.number().int().positive(), customerIds: z.array(z.number().int().positive()).max(500).optional(), limit: z.number().int().min(1).max(500).optional() }))
       .mutation(async ({ input }) => runMarketingAutomationRule({ ...input, dryRun: true })),
+    preflightAutomationRule: adminProcedure
+      .input(z.object({ ruleId: z.number().int().positive(), customerIds: z.array(z.number().int().positive()).max(500).optional(), limit: z.number().int().min(1).max(500).optional() }))
+      .mutation(async ({ input }) => {
+        const rule = await db.getMarketingAutomationRuleById(input.ruleId);
+        if (!rule) throw new TRPCError({ code: "NOT_FOUND", message: "营销自动规则不存在" });
+        const template = await db.getMarketingMessageTemplateById(rule.templateId);
+        const contentComplete = Boolean(template?.isActive && template.content.trim());
+        const warnings: string[] = [];
+        if (!template) warnings.push("找不到关联的营销消息模板，请重新选择模板。");
+        else if (!template.isActive) warnings.push("关联消息模板目前未启用，自动发送会被阻止。");
+        else if (!template.content.trim()) warnings.push("消息模板没有内容，无法建立发送任务。");
+
+        if (!contentComplete) {
+          return {
+            ruleId: rule.id,
+            canEnable: false,
+            targetCustomers: 0,
+            automaticMessenger: 0,
+            manualFollowUp: 0,
+            content: { complete: false, templateName: template?.name ?? null, channel: template?.channel ?? null },
+            compliance: { hasAutomaticMessengerWindow: false, requiresManualFollowUp: false },
+            warnings,
+          };
+        }
+
+        const preview = await runMarketingAutomationRule({ ...input, dryRun: true, allowPausedDryRun: true });
+        const targetCustomers = preview.queued + preview.manualCopy;
+        if (targetCustomers === 0) warnings.push("目前没有符合分群或筛选条件的客户；启用后不会发送任何消息。");
+        if (preview.manualCopy > 0) warnings.push(`${preview.manualCopy} 位客户不在 Messenger 24 小时互动窗口内，只会保留人工发送文案。`);
+        return {
+          ruleId: rule.id,
+          canEnable: true,
+          targetCustomers,
+          automaticMessenger: preview.queued,
+          manualFollowUp: preview.manualCopy,
+          content: { complete: true, templateName: template?.name ?? null, channel: template?.channel ?? null },
+          compliance: { hasAutomaticMessengerWindow: preview.queued > 0, requiresManualFollowUp: preview.manualCopy > 0 },
+          warnings,
+        };
+      }),
     runAutomationNow: adminProcedure
       .input(z.object({ ruleId: z.number().int().positive(), customerIds: z.array(z.number().int().positive()).max(500).optional(), limit: z.number().int().min(1).max(500).optional() }))
       .mutation(async ({ input }) => runMarketingAutomationRule(input)),
     scheduleAutomationRule: adminProcedure
-      .input(z.object({ ruleId: z.number().int().positive(), cron: z.string().trim().regex(/^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+$/, "排程必须使用 6 段 UTC cron 格式") }))
+      .input(z.object({
+        ruleId: z.number().int().positive(),
+        cron: z.string().trim().regex(/^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+$/, "排程必须使用 6 段 UTC cron 格式"),
+        scheduledAt: z.date().nullable().optional(),
+        scheduleType: z.enum(["once", "cron"]).optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         const rule = await db.getMarketingAutomationRuleById(input.ruleId);
         if (!rule) throw new TRPCError({ code: "NOT_FOUND", message: "营销自动规则不存在" });
+        const template = await db.getMarketingMessageTemplateById(rule.templateId);
+        if (!template?.isActive || !template.content.trim()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "启用前检查未通过：关联营销模板不存在、未启用或没有内容" });
+        }
+        const preflight = await runMarketingAutomationRule({ ruleId: rule.id, dryRun: true, allowPausedDryRun: true, limit: 100 });
         const sessionToken = parseCookie(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
         const description = `营销自动规则：${rule.name}。仅规则处于启用状态时执行。`;
+        const existingFilterConfig = rule.filterConfig && typeof rule.filterConfig === "object" && !Array.isArray(rule.filterConfig) ? rule.filterConfig : {};
+        const filterConfig = { ...existingFilterConfig, scheduleCron: input.cron, scheduleTimezone: "UTC" };
+        const updateRule = async () => db.updateMarketingAutomationRule(rule.id, {
+          status: "active",
+          scheduleType: input.scheduleType ?? "cron",
+          scheduledAt: input.scheduledAt ?? null,
+          filterConfig,
+        });
         if (rule.scheduleCronTaskUid) {
           const job = await updateHeartbeatJob(rule.scheduleCronTaskUid, { cron: input.cron, path: "/api/scheduled/marketing-automation", method: "POST", payload: {}, description, enable: true }, sessionToken);
-          await db.updateMarketingAutomationRule(rule.id, { status: "active", scheduleType: "cron" });
-          return { taskUid: rule.scheduleCronTaskUid, nextExecutionAt: job.nextExecutionAt ?? null };
+          await updateRule();
+          return { taskUid: rule.scheduleCronTaskUid, nextExecutionAt: job.nextExecutionAt ?? null, preflight };
         }
         const job = await createHeartbeatJob({
           name: `marketing-automation-${rule.id}`,
@@ -392,8 +450,8 @@ export const appRouter = router({
           payload: {},
           description,
         }, sessionToken);
-        await db.updateMarketingAutomationRule(rule.id, { status: "active", scheduleType: "cron", scheduleCronTaskUid: job.taskUid });
-        return { taskUid: job.taskUid, nextExecutionAt: job.nextExecutionAt ?? null };
+        await db.updateMarketingAutomationRule(rule.id, { status: "active", scheduleType: input.scheduleType ?? "cron", scheduledAt: input.scheduledAt ?? null, scheduleCronTaskUid: job.taskUid, filterConfig });
+        return { taskUid: job.taskUid, nextExecutionAt: job.nextExecutionAt ?? null, preflight };
       }),
     pauseAutomationRule: adminProcedure
       .input(z.object({ ruleId: z.number().int().positive() }))
@@ -423,6 +481,25 @@ export const appRouter = router({
     listMessageDeliveries: adminProcedure
       .input(z.object({ limit: z.number().int().min(1).max(500).optional() }).optional())
       .query(async ({ input }) => db.listMarketingMessageDeliveries(input?.limit || 100)),
+    simulateKeywordMatch: adminProcedure
+      .input(z.object({ comment: z.string().trim().min(1).max(1000) }))
+      .query(async ({ input }) => {
+        const keywords = db.parseCommentKeywords(input.comment);
+        const { matched, unmatched } = await db.matchKeywordsToProducts(keywords);
+        const triggered = matched.length > 0;
+        return {
+          comment: input.comment,
+          keywords,
+          matched,
+          unmatched,
+          triggered,
+          preview: {
+            publicReply: triggered ? "会进入该直播／帖子既有的公开回复规则；实际回复仍受活动与渠道配置控制。" : "没有匹配商品关键词，不会触发公开回复。",
+            privateMessage: triggered ? "会进入既有私聊触发规则；实际自动私聊仍须符合 Messenger 24 小时互动窗口。" : "不会触发私聊。",
+            orderAction: triggered ? "会进入既有捉单资格与库存检查；本模拟不会建立订单、预留库存或发送任何消息。" : "不会建立订单。",
+          },
+        };
+      }),
   }),
 
   auth: router({
