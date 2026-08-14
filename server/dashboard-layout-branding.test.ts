@@ -38,6 +38,16 @@ describe("侧边栏品牌区与导航分类配色", () => {
     expect(sidebarInset).toContain('onSelect={() => setLang("en")}');
   });
 
+  it("leaves page titles to the page content instead of duplicating the active navigation label in the top bar", () => {
+    const sidebarInset = layoutSource.slice(
+      layoutSource.indexOf("<SidebarInset"),
+      layoutSource.indexOf("<main className")
+    );
+
+    expect(layoutSource).not.toContain("let activeLabel");
+    expect(sidebarInset).not.toContain("{activeLabel}");
+  });
+
   it("assigns distinct accents to primary menu categories while keeping submenu items neutral", () => {
     for (const color of ["rose", "amber", "blue", "orange", "emerald", "violet", "indigo", "pink", "purple", "cyan", "slate"]) {
       expect(layoutSource).toContain(`text-${color}-600`);

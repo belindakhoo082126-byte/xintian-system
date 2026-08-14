@@ -333,25 +333,6 @@ function DashboardLayoutContent({
   const resolveLabel = (label: string | { zh: string; en: string }): string =>
     typeof label === "string" ? t(label) : (lang === "zh" ? label.zh : label.en);
 
-  // Find active label for header
-  let activeLabel = "Menu";
-  for (const item of visibleMenu) {
-    if (isGroup(item)) {
-      for (const child of item.children) {
-        if (isMenuPathActive(location, child.path)) {
-          activeLabel = resolveLabel(child.label);
-          break;
-        }
-      }
-    } else {
-      const itemPath = (item as MenuChild).path;
-      if (itemPath && location === itemPath) {
-        activeLabel = resolveLabel(item.label);
-        break;
-      }
-    }
-  }
-
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -539,13 +520,10 @@ function DashboardLayoutContent({
 
       <SidebarInset className="w-full min-w-0 max-w-full overflow-x-hidden">
         <div className="sticky top-0 z-40 flex h-16 min-w-0 items-center justify-between gap-3 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:backdrop-blur no-print sm:px-4">
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 items-center">
             {isMobile && (
               <SidebarTrigger className="h-11 w-11 shrink-0 rounded-lg bg-background" />
             )}
-            <span className="truncate text-sm font-medium tracking-tight text-foreground sm:text-base">
-              {activeLabel}
-            </span>
           </div>
 
           <DropdownMenu>
