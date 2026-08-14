@@ -15,9 +15,10 @@ describe("库存提示与商品级预售快捷控制", () => {
     expect(orderCreateSource).toContain("disabled={isSubmitting || manualItems.length === 0 || hasStockShortage}");
   });
 
-  it("provides a persisted inline product-level presale switch for physical products", () => {
+  it("provides a persisted product-level presale setting for physical products", () => {
     expect(routerSource).toContain("allowOversold: z.boolean().optional()");
-    expect(productsSource).toContain("updateMutation.mutate({ id: p.id, allowPresale })");
-    expect(productsSource).toContain("Allow presale");
+    expect(productsSource).toContain('p.type === "physical" && p.allowPresale');
+    expect(productsSource).toContain('translate("预售", "Presale")');
+    expect(productsSource).toContain('translate("编辑商品", "Edit product")');
   });
 });

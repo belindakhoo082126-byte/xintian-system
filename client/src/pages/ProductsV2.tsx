@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useI18n } from "@/contexts/I18nContext";
-import { useSearch } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,9 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Upload, Bot, Loader2, History } from "lucide-react";
+import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Upload, Bot, Loader2, History, MoreHorizontal, Eye, PackagePlus, Power } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
@@ -176,6 +177,7 @@ export default function ProductsV2() {
     return translate(labels[status]?.zh ?? status, labels[status]?.en ?? status);
   };
   const searchParams = useSearch();
+  const [, setLocation] = useLocation();
   const urlStock = new URLSearchParams(searchParams).get("stock");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -581,8 +583,8 @@ export default function ProductsV2() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-4 items-center flex-wrap">
-        <div className="relative flex-1 max-w-sm">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(280px,1fr)_repeat(4,minmax(132px,0.52fr))]">
+        <div className="relative min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder={translate("搜索商品名称...", "Search product name...")}
@@ -592,7 +594,7 @@ export default function ProductsV2() {
           />
         </div>
         <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(0); }}>
-          <SelectTrigger className="w-[150px]">
+          <SelectTrigger className="w-full">
             <SelectValue placeholder={translate("商品类型", "Product Type")} />
           </SelectTrigger>
           <SelectContent>
@@ -603,7 +605,7 @@ export default function ProductsV2() {
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0); }}>
-          <SelectTrigger className="w-[150px]">
+          <SelectTrigger className="w-full">
             <SelectValue placeholder={translate("商品状态", "Product Status")} />
           </SelectTrigger>
           <SelectContent>
@@ -615,7 +617,7 @@ export default function ProductsV2() {
           </SelectContent>
         </Select>
         <Select value={xtcFilter} onValueChange={(v) => { setXtcFilter(v); setPage(0); }}>
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-full">
             <SelectValue placeholder={translate("XTC 资格", "XTC Eligibility")} />
           </SelectTrigger>
           <SelectContent>
@@ -625,7 +627,7 @@ export default function ProductsV2() {
           </SelectContent>
         </Select>
         <Select value={stockFilter} onValueChange={(v) => { setStockFilter(v); setPage(0); }}>
-          <SelectTrigger className="w-[150px]">
+          <SelectTrigger className="w-full">
             <SelectValue placeholder={translate("库存筛选", "Stock Filter")} />
           </SelectTrigger>
           <SelectContent>
@@ -636,7 +638,7 @@ export default function ProductsV2() {
           </SelectContent>
         </Select>
         {stockFilter === "low" && (
-          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5">
+          <div className="flex w-fit items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5">
             <span className="whitespace-nowrap text-sm text-muted-foreground">{translate("少于", "Below")}</span>
             <Input
               aria-label={translate("低库存阈值", "Low stock threshold")}
@@ -655,210 +657,79 @@ export default function ProductsV2() {
         )}
       </div>
 
-      {/* Products Table */}
-      <Card>
+      {/* Desktop: the table uses only the eight operational columns and never exceeds its container. */}
+      <Card className="hidden overflow-hidden lg:block">
         <CardContent className="p-0">
-          <Table>
+          <Table className="table-fixed">
+            <colgroup>
+              <col className="w-[30%]" /><col className="w-[10%]" /><col className="w-[10%]" /><col className="w-[9%]" />
+              <col className="w-[9%]" /><col className="w-[15%]" /><col className="w-[12%]" /><col className="w-[5%]" />
+            </colgroup>
             <TableHeader>
               <TableRow>
-                <TableHead>{translate("商品名称", "Product Name")}</TableHead>
-                <TableHead>{translate("类型", "Type")}</TableHead>
-                <TableHead>{translate("模式", "Mode")}</TableHead>
-                <TableHead>{translate("分类", "Category")}</TableHead>
-                <TableHead>{translate("关键词", "Keyword")}</TableHead>
-                <TableHead>{translate("售价", "Selling Price")}</TableHead>
-                <TableHead>{translate("状态", "Status")}</TableHead>
-                <TableHead>{translate("库存", "Stock")}</TableHead>
-                <TableHead>{translate("商品预售", "Product Presale")}</TableHead>
-                <TableHead>{translate("商品标记", "Product Flags")}</TableHead>
-                <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
+                <TableHead className="whitespace-normal">{translate("商品资料", "Product")}</TableHead>
+                <TableHead className="whitespace-normal">{translate("类型／模式", "Type / Mode")}</TableHead>
+                <TableHead className="whitespace-normal">{translate("分类", "Category")}</TableHead>
+                <TableHead className="whitespace-normal">{translate("售价", "Selling Price")}</TableHead>
+                <TableHead className="whitespace-normal">{translate("状态", "Status")}</TableHead>
+                <TableHead className="whitespace-normal">{translate("库存资料", "Inventory")}</TableHead>
+                <TableHead className="whitespace-normal">{translate("销售设置", "Sales Settings")}</TableHead>
+                <TableHead className="sticky right-0 z-10 bg-card text-center shadow-[-5px_0_10px_-8px_rgba(0,0,0,0.45)]">{translate("操作", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
-                <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
-              ) : products.length === 0 ? (
-                <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
-              ) : products.map(p => (
-                <TableRow key={p.id} className="[&>td]:py-5 [&>td]:text-base">
-                  <TableCell className="font-medium">
-                    <div className="flex min-w-[250px] items-center gap-4">
-                      <ProductImagePreview
-                        src={p.coverImageUrl}
-                        alt={p.name}
-                        className="h-20 w-20"
-                        label={translate("预览商品图片", "Preview product image")}
-                      />
-                      <span className="text-lg font-semibold leading-snug">{p.name}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={TYPE_BADGES[p.type]} variant="secondary">
-                      {getProductTypeLabel(p.type)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{p.productMode === "variant" ? translate("多规格", "Variant") : translate("单规格", "Simple")}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    {categories?.find(c => c.id === p.categoryId)?.[lang === "zh" ? "nameZh" : "nameEn"] || translate("—", "—")}
-                  </TableCell>
-                  <TableCell>
-                    <code className="rounded bg-muted px-2 py-1 text-sm">{p.keyword}</code>
-                  </TableCell>
-                  <TableCell>
-                    {p.type === "gift" ? translate("免费", "Free") : `RM ${p.sellingPrice || "0"}`}
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={STATUS_BADGES[p.status]} variant="secondary">
-                      {translate(RAW_STATUS_LABELS[p.status]?.zh, RAW_STATUS_LABELS[p.status]?.en) || p.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {p.type === "physical" ? (
-                      <TooltipProvider>
-                        <div className="space-y-1 text-base">
-                          <div>{translate("存库", "Stock")}: <span className="font-medium">{p.stockQuantity ?? 0}</span></div>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="cursor-pointer text-blue-600 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type: "ordered" })}
-                              >
-                                {translate("已下单", "Ordered")}: <span className="font-medium">{p.orderedCount ?? 0}</span>
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-xs">
-                              <div className="text-xs space-y-0.5">
-                                <div className="font-medium">{translate("已下单包含以下订单状态", "Ordered includes these order statuses")}:</div>
-                                <div>• {translate("挂单 / Hold Order", "Hold Order")}</div>
-                                <div>• {translate("待汇款 / Pending", "Pending")}</div>
-                                <div>• {translate("保留订单 / Reserved", "Reserved")}</div>
-                                <div>• {translate("待审核付款凭证 / Receipt Uploaded", "Receipt Uploaded")}</div>
-                                <div>• {translate("部分汇款 / Partial Payment", "Partial Payment")}</div>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="cursor-pointer text-amber-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type: "paid" })}
-                              >
-                                {translate("已汇款", "Paid")}: <span className="font-medium">{p.paidCount ?? 0}</span>
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-xs">
-                              <div className="text-xs space-y-0.5">
-                                <div className="font-medium">{translate("已汇款包含以下订单状态", "Paid includes these order statuses")}:</div>
-                                <div>• {translate("待备货 / Packing", "Packing")}</div>
-                                <div>• {translate("预约发货 / Scheduled", "Scheduled")}</div>
-                                <div>• {translate("部分发货中尚未发出的数量", "Unshipped quantities in partial shipments")}</div>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="cursor-pointer text-green-600 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type: "completed" })}
-                              >
-                                {translate("已完成", "Completed")}: <span className="font-medium">{p.completedCount ?? 0}</span>
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-xs">
-                              <div className="text-xs space-y-0.5">
-                                <div className="font-medium">{translate("已完成包含以下订单状态", "Completed includes these order statuses")}:</div>
-                                <div>• {translate("部分发货中已发出的数量", "Shipped quantities in partial shipments")}</div>
-                                <div>• {translate("已发货 / Shipped", "Shipped")}</div>
-                                <div>• {translate("已完成 / Completed", "Completed")}</div>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </TooltipProvider>
-                    ) : translate("—", "—")}
-                  </TableCell>
-                  <TableCell>
-                    {p.type === "physical" ? (
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={!!p.allowPresale}
-                          disabled={updateMutation.isPending}
-                          onCheckedChange={(allowPresale) => updateMutation.mutate({ id: p.id, allowPresale })}
-                          aria-label={translate(`允许「{name}」预售`, `Allow presale for "{name}"`, { name: p.name })}
-                        />
-                        <span className={`text-sm font-medium ${p.allowPresale ? "text-amber-700" : "text-muted-foreground"}`}>
-                          {p.allowPresale ? translate("已开启预售", "Presale on") : translate("未开启", "Off")}
-                        </span>
+              {isLoading ? <TableRow><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">{translate("加载中...", "Loading...")}</TableCell></TableRow>
+                : products.length === 0 ? <TableRow><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
+                : products.map(p => (
+                  <TableRow key={p.id} className="[&>td]:py-5 [&>td]:text-base">
+                    <TableCell className="font-medium">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="shrink-0"><ProductImagePreview src={p.coverImageUrl} alt={p.name} className="h-20 w-20" label={translate("预览商品图片", "Preview product image")} /></div>
+                        <div className="min-w-0 space-y-1.5"><p className="text-lg font-semibold leading-snug line-clamp-2" title={p.name}>{p.name}</p><code className="block truncate rounded bg-muted px-1.5 py-0.5 text-sm text-muted-foreground" title={p.keyword || undefined}>{p.keyword || translate("未设关键词", "No keyword")}</code></div>
                       </div>
-                    ) : translate("—", "—")}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex min-w-[160px] flex-wrap gap-1.5">
-                      {p.isFeatured && <Badge className="border border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-100">{translate("推荐", "Featured")}</Badge>}
-                      {p.isSpecial && <Badge className="border border-orange-200 bg-orange-100 text-orange-800 hover:bg-orange-100">{translate("特价", "Special")}</Badge>}
-                      {p.type === "gift" && <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{translate("赠品", "Gift")}</Badge>}
-                      {p.type === "virtual" && <Badge className="border border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{translate("虚拟商品", "Virtual")}</Badge>}
-                      {p.salesMode === "import_preorder" && <Badge className="border border-sky-200 bg-sky-100 text-sky-800 hover:bg-sky-100">{translate("中国进口", "China Import")}</Badge>}
-                      {p.salesMode !== "import_preorder" && p.allowImportOrder && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("可入 XTC", "Eligible for XTC")}</Badge>}
-                      {!p.isFeatured && !p.isSpecial && p.type !== "gift" && p.type !== "virtual" && p.salesMode !== "import_preorder" && !p.allowImportOrder && <span className="text-sm text-muted-foreground">{translate("—", "—")}</span>}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => openEdit(p)} title={translate("编辑", "Edit")}>
-                        <Edit2 className="h-5 w-5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => duplicateMutation.mutate({ id: p.id })} title={translate("复制", "Duplicate")}>
-                        <Copy className="h-5 w-5" />
-                      </Button>
-                      {p.type === "physical" && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-10 w-10"
-                          onClick={() => setStockLogTarget({ productId: p.id, productName: p.name })}
-                          title={translate("库存操作日志", "Stock operation log")}
-                        >
-                          <History className="h-5 w-5" />
-                        </Button>
-                      )}
-                      {p.type === "membership" && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-10 w-10"
-                          onClick={() => { setCurrentProductId(p.id); setShowMemberLinkDialog(true); }}
-                          title={translate("会员链接", "Member Link")}
-                        >
-                          <LinkIcon className="h-5 w-5" />
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-10 w-10"
-                        onClick={() => {
-                          if (confirm(translate(`确定删除「{name}」吗？`, `Are you sure you want to delete "{name}"?`, { name: p.name }))) {
-                            deleteMutation.mutate({ id: p.id });
-                          }
-                        }}
-                        title={translate("删除", "Delete")}
-                      >
-                        <Trash2 className="h-5 w-5 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                    <TableCell><div className="space-y-1.5"><Badge className={TYPE_BADGES[p.type]} variant="secondary">{getProductTypeLabel(p.type)}</Badge><p className="text-sm text-muted-foreground">{p.productMode === "variant" ? translate("多规格", "Variant") : translate("单规格", "Simple")}</p></div></TableCell>
+                    <TableCell className="break-words">{categories?.find(c => c.id === p.categoryId)?.[lang === "zh" ? "nameZh" : "nameEn"] || translate("—", "—")}</TableCell>
+                    <TableCell>{p.type === "gift" ? translate("免费", "Free") : `RM ${p.sellingPrice || "0"}`}</TableCell>
+                    <TableCell><Badge className={STATUS_BADGES[p.status]} variant="secondary">{translate(RAW_STATUS_LABELS[p.status]?.zh, RAW_STATUS_LABELS[p.status]?.en) || p.status}</Badge></TableCell>
+                    <TableCell>{p.type === "physical" ? <div className="space-y-1.5"><p>{translate("库存", "Stock")}: <span className="font-semibold">{p.stockQuantity ?? 0}</span></p><div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">{(["ordered", "paid", "completed"] as const).map((type, index) => { const count = type === "ordered" ? p.orderedCount : type === "paid" ? p.paidCount : p.completedCount; const color = type === "ordered" ? "text-blue-600" : type === "paid" ? "text-amber-700" : "text-green-600"; const label = type === "ordered" ? translate("已下单", "Ordered") : type === "paid" ? translate("已汇款", "Paid") : translate("已完成", "Completed"); return <span key={type} className="inline-flex items-center gap-1">{index > 0 && <span className="text-muted-foreground">|</span>}<button type="button" className={`font-medium ${color} underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`} onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type })}>{label} {count ?? 0}</button></span>; })}</div></div> : translate("—", "—")}</TableCell>
+                    <TableCell><div className="flex flex-wrap gap-1.5">{p.type === "physical" && p.allowPresale && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("预售", "Presale")}</Badge>}{p.isFeatured && <Badge className="border border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-100">{translate("推荐", "Featured")}</Badge>}{p.isSpecial && <Badge className="border border-orange-200 bg-orange-100 text-orange-800 hover:bg-orange-100">{translate("特价", "Special")}</Badge>}{p.type === "gift" && <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{translate("赠品", "Gift")}</Badge>}{p.type === "virtual" && <Badge className="border border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{translate("虚拟商品", "Virtual")}</Badge>}{p.salesMode === "import_preorder" && <Badge className="border border-sky-200 bg-sky-100 text-sky-800 hover:bg-sky-100">{translate("中国进口", "China Import")}</Badge>}{p.salesMode !== "import_preorder" && p.allowImportOrder && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("可入 XTC", "Eligible for XTC")}</Badge>}{!(p.type === "physical" && p.allowPresale) && !p.isFeatured && !p.isSpecial && p.type !== "gift" && p.type !== "virtual" && p.salesMode !== "import_preorder" && !p.allowImportOrder && <span className="text-muted-foreground">{translate("—", "—")}</span>}</div></TableCell>
+                    <TableCell className="sticky right-0 z-10 bg-card text-center shadow-[-5px_0_10px_-8px_rgba(0,0,0,0.45)]"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-10 w-10" aria-label={translate(`操作「{name}」`, `Actions for "{name}"`, { name: p.name })}><MoreHorizontal className="h-5 w-5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuLabel>{translate("商品操作", "Product Actions")}</DropdownMenuLabel><DropdownMenuItem onClick={() => openEdit(p)}><Eye className="mr-2 h-4 w-4" />{translate("查看详情", "View details")}</DropdownMenuItem><DropdownMenuItem onClick={() => openEdit(p)}><Edit2 className="mr-2 h-4 w-4" />{translate("编辑商品", "Edit product")}</DropdownMenuItem>{p.type === "physical" && <DropdownMenuItem onClick={() => setLocation("/purchase-orders")}><PackagePlus className="mr-2 h-4 w-4" />{translate("调整库存", "Adjust stock")}</DropdownMenuItem>}{p.type === "physical" && <DropdownMenuItem onClick={() => setStockLogTarget({ productId: p.id, productName: p.name })}><History className="mr-2 h-4 w-4" />{translate("查看库存日志", "View stock log")}</DropdownMenuItem>}<DropdownMenuItem onClick={() => duplicateMutation.mutate({ id: p.id })}><Copy className="mr-2 h-4 w-4" />{translate("复制商品", "Duplicate")}</DropdownMenuItem>{p.type === "membership" && <DropdownMenuItem onClick={() => { setCurrentProductId(p.id); setShowMemberLinkDialog(true); }}><LinkIcon className="mr-2 h-4 w-4" />{translate("会员链接", "Member link")}</DropdownMenuItem>}<DropdownMenuSeparator /><DropdownMenuItem onClick={() => updateMutation.mutate({ id: p.id, status: p.status === "active" ? "inactive" : "active" })}><Power className="mr-2 h-4 w-4" />{p.status === "active" ? translate("下架", "Unpublish") : translate("上架", "Publish")}</DropdownMenuItem><DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => { if (confirm(translate(`确定删除「{name}」吗？`, `Are you sure you want to delete "{name}"?`, { name: p.name }))) deleteMutation.mutate({ id: p.id }); }}><Trash2 className="mr-2 h-4 w-4" />{translate("删除", "Delete")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                  </TableRow>
+                ))}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      {/* Mobile: cards intentionally replace the horizontal table instead of squeezing columns. */}
+      <div className="space-y-3 lg:hidden">
+        {isLoading ? (
+          <Card><CardContent className="py-10 text-center text-muted-foreground">{translate("加载中...", "Loading...")}</CardContent></Card>
+        ) : products.length === 0 ? (
+          <Card><CardContent className="py-10 text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</CardContent></Card>
+        ) : products.map(p => (
+          <Card key={p.id} className="overflow-hidden">
+            <CardContent className="space-y-4 p-4">
+              <div className="flex items-start gap-3">
+                <ProductImagePreview src={p.coverImageUrl} alt={p.name} className="h-20 w-20 shrink-0" label={translate("预览商品图片", "Preview product image")} />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <p className="line-clamp-2 text-base font-semibold leading-snug" title={p.name}>{p.name}</p>
+                  <code className="block truncate rounded bg-muted px-1.5 py-0.5 text-sm text-muted-foreground" title={p.keyword || undefined}>{p.keyword || translate("未设关键词", "No keyword")}</code>
+                  <div className="flex flex-wrap items-center gap-2"><Badge className={STATUS_BADGES[p.status]} variant="secondary">{translate(RAW_STATUS_LABELS[p.status]?.zh, RAW_STATUS_LABELS[p.status]?.en) || p.status}</Badge><span className="font-semibold">{p.type === "gift" ? translate("免费", "Free") : `RM ${p.sellingPrice || "0"}`}</span></div>
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild><Button variant="outline" size="icon" className="h-10 w-10 shrink-0" aria-label={translate(`操作「{name}」`, `Actions for "{name}"`, { name: p.name })}><MoreHorizontal className="h-5 w-5" /></Button></DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48"><DropdownMenuLabel>{translate("商品操作", "Product Actions")}</DropdownMenuLabel><DropdownMenuItem onClick={() => openEdit(p)}><Eye className="mr-2 h-4 w-4" />{translate("查看详情", "View details")}</DropdownMenuItem><DropdownMenuItem onClick={() => openEdit(p)}><Edit2 className="mr-2 h-4 w-4" />{translate("编辑商品", "Edit product")}</DropdownMenuItem>{p.type === "physical" && <DropdownMenuItem onClick={() => setLocation("/purchase-orders")}><PackagePlus className="mr-2 h-4 w-4" />{translate("调整库存", "Adjust stock")}</DropdownMenuItem>}{p.type === "physical" && <DropdownMenuItem onClick={() => setStockLogTarget({ productId: p.id, productName: p.name })}><History className="mr-2 h-4 w-4" />{translate("查看库存日志", "View stock log")}</DropdownMenuItem>}<DropdownMenuItem onClick={() => duplicateMutation.mutate({ id: p.id })}><Copy className="mr-2 h-4 w-4" />{translate("复制商品", "Duplicate")}</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem onClick={() => updateMutation.mutate({ id: p.id, status: p.status === "active" ? "inactive" : "active" })}><Power className="mr-2 h-4 w-4" />{p.status === "active" ? translate("下架", "Unpublish") : translate("上架", "Publish")}</DropdownMenuItem><DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => { if (confirm(translate(`确定删除「{name}」吗？`, `Are you sure you want to delete "{name}"?`, { name: p.name }))) deleteMutation.mutate({ id: p.id }); }}><Trash2 className="mr-2 h-4 w-4" />{translate("删除", "Delete")}</DropdownMenuItem></DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              {p.type === "physical" && <div className="rounded-lg bg-muted/45 p-3"><div className="flex items-baseline justify-between"><span className="text-sm text-muted-foreground">{translate("库存", "Stock")}</span><span className="text-lg font-semibold">{p.stockQuantity ?? 0}</span></div><div className="mt-2 grid grid-cols-3 gap-2 border-t pt-2 text-center text-sm"><button type="button" className="text-blue-600" onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type: "ordered" })}><span className="block text-muted-foreground">{translate("已下单", "Ordered")}</span><span className="font-semibold">{p.orderedCount ?? 0}</span></button><button type="button" className="border-x text-amber-700" onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type: "paid" })}><span className="block text-muted-foreground">{translate("已汇款", "Paid")}</span><span className="font-semibold">{p.paidCount ?? 0}</span></button><button type="button" className="text-green-600" onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type: "completed" })}><span className="block text-muted-foreground">{translate("已完成", "Completed")}</span><span className="font-semibold">{p.completedCount ?? 0}</span></button></div></div>}
+              <div className="flex flex-wrap gap-1.5">{p.type === "physical" && p.allowPresale && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("预售", "Presale")}</Badge>}{p.isFeatured && <Badge className="border border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-100">{translate("推荐", "Featured")}</Badge>}{p.isSpecial && <Badge className="border border-orange-200 bg-orange-100 text-orange-800 hover:bg-orange-100">{translate("特价", "Special")}</Badge>}{p.type === "gift" && <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{translate("赠品", "Gift")}</Badge>}{p.type === "virtual" && <Badge className="border border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{translate("虚拟商品", "Virtual")}</Badge>}{p.salesMode === "import_preorder" && <Badge className="border border-sky-200 bg-sky-100 text-sky-800 hover:bg-sky-100">{translate("中国进口", "China Import")}</Badge>}{p.salesMode !== "import_preorder" && p.allowImportOrder && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("可入 XTC", "Eligible for XTC")}</Badge>}{!(p.type === "physical" && p.allowPresale) && !p.isFeatured && !p.isSpecial && p.type !== "gift" && p.type !== "virtual" && p.salesMode !== "import_preorder" && !p.allowImportOrder && <span className="text-sm text-muted-foreground">{translate("未开启销售设置", "No sales settings enabled")}</span>}</div>
+              <details className="group rounded-lg border px-3 py-2.5"><summary className="cursor-pointer text-sm font-medium text-primary">{translate("查看详情", "View details")}</summary><dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t pt-3 text-sm"><div><dt className="text-muted-foreground">{translate("类型／模式", "Type / Mode")}</dt><dd className="mt-0.5">{getProductTypeLabel(p.type)}／{p.productMode === "variant" ? translate("多规格", "Variant") : translate("单规格", "Simple")}</dd></div><div><dt className="text-muted-foreground">{translate("分类", "Category")}</dt><dd className="mt-0.5 break-words">{categories?.find(c => c.id === p.categoryId)?.[lang === "zh" ? "nameZh" : "nameEn"] || translate("—", "—")}</dd></div></dl></details>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
       <Dialog open={!!orderDetailsTarget} onOpenChange={(open) => { if (!open) setOrderDetailsTarget(null); }}>
         <DialogContent className="max-w-2xl">

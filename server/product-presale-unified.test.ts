@@ -19,9 +19,10 @@ describe("商品级统一预售", () => {
   });
 
   it("商品管理只提供商品级预售开关，不再以超卖作为管理员操作语义", () => {
-    expect(productPageSource).toContain('translate("商品预售", "Product Presale")');
-    expect(productPageSource).toContain("checked={!!p.allowPresale}");
-    expect(productPageSource).toContain("onCheckedChange={(allowPresale) => updateMutation.mutate({ id: p.id, allowPresale })}");
+    expect(productPageSource).toContain('p.type === "physical" && p.allowPresale');
+    expect(productPageSource).toContain('translate("预售", "Presale")');
+    expect(productPageSource).toContain('translate("编辑商品", "Edit product")');
+    expect(productPageSource).not.toContain('translate("允许超卖", "Allow overselling")');
   });
 
   it("直播成功捉单不再分流预售数量，所有订单进入同一库存账本", () => {

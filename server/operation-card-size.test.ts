@@ -42,8 +42,9 @@ describe("添加商品操作框尺寸", () => {
 
     expect(source).toContain('className="[&>td]:py-5 [&>td]:text-base"');
     expect(source).toContain('className="h-20 w-20"');
-    expect(source).toContain('className="text-lg font-semibold leading-snug"');
-    expect(source).toContain('className="h-10 w-10" onClick={() => openEdit(p)}');
-    expect(source).toContain('className="h-10 w-10" onClick={() => duplicateMutation.mutate({ id: p.id })}');
+    expect(source).toContain('className="text-lg font-semibold leading-snug line-clamp-2"');
+    expect(source).toContain('className="h-10 w-10" aria-label={translate(`操作「{name}」`');
+    expect(source).toContain('translate("编辑商品", "Edit product")');
+    expect(source).toContain('translate("复制商品", "Duplicate")');
   });
 });
