@@ -1254,7 +1254,12 @@ export async function appendItemsToUnpaidLocalOrder(params: {
     params.targetOrderId,
     params.operationType,
     `${params.operationBy} 自动合单：${params.items.map((item) => `${item.productName} ×${item.quantity}`).join("、")}`,
-    JSON.stringify({ items: params.items.map((item) => ({ productId: item.productId, quantity: item.quantity, itemSource: item.itemSource, unitPrice: item.unitPrice })), totalBefore: order.totalAmount, totalAfter: totalAmount.toFixed(2) }),
+    JSON.stringify({
+      items: params.items.map((item) => ({ productId: item.productId, quantity: item.quantity, itemSource: item.itemSource, unitPrice: item.unitPrice })),
+      addedAmount: params.items.reduce((sum, item) => sum + Number(item.subtotal || 0), 0).toFixed(2),
+      totalBefore: order.totalAmount,
+      totalAfter: totalAmount.toFixed(2),
+    }),
     params.operationBy,
   );
   broadcastChanges(["orders", "inventory", "dashboard", "customers"]);
@@ -9013,6 +9018,36 @@ export async function getDashboardV11Stats() {
     .where(gte(orders.createdAt, today)) as any[];
   const monthSales = await db.select({ total: sql`COALESCE(SUM(totalAmount), 0)` }).from(orders)
     .where(gte(orders.createdAt, firstOfMonth)) as any[];
+  // Cross-channel merge is tracked at the append-operation level rather than
+  // by counting order creation, because one existing XT order can receive
+  // several independent additions from different channels in a single day.
+  const todayCrossChannelMergeRows = await db.select({
+    orderId: orderOperationLogs.orderId,
+    changes: orderOperationLogs.changes,
+  }).from(orderOperationLogs)
+    .where(and(
+      eq(orderOperationLogs.operationType, "cross_channel_merge"),
+      gte(orderOperationLogs.createdAt, today),
+      lt(orderOperationLogs.createdAt, tomorrow),
+    ));
+  const todayCrossChannelMerge = todayCrossChannelMergeRows.reduce((summary, row) => {
+    try {
+      const changes = JSON.parse(row.changes || "{}") as {
+        addedAmount?: string | number;
+        items?: Array<{ quantity?: number; unitPrice?: string | number }>;
+      };
+      const fallbackItemAmount = (changes.items || []).reduce(
+        (sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0),
+        0,
+      );
+      summary.addedAmount += Number(changes.addedAmount ?? fallbackItemAmount) || 0;
+    } catch {
+      // Historical or malformed audit payloads remain countable. Their amount
+      // is intentionally omitted instead of making the whole Dashboard fail.
+    }
+    summary.count += 1;
+    return summary;
+  }, { count: 0, addedAmount: 0 });
 
   // Cash receipts: only approved payment records, allocated by payment date.
   // This deliberately does not infer payment from an order status or totalAmount.
@@ -9096,6 +9131,10 @@ export async function getDashboardV11Stats() {
       todayShipped: Number(todayShipped[0]?.count || 0),
       todaySales: todaySales[0]?.total || "0.00",
       monthSales: monthSales[0]?.total || "0.00",
+    },
+    crossChannelMerge: {
+      count: todayCrossChannelMerge.count,
+      addedAmount: todayCrossChannelMerge.addedAmount.toFixed(2),
     },
     // Dashboard cash view: confirmed payment rows in the selected calendar month.
     cashReceiptBreakdown,
