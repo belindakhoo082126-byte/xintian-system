@@ -134,6 +134,15 @@ describe.sequential("直播库存与订单阶段隔离行为验证", () => {
     // 管理员在直播内补 2 件，必须同步主商品库存与可售数。
     const adjusted = await adjustLiveRoomProductStock(normalLiveProductId, { quantityChange: 2, reason: "other" });
     expect(adjusted).toMatchObject({ startStock: 7, availableStock: 7 });
+    const [liveAdjustment] = await db!.select().from(inventoryAdjustments)
+      .where(eq(inventoryAdjustments.productId, normalProductId));
+    expect(liveAdjustment).toMatchObject({
+      productId: normalProductId,
+      adjustmentType: "other",
+      quantityChange: 2,
+      adjustedBy: "live_management",
+    });
+    expect(liveAdjustment.reason).toContain("直播库存调整");
 
     const normalCapture = await createOrderFromLiveCapture({
       commenterName: `${qaKey} 客户 1`, commenterPsid: `${qaKey}-PSID-1`, commentMessage: "QAN x2",
@@ -182,6 +191,9 @@ describe.sequential("直播库存与订单阶段隔离行为验证", () => {
     expect(trimmed).toMatchObject({ startStock: 0, availableStock: 0 });
     const [trimmedProduct] = await db!.select({ stockQuantity: products.stockQuantity }).from(products).where(eq(products.id, normalProductId));
     expect(Number(trimmedProduct.stockQuantity)).toBe(0);
+    const adjustments = await db!.select().from(inventoryAdjustments)
+      .where(eq(inventoryAdjustments.productId, normalProductId));
+    expect(adjustments).toHaveLength(2);
   }, 20_000);
 
   it("黑名单客户的直播留言不会建立订单、占用库存或写入直播捉单记录", async () => {

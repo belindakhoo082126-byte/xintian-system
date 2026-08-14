@@ -1128,6 +1128,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
                 </SelectContent>
               </Select>
             </div>
+            <p className="text-xs text-muted-foreground">调整会同步至商品管理库存，并自动写入对应商品的库存调整记录。</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStockDialogOpen(false)}>{t("live.removeProduct")}</Button>

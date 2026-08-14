@@ -1132,6 +1132,8 @@ export const systemSettings = mysqlTable("system_settings", {
   liveCommentFooter: text("liveCommentFooter"),
   // V2.0.42: Custom checkout message template (supports {link} placeholder)
   checkoutMessageTemplate: text("checkoutMessageTemplate"),
+  // 可编辑的直播得标通知模板；专属结单按钮由 Messenger 自动附加。
+  liveWinNoticeTemplate: text("liveWinNoticeTemplate"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 

@@ -5,6 +5,7 @@ import path from "node:path";
 const root = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "client/src/pages/LiveRoomDetail.tsx"), "utf8");
 const routerSource = fs.readFileSync(path.join(root, "server/routers.ts"), "utf8");
+const liveRoomsSource = fs.readFileSync(path.join(root, "client/src/pages/LiveRooms.tsx"), "utf8");
 
 describe("直播详情的操作口径与商品预览", () => {
   it("直播间备忘录经专用接口保存、数据库回读并立即回显，不影响留言备注机制", () => {
@@ -22,5 +23,12 @@ describe("直播详情的操作口径与商品预览", () => {
     expect(source).toContain("onPreview={(url: string, name: string)");
     expect(source).toContain("直播价只用于本场新建订单");
     expect(source).toContain("商品数为本场已加入的独立商品；商品数量为本场成功捉单的总件数。");
+  });
+
+  it("直播管理列表明确标示商品种类与成功捉单件数", () => {
+    expect(liveRoomsSource).toContain("const productCountLabel");
+    expect(liveRoomsSource).toContain("const totalItemsLabel");
+    expect(liveRoomsSource).toContain("本场直播已上架的不同商品种类数。");
+    expect(liveRoomsSource).toContain("本场直播成功捉单的商品总件数，不是剩余库存。");
   });
 });

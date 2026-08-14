@@ -405,6 +405,34 @@ export default function SystemSettings() {
               </div>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>直播得标通知模板</CardTitle>
+              <CardDescription>直播留言成功捉单后发送给客户的通知内容；每位客户的专属结单按钮会自动附加。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                <Label>得标通知内容</Label>
+                <Textarea
+                  value={form.liveWinNoticeTemplate || ""}
+                  onChange={(e) => update("liveWinNoticeTemplate", e.target.value)}
+                  rows={10}
+                  placeholder={"🎉 得标通知！\n\n{item_list}\n\n小计：RM{total_amount}\n\n请点击下方【查询订单及结账】按钮查看订单详情并完成付款。"}
+                />
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">可用占位符：</p>
+                  <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs">
+                    <code className="rounded bg-muted px-2 py-1">{"{customer_name}"}</code><span className="text-muted-foreground">客户名字</span>
+                    <code className="ml-2 rounded bg-muted px-2 py-1">{"{order_number}"}</code><span className="text-muted-foreground">订单号</span>
+                    <code className="ml-2 rounded bg-muted px-2 py-1">{"{item_list}"}</code><span className="text-muted-foreground">商品列表</span>
+                    <code className="ml-2 rounded bg-muted px-2 py-1">{"{total_amount}"}</code><span className="text-muted-foreground">小计金额</span>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">无需填写结单链接；系统会在每一位客户的消息下方自动附加其专属的「查询订单及结账」按钮。</p>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

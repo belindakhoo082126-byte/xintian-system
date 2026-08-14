@@ -3059,6 +3059,7 @@ export const appRouter = router({
       autoCompleteDays: z.number().optional(),
       liveCommentFooter: z.string().nullable().optional(),
       checkoutMessageTemplate: z.string().nullable().optional(),
+      liveWinNoticeTemplate: z.string().nullable().optional(),
     })).mutation(async ({ input }) => {
       return await db.updateSystemSettings(input);
     }),

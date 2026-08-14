@@ -12589,17 +12589,26 @@ export async function adjustLiveRoomProductStock(id: number, data: {
       .set({ stockQuantity: sql`GREATEST(0, stockQuantity + ${data.quantityChange})` })
       .where(eq(products.id, product[0].productId));
   }
-  // Write to inventory adjustments log for ALL changes (not just negative)
-  if (data.reason) {
-    await db.insert(inventoryAdjustments).values({
-      productId: product[0].productId,
-      adjustmentType: data.reason as any,
-      quantityChange: data.quantityChange,
-      unitCost: "0",
-      reason: `Live room product stock adjustment (ID: ${id}, Reason: ${data.reason})`,
-      adjustedBy: "live_management",
-    });
-  }
+  // Every live-stock change must be auditable in the main product inventory log.
+  // The live UI uses reasons that differ from the strict inventory enum, so map
+  // them to the nearest allowed audit category and retain the original reason.
+  const liveReason = data.reason || "other";
+  const adjustmentType = ({
+    damaged: "human_damage",
+    scrap: "lost",
+    restock: "other",
+    correction: "other",
+    other: "other",
+  } as Record<string, "quality_issue" | "plant_death" | "pest_disease" | "human_damage" | "unhealthy" | "lost" | "other">)[liveReason] || "other";
+  await db.insert(inventoryAdjustments).values({
+    productId: product[0].productId,
+    adjustmentType,
+    quantityChange: data.quantityChange,
+    unitCost: "0",
+    reason: `直播库存调整｜直播商品 #${id}｜原因：${liveReason}`,
+    remark: "由直播管理库存调整同步写入",
+    adjustedBy: "live_management",
+  });
   broadcastChanges(["liveRooms", "inventory"]);
   return { success: true, startStock: newStartStock, availableStock: newAvailableStock };
 }
@@ -16236,10 +16245,26 @@ export async function executeAutoOrderCapture(params: {
     sourceType: params.sourceType,
   });
 
-  // Build reply message with order details
+  // Build reply message with order details. The checkout action itself stays a
+  // Messenger button so every customer receives their own secure order link.
   const itemList = matchedProducts.map((m) => `${m.productName} x${m.quantity} (RM${m.unitPrice})`).join("\n");
   const totalAmount = orderResult.totalAmount || "0";
-  const replyMessage = `🎉 得标通知！\n\n${itemList}\n\n小计：RM${totalAmount}\n\n请点击下方【查询订单及结账】按钮查看订单详情并完成付款。`;
+  const settings = await getSystemSettings();
+  const liveWinNoticeTemplate = String((settings as any)?.liveWinNoticeTemplate || "").trim() || [
+    "🎉 得标通知！",
+    "",
+    "{item_list}",
+    "",
+    "小计：RM{total_amount}",
+    "",
+    "请点击下方【查询订单及结账】按钮查看订单详情并完成付款。",
+  ].join("\n");
+  const replyMessage = liveWinNoticeTemplate
+    .replace(/\{customer_name\}/g, params.customerName || "")
+    .replace(/\{order_number\}/g, orderResult.orderNumber || "")
+    .replace(/\{item_list\}/g, itemList)
+    .replace(/\{total_amount\}/g, String(totalAmount))
+    .replace(/\{checkout_link\}/g, "下方【查询订单及结账】按钮");
 
   return {
     success: true,

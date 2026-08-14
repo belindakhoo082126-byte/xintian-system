@@ -23,6 +23,10 @@ const statusColors: Record<string, string> = {
 
 export default function LiveRooms() {
   const { t, lang } = useI18n();
+  const productCountLabel = lang === "en" ? `${t("liveRooms.colProductCount")} (types)` : `${t("liveRooms.colProductCount")}（种类）`;
+  const totalItemsLabel = lang === "en" ? `${t("liveRooms.colTotalItems")} (successful units)` : `${t("liveRooms.colTotalItems")}（成功捉单件数）`;
+  const productCountHint = lang === "en" ? "Count of distinct products added to this live room." : "本场直播已上架的不同商品种类数。";
+  const totalItemsHint = lang === "en" ? "Total units from successful captures in this live room, not remaining stock." : "本场直播成功捉单的商品总件数，不是剩余库存。";
   const queryClient = trpc.useUtils();
   const liveRoomsQuery = trpc.liveRooms.list.useQuery({});
   const batchesQuery = trpc.importBatches.list.useQuery({});
@@ -341,9 +345,9 @@ export default function LiveRooms() {
                   <TableHead>{t("liveRooms.colDate")}</TableHead>
                   <TableHead>{t("liveRooms.colStreamer")}</TableHead>
                   <TableHead>{t("liveRooms.colStatus")}</TableHead>
-                  <TableHead className="text-center">{t("liveRooms.colProductCount")}</TableHead>
+                  <TableHead className="text-center" title={productCountHint}>{productCountLabel}</TableHead>
                   <TableHead className="text-center">{t("liveRooms.colOrderCount")}</TableHead>
-                  <TableHead className="text-center">{t("liveRooms.colTotalItems")}</TableHead>
+                  <TableHead className="text-center" title={totalItemsHint}>{totalItemsLabel}</TableHead>
                   <TableHead className="text-right">{t("liveRooms.colRevenue")}</TableHead>
                   <TableHead className="text-right">{t("liveRooms.colActions")}</TableHead>
                 </TableRow>
