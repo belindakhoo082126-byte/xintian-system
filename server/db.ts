@@ -960,17 +960,18 @@ export async function resolveOrderCategory(opts: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // Priority 1: Check product orderCategory
+  // Priority 1: Check product orderCategory. Any import product makes the
+  // order an XTC order; inspecting only the first row would incorrectly route
+  // a cart containing local accessories plus an import item into XT.
   if (opts.productIds && opts.productIds.length > 0) {
     const productRows = await db
       .select({ orderCategory: products.orderCategory })
       .from(products)
-      .where(inArray(products.id, opts.productIds))
-      .limit(1);
-    if (productRows.length > 0 && productRows[0].orderCategory === "import") {
+      .where(inArray(products.id, Array.from(new Set(opts.productIds))));
+    if (productRows.some((row) => row.orderCategory === "import")) {
       return "import";
     }
-    if (productRows.length > 0 && productRows[0].orderCategory === "local") {
+    if (productRows.some((row) => row.orderCategory === "local")) {
       return "local";
     }
   }
@@ -984,6 +985,286 @@ export async function resolveOrderCategory(opts: {
 
   // Default: local
   return "local";
+}
+
+/**
+ * Returns the newest local XT order that may safely receive items from any
+ * sales channel. A candidate is deliberately narrower than a generic
+ * "open" order: it must still be genuinely unpaid, without an uploaded or
+ * pending payment proof, and must not have entered packing / fulfilment.
+ *
+ * XTC orders are never returned here. Their merge eligibility remains tied to
+ * the selected China-import live window and is handled by the import flow.
+ */
+export async function findMergeableUnpaidLocalOrder(customerId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = unwrapMySqlRows<any>(await db.execute(sql`
+    SELECT o.*
+    FROM orders o
+    WHERE o.customerId = ${customerId}
+      AND o.orderCategory = 'local'
+      AND o.physicalStatus IN ('pending', 'hold_order')
+      AND COALESCE(o.paidAmount, 0) = 0
+      AND o.receiptUrl IS NULL
+      AND o.paymentUploadedAt IS NULL
+      AND o.paymentConfirmedAt IS NULL
+      AND COALESCE(o.cancelProtection, 0) = 0
+      AND NOT EXISTS (
+        SELECT 1
+        FROM order_payments op
+        WHERE op.orderId = o.id
+          AND op.reviewStatus IN ('pending', 'approved')
+      )
+    ORDER BY o.createdAt DESC, o.id DESC
+    LIMIT 1
+  `));
+
+  return rows[0] ?? null;
+}
+
+/** China-import orders can only accept new items while their own import live window is open. */
+export async function assertImportLiveOrderWindow(liveRoomId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (!liveRoomId) throw new Error("XTC 中国代购订单必须来自已设定期限的中国代购直播间");
+
+  const room = await db.select({
+    id: liveRooms.id,
+    liveType: liveRooms.liveType,
+    preorderStartDate: liveRooms.preorderStartDate,
+    preorderEndDate: liveRooms.preorderEndDate,
+    liveStartTime: liveRooms.liveStartTime,
+    liveEndTime: liveRooms.liveEndTime,
+  }).from(liveRooms).where(eq(liveRooms.id, liveRoomId)).limit(1);
+  const importRoom = room[0];
+  if (!importRoom || importRoom.liveType !== "import_preorder") {
+    throw new Error("XTC 中国代购订单只能在中国代购直播间建立");
+  }
+  const start = importRoom.preorderStartDate || importRoom.liveStartTime;
+  const end = importRoom.preorderEndDate || importRoom.liveEndTime;
+  if (!start || !end) throw new Error("该中国代购直播尚未设定开始日期或截止日期，不能下单");
+  const now = new Date();
+  if (now < new Date(start) || now > new Date(end)) {
+    throw new Error("中国代购订单仅可在该直播的开始日期至截止日期期间下单");
+  }
+}
+
+/** Resolves the only China-import live window that is open now for non-live channels. */
+export async function getActiveImportLiveRoomId(): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rooms = await db.select({
+    id: liveRooms.id,
+    preorderStartDate: liveRooms.preorderStartDate,
+    preorderEndDate: liveRooms.preorderEndDate,
+    liveStartTime: liveRooms.liveStartTime,
+    liveEndTime: liveRooms.liveEndTime,
+  }).from(liveRooms).where(eq(liveRooms.liveType, "import_preorder"));
+  const now = new Date();
+  const active = rooms.filter((room) => {
+    const start = room.preorderStartDate || room.liveStartTime;
+    const end = room.preorderEndDate || room.liveEndTime;
+    return Boolean(start && end && now >= new Date(start) && now <= new Date(end));
+  });
+  if (active.length !== 1) {
+    throw new Error(active.length === 0
+      ? "目前没有处于开始日期至截止日期内的中国代购直播，无法建立 XTC 订单"
+      : "目前有多个中国代购直播窗口重叠，请由直播间明确建立 XTC 订单");
+  }
+  return active[0].id;
+}
+
+export async function findMergeableUnpaidImportLiveOrder(customerId: number, liveRoomId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = unwrapMySqlRows<any>(await db.execute(sql`
+    SELECT o.*
+    FROM orders o
+    WHERE o.customerId = ${customerId}
+      AND o.orderCategory = 'import'
+      AND o.liveRoomId = ${liveRoomId}
+      AND o.physicalStatus IN ('pending', 'hold_order')
+      AND COALESCE(o.paidAmount, 0) = 0
+      AND o.receiptUrl IS NULL
+      AND o.paymentUploadedAt IS NULL
+      AND o.paymentConfirmedAt IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM order_payments op
+        WHERE op.orderId = o.id AND op.reviewStatus IN ('pending', 'approved')
+      )
+    ORDER BY o.createdAt DESC, o.id DESC
+    LIMIT 1
+  `));
+  return rows[0] ?? null;
+}
+
+type LocalOrderMergeItem = {
+  productId: number;
+  productName: string;
+  productSku?: string | null;
+  productType?: "physical" | "membership" | "gift";
+  quantity: number;
+  unitPrice: string;
+  subtotal: string;
+  variationId?: number | null;
+  variationName?: string | null;
+  facebookKeyword?: string | null;
+  discount?: string | null;
+  itemSource: "admin" | "facebook_live" | "messenger" | "mall";
+  salesMode?: "normal" | "presale" | "import_preorder";
+  priceType?: "retail" | "wholesale" | "agent" | "special" | "manual";
+  unitCost?: string | null;
+  originalUnitPrice?: string | null;
+};
+
+/**
+ * Appends channel-specific item snapshots to an already validated unpaid XT
+ * order, reusing the existing stock reservation and price-breakdown rules.
+ * The function never changes the target order's source, receipt, payment or
+ * address fields; every appended item keeps its originating channel instead.
+ */
+export async function appendItemsToUnpaidLocalOrder(params: {
+  customerId: number;
+  targetOrderId: number;
+  expectedOrderCategory?: "local" | "import";
+  items: LocalOrderMergeItem[];
+  operationType: string;
+  operationBy: string;
+  reserveStock?: boolean;
+  allocateFifoCost?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Recheck at write time. A payment upload, approval or packing transition
+  // between candidate lookup and this call must turn the operation into a new
+  // order rather than silently changing a paid / fulfilment order.
+  const target = await db.select({
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    secureToken: orders.secureToken,
+    customerId: orders.customerId,
+    orderCategory: orders.orderCategory,
+    physicalStatus: orders.physicalStatus,
+    paidAmount: orders.paidAmount,
+    receiptUrl: orders.receiptUrl,
+    paymentUploadedAt: orders.paymentUploadedAt,
+    paymentConfirmedAt: orders.paymentConfirmedAt,
+    cancelProtection: orders.cancelProtection,
+    membershipSubtotal: orders.membershipSubtotal,
+    promotionDiscount: orders.promotionDiscount,
+    discountAmount: orders.discountAmount,
+    extraCharge: orders.extraCharge,
+    creditUsed: orders.creditUsed,
+    shippingMethod: orders.shippingMethod,
+    totalAmount: orders.totalAmount,
+  }).from(orders).where(eq(orders.id, params.targetOrderId)).limit(1);
+  const order = target[0];
+  const expectedCategory = params.expectedOrderCategory || "local";
+  if (!order
+    || order.customerId !== params.customerId
+    || order.orderCategory !== expectedCategory
+    || !["pending", "hold_order"].includes(order.physicalStatus || "pending")
+    || Number(order.paidAmount || 0) !== 0
+    || order.receiptUrl
+    || order.paymentUploadedAt
+    || order.paymentConfirmedAt
+    || order.cancelProtection) {
+    throw new Error("目标 XT 订单已不符合未汇款自动合并条件");
+  }
+  const paymentProofs = await db.select({ id: orderPayments.id }).from(orderPayments)
+    .where(and(
+      eq(orderPayments.orderId, params.targetOrderId),
+      inArray(orderPayments.reviewStatus, ["pending", "approved"]),
+    )).limit(1);
+  if (paymentProofs.length > 0) {
+    throw new Error("目标 XT 订单已有付款凭证或已确认付款，不能自动合并");
+  }
+
+  const stockItems = params.items
+    .filter((item) => (item.productType || "physical") === "physical")
+    .map((item) => ({ productId: item.productId, quantity: item.quantity }));
+  if (params.reserveStock !== false && stockItems.length > 0) {
+    await reserveProductStocksForOrder(stockItems);
+  }
+
+  for (const item of params.items) {
+    await db.insert(orderItems).values({
+      orderId: params.targetOrderId,
+      productId: item.productId,
+      productName: item.productName,
+      productSku: item.productSku || null,
+      productType: item.productType || "physical",
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      subtotal: item.subtotal,
+      variationId: item.variationId || null,
+      variationName: item.variationName || null,
+      facebookKeyword: item.facebookKeyword || null,
+      discount: item.discount || "0.00",
+      itemSource: item.itemSource,
+      salesMode: item.salesMode || "normal",
+      priceType: item.priceType || "retail",
+      unitCost: item.unitCost || "0.00",
+      originalUnitPrice: item.originalUnitPrice || null,
+    });
+    if (params.allocateFifoCost && item.productId && (item.productType || "physical") === "physical") {
+      await allocateFifoCostForSale({
+        orderId: params.targetOrderId,
+        productId: item.productId,
+        quantity: item.quantity,
+        createdBy: params.operationBy,
+      });
+    }
+  }
+
+  const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, params.targetOrderId));
+  const breakdown = calculateOrderPriceBreakdown(allItems, {
+    promotionDiscount: order.promotionDiscount,
+    discountAmount: order.discountAmount,
+  });
+  const totalWeight = allItems
+    .filter((item) => item.productType === "physical" || item.productType === "gift")
+    .reduce((sum, item) => sum + (Number(item.unitWeight || 0) || 0.5) * Number(item.quantity || 0), 0);
+  const membershipSubtotal = Number(order.membershipSubtotal || 0);
+  const promotionDiscount = Number(order.promotionDiscount || 0);
+  const discountAmount = Number(order.discountAmount || 0);
+  const extraCharge = Number(order.extraCharge || 0);
+  const creditUsed = Number(order.creditUsed || 0);
+  let shippingFee = 0;
+  if (order.shippingMethod === "west_malaysia") {
+    shippingFee = calculateWestMalaysiaShipping(totalWeight, breakdown.freeShippingEligibleSubtotal).shippingFee;
+  } else if (order.shippingMethod === "east_malaysia_poslaju") {
+    shippingFee = 50;
+  } else if (order.shippingMethod === "lalamove") {
+    shippingFee = breakdown.freeShippingEligibleSubtotal >= 150 ? 0 : 15;
+  }
+  const totalAmount = breakdown.physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
+
+  await db.update(orders).set({
+    physicalSubtotal: breakdown.physicalSubtotal.toFixed(2),
+    shippingFee: shippingFee.toFixed(2),
+    customerPaidShipping: shippingFee.toFixed(2),
+    totalWeight: totalWeight.toFixed(2),
+    totalAmount: totalAmount.toFixed(2),
+  }).where(eq(orders.id, params.targetOrderId));
+  await logOrderOperation(
+    params.targetOrderId,
+    params.operationType,
+    `${params.operationBy} 自动合单：${params.items.map((item) => `${item.productName} ×${item.quantity}`).join("、")}`,
+    JSON.stringify({ items: params.items.map((item) => ({ productId: item.productId, quantity: item.quantity, itemSource: item.itemSource, unitPrice: item.unitPrice })), totalBefore: order.totalAmount, totalAfter: totalAmount.toFixed(2) }),
+    params.operationBy,
+  );
+  broadcastChanges(["orders", "inventory", "dashboard", "customers"]);
+
+  return {
+    orderId: params.targetOrderId,
+    orderNumber: order.orderNumber,
+    secureToken: order.secureToken,
+    totalAmount: totalAmount.toFixed(2),
+  };
 }
 
 /**
@@ -1168,9 +1449,48 @@ export async function createOrderWithSplit(data: {
   }
   if (data.orderCategory === "import") {
     await assertChinaImportOrderItemsEligible(data.items.map((item) => item.productId));
+    data.liveRoomId = data.liveRoomId || await getActiveImportLiveRoomId();
+    await assertImportLiveOrderWindow(data.liveRoomId);
   }
 
   await applyTrustedSpecialPriceSnapshots(db, data.items);
+
+  const mergeTarget = data.orderCategory === "import"
+    ? await findMergeableUnpaidImportLiveOrder(data.customerId, data.liveRoomId!)
+    : await findMergeableUnpaidLocalOrder(data.customerId);
+  if (mergeTarget) {
+    const itemSource = data.orderSource === "facebook_live"
+      ? "facebook_live"
+      : data.orderSource === "mall" || data.orderSource === "store"
+        ? "mall"
+        : data.orderSource === "ai" || data.orderSource === "private_chat" || data.orderSource === "messenger" || data.orderSource === "post"
+          ? "messenger"
+          : "admin";
+    const mergedOrder = await appendItemsToUnpaidLocalOrder({
+      customerId: data.customerId,
+      targetOrderId: mergeTarget.id,
+      expectedOrderCategory: data.orderCategory as "local" | "import",
+      operationType: data.orderCategory === "import" ? "import_manual_merge" : "cross_channel_merge",
+      operationBy: data.orderSource || "后台建单",
+      allocateFifoCost: true,
+      items: data.items.map((item) => ({
+        productId: item.productId,
+        productName: item.productName,
+        productType: item.productType,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        subtotal: item.subtotal,
+        variationId: item.variationId || null,
+        variationName: item.variationName || null,
+        itemSource,
+        salesMode: data.orderCategory === "import" ? "import_preorder" : "normal",
+        priceType: (item.priceType as any) || "retail",
+        unitCost: item.unitCost || "0",
+        originalUnitPrice: item.originalUnitPrice || null,
+      })),
+    });
+    return { ...mergedOrder, creditUsed: "0.00", creditRemaining: (await getCustomerById(data.customerId))?.creditBalance?.toString() || "0.00", merged: true };
+  }
 
   // V2.2: Calculate shipping using new West Malaysia rules
   let shippingFee = 0;
@@ -6123,6 +6443,14 @@ export async function mallCheckout(data: {
     phoneNumber: data.contactNumber,
     email: data.email,
   });
+  const mallProductIds = data.items.map((item) => item.productId).filter(Boolean) as number[];
+  const resolvedCategory = await resolveOrderCategory({ productIds: mallProductIds });
+  let importLiveRoomId: number | null = null;
+  if (resolvedCategory === "import") {
+    await assertChinaImportOrderItemsEligible(mallProductIds);
+    importLiveRoomId = await getActiveImportLiveRoomId();
+    await assertImportLiveOrderWindow(importLiveRoomId);
+  }
 
   // Build shipping address
   const shippingAddress = [
@@ -6189,22 +6517,30 @@ export async function mallCheckout(data: {
   if (freeShippingEntitlement) shippingFee = 0;
   const totalAmount = subtotal - marketingDiscount + shippingFee;
 
-  // If merging into an existing hold order, only allow the current customer's active, mergeable hold.
-  if (data.mergeIntoOrderId) {
-    const mergeTarget = await getMergeableHoldOrderById(customer.id, data.mergeIntoOrderId);
-    if (!mergeTarget) {
-      throw new Error("Selected hold order is no longer available for this customer");
-    }
+  // Any local item from the mall joins the customer's newest truly unpaid XT
+  // order, regardless of whether it was created in the mall, a live, AI chat,
+  // post or the backend. A caller-supplied target is only accepted when it is
+  // exactly that eligible candidate.
+  const mergeTarget = resolvedCategory === "local"
+    ? await findMergeableUnpaidLocalOrder(customer.id)
+    : await findMergeableUnpaidImportLiveOrder(customer.id, importLiveRoomId!);
+  if (data.mergeIntoOrderId && mergeTarget?.id !== data.mergeIntoOrderId) {
+    throw new Error("所选订单已有付款或已进入包货／发货流程，不能继续自动合单");
+  }
+  if (mergeTarget) {
     await reserveProductStocksForOrder(regularItems);
-
-    // Add items to existing order
-    for (const item of data.items) {
-      await db.insert(orderItems).values({
-        orderId: data.mergeIntoOrderId,
+    const mergedOrder = await appendItemsToUnpaidLocalOrder({
+      customerId: customer.id,
+      targetOrderId: mergeTarget.id,
+      expectedOrderCategory: resolvedCategory,
+      reserveStock: false,
+      operationType: resolvedCategory === "import" ? "import_mall_merge" : "cross_channel_merge",
+      operationBy: "商城",
+      items: data.items.map((item) => ({
         productId: item.productId,
         productName: item.productName,
         productSku: item.productSku || null,
-        productType: "physical",
+        productType: "physical" as const,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         subtotal: item.subtotal,
@@ -6212,66 +6548,22 @@ export async function mallCheckout(data: {
         variationName: item.variationName || null,
         facebookKeyword: item.facebookKeyword || null,
         discount: item.discount || "0.00",
-        priceType: item.isSpecial ? "special" : "retail",
+        itemSource: "mall" as const,
+        salesMode: resolvedCategory === "import" ? "import_preorder" as const : "normal" as const,
+        priceType: item.isSpecial ? "special" as const : "retail" as const,
         originalUnitPrice: item.originalUnitPrice || null,
-      });
-    }
-
-    // Recalculate order totals
-    const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, data.mergeIntoOrderId));
-    const newSubtotal = allItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
-    const newWeight = allItems.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
-    // V2.1: Free shipping threshold excludes special-price items (priceType === "special")
-    const specialSubtotal = allItems.filter(i => i.priceType === "special").reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
-    const thresholdSubtotal = newSubtotal - specialSubtotal;
-    let newShippingFee = 0;
-    const existingOrder = await getOrderById(data.mergeIntoOrderId);
-    const method = existingOrder?.shippingMethod || data.shippingMethod;
-    if (method === "west_malaysia") {
-      if (thresholdSubtotal >= 150) {
-        newShippingFee = newWeight <= 10 ? 0 : Math.ceil(newWeight - 10) * 3;
-      } else {
-        newShippingFee = 15 + (newWeight <= 10 ? 0 : Math.ceil(newWeight - 10) * 3);
-      }
-    } else if (method === "east_malaysia_poslaju") {
-      newShippingFee = 50;
-    } else if (method === "east_malaysia_shopee" || method === "east_malaysia") {
-      // V2.0.84: 东马 Shopee 运费固定 RM0
-      newShippingFee = 0;
-    } else if (method === "lalamove") {
-      // V2.0.84: Lalamove — 满 RM150 公司承担，未满收 RM15
-      newShippingFee = thresholdSubtotal >= 150 ? 0 : 15;
-    }
-    const newTotal = newSubtotal + newShippingFee;
-    const paidAmount = parseFloat((existingOrder as any)?.paidAmount || "0");
-
-    await db.update(orders).set({
-      physicalSubtotal: newSubtotal.toFixed(2),
-      shippingFee: newShippingFee.toFixed(2),
-      totalAmount: newTotal.toFixed(2),
-      totalWeight: newWeight.toFixed(2),
-    }).where(eq(orders.id, data.mergeIntoOrderId));
-
-    const nextStatus = paidAmount > 0 && paidAmount < newTotal ? "receipt_uploaded" : "receipt_uploaded";
-    await transitionOrderStatus(
-      data.mergeIntoOrderId,
-      nextStatus,
-      "Mall checkout",
-      "Hold order merged; awaiting payment review",
-    );
-    await releaseHoldOrder(data.mergeIntoOrderId, "Mall checkout");
+      })),
+    });
 
     for (const item of data.items.filter((entry) => entry.bundleId)) {
       await deductBundleStock(item.bundleId!, item.quantity);
     }
-    return { orderId: data.mergeIntoOrderId, orderNumber: existingOrder?.orderNumber, merged: true, totalAmount: newTotal.toFixed(2) };
+    return { ...mergedOrder, merged: true };
   }
 
   // Create new order
   // V2.1.04: Use resolveOrderCategory for unified routing
   await reserveProductStocksForOrder(regularItems);
-  const mallProductIds = regularItems.map(i => i.productId).filter(Boolean) as number[];
-  const resolvedCategory = await resolveOrderCategory({ productIds: mallProductIds });
   const isImport = resolvedCategory === "import";
   const orderPrefix = isImport ? "XTC" : "XT";
   const orderNumber = await generateOrderNumber(orderPrefix);
@@ -6294,6 +6586,7 @@ export async function mallCheckout(data: {
     shippingAddress,
     shippingMethod: data.shippingMethod as any,
     orderSource: "store",
+    liveRoomId: importLiveRoomId,
     paymentMethodId: (data.paymentMethodId as any) || null,
     paymentMethodName: (data.paymentMethodName as any) || null,
     // V2.0.85: Save recipient info on order
@@ -8336,55 +8629,37 @@ export async function createOrderFromLiveCapture(data: {
     liveType: data.liveType,
   });
   const isImportOrder = orderCategory === 'import';
-  let existingOrderId: number | null = null;
-  if (data.liveVideoId || data.liveRoomId) {
-    const existingOrders = await db.select().from(orders)
-      .where(sql`customerId = ${customer.id} AND orderSource = 'facebook_live' AND orderCategory = ${orderCategory} AND physicalStatus NOT IN ('closed', 'cancelled', 'completed')`)
-      .orderBy(desc(orders.createdAt))
-      .limit(1);
-    if (existingOrders.length > 0) {
-      // Check if this order is from the same live session (within 4 hours)
-      const orderTime = new Date(existingOrders[0].createdAt).getTime();
-      const now = Date.now();
-      if (now - orderTime < 4 * 60 * 60 * 1000) {
-        existingOrderId = existingOrders[0].id;
-      }
-    }
-  }
+  if (isImportOrder) await assertImportLiveOrderWindow(data.liveRoomId);
+  const mergeTarget = isImportOrder
+    ? await findMergeableUnpaidImportLiveOrder(customer.id, data.liveRoomId!)
+    : await findMergeableUnpaidLocalOrder(customer.id);
+  const existingOrderId = mergeTarget?.id ?? null;
   
   if (existingOrderId) {
-    // Merge into existing order: add new items
-    await reserveProductStocksForOrder(reservableProducts);
-    for (const p of data.matchedProducts) {
-      const itemSubtotal = (parseFloat(p.unitPrice) * p.quantity).toFixed(2);
-      await db.insert(orderItems).values({
-        orderId: existingOrderId,
+    // Merge via the shared service. The original order keeps its checkout
+    // identity; each appended line retains its Facebook Live / post source.
+    const mergedOrder = await appendItemsToUnpaidLocalOrder({
+      customerId: customer.id,
+      targetOrderId: existingOrderId,
+      expectedOrderCategory: isImportOrder ? "import" : "local",
+      items: data.matchedProducts.map((p) => ({
         productId: p.productId,
         productName: p.productName,
         productSku: p.productSku || null,
-        productType: "physical",
+        productType: "physical" as const,
         quantity: p.quantity,
         unitPrice: p.unitPrice,
-        subtotal: itemSubtotal,
+        subtotal: (parseFloat(p.unitPrice) * p.quantity).toFixed(2),
         facebookKeyword: p.keyword,
-        discount: "0.00",
-        itemSource: "facebook_live",
-        salesMode: isImportOrder ? "import_preorder" : "normal",
+        itemSource: "facebook_live" as const,
+        salesMode: isImportOrder ? "import_preorder" as const : "normal" as const,
         priceType: p.priceType || "retail",
         originalUnitPrice: p.originalUnitPrice || null,
-      });
-      // Product stock was atomically reserved before the item was inserted.
-    }
-    // Recalculate order total
-    const allItems = await db.select({
-      total: sql`COALESCE(SUM(subtotal), 0)`,
-      weight: sql`COALESCE(SUM(quantity * 0.5), 0)`,
-    }).from(orderItems).where(eq(orderItems.orderId, existingOrderId));
-    await db.update(orders).set({
-      physicalSubtotal: String(allItems[0]?.total || 0),
-      totalAmount: String(allItems[0]?.total || 0),
-      totalWeight: String(allItems[0]?.weight || 0),
-    }).where(eq(orders.id, existingOrderId));
+      })),
+      operationType: isImportOrder ? "import_live_merge" : "cross_channel_merge",
+      operationBy: data.sourceType === "facebook_post" ? "Facebook Post" : "Facebook Live",
+      allocateFifoCost: true,
+    });
     
     // Create live capture record linked to existing order
     await db.insert(liveOrderCaptures).values({
@@ -8401,10 +8676,8 @@ export async function createOrderFromLiveCapture(data: {
       commentDate: new Date(),
     });
     await syncLiveRoomProductCounts(data.liveRoomId, data.matchedProducts);
-    
-    broadcastChanges(["orders", "inventory", "dashboard"]);
-    const existingOrder = await db.select().from(orders).where(eq(orders.id, existingOrderId)).limit(1);
-    return { orderId: existingOrderId, orderNumber: existingOrder[0]?.orderNumber || "", totalAmount: String(allItems[0]?.total || 0), merged: true, secureToken: existingOrder[0]?.secureToken || null };
+
+    return { ...mergedOrder, merged: true };
   }
   
   // Create new order

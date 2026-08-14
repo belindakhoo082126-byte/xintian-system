@@ -1,4 +1,4 @@
-import { assertChinaImportOrderItemsEligible, getDb, resolveOrderCategory, recalculateOrderBalance, generateOrderNumber, generateSecureToken } from "./db";
+import { appendItemsToUnpaidLocalOrder, assertChinaImportOrderItemsEligible, assertImportLiveOrderWindow, findMergeableUnpaidImportLiveOrder, findMergeableUnpaidLocalOrder, getActiveImportLiveRoomId, getDb, resolveOrderCategory, recalculateOrderBalance, generateOrderNumber, generateSecureToken } from "./db";
 import { draftOrders, orderChangeRequests, reservationRecords, products, orders, orderItems, aiLogs, aiHandoverRequests } from "../drizzle/schema";
 import { eq, sql, and, desc } from "drizzle-orm";
 import { SideEffectPolicy } from "./aiTestRunner";
@@ -338,8 +338,47 @@ export async function approveDraftOrder(draftId: number, approvedBy: string): Pr
   const draftItems = draft.items as DraftOrderItem[];
   const productIds = draftItems.map(i => i.productId).filter(Boolean) as number[];
   const orderCategory = await resolveOrderCategory({ productIds });
+  let importLiveRoomId: number | null = null;
   if (orderCategory === "import") {
     await assertChinaImportOrderItemsEligible(productIds);
+    importLiveRoomId = await getActiveImportLiveRoomId();
+    await assertImportLiveOrderWindow(importLiveRoomId);
+  }
+
+  const mergeTarget = draft.customerId
+    ? orderCategory === "import"
+      ? await findMergeableUnpaidImportLiveOrder(draft.customerId, importLiveRoomId!)
+      : await findMergeableUnpaidLocalOrder(draft.customerId)
+    : null;
+  if (mergeTarget) {
+    const mergedOrder = await appendItemsToUnpaidLocalOrder({
+      customerId: draft.customerId!,
+      targetOrderId: mergeTarget.id,
+      expectedOrderCategory: orderCategory,
+      reserveStock: false,
+      operationType: orderCategory === "import" ? "import_ai_merge" : "cross_channel_merge",
+      operationBy: "AI／私聊",
+      items: draftItems.map((item) => ({
+        productId: item.productId,
+        productName: item.productName,
+        productType: "physical" as const,
+        quantity: item.quantity,
+        unitPrice: item.price.toFixed(2),
+        subtotal: (item.price * item.quantity).toFixed(2),
+        variationId: item.variantId || null,
+        itemSource: "messenger" as const,
+        salesMode: orderCategory === "import" ? "import_preorder" as const : "normal" as const,
+        priceType: "retail" as const,
+      })),
+    });
+    await convertInventory(draftId, "draft_order");
+    await database.update(draftOrders).set({
+      status: "approved",
+      approvedBy,
+      approvedAt: new Date(),
+      officialOrderId: mergeTarget.id,
+    }).where(eq(draftOrders.id, draftId));
+    return { orderId: mergedOrder.orderId, orderNumber: mergedOrder.orderNumber };
   }
 
   // V2.1.23: Generate proper order number with XT/XTC prefix
@@ -370,6 +409,7 @@ export async function approveDraftOrder(draftId: number, approvedBy: string): Pr
     importStatus,
     isSpecialOrder: false,
     orderCategory: orderCategory as any,
+    liveRoomId: importLiveRoomId,
   });
 
   const orderId = (orderResult as any).insertId;
