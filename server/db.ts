@@ -202,21 +202,18 @@ export async function getProducts(filters?: { type?: string; search?: string; is
   return await query.orderBy(desc(products.createdAt));
 }
 
-/** 中国代购订单可选择的本地例外类别：肥料及花盆／盆器。 */
-export const CHINA_IMPORT_ALLOWED_CATEGORY_NAMES = ["肥料", "花盆", "盆器"] as const;
-
 export function isChinaImportOrderEligibleProduct(product: {
   salesMode?: string | null;
-  isPot?: boolean | null;
-  categoryName?: string | null;
+  orderCategory?: string | null;
+  allowImportOrder?: boolean | null;
 }) {
   return product.salesMode === "import_preorder"
-    || Boolean(product.isPot)
-    || CHINA_IMPORT_ALLOWED_CATEGORY_NAMES.includes((product.categoryName || "") as typeof CHINA_IMPORT_ALLOWED_CATEGORY_NAMES[number]);
+    || product.orderCategory === "import"
+    || Boolean(product.allowImportOrder);
 }
 
 /**
- * 中国代购订单只允许中国进口代购商品，或本地肥料／花盆。此服务层校验用于
+ * 中国代购订单只允许中国进口代购商品，或已明确授权的本地配套商品。此服务层校验用于
  * 后台建单、AI建单与商城加单，不能只依赖前端筛选。
  */
 export async function assertChinaImportOrderItemsEligible(productIds: number[]) {
@@ -229,10 +226,9 @@ export async function assertChinaImportOrderItemsEligible(productIds: number[]) 
     id: products.id,
     name: products.name,
     salesMode: products.salesMode,
-    isPot: products.isPot,
-    categoryName: productCategories.name,
+    orderCategory: products.orderCategory,
+    allowImportOrder: products.allowImportOrder,
   }).from(products)
-    .leftJoin(productCategories, eq(products.categoryId, productCategories.id))
     .where(inArray(products.id, uniqueIds));
 
   const foundIds = new Set(rows.map((row) => row.id));
@@ -240,7 +236,7 @@ export async function assertChinaImportOrderItemsEligible(productIds: number[]) 
   const disallowed = rows.filter((row) => !isChinaImportOrderEligibleProduct(row));
   if (missing.length > 0 || disallowed.length > 0) {
     const names = disallowed.map((row) => row.name).join("、");
-    throw new Error(`中国代购订单只可选择“中国进口代购”模式商品，以及肥料或花盆类商品${names ? `；不可加入：${names}` : ""}`);
+    throw new Error(`中国代购订单只可选择“中国进口代购”模式商品，以及已开启“允许进入中国代购订单”的本地配套商品${names ? `；不可加入：${names}` : ""}`);
   }
 }
 
@@ -252,10 +248,9 @@ export async function getProductsForOrder(filters?: { search?: string; orderCate
   const categoryRows = await db.select({
     id: products.id,
     salesMode: products.salesMode,
-    isPot: products.isPot,
-    categoryName: productCategories.name,
+    orderCategory: products.orderCategory,
+    allowImportOrder: products.allowImportOrder,
   }).from(products)
-    .leftJoin(productCategories, eq(products.categoryId, productCategories.id))
     .where(inArray(products.id, productRows.map((product) => product.id)));
   const eligibleIds = new Set(categoryRows.filter(isChinaImportOrderEligibleProduct).map((row) => row.id));
   return productRows.filter((product) => eligibleIds.has(product.id));
@@ -950,8 +945,11 @@ export async function generateOrderNumber(prefix: string): Promise<string> {
   return `${prefix}${String(nextNum).padStart(5, "0")}`;
 }
 
-// V2.1: Unified order category resolver — determines whether an order should be local (XT) or import (XTC)
-// Priority: 1) Product orderCategory  2) Existing order orderCategory  3) Live room liveType
+// V2.1: Unified order category resolver — determines whether an order should be local (XT) or import (XTC).
+// A local accessory with allowImportOrder remains XT by default. It can only
+// enter an XTC order when the caller supplies an existing XTC order or an
+// active China-import live context; the separate item-eligibility assertion
+// then prevents unapproved local goods from entering XTC.
 export async function resolveOrderCategory(opts: {
   productIds?: number[];
   existingOrderCategory?: string;
@@ -960,7 +958,7 @@ export async function resolveOrderCategory(opts: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // Priority 1: Check product orderCategory. Any import product makes the
+  // Priority 1: Any China-import product makes the
   // order an XTC order; inspecting only the first row would incorrectly route
   // a cart containing local accessories plus an import item into XT.
   if (opts.productIds && opts.productIds.length > 0) {
@@ -971,19 +969,19 @@ export async function resolveOrderCategory(opts: {
     if (productRows.some((row) => row.orderCategory === "import")) {
       return "import";
     }
-    if (productRows.some((row) => row.orderCategory === "local")) {
-      return "local";
-    }
   }
 
-  // Priority 2: Existing order orderCategory
+  // Priority 2: A verified existing XTC order remains XTC. Its caller must
+  // still pass assertChinaImportOrderItemsEligible before appending items.
   if (opts.existingOrderCategory === "import") return "import";
   if (opts.existingOrderCategory === "local") return "local";
 
-  // Priority 3: Live room liveType
+  // Priority 3: A China-import live provides the controlled XTC context for
+  // authorised local accessories such as fertilizer and pots.
   if (opts.liveType === "import_preorder") return "import";
 
-  // Default: local
+  // Every other context, including normal mall / AI / private-chat checkout,
+  // remains a local XT order even if a product is eligible for XTC.
   return "local";
 }
 
@@ -4446,6 +4444,7 @@ export async function createProductEnhanced(data: {
   telegramFlowLink?: string;
   allowStandalonePurchase?: boolean;
   allowMixedCheckout?: boolean;
+  allowImportOrder?: boolean;
   notes?: string;
   coverImageUrl?: string;
   images?: string;
@@ -4519,6 +4518,7 @@ export async function createProductEnhanced(data: {
     telegramFlowLink: data.telegramFlowLink,
     allowStandalonePurchase: data.allowStandalonePurchase,
     allowMixedCheckout: data.allowMixedCheckout,
+    allowImportOrder: data.allowImportOrder ?? false,
     notes: data.notes,
     coverImageUrl: data.coverImageUrl,
     images: data.images,
@@ -4597,6 +4597,7 @@ export async function updateProductEnhanced(id: number, data: Partial<{
   telegramFlowLink: string;
   allowStandalonePurchase: boolean;
   allowMixedCheckout: boolean;
+  allowImportOrder: boolean;
   notes: string;
   coverImageUrl: string;
   images: string;

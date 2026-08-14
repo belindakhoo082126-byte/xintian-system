@@ -1,0 +1,847 @@
+210-  isPot?: boolean | null;
+211-  categoryName?: string | null;
+212-}) {
+213-  return product.salesMode === "import_preorder"
+214-    || Boolean(product.isPot)
+215-    || CHINA_IMPORT_ALLOWED_CATEGORY_NAMES.includes((product.categoryName || "") as typeof CHINA_IMPORT_ALLOWED_CATEGORY_NAMES[number]);
+216-}
+217-
+218-/**
+219- * 中国代购订单只允许中国进口代购商品，或本地肥料／花盆。此服务层校验用于
+220- * 后台建单、AI建单与商城加单，不能只依赖前端筛选。
+221- */
+222:export async function assertChinaImportOrderItemsEligible(productIds: number[]) {
+223-  const uniqueIds = Array.from(new Set(productIds.filter((id) => Number.isFinite(id) && id > 0)));
+224-  if (uniqueIds.length === 0) return;
+225-  const db = await getDb();
+226-  if (!db) throw new Error("Database not available");
+227-
+228-  const rows = await db.select({
+229-    id: products.id,
+230-    name: products.name,
+231-    salesMode: products.salesMode,
+232-    isPot: products.isPot,
+233-    categoryName: productCategories.name,
+234-  }).from(products)
+235-    .leftJoin(productCategories, eq(products.categoryId, productCategories.id))
+236-    .where(inArray(products.id, uniqueIds));
+237-
+238-  const foundIds = new Set(rows.map((row) => row.id));
+239-  const missing = uniqueIds.filter((id) => !foundIds.has(id));
+240-  const disallowed = rows.filter((row) => !isChinaImportOrderEligibleProduct(row));
+241-  if (missing.length > 0 || disallowed.length > 0) {
+242-    const names = disallowed.map((row) => row.name).join("、");
+243-    throw new Error(`中国代购订单只可选择“中国进口代购”模式商品，以及肥料或花盆类商品${names ? `；不可加入：${names}` : ""}`);
+244-  }
+245-}
+246-
+247-export async function getProductsForOrder(filters?: { search?: string; orderCategory?: string }) {
+248-  const productRows = await getProducts({ search: filters?.search });
+249-  if (filters?.orderCategory !== "import" || productRows.length === 0) return productRows;
+250-  const db = await getDb();
+251-  if (!db) return [];
+252-  const categoryRows = await db.select({
+253-    id: products.id,
+254-    salesMode: products.salesMode,
+255-    isPot: products.isPot,
+256-    categoryName: productCategories.name,
+257-  }).from(products)
+258-    .leftJoin(productCategories, eq(products.categoryId, productCategories.id))
+259-    .where(inArray(products.id, productRows.map((product) => product.id)));
+260-  const eligibleIds = new Set(categoryRows.filter(isChinaImportOrderEligibleProduct).map((row) => row.id));
+261-  return productRows.filter((product) => eligibleIds.has(product.id));
+262-}
+263-
+264-export async function getProductById(id: number) {
+265-  const db = await getDb();
+266-  if (!db) return undefined;
+267-  const result = await db.select().from(products).where(eq(products.id, id)).limit(1);
+268-  return result.length > 0 ? result[0] : undefined;
+269-}
+270-
+271-export async function createProduct(data: typeof products.$inferInsert) {
+272-  const db = await getDb();
+273-  if (!db) throw new Error("Database not available");
+274-  const result = await db.insert(products).values(data);
+275-  return result;
+276-}
+277-
+278-export async function updateProduct(id: number, data: Partial<typeof products.$inferInsert>) {
+279-  const db = await getDb();
+280-  if (!db) throw new Error("Database not available");
+281-  await db.update(products).set(data).where(eq(products.id, id));
+282-}
+283-
+284-export async function deleteProduct(id: number) {
+285-  const db = await getDb();
+286-  if (!db) throw new Error("Database not available");
+287-  await db.delete(products).where(eq(products.id, id));
+288-}
+289-
+290-// ============================================================================
+291-// Customer helpers
+292-// ============================================================================
+293-
+294-export async function getCustomers(search?: string) {
+295-  const db = await getDb();
+296-  if (!db) return [];
+297-  let query = db.select().from(customers);
+298-  if (search) {
+299-    // V2.1.17: Phone normalize — strip spaces, dashes, brackets, and convert +60 to 0
+300-    const normalizedSearch = normalizePhone(search);
+301-    const conditions = [
+302-      like(customers.name, `%${search}%`),
+303-      like(customers.facebookName, `%${search}%`),
+304-      like(customers.phoneNumber, `%${search}%`),
+305-      like(customers.email, `%${search}%`),
+306-      like(customers.facebookId, `%${search}%`),
+307-      like(customers.messengerId, `%${search}%`),
+308-      like(customers.customerId, `%${search}%`),
+309-      like(customers.displayName, `%${search}%`),
+310-      like(customers.whatsappPhone, `%${search}%`),
+311-    ];
+312-    // Also search with normalized phone if it differs from original
+313-    if (normalizedSearch !== search) {
+314-      conditions.push(like(customers.phoneNumber, `%${normalizedSearch}%`));
+315-      conditions.push(like(customers.whatsappPhone, `%${normalizedSearch}%`));
+316-    }
+317-    query = query.where(or(...conditions)) as any;
+318-  }
+319-  return await query.orderBy(desc(customers.createdAt));
+320-}
+321-
+322-/**
+323- * V2.1.17: Normalize Malaysian phone number for search.
+324- * Strips spaces, dashes, brackets, and converts +60 prefix to 0.
+325- * Examples: "+60 12-345 6789" → "0123456789", "6012-3456789" → "0123456789"
+326- */
+327-export function normalizePhone(phone: string): string {
+328-  let normalized = phone.replace(/[\s\-()\[\]]/g, '');
+329-  // Convert +60 or 60 prefix to 0 (Malaysian format)
+330-  if (normalized.startsWith('+60')) {
+331-    normalized = '0' + normalized.slice(3);
+332-  } else if (normalized.startsWith('60') && normalized.length >= 10) {
+333-    normalized = '0' + normalized.slice(2);
+334-  }
+335-  return normalized;
+336-}
+337-
+338-export async function getCustomerById(id: number) {
+339-  const db = await getDb();
+340-  if (!db) return undefined;
+341-  const result = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
+342-  return result.length > 0 ? result[0] : undefined;
+343-}
+344-
+345-export async function findOrCreateCustomer(data: {
+346-  facebookId?: string;
+347-  facebookName?: string;
+348-  messengerId?: string;
+349-  name?: string;
+350-  phoneNumber?: string;
+351-  email?: string;
+352-  address?: string;
+--
+1444-
+1445-  // Physical and gift items both go through the physical order flow
+1446-  // Gift items have price=0 but still count toward shipping weight and free-shipping threshold
+1447-  const hasPhysical = data.items.some(i => i.productType === "physical" || i.productType === "gift");
+1448-  const hasMembership = data.items.some(i => i.productType === "membership");
+1449-  const orderType = hasPhysical && hasMembership ? "mixed" : hasMembership ? "membership" : "physical";
+1450-  // V2.1.04: Use resolveOrderCategory for unified routing — product orderCategory takes priority
+1451-  if (!data.orderCategory) {
+1452-    const productIds = data.items.map(i => i.productId).filter(Boolean) as number[];
+1453-    data.orderCategory = await resolveOrderCategory({ productIds });
+1454-  }
+1455-  if (data.orderCategory === "import") {
+1456:    await assertChinaImportOrderItemsEligible(data.items.map((item) => item.productId));
+1457-    data.liveRoomId = data.liveRoomId || await getActiveImportLiveRoomId();
+1458-    await assertImportLiveOrderWindow(data.liveRoomId);
+1459-  }
+1460-
+1461-  await applyTrustedSpecialPriceSnapshots(db, data.items);
+1462-
+1463-  const mergeTarget = data.orderCategory === "import"
+1464-    ? await findMergeableUnpaidImportLiveOrder(data.customerId, data.liveRoomId!)
+1465-    : await findMergeableUnpaidLocalOrder(data.customerId);
+1466-  if (mergeTarget) {
+1467-    const itemSource = data.orderSource === "facebook_live"
+1468-      ? "facebook_live"
+1469-      : data.orderSource === "mall" || data.orderSource === "store"
+1470-        ? "mall"
+1471-        : data.orderSource === "ai" || data.orderSource === "private_chat" || data.orderSource === "messenger" || data.orderSource === "post"
+1472-          ? "messenger"
+1473-          : "admin";
+1474-    const mergedOrder = await appendItemsToUnpaidLocalOrder({
+1475-      customerId: data.customerId,
+1476-      targetOrderId: mergeTarget.id,
+1477-      expectedOrderCategory: data.orderCategory as "local" | "import",
+1478-      operationType: data.orderCategory === "import" ? "import_manual_merge" : "cross_channel_merge",
+1479-      operationBy: data.orderSource || "后台建单",
+1480-      allocateFifoCost: true,
+1481-      items: data.items.map((item) => ({
+1482-        productId: item.productId,
+1483-        productName: item.productName,
+1484-        productType: item.productType,
+1485-        quantity: item.quantity,
+1486-        unitPrice: item.unitPrice,
+1487-        subtotal: item.subtotal,
+1488-        variationId: item.variationId || null,
+1489-        variationName: item.variationName || null,
+1490-        itemSource,
+1491-        salesMode: data.orderCategory === "import" ? "import_preorder" : "normal",
+1492-        priceType: (item.priceType as any) || "retail",
+1493-        unitCost: item.unitCost || "0",
+1494-        originalUnitPrice: item.originalUnitPrice || null,
+1495-      })),
+1496-    });
+1497-    return { ...mergedOrder, creditUsed: "0.00", creditRemaining: (await getCustomerById(data.customerId))?.creditBalance?.toString() || "0.00", merged: true };
+1498-  }
+1499-
+1500-  // V2.2: Calculate shipping using new West Malaysia rules
+1501-  let shippingFee = 0;
+1502-  const promotionDiscountNum = parseFloat(data.promotionDiscount || "0");
+1503-  const discountAmountNum = parseFloat(data.discountAmount || "0");
+1504-  const extraChargeNum = parseFloat(data.extraCharge || "0");
+1505-  const creditUsedNum = parseFloat(data.creditUsed || "0");
+1506-  const priceBreakdown = calculateOrderPriceBreakdown(data.items, {
+1507-    promotionDiscount: promotionDiscountNum,
+1508-    discountAmount: discountAmountNum,
+1509-  });
+1510-  const { physicalSubtotal, membershipSubtotal, freeShippingEligibleSubtotal } = priceBreakdown;
+1511-  
+1512-  if (hasPhysical && data.shippingMethod === "west_malaysia") {
+1513-    const totalWeight = data.items
+1514-      .filter(i => i.productType === "physical" || i.productType === "gift")
+1515-      .reduce((sum, i) => sum + 0.5 * i.quantity, 0);
+1516-    const shipResult = calculateWestMalaysiaShipping(totalWeight, freeShippingEligibleSubtotal);
+1517-    shippingFee = shipResult.shippingFee;
+1518-  } else if (hasPhysical && data.shippingMethod === "east_malaysia_poslaju") {
+1519-    // V2.0.80: 东马 PosLaju 预收 RM50（2kg 内），打包后 API 计算实际运费
+1520-    shippingFee = 50;
+1521-  } else if (hasPhysical && data.shippingMethod === "east_malaysia_shopee") {
+1522-    // V2.0.84: 东马 Shopee 运费固定 RM0
+1523-    shippingFee = 0;
+1524-  } else if (hasPhysical && data.shippingMethod === "lalamove") {
+1525-    // V2.0.84: Lalamove — 满 RM150 公司承担，未满收 RM15
+1526-    shippingFee = freeShippingEligibleSubtotal >= 150 ? 0 : 15;
+1527-  }
+1528-
+1529-  // V2.0.78: Auto-deduct credit from customer balance (no manual input)
+1530-  // Read customer's current credit balance
+1531-  const customer = await getCustomerById(data.customerId);
+1532-  if (!customer) throw new Error("Customer not found");
+1533-  const customerCreditBalance = parseFloat(customer.creditBalance?.toString() || "0");
+1534-  // Auto-calculate credit used: min(available credit, pre-credit total)
+1535-  const preCreditTotal = physicalSubtotal + membershipSubtotal - promotionDiscountNum - discountAmountNum + extraChargeNum + shippingFee;
+1536-  const autoCreditUsed = Math.min(customerCreditBalance, Math.max(0, preCreditTotal));
+1537-  const autoCreditUsedStr = autoCreditUsed.toFixed(2);
+1538-
+1539-  // V2.2: Total = 商品小计 - 促销优惠 - 人工折扣 + 额外收费 + 运费 - 使用Credit
+1540-  const totalAmount = preCreditTotal - autoCreditUsed;
+1541-  
+1542-  // V2.0.99: Generate sequential order number with XT/XTC prefix (XT00001, XTC00001)
+1543-  if (physicalItems.length > 0) {
+1544-    await reserveProductStocksForOrder(physicalItems);
+1545-  }
+1546-  const prefix = data.orderCategory === "import" ? "XTC" : "XT";
+1547-  const orderNumber = await generateOrderNumber(prefix);
+1548-  const secureToken = generateSecureToken();
+1549-  const checkoutLink = `/order/${orderNumber}/${secureToken}`;
+1550-
+1551-  const orderResult = await db.insert(orders).values({
+1552-    orderNumber,
+1553-    secureToken,
+1554-    checkoutLink,
+1555-    customerId: data.customerId,
+1556-    facebookName: data.facebookName || null,
+1557-    facebookId: data.facebookId || null,
+1558-    messengerId: data.messengerId || null,
+1559-    orderType: orderType as any,
+1560-    physicalSubtotal: physicalSubtotal.toFixed(2),
+1561-    membershipSubtotal: membershipSubtotal.toFixed(2),
+1562-    shippingFee: shippingFee.toFixed(2),
+1563-    customerPaidShipping: shippingFee.toFixed(2),
+1564-    totalAmount: totalAmount.toFixed(2),
+1565-    physicalStatus: "pending",
+1566-    importStatus: data.orderCategory === "import" ? "pending" : null,
+1567-    membershipStatus: hasMembership ? "pending" : undefined,
+1568-    shippingAddress: data.shippingAddress || null,
+1569-    shippingMethod: (data.shippingMethod as any) || null,
+1570-    paymentMethodId: (data.paymentMethodId as any) || null,
+1571-    paymentMethodName: (data.paymentMethodName as any) || null,
+1572-    orderNature: (data.orderNature as any) || "retail",
+1573-    orderSource: (data.orderSource as any) || "manual",
+1574-    orderCategory: (data.orderCategory as any) || "local",
+1575-    sourceName: data.sourceName || null,
+1576-    liveRoomId: data.liveRoomId || null,
+1577-    // V2.2: Promotion / discount / extra charge / credit
+1578-    promotionId: data.promotionId || null,
+1579-    promotionName: data.promotionName || null,
+1580-    promotionDiscount: data.promotionDiscount || null,
+1581-    extraCharge: data.extraCharge || null,
+1582-    extraChargeDescription: data.extraChargeDescription || null,
+1583-    creditUsed: autoCreditUsedStr,
+1584-    discountAmount: data.discountAmount || null,
+1585-    discountReason: data.discountReason || null,
+1586-    // V2.0.85: Save recipient info on order
+--
+6443-  const regularItems = data.items.filter((item) => !item.bundleId);
+6444-
+6445-  // Find or create customer
+6446-  const customer = await findOrCreateCustomer({
+6447-    name: data.customerName,
+6448-    phoneNumber: data.contactNumber,
+6449-    email: data.email,
+6450-  });
+6451-  const mallProductIds = data.items.map((item) => item.productId).filter(Boolean) as number[];
+6452-  const resolvedCategory = await resolveOrderCategory({ productIds: mallProductIds });
+6453-  let importLiveRoomId: number | null = null;
+6454-  if (resolvedCategory === "import") {
+6455:    await assertChinaImportOrderItemsEligible(mallProductIds);
+6456-    importLiveRoomId = await getActiveImportLiveRoomId();
+6457-    await assertImportLiveOrderWindow(importLiveRoomId);
+6458-  }
+6459-
+6460-  // Build shipping address
+6461-  const shippingAddress = [
+6462-    data.addressLine1,
+6463-    data.addressLine2,
+6464-    `${data.postcode} ${data.city}`,
+6465-    data.state,
+6466-    data.area,
+6467-    ].filter(Boolean).join(", ");
+6468-  // Calculate totals
+6469-  const subtotal = data.items.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+6470-  // V2.2: Exclude standalone items from normal shipping calculation
+6471-  const normalItems = data.items.filter(i => !i.isStandalone);
+6472-  const standaloneItems = data.items.filter(i => i.isStandalone);
+6473-  // Weight for shipping: only normal (non-standalone) items
+6474-  const totalWeight = normalItems.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
+6475-  // V2.1: Free shipping threshold excludes special-price items
+6476-  const specialSubtotal = data.items.filter(i => i.isSpecial).reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+6477-  const normalSubtotal = normalItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
+6478-  const thresholdSubtotal = normalSubtotal - specialSubtotal;
+6479-  // Calculate shipping fee based on method
+6480-  let shippingFee = 0;
+6481-  if (data.shippingMethod === "west_malaysia") {
+6482-    if (thresholdSubtotal >= 150) {
+6483-      // 满 RM150：10kg 以内免邮，超过 10kg 每公斤 RM3
+6484-      shippingFee = totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3;
+6485-    } else {
+6486-      // 未满 RM150：10kg 以内 RM15，超过 10kg 每公斤 RM3
+6487-      shippingFee = 15 + (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3);
+6488-    }
+6489-  } else if (data.shippingMethod === "east_malaysia_poslaju") {
+6490-    // V2.0.80: 东马 PosLaju 预收 RM50（2kg 内），打包后 API 计算实际运费
+6491-    shippingFee = 50;
+6492-  } else if (data.shippingMethod === "east_malaysia_shopee") {
+6493-    // V2.0.84: 东马 Shopee 运费固定 RM0，Shopee 平台自行向客户收取运费
+6494-    shippingFee = 0;
+6495-  } else if (data.shippingMethod === "east_malaysia") {
+6496-    // 兼容旧数据：默认走 Shopee 规则（RM0）
+6497-    shippingFee = 0;
+6498-  } else if (data.shippingMethod === "self_pickup") {
+6499-    shippingFee = 0;
+6500-  } else if (data.shippingMethod === "lalamove") {
+6501-    // V2.0.84: Lalamove — 满 RM150 公司承担 RM15，未满 RM15 收 RM15
+6502-    shippingFee = thresholdSubtotal >= 150 ? 0 : 15;
+6503-  }
+6504-
+6505-  // The mall preview is guidance only. Re-evaluate promotions on the server
+6506-  // immediately before this new order is created.
+6507-  const marketingCart = data.items.map((item) => ({
+6508-    productId: item.productId,
+6509-    quantity: item.quantity,
+6510-    unitPrice: Math.max(0, parseFloat(item.unitPrice) || 0),
+6511-  }));
+6512-  const appliedMarketingCampaigns = (await getActiveMarketingCampaigns())
+6513-    .filter((campaign) => Boolean((campaign as any).showInMall))
+6514-    .map((campaign) => ({
+6515-      campaign,
+6516-      result: evaluateMarketingCampaign(campaign as any, marketingCart, { orderSource: "store" }),
+6517-    }))
+6518-    .filter(({ result }) => result.eligible);
+6519-  const marketingDiscount = Math.min(subtotal, appliedMarketingCampaigns.reduce((sum, item) => sum + item.result.discountTotal, 0));
+6520-  const freeShippingEntitlement = appliedMarketingCampaigns.some(({ result }) => result.entitlements.some((entitlement) => entitlement.type === "free_shipping"));
+6521-  const marketingShippingSubsidy = freeShippingEntitlement ? shippingFee : 0;
+6522-  if (freeShippingEntitlement) shippingFee = 0;
+6523-  const totalAmount = subtotal - marketingDiscount + shippingFee;
+6524-
+6525-  // Any local item from the mall joins the customer's newest truly unpaid XT
+6526-  // order, regardless of whether it was created in the mall, a live, AI chat,
+6527-  // post or the backend. A caller-supplied target is only accepted when it is
+6528-  // exactly that eligible candidate.
+6529-  const mergeTarget = resolvedCategory === "local"
+6530-    ? await findMergeableUnpaidLocalOrder(customer.id)
+6531-    : await findMergeableUnpaidImportLiveOrder(customer.id, importLiveRoomId!);
+6532-  if (data.mergeIntoOrderId && mergeTarget?.id !== data.mergeIntoOrderId) {
+6533-    throw new Error("所选订单已有付款或已进入包货／发货流程，不能继续自动合单");
+6534-  }
+6535-  if (mergeTarget) {
+6536-    await reserveProductStocksForOrder(regularItems);
+6537-    const mergedOrder = await appendItemsToUnpaidLocalOrder({
+6538-      customerId: customer.id,
+6539-      targetOrderId: mergeTarget.id,
+6540-      expectedOrderCategory: resolvedCategory,
+6541-      reserveStock: false,
+6542-      operationType: resolvedCategory === "import" ? "import_mall_merge" : "cross_channel_merge",
+6543-      operationBy: "商城",
+6544-      items: data.items.map((item) => ({
+6545-        productId: item.productId,
+6546-        productName: item.productName,
+6547-        productSku: item.productSku || null,
+6548-        productType: "physical" as const,
+6549-        quantity: item.quantity,
+6550-        unitPrice: item.unitPrice,
+6551-        subtotal: item.subtotal,
+6552-        variationId: item.variationId || null,
+6553-        variationName: item.variationName || null,
+6554-        facebookKeyword: item.facebookKeyword || null,
+6555-        discount: item.discount || "0.00",
+6556-        itemSource: "mall" as const,
+6557-        salesMode: resolvedCategory === "import" ? "import_preorder" as const : "normal" as const,
+6558-        priceType: item.isSpecial ? "special" as const : "retail" as const,
+6559-        originalUnitPrice: item.originalUnitPrice || null,
+6560-      })),
+6561-    });
+6562-
+6563-    for (const item of data.items.filter((entry) => entry.bundleId)) {
+6564-      await deductBundleStock(item.bundleId!, item.quantity);
+6565-    }
+6566-    return { ...mergedOrder, merged: true };
+6567-  }
+6568-
+6569-  // Create new order
+6570-  // V2.1.04: Use resolveOrderCategory for unified routing
+6571-  await reserveProductStocksForOrder(regularItems);
+6572-  const isImport = resolvedCategory === "import";
+6573-  const orderPrefix = isImport ? "XTC" : "XT";
+6574-  const orderNumber = await generateOrderNumber(orderPrefix);
+6575-  const secureToken = generateSecureToken();
+6576-  const checkoutLink = `/order/${orderNumber}/${secureToken}`;
+6577-  const orderResult = await db.insert(orders).values({
+6578-    orderNumber,
+6579-    secureToken,
+6580-    checkoutLink,
+6581-    customerId: customer.id,
+6582-    orderType: "physical",
+6583-    orderCategory: resolvedCategory,
+6584-    importStatus: isImport ? "pending" : null,
+6585-    physicalSubtotal: (subtotal - marketingDiscount).toFixed(2),
+--
+6760-  }).from(orders).where(eq(orders.id, orderId)).limit(1);
+6761-  if (!target[0]) throw new Error("Order not found");
+6762-  // 仅允许尚未履约完成的可编辑订单继续加单。packing 对应后台的
+6763-  // 「待包货／待备货」，仍未产生发货批次；partial_shipped 及其后的状态一律禁止。
+6764-  const mergeableStatuses = ["pending", "receipt_uploaded", "hold_order", "partial_payment", "packing"];
+6765-  const currentPhysicalStatus = target[0].physicalStatus || "pending";
+6766-  if (!mergeableStatuses.includes(currentPhysicalStatus)) throw new Error("当前订单状态不允许加单");
+6767-  // 中国代购可加中国进口代购商品，以及肥料和花盆；本地订单仍不能加入中国代购商品。
+6768-  const productIds = items.map((i) => i.productId).filter((id) => id > 0);
+6769-  if (productIds.length > 0) {
+6770-    const orderCat = target[0].orderCategory || "local";
+6771-    if (orderCat === "import") {
+6772:      await assertChinaImportOrderItemsEligible(productIds);
+6773-    } else {
+6774-      const productRows = await db.select({ orderCategory: products.orderCategory }).from(products).where(inArray(products.id, productIds));
+6775-      for (const pr of productRows) {
+6776-        if (pr.orderCategory === "import") {
+6777-        throw new Error("此商品属于中国代购商品，不能加入本地订单，请加入/建立中国代购 XTC 订单。");
+6778-        }
+6779-      }
+6780-    }
+6781-  }
+6782-  await reserveProductStocksForOrder(items);
+6783-  for (const item of items) {
+6784-    await db.insert(orderItems).values({
+6785-      orderId,
+6786-      productId: item.productId,
+6787-      productName: item.productName,
+6788-      productSku: item.productSku || null,
+6789-      productType: "physical",
+6790-      quantity: item.quantity,
+6791-      unitPrice: item.unitPrice,
+6792-      subtotal: item.subtotal,
+6793-      variationId: item.variationId || null,
+6794-      variationName: item.variationName || null,
+6795-      facebookKeyword: item.facebookKeyword || null,
+6796-      priceType: item.isSpecial ? "special" : "retail",
+6797-      discount: "0.00",
+6798-      itemSource: "mall",
+6799-    });
+6800-
+6801-    if (item.variationId) {
+6802-      await db.update(productVariations).set({
+6803-        stockQuantity: sql`${productVariations.stockQuantity} - ${item.quantity}`,
+6804-      }).where(eq(productVariations.id, item.variationId));
+6805-    }
+6806-    // Product stock was atomically reserved before the item was inserted.
+6807-    await allocateFifoCostForSale({ orderId, productId: item.productId, quantity: item.quantity, createdBy: "mall" });
+6808-  }
+6809-
+6810-  const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+6811-  const priceBreakdown = calculateOrderPriceBreakdown(allItems, {
+6812-    promotionDiscount: target[0].promotionDiscount,
+6813-    discountAmount: target[0].discountAmount,
+6814-  });
+6815-  const physicalSubtotal = priceBreakdown.physicalSubtotal;
+6816-  const totalWeight = allItems
+6817-    .filter((item: any) => item.productType === "physical" || item.productType === "gift")
+6818-    .reduce((sum, item) => sum + 0.5 * Number(item.quantity || 0), 0);
+6819-  const specialSubtotal = priceBreakdown.specialSubtotal;
+6820-
+6821-  const membershipSubtotal = parseFloat(target[0].membershipSubtotal || "0");
+6822-  const promotionDiscount = parseFloat(target[0].promotionDiscount || "0");
+6823-  const discountAmount = parseFloat(target[0].discountAmount || "0");
+6824-  const extraCharge = parseFloat(target[0].extraCharge || "0");
+6825-  const creditUsed = parseFloat(target[0].creditUsed || "0");
+6826-  const eligibleSubtotal = priceBreakdown.freeShippingEligibleSubtotal;
+6827-
+6828-  let shippingFee = 0;
+6829-  if (target[0].shippingMethod === "west_malaysia") {
+6830-    shippingFee = calculateWestMalaysiaShipping(totalWeight, eligibleSubtotal).shippingFee;
+6831-  } else if (target[0].shippingMethod === "east_malaysia_poslaju") {
+6832-    // V2.0.80: 东马 PosLaju 预收 RM50
+6833-    shippingFee = 50;
+6834-  } else if (target[0].shippingMethod === "east_malaysia_shopee") {
+6835-    // V2.0.84: 东马 Shopee 运费固定 RM0
+6836-    shippingFee = 0;
+6837-  } else if (target[0].shippingMethod === "lalamove") {
+6838-    // V2.0.84: Lalamove
+6839-    shippingFee = eligibleSubtotal >= 150 ? 0 : 15;
+6840-  }
+6841-
+6842-  const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
+6843-
+6844-  // V2.1.14: Auto-recalculate order status after adding items
+6845-  const currentPaidAmount = parseFloat(target[0].paidAmount || "0");
+6846-  let newPhysicalStatus = currentPhysicalStatus;
+6847-  if (currentPaidAmount > 0 && currentPaidAmount < totalAmount) {
+6848-    newPhysicalStatus = "partial_payment";
+6849-  } else if (currentPaidAmount >= totalAmount && totalAmount > 0) {
+6850-    if (newPhysicalStatus === "pending") newPhysicalStatus = "packing";
+6851-  }
+6852-
+6853-  await db.update(orders).set({
+6854-    physicalSubtotal: physicalSubtotal.toFixed(2),
+6855-    shippingFee: shippingFee.toFixed(2),
+6856-    customerPaidShipping: shippingFee.toFixed(2),
+6857-    totalWeight: totalWeight.toFixed(2),
+6858-    totalAmount: totalAmount.toFixed(2),
+6859-    physicalStatus: newPhysicalStatus,
+6860-  }).where(eq(orders.id, orderId));
+6861-  // V2.1.08: Removed auto-remark for mall add-on; itemSource on order_items already records it.
+6862-  // Activity log below serves as the system operation record.
+6863-  // V2.0.90: Add order operation log for timeline tracking
+6864-  await logOrderOperation(orderId, "mall_addon", `商城加单：${items.map((item) => `${item.productName} ×${item.quantity}`).join("、")}`, JSON.stringify({
+6865-    items: items.map((item) => ({ name: item.productName, qty: item.quantity, price: item.unitPrice })),
+6866-    totalBefore: target[0].totalAmount,
+6867-    totalAfter: totalAmount.toFixed(2),
+6868-  }), "客户结单页");
+6869-  broadcastChanges(["orders", "inventory", "dashboard", "customers"]);
+6870-
+6871-  return {
+6872-    orderId,
+6873-    orderNumber: target[0].orderNumber,
+6874-    secureToken: target[0].secureToken,
+6875-    totalAmount: totalAmount.toFixed(2),
+6876-  };
+6877-}
+6878-// --- Mall Order Query (Guest) ---
+6879-export async function queryOrderByNumber(orderNumber: string, contactNumber: string) {
+6880-  const db = await getDb();
+6881-  if (!db) return undefined;
+6882-  // Find order by order number, then verify customer phone matches
+6883-  const order = await db.select().from(orders)
+6884-    .where(eq(orders.orderNumber, orderNumber))
+6885-    .limit(1);
+6886-  if (order.length === 0) return undefined;
+6887-  const customer = await getCustomerById(order[0].customerId);
+6888-  if (!customer || customer.phoneNumber !== contactNumber) return undefined;
+6889-  return order[0];
+6890-}
+6891-
+6892-// --- Smart Paste: parse customer info text ---
+6893-export function parseSmartPaste(text: string): {
+6894-  customerName?: string;
+6895-  contactNumber?: string;
+6896-  addressLine1?: string;
+6897-  addressLine2?: string;
+6898-  postcode?: string;
+6899-  city?: string;
+6900-  state?: string;
+6901-  area?: string;
+6902-} {
+4402-
+4403-export async function getProductByIdEnhanced(id: number) {
+4404-  const db = await getDb();
+4405-  if (!db) return undefined;
+4406-  const productResult = await db.select().from(products).where(eq(products.id, id)).limit(1);
+4407-  if (productResult.length === 0) return undefined;
+4408-  const product = productResult[0];
+4409-  const images = await db.select().from(productImages).where(eq(productImages.productId, id)).orderBy(asc(productImages.sortOrder));
+4410-  const videos = await db.select().from(productVideos).where(eq(productVideos.productId, id)).orderBy(asc(productVideos.sortOrder));
+4411-  const variantList = await db.select().from(variants).where(eq(variants.productId, id)).orderBy(asc(variants.sortOrder));
+4412-  const links = await db.select().from(memberLinks).where(eq(memberLinks.productId, id));
+4413-  const attrs = await db.select().from(productAttributes).where(eq(productAttributes.productId, id)).orderBy(asc(productAttributes.sortOrder));
+4414-  return { ...product, images, videos, variants: variantList, memberLinks: links, attributes: attrs };
+4415-}
+4416-
+4417:export async function createProductEnhanced(data: {
+4418-  name: string;
+4419-  type: 'physical' | 'membership' | 'gift';
+4420-  productMode: 'simple' | 'variant';
+4421-  categoryId?: number;
+4422-  unitId?: number;
+4423-  keyword: string;
+4424-  sku?: string;
+4425-  status?: string;
+4426-  visibility?: string;
+4427-  priceVisibility?: string;
+4428-  shortDescZh?: string;
+4429-  shortDescEn?: string;
+4430-  fullDescZh?: string;
+4431-  fullDescEn?: string;
+4432-  careZh?: string;
+4433-  careEn?: string;
+4434-  sellingPrice?: string;
+4435-  compareAtPrice?: string;
+4436-  memberPrice?: string;
+4437-  currentCost?: string;
+4438-  specialPrice?: string;
+4439-  dimensions?: any;
+4440-  weightKg?: string;
+4441-  stockQuantity?: number;
+4442-  isFeatured?: boolean;
+4443-  featuredSortOrder?: number;
+4444-  isMemberOnly?: boolean;
+4445-  membershipIntro?: string;
+4446-  telegramFlowLink?: string;
+4447-  allowStandalonePurchase?: boolean;
+4448-  allowMixedCheckout?: boolean;
+4449-  notes?: string;
+4450-  coverImageUrl?: string;
+4451-  images?: string;
+4452-  videoUrl?: string;
+4453-  description?: string;
+4454-  isSpecial?: boolean;
+4455-  allowPresale?: boolean;
+4456-  allowStandaloneShipping?: boolean;
+4457-  standaloneShippingMethod?: string;
+4458-  standaloneShippingFee?: string;
+4459-  lightDesc?: string;
+4460-  waterDesc?: string;
+4461-  fertilizerDesc?: string;
+4462-  pruningDesc?: string;
+4463-  syncToMall?: boolean;
+4464-  mallSortOrder?: number;
+4465-  isPot?: boolean;
+4466-  potCapacity?: string;
+4467-  productImages?: string[];
+4468-  // V4: Wholesale & Agent
+4469-  wholesalePrice?: number;
+4470-  agentPrice?: number;
+4471-  moq?: number;
+4472-  visibleTo?: string;
+4473-  specialPriceStartDate?: string;
+4474-  specialPriceEndDate?: string;
+4475-  keywordChannels?: string;
+4476-}) {
+4477-  const db = await getDb();
+4478-  if (!db) throw new Error('Database not available');
+4479-  const normalizedKeyword = data.keyword.toUpperCase().replace(/\s+/g, '');
+4480-  const sku = data.sku || await generateSku(data.productMode);
+4481-  // Convert empty strings to null for decimal columns (MySQL rejects '' for DECIMAL type)
+4482-  const decimalFields = ['sellingPrice', 'compareAtPrice', 'memberPrice', 'currentCost', 'specialPrice', 'weightKg', 'standaloneShippingFee', 'wholesalePrice', 'agentPrice'];
+4483-  const normalizedData: any = {};
+4484-  for (const field of decimalFields) {
+4485-    if (field in data && (data as any)[field] === '') {
+4486-      normalizedData[field] = null;
+4487-    } else {
+4488-      normalizedData[field] = (data as any)[field];
+4489-    }
+4490-  }
+4491-  const result = await db.insert(products).values({
+4492-    name: data.name,
+4493-    type: data.type,
+4494-    productMode: data.productMode,
+4495-    categoryId: data.categoryId,
+4496-    unitId: data.unitId,
+4497-    keyword: normalizedKeyword,
+4498-    sku,
+4499-    status: (data.status as any) || 'draft',
+4500-    visibility: (data.visibility as any) || 'public',
+4501-    priceVisibility: (data.priceVisibility as any) || 'show',
+4502-    shortDescZh: data.shortDescZh,
+4503-    shortDescEn: data.shortDescEn,
+4504-    fullDescZh: data.fullDescZh,
+4505-    fullDescEn: data.fullDescEn,
+4506-    careZh: data.careZh,
+4507-    careEn: data.careEn,
+4508-    sellingPrice: normalizedData.sellingPrice,
+4509-    compareAtPrice: normalizedData.compareAtPrice,
+4510-    memberPrice: normalizedData.memberPrice,
+4511-    specialPrice: normalizedData.specialPrice,
+4512-    currentCost: normalizedData.currentCost,
+4513-    dimensions: data.dimensions,
+4514-    weightKg: normalizedData.weightKg,
+4515-    stockQuantity: data.stockQuantity,
+4516-    isFeatured: data.isFeatured ?? false,
+4517-    featuredSortOrder: data.featuredSortOrder ?? 0,
+4518-    membershipIntro: data.membershipIntro,
+4519-    telegramFlowLink: data.telegramFlowLink,
+4520-    allowStandalonePurchase: data.allowStandalonePurchase,
+4521-    allowMixedCheckout: data.allowMixedCheckout,
+4522-    notes: data.notes,
+4523-    coverImageUrl: data.coverImageUrl,
+4524-    images: data.images,
+4525-    videoUrl: data.videoUrl,
+4526-    description: data.description,
+4527-    isSpecial: data.isSpecial ?? false,
+4528-    // allowPresale 是商品级唯一业务开关；allowOversold 仅为历史库存守卫兼容字段。
+4529-    allowPresale: data.allowPresale ?? false,
+4530-    allowOversold: data.allowPresale ?? false,
+4531-    allowStandaloneShipping: data.allowStandaloneShipping ?? false,
+4532-    standaloneShippingMethod: (data.standaloneShippingMethod as any) || 'fixed_fee',
+4533-    standaloneShippingFee: normalizedData.standaloneShippingFee,
+4534-    lightDesc: data.lightDesc,
+4535-    waterDesc: data.waterDesc,
+4536-    fertilizerDesc: data.fertilizerDesc,
+4537-    pruningDesc: data.pruningDesc,
+4538-    syncToMall: data.syncToMall ?? false,
+4539-    mallSortOrder: data.mallSortOrder ?? 0,
+4540-    isPot: data.isPot ?? false,
+4541-    potCapacity: data.potCapacity,
+4542-    // V4: Wholesale & Agent
+4559-        url,
+4560-        fileKey,
+4561-        sortOrder: i,
+4562-        isMain: i === 0,
+4563-      });
+4564-    }
+4565-  }
+4566-  return { id: productId, sku };
+4567-}
+4568-
+4569:export async function updateProductEnhanced(id: number, data: Partial<{
+4570-  name: string;
+4571-  type: 'physical' | 'membership' | 'gift';
+4572-  productMode: 'simple' | 'variant';
+4573-  categoryId: number;
+4574-  unitId: number;
+4575-  keyword: string;
+4576-  status: string;
+4577-  visibility: string;
+4578-  priceVisibility: string;
+4579-  shortDescZh: string;
+4580-  shortDescEn: string;
+4581-  fullDescZh: string;
+4582-  fullDescEn: string;
+4583-  careZh: string;
+4584-  careEn: string;
+4585-  sellingPrice: string;
+4586-  compareAtPrice: string;
+4587-  memberPrice: string;
+4588-  currentCost: string;
+4589-  specialPrice: string;
+4590-  dimensions: any;
+4591-  weightKg: string;
+4592-  stockQuantity: number;
+4593-  isFeatured: boolean;
+4594-  featuredSortOrder: number;
+4595-  isMemberOnly: boolean;
+4596-  membershipIntro: string;
+4597-  telegramFlowLink: string;
+4598-  allowStandalonePurchase: boolean;
+4599-  allowMixedCheckout: boolean;
+4600-  notes: string;
+4601-  coverImageUrl: string;
+4602-  images: string;
+4603-  videoUrl: string;
+4604-  description: string;
+4605-  isSpecial: boolean;
+4606-  allowPresale: boolean;
+4607-  allowOversold: boolean;
+4608-  allowStandaloneShipping: boolean;
+4609-  standaloneShippingMethod: string;
+4610-  standaloneShippingFee: string;
+4611-  lightDesc: string;
+4612-  waterDesc: string;
+4613-  fertilizerDesc: string;
+4614-  pruningDesc: string;
+4615-  syncToMall: boolean;
+4616-  mallSortOrder: number;
+4617-  isPot: boolean;
+4618-  potCapacity: string;
+4619-  productImages: string[];
+4620-  // V4: Wholesale & Agent
+4621-  wholesalePrice: number;
+4622-  agentPrice: number;
+4623-  moq: number;
+4624-  visibleTo: string;
+4625-  specialPriceStartDate: string;
+4626-  specialPriceEndDate: string;
+4627-  keywordChannels: string;
+4628-}>) {
+4629-  const db = await getDb();
+4630-  if (!db) throw new Error('Database not available');
+4631-  const { productImages: imageUrls, ...updateData } = data;
+4632-  // 统一预售语义：新界面只写 allowPresale；旧入口若仍写 allowOversold，则同步回商品级开关。
+4633-  if (updateData.allowPresale !== undefined) {
+4634-    (updateData as any).allowOversold = updateData.allowPresale;
+4635-  } else if ((updateData as any).allowOversold !== undefined) {
+4636-    (updateData as any).allowPresale = (updateData as any).allowOversold;
+4637-  }
+4638-  if (data.keyword) {
+4639-    updateData.keyword = data.keyword.toUpperCase().replace(/\s+/g, '');
+4640-  }
+4641-  // Convert empty strings to null for decimal columns (MySQL rejects '' for DECIMAL type)
+4642-  const decimalFields = ['sellingPrice', 'compareAtPrice', 'memberPrice', 'currentCost', 'specialPrice', 'weightKg', 'standaloneShippingFee', 'wholesalePrice', 'agentPrice'];
+4643-  for (const field of decimalFields) {
+4644-    if (field in updateData && (updateData as any)[field] === '') {
+4645-      (updateData as any)[field] = null;
+4646-    }
+4647-  }
+4648-  // V4: Convert date strings to Date objects for timestamp fields
+4649-  if (updateData.specialPriceStartDate !== undefined) {
+4650-    (updateData as any).specialPriceStartDate = updateData.specialPriceStartDate ? new Date(updateData.specialPriceStartDate) : null;
+4651-  }
+4652-  if (updateData.specialPriceEndDate !== undefined) {
+4653-    (updateData as any).specialPriceEndDate = updateData.specialPriceEndDate ? new Date(updateData.specialPriceEndDate) : null;
+4654-  }
+4655-  await db.update(products).set(updateData as any).where(eq(products.id, id));
+4656-  // Sync coverImageUrl to live_room_products.imageUrl so Live Studio always shows the latest product image
+4657-  if (updateData.coverImageUrl !== undefined) {
+4658-    await db.update(liveRoomProducts).set({ imageUrl: updateData.coverImageUrl || null }).where(eq(liveRoomProducts.productId, id));
+4659-  }
+4660-  // Sync product images if provided
+4661-  if (imageUrls) {
+4662-    // Delete existing images and re-insert
+4663-    await db.delete(productImages).where(eq(productImages.productId, id));
+4664-    for (let i = 0; i < imageUrls.length; i++) {
+4665-      const url = imageUrls[i];
+4666-      const fileKey = url.replace(/^.*\/manus-storage\//, '');
+4667-      await db.insert(productImages).values({
+4668-        productId: id,
+4669-        url,
+4670-        fileKey,
+4671-        sortOrder: i,
+4672-        isMain: i === 0,
+4673-      });
+4674-    }
+4675-  }
+4676-}
+4677-
+4678-export async function deleteProductEnhanced(id: number) {
+4679-  const db = await getDb();
+4680-  if (!db) throw new Error('Database not available');
+4681-  // Check if product has orders
+4682-  const orderCount = await db.select({ count: sql`count(*)` }).from(orderItems).where(eq(orderItems.productId, id));
+4683-  if (Number(orderCount[0]?.count) > 0) {
+4684-    return { success: false, reason: '此商品已有订单记录，只能停用不能删除' };
+4685-  }
+4686-  // Delete related data
+4687-  await db.delete(productImages).where(eq(productImages.productId, id));
+4688-  await db.delete(productVideos).where(eq(productVideos.productId, id));
+4689-  await db.delete(variants).where(eq(variants.productId, id));

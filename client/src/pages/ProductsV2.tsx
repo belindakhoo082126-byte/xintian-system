@@ -92,6 +92,7 @@ type ProductForm = {
   videoUrl: string;
   // V2.0: Sales mode
   salesMode: string;
+  allowImportOrder: boolean;
   preorderWaitDays: string;
   spotSaleEnabled: boolean;
   spotSaleQty: number;
@@ -122,7 +123,7 @@ const EMPTY_FORM: ProductForm = {
   lightDesc: "", waterDesc: "", fertilizerDesc: "", pruningDesc: "",
   productImages: [],
   videoUrl: "",
-  salesMode: "normal", preorderWaitDays: "", spotSaleEnabled: false, spotSaleQty: 0, linkedBatchId: "",
+  salesMode: "normal", allowImportOrder: false, preorderWaitDays: "", spotSaleEnabled: false, spotSaleQty: 0, linkedBatchId: "",
   wholesalePrice: "", agentPrice: "", moq: 0, visibleTo: ["retail", "member", "wholesale", "agent"],
   specialPriceStartDate: "", specialPriceEndDate: "",
   aiTags: [], aiSellingPoints: "",
@@ -292,6 +293,7 @@ export default function ProductsV2() {
         productImages: (p.images || []).map((img: any) => img.url || img),
         videoUrl: (p as any).videoUrl || "",
         salesMode: (p as any).salesMode || "normal",
+        allowImportOrder: (p as any).allowImportOrder ?? false,
         preorderWaitDays: (p as any).preorderWaitDays || "",
         spotSaleEnabled: (p as any).spotSaleEnabled ?? false,
         spotSaleQty: (p as any).spotSaleQty ?? 0,
@@ -1174,6 +1176,20 @@ export default function ProductsV2() {
                             </SelectContent>
                           </Select>
                         </div>
+                        {form.salesMode !== "import_preorder" && (
+                          <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                            <div className="min-w-0">
+                              <Label>{translate("允许进入中国代购订单", "Allow in China Import Orders")}</Label>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {translate(
+                                  "本地现货主模式不变；仅在有效中国代购直播期间，才可随 XTC 订单购买。普通商城、AI、私聊和帖子下单仍建立本地 XT。",
+                                  "Keeps this product local by default. It may join XTC only during an active China-import live; normal mall, AI, private chat and post orders remain XT."
+                                )}
+                              </p>
+                            </div>
+                            <Switch checked={form.allowImportOrder} onCheckedChange={(v) => setForm({ ...form, allowImportOrder: v })} />
+                          </div>
+                        )}
                         {form.salesMode === "import_preorder" && (
                           <div className="space-y-3">
                             <div>

@@ -489,6 +489,7 @@ export const appRouter = router({
         facebookFlowId: z.string().optional(),
         allowStandalonePurchase: z.boolean().optional(),
         allowMixedCheckout: z.boolean().optional(),
+        allowImportOrder: z.boolean().optional(),
       }))
       .mutation(async ({ input }) => {
         return await db.createProduct(input as any);
@@ -521,6 +522,7 @@ export const appRouter = router({
         facebookFlowId: z.string().optional(),
         allowStandalonePurchase: z.boolean().optional(),
         allowMixedCheckout: z.boolean().optional(),
+        allowImportOrder: z.boolean().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
@@ -743,6 +745,7 @@ export const appRouter = router({
         telegramFlowLink: z.string().optional(),
         allowStandalonePurchase: z.boolean().optional(),
         allowMixedCheckout: z.boolean().optional(),
+        allowImportOrder: z.boolean().optional(),
         notes: z.string().optional(),
         coverImageUrl: z.string().optional(),
         images: z.string().optional(),
@@ -815,6 +818,7 @@ export const appRouter = router({
         telegramFlowLink: z.string().optional(),
         allowStandalonePurchase: z.boolean().optional(),
         allowMixedCheckout: z.boolean().optional(),
+        allowImportOrder: z.boolean().optional(),
         notes: z.string().optional(),
         coverImageUrl: z.string().optional(),
         images: z.string().optional(),

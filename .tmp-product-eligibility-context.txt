@@ -1,0 +1,951 @@
+=== ROUTER ===
+667-        sortOrder: z.number().optional(),
+668-      }))
+669-      .mutation(async ({ input }) => {
+670-        return await db.createUnit(input);
+671-      }),
+672-  }),
+673-
+674-  // ===========================================================================
+675-  // Phase 1: Products V2 (Admin - 三层 API: Admin / Public / Member Link)
+676-  // ===========================================================================
+677:  productsV2: router({
+678-    // --- Admin API ---
+679-    list: adminProcedure
+680-      .input(z.object({
+681-        search: z.string().optional(),
+682-        categoryId: z.number().optional(),
+683-        status: z.enum(['draft', 'active', 'inactive', 'out_of_stock']).optional(),
+684-        productMode: z.enum(['simple', 'variant']).optional(),
+685-        visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
+686-        type: z.enum(['physical', 'membership', 'gift']).optional(),
+687-        isFeatured: z.boolean().optional(),
+688-        stockFilter: z.enum(['low', 'out', 'anomaly']).optional(),
+689-        stockThreshold: z.number().int().min(1).optional(),
+690-        limit: z.number().optional(),
+691-        offset: z.number().optional(),
+692-      }).optional())
+693-      .query(async ({ input }) => {
+694-        return await db.getProductsEnhanced(input || {});
+695-      }),
+696-
+697-    orderDetails: adminProcedure
+698-      .input(z.object({
+699-        productId: z.number().int().positive(),
+700-        type: z.enum(['ordered', 'paid', 'completed']),
+701-      }))
+702-      .query(async ({ input }) => {
+703-        return await db.getProductOrderDetails(input.productId, input.type);
+704-      }),
+705-
+706-    getById: adminProcedure
+707-      .input(z.object({ id: z.number() }))
+708-      .query(async ({ input }) => {
+709-        const product = await db.getProductByIdEnhanced(input.id);
+710-        if (!product) throw new Error('商品不存在');
+711-        return product;
+712-      }),
+713-
+714-    create: adminProcedure
+715-      .input(z.object({
+716-        name: z.string().min(1),
+717-        type: z.enum(['physical', 'membership', 'gift']),
+718-        productMode: z.enum(['simple', 'variant']),
+719-        categoryId: z.number().optional(),
+720-        unitId: z.number().optional(),
+721-        keyword: z.string().min(1),
+722-        sku: z.string().optional(),
+723-        status: z.enum(['draft', 'active', 'inactive', 'out_of_stock']).optional(),
+724-        visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
+725-        priceVisibility: z.enum(['show', 'hide', 'member_link']).optional(),
+726-        shortDescZh: z.string().optional(),
+727-        shortDescEn: z.string().optional(),
+728-        fullDescZh: z.string().optional(),
+729-        fullDescEn: z.string().optional(),
+730-        careZh: z.string().optional(),
+731-        careEn: z.string().optional(),
+732-        sellingPrice: z.string().optional(),
+733-        compareAtPrice: z.string().optional(),
+734-        memberPrice: z.string().optional(),
+735-        currentCost: z.string().optional(),
+736-        specialPrice: z.string().optional(),
+737-        dimensions: z.any().optional(),
+738-        weightKg: z.string().optional(),
+739-        stockQuantity: z.number().optional(),
+740-        isFeatured: z.boolean().optional(),
+741-        featuredSortOrder: z.number().optional(),
+742-        membershipIntro: z.string().optional(),
+743-        telegramFlowLink: z.string().optional(),
+744-        allowStandalonePurchase: z.boolean().optional(),
+745-        allowMixedCheckout: z.boolean().optional(),
+746-        notes: z.string().optional(),
+747-        coverImageUrl: z.string().optional(),
+748-        images: z.string().optional(),
+749-        videoUrl: z.string().optional(),
+750-        description: z.string().optional(),
+751-        isSpecial: z.boolean().optional(),
+752-        allowPresale: z.boolean().optional(),
+753-        allowStandaloneShipping: z.boolean().optional(),
+754-        standaloneShippingMethod: z.enum(['fixed_fee', 'free_shipping']).optional(),
+755-        standaloneShippingFee: z.string().optional(),
+756-        lightDesc: z.string().optional(),
+757-        waterDesc: z.string().optional(),
+758-        fertilizerDesc: z.string().optional(),
+759-        pruningDesc: z.string().optional(),
+760-        syncToMall: z.boolean().optional(),
+761-        mallSortOrder: z.number().optional(),
+762-        isPot: z.boolean().optional(),
+763-        potCapacity: z.string().optional(),
+764-        productImages: z.array(z.string()).optional(),
+765-        // V4: Wholesale & Agent
+766-        wholesalePrice: z.number().optional(),
+767-        agentPrice: z.number().optional(),
+768-        moq: z.number().optional(),
+769-        visibleTo: z.string().optional(),
+770-        specialPriceStartDate: z.string().optional(),
+771-        specialPriceEndDate: z.string().optional(),
+772-        keywordChannels: z.string().optional(),
+773-        aiTags: z.string().optional(),
+774-        aiSellingPoints: z.string().optional(),
+775-      }))
+776-      .mutation(async ({ input }) => {
+777-        // Check keyword conflict
+778-        const conflict = await db.checkKeywordConflict(input.keyword);
+779-        if (!conflict.available) {
+780-          throw new Error(`关键词「${input.keyword}」已被商品「${conflict.conflictWith?.name}」使用`);
+781-        }
+782-        return await db.createProductEnhanced(input);
+783-      }),
+784-
+785-    update: adminProcedure
+786-      .input(z.object({
+787-        id: z.number(),
+788-        name: z.string().optional(),
+789-        type: z.enum(['physical', 'membership', 'gift']).optional(),
+790-        productMode: z.enum(['simple', 'variant']).optional(),
+791-        categoryId: z.number().optional(),
+792-        unitId: z.number().optional(),
+793-        keyword: z.string().optional(),
+794-        status: z.enum(['draft', 'active', 'inactive', 'out_of_stock']).optional(),
+795-        visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
+796-        priceVisibility: z.enum(['show', 'hide', 'member_link']).optional(),
+797-        shortDescZh: z.string().optional(),
+798-        shortDescEn: z.string().optional(),
+799-        fullDescZh: z.string().optional(),
+800-        fullDescEn: z.string().optional(),
+801-        careZh: z.string().optional(),
+802-        careEn: z.string().optional(),
+803-        sellingPrice: z.string().optional(),
+804-        compareAtPrice: z.string().optional(),
+805-        memberPrice: z.string().optional(),
+806-        currentCost: z.string().optional(),
+807-        specialPrice: z.string().optional(),
+808-        dimensions: z.any().optional(),
+809-        weightKg: z.string().optional(),
+810-        stockQuantity: z.number().optional(),
+811-        allowOversold: z.boolean().optional(),
+812-        isFeatured: z.boolean().optional(),
+813-        featuredSortOrder: z.number().optional(),
+814-        membershipIntro: z.string().optional(),
+815-        telegramFlowLink: z.string().optional(),
+816-        allowStandalonePurchase: z.boolean().optional(),
+817-        allowMixedCheckout: z.boolean().optional(),
+818-        notes: z.string().optional(),
+819-        coverImageUrl: z.string().optional(),
+820-        images: z.string().optional(),
+821-        videoUrl: z.string().optional(),
+822-        description: z.string().optional(),
+823-        isSpecial: z.boolean().optional(),
+824-        allowPresale: z.boolean().optional(),
+825-        allowStandaloneShipping: z.boolean().optional(),
+826-        standaloneShippingMethod: z.enum(['fixed_fee', 'free_shipping']).optional(),
+827-        standaloneShippingFee: z.string().optional(),
+828-        lightDesc: z.string().optional(),
+829-        waterDesc: z.string().optional(),
+830-        fertilizerDesc: z.string().optional(),
+831-        pruningDesc: z.string().optional(),
+832-        syncToMall: z.boolean().optional(),
+833-        mallSortOrder: z.number().optional(),
+834-        isPot: z.boolean().optional(),
+835-        potCapacity: z.string().optional(),
+836-        productImages: z.array(z.string()).optional(),
+837-        // V4: Wholesale & Agent
+838-        wholesalePrice: z.number().optional(),
+839-        agentPrice: z.number().optional(),
+840-        moq: z.number().optional(),
+841-        visibleTo: z.string().optional(),
+842-        specialPriceStartDate: z.string().optional(),
+843-        specialPriceEndDate: z.string().optional(),
+844-        keywordChannels: z.string().optional(),
+845-        aiTags: z.string().optional(),
+846-        aiSellingPoints: z.string().optional(),
+847-      }))
+848-      .mutation(async ({ input }) => {
+849-        const { id, ...data } = input;
+850-        // Check keyword conflict if keyword is being updated
+851-        if (data.keyword) {
+852-          const conflict = await db.checkKeywordConflict(data.keyword, id);
+853-          if (!conflict.available) {
+854-            throw new Error(`关键词「${data.keyword}」已被商品「${conflict.conflictWith?.name}」使用`);
+855-          }
+856-        }
+857-        await db.updateProductEnhanced(id, data);
+=== FORM TYPES ===
+  isSpecial: false, specialPrice: "", allowPresale: false, allowStandaloneShipping: false,
+  standaloneShippingMethod: "fixed_fee", standaloneShippingFee: "",
+  lightDesc: "", waterDesc: "", fertilizerDesc: "", pruningDesc: "",
+  productImages: [],
+  videoUrl: "",
+  salesMode: "normal", preorderWaitDays: "", spotSaleEnabled: false, spotSaleQty: 0, linkedBatchId: "",
+  wholesalePrice: "", agentPrice: "", moq: 0, visibleTo: ["retail", "member", "wholesale", "agent"],
+  specialPriceStartDate: "", specialPriceEndDate: "",
+  aiTags: [], aiSellingPoints: "",
+  syncToMall: false,
+};
+
+const RAW_STEPS = [
+  { zh: "基本资料", en: "Basic Info" },
+  { zh: "图片与描述", en: "Images & Description" },
+  { zh: "价格与成本", en: "Price & Cost" },
+  { zh: "规格设置", en: "Variant Settings" },
+  { zh: "显示与推荐", en: "Display & Recommendation" },
+  { zh: "预览确认", en: "Preview & Confirm" },
+];
+
+type VariantForm = {
+  id?: number;
+  name: string;
+  keyword: string;
+  sellingPrice: string;
+  compareAtPrice: string;
+  memberPrice: string;
+    status: "active" | "inactive" | "hidden";
+  sortOrder: number;
+  imageUrl: string;
+  stockQuantity: number;
+};
+const EMPTY_VARIANT: VariantForm = {
+  name: "", keyword: "", sellingPrice: "", compareAtPrice: "", memberPrice: "",
+  status: "active", sortOrder: 0, imageUrl: "", stockQuantity: 0,
+};
+
+export default function ProductsV2() {
+  const { translate, lang } = useI18n();
+  const getProductTypeLabel = (type: string) => {
+    const entry = RAW_PRODUCT_TYPES.find((item) => item.value === type);
+    return translate(entry?.zh ?? type, entry?.en ?? type);
+  };
+  const getPhysicalStatusLabel = (status: string) => {
+    const labels: Record<string, { zh: string; en: string }> = {
+      pending: { zh: "待汇款", en: "Pending Payment" },
+      hold_order: { zh: "保留订单", en: "Hold Order" },
+      partial_payment: { zh: "部分汇款", en: "Partial Payment" },
+      receipt_uploaded: { zh: "待审核付款凭证", en: "Payment Proof Review" },
+      packing: { zh: "待包货", en: "Pending Packing" },
+      partial_shipped: { zh: "部分发货", en: "Partial Shipped" },
+      shipped: { zh: "已发货", en: "Shipped" },
+      completed: { zh: "已完成", en: "Completed" },
+    };
+    return translate(labels[status]?.zh ?? status, labels[status]?.en ?? status);
+  };
+  const searchParams = useSearch();
+  const urlStock = new URLSearchParams(searchParams).get("stock");
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [stockFilter, setStockFilter] = useState<string>(urlStock || "all");
+  const [lowStockThreshold, setLowStockThreshold] = useState("5");
+  const [page, setPage] = useState(0);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState<ProductForm>(EMPTY_FORM);
+  const [step, setStep] = useState(0);
+  const [variants, setVariants] = useState<any[]>([]);
+  const [variantDialogOpen, setVariantDialogOpen] = useState(false);
+  const [editingVariantId, setEditingVariantId] = useState<number | null>(null);
+  const [variantForm, setVariantForm] = useState<VariantForm>(EMPTY_VARIANT);
+  const [showMemberLinkDialog, setShowMemberLinkDialog] = useState(false);
+  const [currentProductId, setCurrentProductId] = useState<number | null>(null);
+  const [simulatorPrice, setSimulatorPrice] = useState("");
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [uploadingVariant, setUploadingVariant] = useState(false);
+  const [coverPreview, setCoverPreview] = useState("");
+  const [orderDetailsTarget, setOrderDetailsTarget] = useState<{
+    productId: number;
+    productName: string;
+    type: "ordered" | "paid" | "completed";
+  } | null>(null);
+  const [stockLogTarget, setStockLogTarget] = useState<{ productId: number; productName: string } | null>(null);
+  const hydratedEditingIdRef = useRef<number | null>(null);
+  const utils = trpc.useUtils();
+
+  // List query with pagination
+  const { data: productsData, isLoading } = trpc.productsV2.list.useQuery({
+    search: search || undefined,
+    type: typeFilter !== "all" ? (typeFilter as any) : undefined,
+    status: statusFilter !== "all" ? (statusFilter as any) : undefined,
+    stockFilter: stockFilter !== "all" ? (stockFilter as "low" | "out" | "anomaly") : undefined,
+    stockThreshold: stockFilter === "low" ? Math.max(1, Number(lowStockThreshold) || 5) : undefined,
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+  });
+
+  const { data: categories } = trpc.categories.list.useQuery({ activeOnly: true });
+  const { data: units } = trpc.units.list.useQuery();
+
+  const products = productsData?.items || [];
+  const totalCount = productsData?.total || 0;
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const orderDetailsQuery = trpc.productsV2.orderDetails.useQuery(
+    {
+      productId: orderDetailsTarget?.productId ?? 0,
+      type: orderDetailsTarget?.type ?? "ordered",
+=== FORM UI ===
+                            placeholder={translate("如：非常适合新手、办公室热卖、最容易照顾、净化空气效果佳", "e.g. Perfect for beginners, office bestseller, easiest to care for, great air purifier")}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Step 2: Price & Cost */}
+                {step === 2 && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <Label>{translate("售价 (RM)", "Selling Price (RM)")} {!isGift && "*"}</Label>
+                        <Input type="number" placeholder="0.00" value={isGift ? "0" : form.sellingPrice}
+                          onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })} disabled={isGift} />
+                      </div>
+                      <div>
+                        <Label>{translate("划线价 (RM)", "Compare At Price (RM)")}</Label>
+                        <Input type="number" placeholder="0.00" value={form.compareAtPrice}
+                          onChange={(e) => setForm({ ...form, compareAtPrice: e.target.value })} disabled={isGift} />
+                      </div>
+                      <div>
+                        <Label>{translate("会员价 (RM)", "Member Price (RM)")}</Label>
+                        <Input type="number" placeholder="0.00" value={form.memberPrice}
+                          onChange={(e) => setForm({ ...form, memberPrice: e.target.value })} disabled={isGift} />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label>{translate("当前成本 (RM)", "Current Cost (RM)")}</Label>
+                      <Input type="number" placeholder="0.00" value={form.currentCost}
+                        readOnly disabled={isVirtual} className="bg-muted/50 cursor-not-allowed" />
+                      <p className="text-xs text-muted-foreground mt-1">{translate("由进货管理自动更新（FIFO），此处仅供参考", "Auto-updated from purchase orders (FIFO), read-only reference")}</p>
+                    </div>
+
+                    {/* Price Simulator */}
+                    {!isGift && !isVirtual && form.currentCost && (
+                      <div className="p-4 rounded-lg border bg-muted/30 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4 text-primary" />
+                          <h4 className="font-medium text-sm">{translate("价格模拟器", "Price Simulator")}</h4>
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <Label>{translate("测试售价 (RM)", "Test Selling Price (RM)")}</Label>
+                            <Input type="number" placeholder={form.sellingPrice || "0.00"} value={simulatorPrice}
+                              onChange={(e) => setSimulatorPrice(e.target.value)} />
+                          </div>
+                          <div>
+                            <Label>{translate("预计利润", "Estimated Profit")}</Label>
+                            <div className={`flex items-center gap-1.5 text-lg font-bold ${profitLevel.color}`}>
+                              <profitLevel.icon className="h-4 w-4" />
+                              RM {simulatorProfit.toFixed(2)}
+                            </div>
+                          </div>
+                          <div>
+                            <Label>{translate("利润率", "Profit Margin")}</Label>
+                            <div className={`text-lg font-bold ${profitLevel.color}`}>
+                              {simulatorMargin.toFixed(1)}%
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge className={profitLevel.color.includes("green") ? "bg-green-100 text-green-700" : profitLevel.color.includes("orange") ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"}>
+                            {profitLevel.label}
+                          </Badge>
+                          {simulatorMargin < 20 && simulatorProfit > 0 && (
+                            <span className="text-xs text-orange-600">{translate("利润率低于 20%，建议调整售价或成本", "Profit margin is below 20%; consider adjusting the selling price or cost")}</span>
+                          )}
+                          {simulatorProfit <= 0 && simulatorPrice && (
+                            <span className="text-xs text-red-600">{translate("当前售价低于成本，处于亏损状态", "The current selling price is below cost, resulting in a loss")}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* V4: Wholesale & Agent Pricing */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <Label>{translate("批发价 (RM)", "Wholesale Price (RM)")}</Label>
+                        <Input type="number" placeholder="自动=售价×50%" value={form.wholesalePrice}
+                          onChange={(e) => setForm({ ...form, wholesalePrice: e.target.value })} disabled={isGift} />
+                        <p className="text-xs text-muted-foreground mt-1">{translate("留空自动计算", "Auto-calc if empty")}</p>
+                      </div>
+                      <div>
+                        <Label>{translate("代理价 (RM)", "Agent Price (RM)")}</Label>
+                        <Input type="number" placeholder="自动=售价×70%" value={form.agentPrice}
+                          onChange={(e) => setForm({ ...form, agentPrice: e.target.value })} disabled={isGift} />
+                        <p className="text-xs text-muted-foreground mt-1">{translate("留空自动计算", "Auto-calc if empty")}</p>
+                      </div>
+                      <div>
+                        <Label>{translate("最低批发量 (MOQ)", "Min Order Qty (MOQ)")}</Label>
+                        <Input type="number" placeholder="0" value={form.moq}
+                          onChange={(e) => setForm({ ...form, moq: parseInt(e.target.value) || 0 })} disabled={isGift} />
+                        <p className="text-xs text-muted-foreground mt-1">{translate("0=无限制", "0=No limit")}</p>
+                      </div>
+                    </div>
+
+                    {/* V4: Special Price Date Range */}
+                    {form.isSpecial && form.specialPrice && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>{translate("特价开始日期", "Special Price Start Date")}</Label>
+                          <Input type="date" value={form.specialPriceStartDate}
+                            onChange={(e) => setForm({ ...form, specialPriceStartDate: e.target.value })} />
+                        </div>
+                        <div>
+                          <Label>{translate("特价结束日期", "Special Price End Date")}</Label>
+                          <Input type="date" value={form.specialPriceEndDate}
+                            onChange={(e) => setForm({ ...form, specialPriceEndDate: e.target.value })} />
+                          <p className="text-xs text-muted-foreground mt-1">{translate("结束后自动恢复原价", "Auto-revert after end date")}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* V4: Price Preview (价格预览) */}
+                    {!isGift && form.sellingPrice && (
+                      <div className="p-4 rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 space-y-2">
+                        <h4 className="font-medium text-sm flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4 text-blue-500" />
+                          {translate("价格预览", "Price Preview")}
+                        </h4>
+                        <div className="grid grid-cols-4 gap-2 text-sm">
+                          <div className="p-2 rounded bg-background">
+                            <div className="text-xs text-muted-foreground">{translate("普通客户", "Retail")}</div>
+                            <div className="font-bold">RM {(parseFloat(form.sellingPrice) || 0).toFixed(2)}</div>
+                          </div>
+                          <div className="p-2 rounded bg-background">
+                            <div className="text-xs text-muted-foreground">{translate("会员", "Member")}</div>
+                            <div className="font-bold">RM {(parseFloat(form.memberPrice || form.sellingPrice) || 0).toFixed(2)}</div>
+                          </div>
+                          <div className="p-2 rounded bg-background">
+                            <div className="text-xs text-muted-foreground">{translate("批发", "Wholesale")}</div>
+                            <div className="font-bold">RM {(parseFloat(form.wholesalePrice) || (parseFloat(form.sellingPrice) || 0) * 0.5).toFixed(2)}</div>
+                          </div>
+                          <div className="p-2 rounded bg-background">
+                            <div className="text-xs text-muted-foreground">{translate("代理", "Agent")}</div>
+                            <div className="font-bold">RM {(parseFloat(form.agentPrice) || (parseFloat(form.sellingPrice) || 0) * 0.7).toFixed(2)}</div>
+                          </div>
+                        </div>
+                        {form.isSpecial && form.specialPrice && (
+                          <div className="text-xs text-orange-600 font-medium">
+                            {translate("⚠ 特价生效时，所有客户统一显示特价", "⚠ When special price is active, all customers see special price")}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* V4: Product Visibility (可见对象) */}
+                    <div>
+                      <Label>{translate("可见对象", "Visible To")}</Label>
+                      <div className="flex flex-wrap gap-3 mt-2">
+                        {[
+                          { value: "retail", label: translate("普通", "Retail") },
+                          { value: "member", label: translate("会员链接", "Member Link") },
+                          { value: "wholesale", label: translate("批发", "Wholesale") },
+                          { value: "agent", label: translate("代理", "Agent") },
+                        ].map((opt) => (
+                          <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={form.visibleTo.includes(opt.value)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setForm({ ...form, visibleTo: [...form.visibleTo, opt.value] });
+                                } else {
+                                  setForm({ ...form, visibleTo: form.visibleTo.filter((v) => v !== opt.value) });
+                                }
+                              }}
+                              className="rounded border-input"
+                            />
+                            <span className="text-sm">{opt.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Price Visibility */}
+                    <div>
+                      <Label>{translate("价格显示设置", "Price Display Settings")}</Label>
+                      <Select value={form.priceVisibility} onValueChange={(v: any) => setForm({ ...form, priceVisibility: v })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="show">{translate("公开显示价格", "Show Price Publicly")}</SelectItem>
+                          <SelectItem value="hide">{translate("隐藏价格（询价）", "Hide Price (Enquiry Required)")}</SelectItem>
+                          <SelectItem value="member_link">{translate("仅会员链接可见", "Visible via Member Link Only")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Physical: weight & dimensions */}
+                    {!isVirtual && (
+                      <>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label>{translate("重量 (kg)", "Weight (kg)")}</Label>
+                            <Input type="number" placeholder="0.00" value={form.weightKg}
+                              onChange={(e) => setForm({ ...form, weightKg: e.target.value })} />
+                          </div>
+                          <div>
+                            <Label>{translate("库存数量", "Stock Quantity")}</Label>
+                            <Input type="number" value={form.stockQuantity} disabled />
+                            <p className="text-xs text-muted-foreground mt-1">{translate("由进货管理自动更新", "Auto-updated by Purchase Management")}</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-4 gap-3">
+                          <div>
+                            <Label>{translate("口径 (cm)", "Diameter (cm)")}</Label>
+                            <Input type="number" placeholder="0" value={form.dimensions.diameter || ""}
+                              onChange={(e) => setForm({ ...form, dimensions: { ...form.dimensions, diameter: e.target.value } })} />
+                          </div>
+                          <div>
+                            <Label>{translate("高度 (cm)", "Height (cm)")}</Label>
+                            <Input type="number" placeholder="0" value={form.dimensions.height || ""}
+                              onChange={(e) => setForm({ ...form, dimensions: { ...form.dimensions, height: e.target.value } })} />
+                          </div>
+                          <div>
+                            <Label>{translate("长度 (cm)", "Length (cm)")}</Label>
+                            <Input type="number" placeholder="0" value={form.dimensions.length || ""}
+                              onChange={(e) => setForm({ ...form, dimensions: { ...form.dimensions, length: e.target.value } })} />
+                          </div>
+                          <div>
+                            <Label>{translate("宽度 (cm)", "Width (cm)")}</Label>
+                            <Input type="number" placeholder="0" value={form.dimensions.width || ""}
+                              onChange={(e) => setForm({ ...form, dimensions: { ...form.dimensions, width: e.target.value } })} />
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Membership-specific */}
+                    {isVirtual && (
+                      <div className="space-y-4 p-4 border rounded-lg bg-purple-50/50 dark:bg-purple-950/20">
+                        <h3 className="font-medium text-sm">{translate("会员商品专属设置", "Membership Product Exclusive Settings")}</h3>
+                        <p className="text-xs text-muted-foreground">{translate("会员商品不计算重量、运费，不进入配货流程，无库存限制", "Membership products do not calculate weight or shipping, do not enter the distribution process, and have no inventory restrictions")}</p>
+                        <div>
+                          <Label>{translate("会员收费金额", "Membership Fee Amount")}</Label>
+                          <Input type="number" placeholder="0.00" value={form.sellingPrice}
+                            onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })} />
+                        </div>
+                        <div>
+                          <Label>{translate("会员介绍", "Membership Introduction")}</Label>
+                          <Textarea value={form.membershipIntro} onChange={(e) => setForm({ ...form, membershipIntro: e.target.value })} rows={3} placeholder={translate("详细描述会员权益和福利...", "Describe membership rights and benefits in detail...")} />
+                        </div>
+                        <div>
+                          <Label>{translate("Telegram 会员流程链接", "Telegram Membership Flow Link")}</Label>
+                          <Input placeholder="https://t.me/..." value={form.telegramFlowLink}
+                            onChange={(e) => setForm({ ...form, telegramFlowLink: e.target.value })} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="flex items-center justify-between rounded-lg border p-3">
+                            <div>
+                              <Label>{translate("允许单独购买", "Allow Standalone Purchase")}</Label>
+                              <p className="text-xs text-muted-foreground">{translate("客户可只购买会员商品", "Customers can purchase membership products only")}</p>
+                            </div>
+                            <Switch checked={form.allowStandalonePurchase}
+                              onCheckedChange={(v) => setForm({ ...form, allowStandalonePurchase: v })} />
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg border p-3">
+                            <div>
+                              <Label>{translate("允许混合结账", "Allow Mixed Checkout")}</Label>
+                              <p className="text-xs text-muted-foreground">{translate("可与普通商品一起结账", "Can be checked out with regular products")}</p>
+                            </div>
+                            <Switch checked={form.allowMixedCheckout}
+                              onCheckedChange={(v) => setForm({ ...form, allowMixedCheckout: v })} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {isGift && (
+                      <div className="p-4 border rounded-lg bg-orange-50/50 dark:bg-orange-950/20">
+                        <h3 className="font-medium text-sm">{translate("赠品设置", "Gift Product Settings")}</h3>
+                        <p className="text-xs text-muted-foreground mt-1">{translate("赠品有库存限制，需计算运费，但不收取商品费用（价格为0）。赠品会与实体商品一起计算运费和免邮门槛。", "Gift products have inventory limits, require shipping calculation, but do not charge product fees (price is 0). Gift products will be calculated with physical products for shipping and free shipping thresholds.")}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Step 3: Variants */}
+                {step === 3 && (
+                  <div className="space-y-4">
+                    {!isVariant ? (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <p>{translate("此商品为单规格模式，无需设置规格。", "This product is in simple mode, no variants needed.")}</p>
+                        <p className="text-xs mt-2">{translate("如需多规格，请在「基本资料」步骤中切换为 Variant 模式", "To enable variants, please switch to Variant mode in the 'Basic Info' step.")}</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-medium">{translate("规格列表", "Variant List")}</h3>
+                          <Button size="sm" onClick={openAddVariant} disabled={!editingId}>
+                            <Plus className="h-4 w-4 mr-1" />
+                            {translate("添加规格", "Add Variant")}
+                          </Button>
+                        </div>
+                        {!editingId && (
+                          <p className="text-xs text-orange-600 bg-orange-50 dark:bg-orange-950/20 p-2 rounded">
+                            {translate("请先保存商品后再添加规格", "Please save the product before adding variants")}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground">{translate("规格关键词 = 商品关键词 + 规格关键词（自动组合）", "Variant Keyword = Product Keyword + Variant Keyword (auto-combined)")}</p>
+                        {variants.length === 0 ? (
+                          <p className="text-center text-muted-foreground py-8">{translate("暂无规格", "No variants yet")}</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {variants.map((v, i) => (
+                              <div key={v.id || i} className="flex items-center gap-3 p-3 border rounded-lg">
+                                <div className="flex-1">
+                                  <span className="font-medium text-sm">{lang === "zh" ? v.nameZh || v.name : v.nameEn || v.name}</span>
+=== RESOLVE ===
+  }).from(orderItems)
+    .leftJoin(products, eq(orderItems.productId, products.id))
+    .where(eq(orderItems.orderId, orderId));
+  return result;
+}
+
+// V2.0.43: Generate sequential order number (XT00001, XT00002, ...)
+export async function generateOrderNumber(prefix: string): Promise<string> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Atomically get and increment the sequence number
+  const [row] = await db.select().from(orderSeq).where(eq(orderSeq.prefix, prefix)).limit(1);
+  let nextNum = 1;
+  if (row) {
+    nextNum = row.nextNumber;
+    await db.update(orderSeq).set({ nextNumber: nextNum + 1 }).where(eq(orderSeq.prefix, prefix));
+  } else {
+    await db.insert(orderSeq).values({ prefix, nextNumber: 2 });
+  }
+  // Format with 5-digit zero-padded number
+  return `${prefix}${String(nextNum).padStart(5, "0")}`;
+}
+
+// V2.1: Unified order category resolver — determines whether an order should be local (XT) or import (XTC)
+// Priority: 1) Product orderCategory  2) Existing order orderCategory  3) Live room liveType
+export async function resolveOrderCategory(opts: {
+  productIds?: number[];
+  existingOrderCategory?: string;
+  liveType?: string;
+}): Promise<"local" | "import"> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Priority 1: Check product orderCategory. Any import product makes the
+  // order an XTC order; inspecting only the first row would incorrectly route
+  // a cart containing local accessories plus an import item into XT.
+  if (opts.productIds && opts.productIds.length > 0) {
+    const productRows = await db
+      .select({ orderCategory: products.orderCategory })
+      .from(products)
+      .where(inArray(products.id, Array.from(new Set(opts.productIds))));
+    if (productRows.some((row) => row.orderCategory === "import")) {
+      return "import";
+    }
+    if (productRows.some((row) => row.orderCategory === "local")) {
+      return "local";
+    }
+  }
+
+  // Priority 2: Existing order orderCategory
+  if (opts.existingOrderCategory === "import") return "import";
+  if (opts.existingOrderCategory === "local") return "local";
+
+  // Priority 3: Live room liveType
+  if (opts.liveType === "import_preorder") return "import";
+
+  // Default: local
+  return "local";
+}
+
+/**
+=== ENHANCED CREATE ===
+export async function createProductEnhanced(data: {
+  name: string;
+  type: 'physical' | 'membership' | 'gift';
+  productMode: 'simple' | 'variant';
+  categoryId?: number;
+  unitId?: number;
+  keyword: string;
+  sku?: string;
+  status?: string;
+  visibility?: string;
+  priceVisibility?: string;
+  shortDescZh?: string;
+  shortDescEn?: string;
+  fullDescZh?: string;
+  fullDescEn?: string;
+  careZh?: string;
+  careEn?: string;
+  sellingPrice?: string;
+  compareAtPrice?: string;
+  memberPrice?: string;
+  currentCost?: string;
+  specialPrice?: string;
+  dimensions?: any;
+  weightKg?: string;
+  stockQuantity?: number;
+  isFeatured?: boolean;
+  featuredSortOrder?: number;
+  isMemberOnly?: boolean;
+  membershipIntro?: string;
+  telegramFlowLink?: string;
+  allowStandalonePurchase?: boolean;
+  allowMixedCheckout?: boolean;
+  notes?: string;
+  coverImageUrl?: string;
+  images?: string;
+  videoUrl?: string;
+  description?: string;
+  isSpecial?: boolean;
+  allowPresale?: boolean;
+  allowStandaloneShipping?: boolean;
+  standaloneShippingMethod?: string;
+  standaloneShippingFee?: string;
+  lightDesc?: string;
+  waterDesc?: string;
+  fertilizerDesc?: string;
+  pruningDesc?: string;
+  syncToMall?: boolean;
+  mallSortOrder?: number;
+  isPot?: boolean;
+  potCapacity?: string;
+  productImages?: string[];
+  // V4: Wholesale & Agent
+  wholesalePrice?: number;
+  agentPrice?: number;
+  moq?: number;
+  visibleTo?: string;
+  specialPriceStartDate?: string;
+  specialPriceEndDate?: string;
+  keywordChannels?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const normalizedKeyword = data.keyword.toUpperCase().replace(/\s+/g, '');
+  const sku = data.sku || await generateSku(data.productMode);
+  // Convert empty strings to null for decimal columns (MySQL rejects '' for DECIMAL type)
+  const decimalFields = ['sellingPrice', 'compareAtPrice', 'memberPrice', 'currentCost', 'specialPrice', 'weightKg', 'standaloneShippingFee', 'wholesalePrice', 'agentPrice'];
+  const normalizedData: any = {};
+  for (const field of decimalFields) {
+    if (field in data && (data as any)[field] === '') {
+      normalizedData[field] = null;
+    } else {
+      normalizedData[field] = (data as any)[field];
+    }
+  }
+  const result = await db.insert(products).values({
+    name: data.name,
+    type: data.type,
+    productMode: data.productMode,
+    categoryId: data.categoryId,
+    unitId: data.unitId,
+    keyword: normalizedKeyword,
+    sku,
+    status: (data.status as any) || 'draft',
+    visibility: (data.visibility as any) || 'public',
+    priceVisibility: (data.priceVisibility as any) || 'show',
+    shortDescZh: data.shortDescZh,
+    shortDescEn: data.shortDescEn,
+    fullDescZh: data.fullDescZh,
+    fullDescEn: data.fullDescEn,
+    careZh: data.careZh,
+    careEn: data.careEn,
+    sellingPrice: normalizedData.sellingPrice,
+    compareAtPrice: normalizedData.compareAtPrice,
+    memberPrice: normalizedData.memberPrice,
+    specialPrice: normalizedData.specialPrice,
+    currentCost: normalizedData.currentCost,
+    dimensions: data.dimensions,
+    weightKg: normalizedData.weightKg,
+    stockQuantity: data.stockQuantity,
+    isFeatured: data.isFeatured ?? false,
+    featuredSortOrder: data.featuredSortOrder ?? 0,
+    membershipIntro: data.membershipIntro,
+    telegramFlowLink: data.telegramFlowLink,
+    allowStandalonePurchase: data.allowStandalonePurchase,
+    allowMixedCheckout: data.allowMixedCheckout,
+    notes: data.notes,
+    coverImageUrl: data.coverImageUrl,
+    images: data.images,
+    videoUrl: data.videoUrl,
+    description: data.description,
+    isSpecial: data.isSpecial ?? false,
+    // allowPresale 是商品级唯一业务开关；allowOversold 仅为历史库存守卫兼容字段。
+    allowPresale: data.allowPresale ?? false,
+    allowOversold: data.allowPresale ?? false,
+    allowStandaloneShipping: data.allowStandaloneShipping ?? false,
+    standaloneShippingMethod: (data.standaloneShippingMethod as any) || 'fixed_fee',
+    standaloneShippingFee: normalizedData.standaloneShippingFee,
+    lightDesc: data.lightDesc,
+    waterDesc: data.waterDesc,
+    fertilizerDesc: data.fertilizerDesc,
+    pruningDesc: data.pruningDesc,
+    syncToMall: data.syncToMall ?? false,
+    mallSortOrder: data.mallSortOrder ?? 0,
+    isPot: data.isPot ?? false,
+    potCapacity: data.potCapacity,
+    // V4: Wholesale & Agent
+    wholesalePrice: normalizedData.wholesalePrice as any,
+    agentPrice: normalizedData.agentPrice as any,
+    moq: data.moq ?? 0,
+    visibleTo: data.visibleTo,
+    specialPriceStartDate: data.specialPriceStartDate ? new Date(data.specialPriceStartDate) : null,
+    specialPriceEndDate: data.specialPriceEndDate ? new Date(data.specialPriceEndDate) : null,
+    keywordChannels: data.keywordChannels || null,
+  });
+  const productId = result[0].insertId;
+  // Save product images to product_images table
+  if (data.productImages && data.productImages.length > 0) {
+    for (let i = 0; i < data.productImages.length; i++) {
+      const url = data.productImages[i];
+      const fileKey = url.replace(/^.*\/manus-storage\//, '');
+      await db.insert(productImages).values({
+        productId,
+        url,
+        fileKey,
+        sortOrder: i,
+        isMain: i === 0,
+      });
+    }
+  }
+  return { id: productId, sku };
+}
+
+export async function updateProductEnhanced(id: number, data: Partial<{
+  name: string;
+=== ENHANCED UPDATE ===
+export async function updateProductEnhanced(id: number, data: Partial<{
+  name: string;
+  type: 'physical' | 'membership' | 'gift';
+  productMode: 'simple' | 'variant';
+  categoryId: number;
+  unitId: number;
+  keyword: string;
+  status: string;
+  visibility: string;
+  priceVisibility: string;
+  shortDescZh: string;
+  shortDescEn: string;
+  fullDescZh: string;
+  fullDescEn: string;
+  careZh: string;
+  careEn: string;
+  sellingPrice: string;
+  compareAtPrice: string;
+  memberPrice: string;
+  currentCost: string;
+  specialPrice: string;
+  dimensions: any;
+  weightKg: string;
+  stockQuantity: number;
+  isFeatured: boolean;
+  featuredSortOrder: number;
+  isMemberOnly: boolean;
+  membershipIntro: string;
+  telegramFlowLink: string;
+  allowStandalonePurchase: boolean;
+  allowMixedCheckout: boolean;
+  notes: string;
+  coverImageUrl: string;
+  images: string;
+  videoUrl: string;
+  description: string;
+  isSpecial: boolean;
+  allowPresale: boolean;
+  allowOversold: boolean;
+  allowStandaloneShipping: boolean;
+  standaloneShippingMethod: string;
+  standaloneShippingFee: string;
+  lightDesc: string;
+  waterDesc: string;
+  fertilizerDesc: string;
+  pruningDesc: string;
+  syncToMall: boolean;
+  mallSortOrder: number;
+  isPot: boolean;
+  potCapacity: string;
+  productImages: string[];
+  // V4: Wholesale & Agent
+  wholesalePrice: number;
+  agentPrice: number;
+  moq: number;
+  visibleTo: string;
+  specialPriceStartDate: string;
+  specialPriceEndDate: string;
+  keywordChannels: string;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const { productImages: imageUrls, ...updateData } = data;
+  // 统一预售语义：新界面只写 allowPresale；旧入口若仍写 allowOversold，则同步回商品级开关。
+  if (updateData.allowPresale !== undefined) {
+    (updateData as any).allowOversold = updateData.allowPresale;
+  } else if ((updateData as any).allowOversold !== undefined) {
+    (updateData as any).allowPresale = (updateData as any).allowOversold;
+  }
+  if (data.keyword) {
+    updateData.keyword = data.keyword.toUpperCase().replace(/\s+/g, '');
+  }
+  // Convert empty strings to null for decimal columns (MySQL rejects '' for DECIMAL type)
+  const decimalFields = ['sellingPrice', 'compareAtPrice', 'memberPrice', 'currentCost', 'specialPrice', 'weightKg', 'standaloneShippingFee', 'wholesalePrice', 'agentPrice'];
+  for (const field of decimalFields) {
+    if (field in updateData && (updateData as any)[field] === '') {
+      (updateData as any)[field] = null;
+    }
+  }
+  // V4: Convert date strings to Date objects for timestamp fields
+  if (updateData.specialPriceStartDate !== undefined) {
+    (updateData as any).specialPriceStartDate = updateData.specialPriceStartDate ? new Date(updateData.specialPriceStartDate) : null;
+  }
+  if (updateData.specialPriceEndDate !== undefined) {
+    (updateData as any).specialPriceEndDate = updateData.specialPriceEndDate ? new Date(updateData.specialPriceEndDate) : null;
+  }
+  await db.update(products).set(updateData as any).where(eq(products.id, id));
+  // Sync coverImageUrl to live_room_products.imageUrl so Live Studio always shows the latest product image
+  if (updateData.coverImageUrl !== undefined) {
+    await db.update(liveRoomProducts).set({ imageUrl: updateData.coverImageUrl || null }).where(eq(liveRoomProducts.productId, id));
+  }
+  // Sync product images if provided
+  if (imageUrls) {
+    // Delete existing images and re-insert
+    await db.delete(productImages).where(eq(productImages.productId, id));
+    for (let i = 0; i < imageUrls.length; i++) {
+      const url = imageUrls[i];
+      const fileKey = url.replace(/^.*\/manus-storage\//, '');
+      await db.insert(productImages).values({
+        productId: id,
+        url,
+        fileKey,
+        sortOrder: i,
+        isMain: i === 0,
+      });
+    }
+  }
+}
+
+export async function deleteProductEnhanced(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  // Check if product has orders
+  const orderCount = await db.select({ count: sql`count(*)` }).from(orderItems).where(eq(orderItems.productId, id));
+  if (Number(orderCount[0]?.count) > 0) {
+    return { success: false, reason: '此商品已有订单记录，只能停用不能删除' };
+  }

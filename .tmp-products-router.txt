@@ -1,0 +1,173 @@
+665-        nameEn: z.string().min(1),
+666-        isDefault: z.boolean().optional(),
+667-        sortOrder: z.number().optional(),
+668-      }))
+669-      .mutation(async ({ input }) => {
+670-        return await db.createUnit(input);
+671-      }),
+672-  }),
+673-
+674-  // ===========================================================================
+675-  // Phase 1: Products V2 (Admin - 三层 API: Admin / Public / Member Link)
+676-  // ===========================================================================
+677:  productsV2: router({
+678-    // --- Admin API ---
+679-    list: adminProcedure
+680-      .input(z.object({
+681-        search: z.string().optional(),
+682-        categoryId: z.number().optional(),
+683-        status: z.enum(['draft', 'active', 'inactive', 'out_of_stock']).optional(),
+684-        productMode: z.enum(['simple', 'variant']).optional(),
+685-        visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
+686-        type: z.enum(['physical', 'membership', 'gift']).optional(),
+687-        isFeatured: z.boolean().optional(),
+688-        stockFilter: z.enum(['low', 'out', 'anomaly']).optional(),
+689-        stockThreshold: z.number().int().min(1).optional(),
+690-        limit: z.number().optional(),
+691-        offset: z.number().optional(),
+692-      }).optional())
+693-      .query(async ({ input }) => {
+694-        return await db.getProductsEnhanced(input || {});
+695-      }),
+696-
+697-    orderDetails: adminProcedure
+698-      .input(z.object({
+699-        productId: z.number().int().positive(),
+700-        type: z.enum(['ordered', 'paid', 'completed']),
+701-      }))
+702-      .query(async ({ input }) => {
+703-        return await db.getProductOrderDetails(input.productId, input.type);
+704-      }),
+705-
+706-    getById: adminProcedure
+707-      .input(z.object({ id: z.number() }))
+708-      .query(async ({ input }) => {
+709-        const product = await db.getProductByIdEnhanced(input.id);
+710-        if (!product) throw new Error('商品不存在');
+711-        return product;
+712-      }),
+713-
+714-    create: adminProcedure
+715-      .input(z.object({
+716-        name: z.string().min(1),
+717-        type: z.enum(['physical', 'membership', 'gift']),
+718-        productMode: z.enum(['simple', 'variant']),
+719-        categoryId: z.number().optional(),
+720-        unitId: z.number().optional(),
+721-        keyword: z.string().min(1),
+722-        sku: z.string().optional(),
+723-        status: z.enum(['draft', 'active', 'inactive', 'out_of_stock']).optional(),
+724-        visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
+725-        priceVisibility: z.enum(['show', 'hide', 'member_link']).optional(),
+726-        shortDescZh: z.string().optional(),
+727-        shortDescEn: z.string().optional(),
+728-        fullDescZh: z.string().optional(),
+729-        fullDescEn: z.string().optional(),
+730-        careZh: z.string().optional(),
+731-        careEn: z.string().optional(),
+732-        sellingPrice: z.string().optional(),
+733-        compareAtPrice: z.string().optional(),
+734-        memberPrice: z.string().optional(),
+735-        currentCost: z.string().optional(),
+736-        specialPrice: z.string().optional(),
+737-        dimensions: z.any().optional(),
+738-        weightKg: z.string().optional(),
+739-        stockQuantity: z.number().optional(),
+740-        isFeatured: z.boolean().optional(),
+741-        featuredSortOrder: z.number().optional(),
+742-        membershipIntro: z.string().optional(),
+743-        telegramFlowLink: z.string().optional(),
+744-        allowStandalonePurchase: z.boolean().optional(),
+745-        allowMixedCheckout: z.boolean().optional(),
+746-        notes: z.string().optional(),
+747-        coverImageUrl: z.string().optional(),
+748-        images: z.string().optional(),
+749-        videoUrl: z.string().optional(),
+750-        description: z.string().optional(),
+751-        isSpecial: z.boolean().optional(),
+752-        allowPresale: z.boolean().optional(),
+753-        allowStandaloneShipping: z.boolean().optional(),
+754-        standaloneShippingMethod: z.enum(['fixed_fee', 'free_shipping']).optional(),
+755-        standaloneShippingFee: z.string().optional(),
+756-        lightDesc: z.string().optional(),
+757-        waterDesc: z.string().optional(),
+758-        fertilizerDesc: z.string().optional(),
+759-        pruningDesc: z.string().optional(),
+760-        syncToMall: z.boolean().optional(),
+761-        mallSortOrder: z.number().optional(),
+762-        isPot: z.boolean().optional(),
+763-        potCapacity: z.string().optional(),
+764-        productImages: z.array(z.string()).optional(),
+765-        // V4: Wholesale & Agent
+766-        wholesalePrice: z.number().optional(),
+767-        agentPrice: z.number().optional(),
+768-        moq: z.number().optional(),
+769-        visibleTo: z.string().optional(),
+770-        specialPriceStartDate: z.string().optional(),
+771-        specialPriceEndDate: z.string().optional(),
+772-        keywordChannels: z.string().optional(),
+773-        aiTags: z.string().optional(),
+774-        aiSellingPoints: z.string().optional(),
+775-      }))
+776-      .mutation(async ({ input }) => {
+777-        // Check keyword conflict
+778-        const conflict = await db.checkKeywordConflict(input.keyword);
+779-        if (!conflict.available) {
+780-          throw new Error(`关键词「${input.keyword}」已被商品「${conflict.conflictWith?.name}」使用`);
+781-        }
+782-        return await db.createProductEnhanced(input);
+783-      }),
+784-
+785-    update: adminProcedure
+786-      .input(z.object({
+787-        id: z.number(),
+788-        name: z.string().optional(),
+789-        type: z.enum(['physical', 'membership', 'gift']).optional(),
+790-        productMode: z.enum(['simple', 'variant']).optional(),
+791-        categoryId: z.number().optional(),
+792-        unitId: z.number().optional(),
+793-        keyword: z.string().optional(),
+794-        status: z.enum(['draft', 'active', 'inactive', 'out_of_stock']).optional(),
+795-        visibility: z.enum(['public', 'link_only', 'hidden']).optional(),
+796-        priceVisibility: z.enum(['show', 'hide', 'member_link']).optional(),
+797-        shortDescZh: z.string().optional(),
+798-        shortDescEn: z.string().optional(),
+799-        fullDescZh: z.string().optional(),
+800-        fullDescEn: z.string().optional(),
+801-        careZh: z.string().optional(),
+802-        careEn: z.string().optional(),
+803-        sellingPrice: z.string().optional(),
+804-        compareAtPrice: z.string().optional(),
+805-        memberPrice: z.string().optional(),
+806-        currentCost: z.string().optional(),
+807-        specialPrice: z.string().optional(),
+808-        dimensions: z.any().optional(),
+809-        weightKg: z.string().optional(),
+810-        stockQuantity: z.number().optional(),
+811-        allowOversold: z.boolean().optional(),
+812-        isFeatured: z.boolean().optional(),
+813-        featuredSortOrder: z.number().optional(),
+814-        membershipIntro: z.string().optional(),
+815-        telegramFlowLink: z.string().optional(),
+816-        allowStandalonePurchase: z.boolean().optional(),
+817-        allowMixedCheckout: z.boolean().optional(),
+818-        notes: z.string().optional(),
+819-        coverImageUrl: z.string().optional(),
+820-        images: z.string().optional(),
+821-        videoUrl: z.string().optional(),
+822-        description: z.string().optional(),
+823-        isSpecial: z.boolean().optional(),
+824-        allowPresale: z.boolean().optional(),
+825-        allowStandaloneShipping: z.boolean().optional(),
+826-        standaloneShippingMethod: z.enum(['fixed_fee', 'free_shipping']).optional(),
+827-        standaloneShippingFee: z.string().optional(),
+828-        lightDesc: z.string().optional(),
+829-        waterDesc: z.string().optional(),
+830-        fertilizerDesc: z.string().optional(),
+831-        pruningDesc: z.string().optional(),
+832-        syncToMall: z.boolean().optional(),
+833-        mallSortOrder: z.number().optional(),
+834-        isPot: z.boolean().optional(),
+835-        potCapacity: z.string().optional(),
+836-        productImages: z.array(z.string()).optional(),
+837-        // V4: Wholesale & Agent

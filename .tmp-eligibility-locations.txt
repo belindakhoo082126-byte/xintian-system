@@ -1,0 +1,31 @@
+64:export const products = mysqlTable("products", {
+955:export async function resolveOrderCategory(opts: {
+1450:  // V2.1.04: Use resolveOrderCategory for unified routing — product orderCategory takes priority
+1453:    data.orderCategory = await resolveOrderCategory({ productIds });
+5979:  const isImportOrder = order[0].orderCategory === 'import';
+5989:  if (isImportOrder) {
+6452:  const resolvedCategory = await resolveOrderCategory({ productIds: mallProductIds });
+6570:  // V2.1.04: Use resolveOrderCategory for unified routing
+6572:  const isImport = resolvedCategory === "import";
+6573:  const orderPrefix = isImport ? "XTC" : "XT";
+6584:    importStatus: isImport ? "pending" : null,
+8301:  const isImport = order[0].orderCategory === 'import';
+8302:  const activeStatus = isImport ? (order[0].importStatus || 'pending') : (order[0].physicalStatus || 'pending');
+8303:  const customerStatus = isImport
+8630:  // V2.1.04: Use resolveOrderCategory for unified routing — product orderCategory takes priority
+8632:  const orderCategory = await resolveOrderCategory({
+8636:  const isImportOrder = orderCategory === 'import';
+8637:  if (isImportOrder) await assertImportLiveOrderWindow(data.liveRoomId);
+8638:  const mergeTarget = isImportOrder
+8649:      expectedOrderCategory: isImportOrder ? "import" : "local",
+8660:        salesMode: isImportOrder ? "import_preorder" as const : "normal" as const,
+8664:      operationType: isImportOrder ? "import_live_merge" : "cross_channel_merge",
+8696:  const prefix = isImportOrder ? "XTC" : "XT";
+8714:    importStatus: isImportOrder ? "pending" : null,
+8753:      salesMode: isImportOrder ? "import_preorder" : "normal",
+16238:  const isImport = orderData.orderCategory === 'import';
+16239:  const activeStatus = isImport ? (orderData.importStatus || 'pending') : (orderData.physicalStatus || 'pending');
+16240:  const customerStatus = isImport
+157:  isPot: boolean("isPot").default(false).notNull(),
+180:  salesMode: mysqlEnum("salesMode", ["normal", "presale", "import_preorder"]).default("normal").notNull(),
+698:  salesMode: mysqlEnum("salesMode", ["normal", "presale", "import_preorder"]).default("normal"),

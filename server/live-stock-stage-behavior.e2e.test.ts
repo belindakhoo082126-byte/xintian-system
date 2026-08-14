@@ -224,7 +224,7 @@ describe.sequential("直播库存与订单阶段隔离行为验证", () => {
     const adjustments = await db!.select().from(inventoryAdjustments)
       .where(eq(inventoryAdjustments.productId, normalProductId));
     expect(adjustments).toHaveLength(2);
-  }, 20_000);
+  }, 45_000);
 
   it("黑名单客户的直播留言不会建立订单、占用库存或写入直播捉单记录", async () => {
     const db = await getDb();

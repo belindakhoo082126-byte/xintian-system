@@ -33,7 +33,7 @@ describe.sequential("中国代购商品范围隔离行为验证", () => {
 
   afterEach(cleanup);
 
-  it("后台建单、商城加单与AI批准均拒绝普通商品；允许中国进口代购商品", async () => {
+  it("后台建单与商城加单拒绝普通商品进入 XTC；AI 普通草稿在无代购上下文时维持 XT", async () => {
     const db = await getDb();
     expect(db, "DATABASE_URL 必须可用，才可进行真实隔离演练").toBeTruthy();
     await cleanup();
@@ -48,7 +48,7 @@ describe.sequential("中国代购商品范围隔离行为验证", () => {
     const blockedInsert = await db!.insert(products).values({
       name: `${qaKey} 普通商品`, sku: blockedSku, keyword: `${skuBase}B`,
       type: "physical", status: "active", sellingPrice: "10.00", cost: "4.00", currentCost: "4.00",
-      stockQuantity: 2, reservedQuantity: 0, allowOversold: false, salesMode: "normal", orderCategory: "import",
+      stockQuantity: 2, reservedQuantity: 0, allowOversold: false, salesMode: "normal", orderCategory: "local", allowImportOrder: false,
     });
     const allowedInsert = await db!.insert(products).values({
       name: `${qaKey} 中国代购商品`, sku: allowedSku, keyword: `${skuBase}A`,
@@ -78,10 +78,13 @@ describe.sequential("中国代购商品范围隔离行为验证", () => {
 
     const draftInsert = await db!.insert(draftOrders).values({
       draftNumber: `${qaKey}-DRAFT`, customerId, customerName: qaKey, platform: "messenger", totalAmount: "10.00",
-      items: [{ productId: blockedProductId, productName: `${qaKey} 普通商品`, quantity: 1, price: "10.00" }],
+      items: [{ productId: blockedProductId, productName: `${qaKey} 普通商品`, quantity: 1, price: 10 }],
       status: "waiting_approval",
     });
     const draftId = Number((draftInsert as any)?.[0]?.insertId ?? (draftInsert as any)?.insertId);
-    await expect(approveDraftOrder(draftId, "qa-import-scope")).rejects.toThrow(/中国代购|代购/);
+    const approved = await approveDraftOrder(draftId, "qa-import-scope");
+    const [approvedOrder] = await db!.select({ orderCategory: orders.orderCategory })
+      .from(orders).where(eq(orders.id, approved.orderId)).limit(1);
+    expect(approvedOrder?.orderCategory).toBe("local");
   }, 20_000);
 });

@@ -1,0 +1,250 @@
+82-  specialPrice: string;
+83-  allowPresale: boolean;
+84-  allowStandaloneShipping: boolean;
+85-  standaloneShippingMethod: string;
+86-  standaloneShippingFee: string;
+87-  lightDesc: string;
+88-  waterDesc: string;
+89-  fertilizerDesc: string;
+90-  pruningDesc: string;
+91-  productImages: string[];
+92-  videoUrl: string;
+93-  // V2.0: Sales mode
+94:  salesMode: string;
+95-  preorderWaitDays: string;
+96-  spotSaleEnabled: boolean;
+97-  spotSaleQty: number;
+98-  linkedBatchId: string;
+99-  // V4: Wholesale & Agent
+100-  wholesalePrice: string;
+101-  agentPrice: string;
+102-  moq: number;
+103-  visibleTo: string[];
+104-  specialPriceStartDate: string;
+105-  specialPriceEndDate: string;
+106-  // V5: AI Tags & Selling Points
+107-  aiTags: string[];
+108-  aiSellingPoints: string;
+109-  syncToMall: boolean;
+110-};
+111-
+112-const EMPTY_FORM: ProductForm = {
+113-  name: "", type: "physical", productMode: "simple", categoryId: undefined, unitId: undefined,
+114-  keyword: "", keywordChannels: ["fb_live", "fb_post", "fb_reel", "messenger", "whatsapp"], status: "draft", visibility: "public", priceVisibility: "show",
+115-  shortDescZh: "", shortDescEn: "", fullDescZh: "", fullDescEn: "", careZh: "", careEn: "",
+116-  sellingPrice: "", compareAtPrice: "", memberPrice: "", currentCost: "",
+117-  weightKg: "", stockQuantity: 0, isFeatured: false, featuredSortOrder: 0,
+118-  membershipIntro: "", telegramFlowLink: "", allowStandalonePurchase: true, allowMixedCheckout: true,
+119-  notes: "", coverImageUrl: "", dimensions: {},
+120-  isSpecial: false, specialPrice: "", allowPresale: false, allowStandaloneShipping: false,
+121-  standaloneShippingMethod: "fixed_fee", standaloneShippingFee: "",
+122-  lightDesc: "", waterDesc: "", fertilizerDesc: "", pruningDesc: "",
+123-  productImages: [],
+124-  videoUrl: "",
+125:  salesMode: "normal", preorderWaitDays: "", spotSaleEnabled: false, spotSaleQty: 0, linkedBatchId: "",
+126-  wholesalePrice: "", agentPrice: "", moq: 0, visibleTo: ["retail", "member", "wholesale", "agent"],
+127-  specialPriceStartDate: "", specialPriceEndDate: "",
+128-  aiTags: [], aiSellingPoints: "",
+129-  syncToMall: false,
+130-};
+131-
+132-const RAW_STEPS = [
+133-  { zh: "基本资料", en: "Basic Info" },
+134-  { zh: "图片与描述", en: "Images & Description" },
+135-  { zh: "价格与成本", en: "Price & Cost" },
+136-  { zh: "规格设置", en: "Variant Settings" },
+137-  { zh: "显示与推荐", en: "Display & Recommendation" },
+138-  { zh: "预览确认", en: "Preview & Confirm" },
+139-];
+140-
+141-type VariantForm = {
+142-  id?: number;
+143-  name: string;
+144-  keyword: string;
+145-  sellingPrice: string;
+146-  compareAtPrice: string;
+147-  memberPrice: string;
+148-    status: "active" | "inactive" | "hidden";
+149-  sortOrder: number;
+150-  imageUrl: string;
+151-  stockQuantity: number;
+152-};
+153-const EMPTY_VARIANT: VariantForm = {
+154-  name: "", keyword: "", sellingPrice: "", compareAtPrice: "", memberPrice: "",
+155-  status: "active", sortOrder: 0, imageUrl: "", stockQuantity: 0,
+156-};
+157-
+158-export default function ProductsV2() {
+159-  const { translate, lang } = useI18n();
+160-  const getProductTypeLabel = (type: string) => {
+--
+282-        isSpecial: p.isSpecial ?? false,
+283-        specialPrice: p.specialPrice || "",
+284-        allowPresale: p.allowPresale ?? false,
+285-        allowStandaloneShipping: p.allowStandaloneShipping ?? false,
+286-        standaloneShippingMethod: (p as any).standaloneShippingMethod || "fixed_fee",
+287-        standaloneShippingFee: (p as any).standaloneShippingFee ? String((p as any).standaloneShippingFee) : "",
+288-        lightDesc: p.lightDesc || "",
+289-        waterDesc: p.waterDesc || "",
+290-        fertilizerDesc: p.fertilizerDesc || "",
+291-        pruningDesc: p.pruningDesc || "",
+292-        productImages: (p.images || []).map((img: any) => img.url || img),
+293-        videoUrl: (p as any).videoUrl || "",
+294:        salesMode: (p as any).salesMode || "normal",
+295-        preorderWaitDays: (p as any).preorderWaitDays || "",
+296-        spotSaleEnabled: (p as any).spotSaleEnabled ?? false,
+297-        spotSaleQty: (p as any).spotSaleQty ?? 0,
+298-        linkedBatchId: (p as any).linkedBatchId ? String((p as any).linkedBatchId) : "",
+299-        wholesalePrice: (p as any).wholesalePrice ? String((p as any).wholesalePrice) : "",
+300-        agentPrice: (p as any).agentPrice ? String((p as any).agentPrice) : "",
+301-        moq: (p as any).moq ?? 0,
+302-        visibleTo: (() => { try { return JSON.parse((p as any).visibleTo || '"[\"retail\",\"member\",\"wholesale\",\"agent\"]"'); } catch { return ["retail", "member", "wholesale", "agent"]; } })(),
+303-        specialPriceStartDate: (p as any).specialPriceStartDate ? String((p as any).specialPriceStartDate).split("T")[0] : "",
+304-        specialPriceEndDate: (p as any).specialPriceEndDate ? String((p as any).specialPriceEndDate).split("T")[0] : "",
+305-        aiTags: (() => { try { const t = JSON.parse((p as any).aiTags || "[]"); return Array.isArray(t) ? t : []; } catch { return []; } })(),
+306-        aiSellingPoints: (p as any).aiSellingPoints || "",
+307-        syncToMall: (p as any).syncToMall ?? false,
+308-      });
+309-      setVariants(p.variants || []);
+310-      hydratedEditingIdRef.current = editingId;
+311-    }
+312-  }, [detailQuery.data, editingId]);
+313-
+314-  const createMutation = trpc.productsV2.create.useMutation({
+315-    onSuccess: (data) => {
+316-      utils.productsV2.invalidate();
+317-      toast.success(translate(`商品创建成功，SKU: {sku}`, `Product created successfully, SKU: {sku}`, { sku: data.sku }));
+318-      setDialogOpen(false);
+319-      resetForm();
+320-    },
+321-    onError: (e) => toast.error(translate(`创建失败: {message}`, `Creation failed: {message}`, { message: e.message })),
+322-  });
+323-
+324-  const updateMutation = trpc.productsV2.update.useMutation({
+325-    onSuccess: () => {
+326-      utils.productsV2.invalidate();
+327-      toast.success(translate("商品更新成功", "Product updated successfully"));
+328-      setDialogOpen(false);
+329-      resetForm();
+--
+457-    if (!form.name.trim()) {
+458-      toast.error(translate("请输入商品名称", "Please enter product name"));
+459-      setStep(0);
+460-      return;
+461-    }
+462-    if (!form.keyword.trim()) {
+463-      toast.error(translate("请输入商品关键词", "Please enter product keyword"));
+464-      setStep(0);
+465-      return;
+466-    }
+467-    const data: any = {
+468-      ...form,
+469:      salesMode: form.salesMode,
+470-      preorderWaitDays: form.preorderWaitDays || undefined,
+471-      spotSaleEnabled: form.spotSaleEnabled,
+472-      spotSaleQty: form.spotSaleQty,
+473-      linkedBatchId: form.linkedBatchId ? Number(form.linkedBatchId) : undefined,
+474-      wholesalePrice: form.wholesalePrice ? Number(form.wholesalePrice) : undefined,
+475-      agentPrice: form.agentPrice ? Number(form.agentPrice) : undefined,
+476-      moq: form.moq,
+477-      visibleTo: JSON.stringify(form.visibleTo),
+478-      specialPriceStartDate: form.specialPriceStartDate || undefined,
+479-      specialPriceEndDate: form.specialPriceEndDate || undefined,
+480-      keywordChannels: JSON.stringify(form.keywordChannels),
+481-      aiTags: JSON.stringify(form.aiTags),
+482-      aiSellingPoints: form.aiSellingPoints || undefined,
+483-      syncToMall: form.syncToMall,
+484-    };
+485-    if (editingId) {
+486-      updateMutation.mutate({ id: editingId, ...data });
+487-    } else {
+488-      createMutation.mutate(data);
+489-    }
+490-  }
+491-
+492-  function openAddVariant() {
+493-    setVariantForm(EMPTY_VARIANT);
+494-    setEditingVariantId(null);
+495-    setVariantDialogOpen(true);
+496-  }
+497-
+498-  function openEditVariant(v: any) {
+499-    setEditingVariantId(v.id);
+500-    setVariantForm({
+501-      id: v.id,
+502-      name: v.name || "",
+503-      keyword: v.keyword || "",
+504-      sellingPrice: v.sellingPrice || "",
+--
+1156-                                <Input type="number" step="0.01" placeholder="0.00" value={form.standaloneShippingFee || ""}
+1157-                                  onChange={(e) => setForm({ ...form, standaloneShippingFee: e.target.value })} />
+1158-                              </div>
+1159-                            )}
+1160-                          </div>
+1161-                                                )}
+1162-                      </div>
+1163-                    )}
+1164-                    {isPhysical && (
+1165-                      <div className="space-y-3 rounded-lg border p-4 bg-muted/20">
+1166-                        <div>
+1167-                          <Label>{translate("销售模式", "Sales Mode")}</Label>
+1168:                          <Select value={form.salesMode} onValueChange={(v) => setForm({ ...form, salesMode: v })}>
+1169-                            <SelectTrigger><SelectValue /></SelectTrigger>
+1170-                            <SelectContent>
+1171-                              <SelectItem value="normal">{translate("普通现货", "Normal Stock")}</SelectItem>
+1172-                              <SelectItem value="presale">{translate("可预售", "Presale")}</SelectItem>
+1173-                              <SelectItem value="import_preorder">{translate("中国进口代购", "China Import Pre-order")}</SelectItem>
+1174-                            </SelectContent>
+1175-                          </Select>
+1176-                        </div>
+1177:                        {form.salesMode === "import_preorder" && (
+1178-                          <div className="space-y-3">
+1179-                            <div>
+1180-                              <Label>{translate("预计等待时间", "Estimated Wait Time")}</Label>
+1181-                              <Input value={form.preorderWaitDays} onChange={(e) => setForm({ ...form, preorderWaitDays: e.target.value })} placeholder={translate("例如: 30~45天", "e.g. 30~45 days")} />
+1182-                            </div>
+1183-                            <div className="flex items-center justify-between rounded-lg border p-3">
+1184-                              <div>
+1185-                                <Label>{translate("到货后现货销售", "Spot Sale After Arrival")}</Label>
+1186-                                <p className="text-xs text-muted-foreground">{translate("到货后剩余库存可现货销售", "Remaining stock can be sold as normal after arrival")}</p>
+1187-                              </div>
+1188-                              <Switch checked={form.spotSaleEnabled} onCheckedChange={(v) => setForm({ ...form, spotSaleEnabled: v })} />
+1189-                            </div>
+1190-                            {form.spotSaleEnabled && (
+1191-                              <div>
+1192-                                <Label>{translate("现货销售数量", "Spot Sale Quantity")}</Label>
+1193-                                <Input type="number" value={form.spotSaleQty} onChange={(e) => setForm({ ...form, spotSaleQty: Number(e.target.value) })} />
+1194-                              </div>
+1195-                            )}
+1196-                          </div>
+1197-                        )}
+1198-                      </div>
+1199-                    )}
+1200-                    {isPhysical && form.isSpecial && (
+1201-                      <div>
+1202-                        <Label>{translate("特价金额 (RM)", "Special Price (RM)")}</Label>
+1203-                        <Input type="number" placeholder="0.00" value={form.specialPrice}
+1204-                          onChange={(e) => setForm({ ...form, specialPrice: e.target.value })} />
+1205-                      </div>
+1206-                    )}
+1207-                  </div>
+1208-                )}
+1209-
+1210-                {/* Step 1: Images & Description */}
+1211-                {step === 1 && (
+1212-                  <div className="space-y-4">
+9:231:    salesMode: products.salesMode,
+25:247-export async function getProductsForOrder(filters?: { search?: string; orderCategory?: string }) {
+27:249-  if (filters?.orderCategory !== "import" || productRows.length === 0) return productRows;
+32:254:    salesMode: products.salesMode,
+77:924:    salesMode: orderItems.salesMode,
+107:954-// Priority: 1) Product orderCategory  2) Existing order orderCategory  3) Live room liveType
+122:1208:      salesMode: item.salesMode || "normal",
+167:1491:        salesMode: data.orderCategory === "import" ? "import_preorder" : "normal",
+212:6557:        salesMode: resolvedCategory === "import" ? "import_preorder" as const : "normal" as const,
+238:6583-    orderCategory: resolvedCategory,
+257:7440:        salesMode: item.salesMode,
+290:7473-  // Local orders: orderCategory='local' (or null) with physicalStatus matching
+291:7474-  // Import orders: orderCategory='import' with importStatus matching
+302:8660:        salesMode: isImportOrder ? "import_preorder" as const : "normal" as const,
+347:8753:      salesMode: isImportOrder ? "import_preorder" : "normal",
