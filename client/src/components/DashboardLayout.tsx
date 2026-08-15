@@ -318,7 +318,6 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const mainContentRef = useRef<HTMLElement>(null);
   const isShippingStaff = user?.role !== "admin";
 
   // For shipping staff, only show packing and order-tracking
@@ -335,39 +334,6 @@ function DashboardLayoutContent({
     typeof label === "string" ? t(label) : (lang === "zh" ? label.zh : label.en);
 
   const isMobile = useIsMobile();
-  const menuLeaves = visibleMenu.flatMap((item) => {
-    if (!isGroup(item)) return [item];
-    return item.children.flatMap((child) => [child, ...(child.children ?? [])]);
-  });
-  const activeMenuItem = menuLeaves.find((item) => isMenuPathActive(location, item.path));
-  const topBarTitle = activeMenuItem ? resolveLabel(activeMenuItem.label) : null;
-
-  useEffect(() => {
-    const contentRoot = mainContentRef.current;
-    const normalizedTopBarTitle = topBarTitle?.replace(/\s+/g, " ").trim().toLocaleLowerCase();
-    if (!contentRoot || !normalizedTopBarTitle) return;
-
-    const stripPageHeaderSuffix = (title: string) => title
-      .replace(/(?:管理|列表|中心|设置|工作台|记录|日志|报表|总览|管理与处理|management|manager|list|center|settings|workspace|record|log|report|overview)$/i, "")
-      .replace(/直播间/g, "直播")
-      .replace(/\s+/g, " ")
-      .trim();
-    const normalizedBaseTitle = stripPageHeaderSuffix(normalizedTopBarTitle);
-
-    const duplicateHeading = Array.from(contentRoot.querySelectorAll<HTMLElement>("h1")).find((heading) => {
-      const headingText = heading.textContent?.replace(/\s+/g, " ").trim().toLocaleLowerCase();
-      if (!headingText) return false;
-      const normalizedHeading = stripPageHeaderSuffix(headingText);
-      return normalizedHeading === normalizedBaseTitle || normalizedHeading === normalizedTopBarTitle;
-    });
-
-    if (!duplicateHeading) return;
-    duplicateHeading.dataset.menuTitleDuplicate = "true";
-
-    return () => {
-      delete duplicateHeading.dataset.menuTitleDuplicate;
-    };
-  }, [lang, location, topBarTitle]);
 
   useEffect(() => {
     if (isCollapsed) {
@@ -552,17 +518,11 @@ function DashboardLayoutContent({
         />
       </div>
 
-      <SidebarInset className="w-full min-w-0 max-w-full overflow-x-hidden">
-        <div className="sticky top-0 z-40 flex h-16 min-w-0 items-center justify-between gap-3 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:backdrop-blur no-print sm:px-4">
-          <div className="flex min-w-0 items-center gap-2">
-            {isMobile && (
-              <SidebarTrigger className="h-11 w-11 shrink-0 rounded-lg bg-background" />
-            )}
-            {topBarTitle && (
-              <h1 className="truncate text-2xl font-bold tracking-tight">{topBarTitle}</h1>
-            )}
-          </div>
-
+      <SidebarInset className="relative w-full min-w-0 max-w-full overflow-x-hidden">
+        <div className="fixed right-3 top-3 z-40 flex items-center gap-2 no-print sm:right-4">
+          {isMobile && (
+            <SidebarTrigger className="h-11 w-11 shrink-0 rounded-lg border border-border/80 bg-background shadow-sm" />
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -587,7 +547,7 @@ function DashboardLayoutContent({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <main ref={mainContentRef} data-admin-menu-content className="min-w-0 max-w-full flex-1 overflow-x-hidden p-3 sm:p-4">
+        <main data-admin-menu-content className="min-w-0 max-w-full flex-1 overflow-x-hidden p-3 pt-16 pr-24 sm:p-4 sm:pt-4 sm:pr-24">
           <BackendEnglishFallback>{children}</BackendEnglishFallback>
         </main>
       </SidebarInset>
