@@ -99,6 +99,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const [splitQuantities, setSplitQuantities] = useState<Record<number, number>>({});
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTargetId, setMergeTargetId] = useState<string>("");
+  const [mergeCreditDisposition, setMergeCreditDisposition] = useState<"carry_forward" | "return_to_source">("carry_forward");
 
   // Preload logo as dataURL for Preview — same asset as export/print
   useEffect(() => {
@@ -337,6 +338,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
       toast.success(translate("订单已合并至 {orderNumber}", "Order merged into {orderNumber}", { orderNumber: result.targetOrderNumber }));
       setMergeOpen(false);
       setMergeTargetId("");
+      setMergeCreditDisposition("carry_forward");
       utils.orders.getDetail.invalidate({ id: orderId });
       utils.orders.list.invalidate();
     },
@@ -1135,7 +1137,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
         </DialogContent>
       </Dialog>
 
-      <Dialog open={mergeOpen} onOpenChange={(open) => { setMergeOpen(open); if (!open) setMergeTargetId(""); }}>
+      <Dialog open={mergeOpen} onOpenChange={(open) => { setMergeOpen(open); if (!open) { setMergeTargetId(""); setMergeCreditDisposition("carry_forward"); } }}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>{translate("合并订单", "Merge Order")}</DialogTitle>
@@ -1159,10 +1161,25 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                 </Select>
               </div>
             )}
+            {Number(order?.creditUsed || 0) > 0 && (
+              <div className="space-y-3 rounded-md border border-violet-300 bg-violet-50 p-3 text-sm text-violet-950 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-100" data-merge-credit-disposition>
+                <div>
+                  <p className="font-semibold">{translate("此来源订单已使用客户 Credit", "This source order has used customer Credit")}</p>
+                  <p className="mt-1 text-xs opacity-80">{translate(`本订单已使用 RM ${Number(order?.creditUsed || 0).toFixed(2)}。请选择合并时继续使用，或退回来源客户余额。`, `This order used RM ${Number(order?.creditUsed || 0).toFixed(2)}. Choose whether to use it after merge or return it to the source customer balance.`)}</p>
+                </div>
+                <Select value={mergeCreditDisposition} onValueChange={(value) => setMergeCreditDisposition(value as "carry_forward" | "return_to_source")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="carry_forward">{translate("继续用于保留订单（减少保留订单应付金额）", "Use on kept order (reduces its amount due)")}</SelectItem>
+                    <SelectItem value="return_to_source">{translate("退回来源客户 Credit 余额（不用于保留订单）", "Return to source customer Credit balance (do not use on kept order)")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMergeOpen(false)}>{translate("取消", "Cancel")}</Button>
-            <Button onClick={() => mergeOrderMutation.mutate({ sourceOrderId: orderId, targetOrderId: Number(mergeTargetId) })} disabled={!mergeTargetId || mergeOrderMutation.isPending}>
+            <Button onClick={() => mergeOrderMutation.mutate({ sourceOrderId: orderId, targetOrderId: Number(mergeTargetId), creditDisposition: mergeCreditDisposition })} disabled={!mergeTargetId || mergeOrderMutation.isPending}>
               <GitMerge className="h-4 w-4 mr-2" />{translate("确认合并", "Confirm Merge")}
             </Button>
           </DialogFooter>

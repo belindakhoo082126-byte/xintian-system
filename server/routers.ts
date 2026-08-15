@@ -1840,6 +1840,7 @@ export const appRouter = router({
       .input(z.object({
         sourceOrderId: z.number().int().positive(),
         targetOrderId: z.number().int().positive(),
+        creditDisposition: z.enum(["carry_forward", "return_to_source"]).optional(),
       }))
       .mutation(({ input, ctx }) => db.mergeUnpaidLocalOrders({
         ...input,

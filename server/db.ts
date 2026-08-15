@@ -7592,7 +7592,7 @@ export async function getManualOrderMergeCandidates(sourceOrderId: number) {
   return unwrapMySqlRows<any>(await db.execute(sql`
     SELECT o.id, o.orderNumber, o.customerId,
            COALESCE(NULLIF(c.displayName, ''), NULLIF(c.name, ''), NULLIF(c.facebookName, ''), NULLIF(o.facebookName, ''), CONCAT('Customer #', o.customerId)) AS customerName,
-           o.physicalStatus, o.totalAmount, o.shippingMethod,
+           o.physicalStatus, o.totalAmount, o.creditUsed, o.shippingMethod,
            o.shippingAddress, o.createdAt
     FROM orders o
     LEFT JOIN customers c ON c.id = o.customerId
@@ -7601,7 +7601,6 @@ export async function getManualOrderMergeCandidates(sourceOrderId: number) {
       AND o.orderType = 'physical'
       AND o.physicalStatus IN ('pending', 'hold_order')
       AND COALESCE(o.paidAmount, 0) = 0
-      AND COALESCE(o.creditUsed, 0) = 0
       AND COALESCE(o.discountAmount, 0) = 0
       AND COALESCE(o.promotionDiscount, 0) = 0
       AND COALESCE(o.extraCharge, 0) = 0
@@ -7624,7 +7623,12 @@ export async function getManualOrderMergeCandidates(sourceOrderId: number) {
  * source belongs to a different customer; the source is kept as a zero-value
  * cancelled audit record instead of being deleted.
  */
-export async function mergeUnpaidLocalOrders(input: { sourceOrderId: number; targetOrderId: number; operator: string }) {
+export async function mergeUnpaidLocalOrders(input: {
+  sourceOrderId: number;
+  targetOrderId: number;
+  creditDisposition?: "carry_forward" | "return_to_source";
+  operator: string;
+}) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   if (input.sourceOrderId === input.targetOrderId) throw new Error("请选择另一张订单作为合单目标");
@@ -7636,7 +7640,7 @@ export async function mergeUnpaidLocalOrders(input: { sourceOrderId: number; tar
     if (!order) throw new Error(`${label}不存在`);
     if (order.orderType !== "physical" || order.orderCategory !== "local") throw new Error(`${label}必须是本地实体订单`);
     if (!["pending", "hold_order"].includes(order.physicalStatus || "")) throw new Error(`${label}不是可合并的未付款订单`);
-    if (Number(order.paidAmount || 0) > 0 || Number(order.creditUsed || 0) > 0) throw new Error(`${label}已有已确认付款或已使用 Credit，不能合单`);
+    if (Number(order.paidAmount || 0) > 0) throw new Error(`${label}已有已确认付款，不能合单`);
     if (Number(order.discountAmount || 0) > 0 || Number(order.promotionDiscount || 0) > 0 || Number(order.extraCharge || 0) > 0) {
       throw new Error(`${label}含订单级折扣、促销或额外收费，不能直接合单`);
     }
@@ -7650,6 +7654,15 @@ export async function mergeUnpaidLocalOrders(input: { sourceOrderId: number; tar
 
   await validate(source, "原订单");
   await validate(target, "目标订单");
+  const sourceCreditUsed = Number(source!.creditUsed || 0);
+  const targetCreditUsed = Number(target!.creditUsed || 0);
+  const creditDisposition = sourceCreditUsed > 0 ? input.creditDisposition : "carry_forward";
+  if (sourceCreditUsed > 0 && !creditDisposition) {
+    throw new Error("原订单已使用客户 Credit，请选择带入保留订单或退回来源客户余额");
+  }
+  if (sourceCreditUsed > 0 && !source!.customerId) {
+    throw new Error("原订单缺少客户资料，无法处理已使用的 Credit");
+  }
   const sourceItems = await db.select({ id: orderItems.id, productName: orderItems.productName, quantity: orderItems.quantity })
     .from(orderItems).where(eq(orderItems.orderId, input.sourceOrderId));
   if (sourceItems.length === 0) throw new Error("原订单没有可合并的商品");
@@ -7663,14 +7676,43 @@ export async function mergeUnpaidLocalOrders(input: { sourceOrderId: number; tar
       shippingFee: "0.00",
       totalWeight: "0.00",
       totalAmount: "0.00",
+      creditUsed: "0.00",
     }).where(eq(orders.id, input.sourceOrderId));
   });
 
-  await recalculateOrderTotals(input.targetOrderId);
+  const recalculatedTarget = await recalculateOrderTotals(input.targetOrderId);
+  let creditCarriedForward = 0;
+  let creditReturnedToSource = 0;
+  if (sourceCreditUsed > 0 && creditDisposition === "carry_forward") {
+    // The retained order may only use Credit up to its remaining payable amount.
+    // Any unused portion is returned to the original customer below.
+    creditCarriedForward = Math.min(sourceCreditUsed, Math.max(0, Number(recalculatedTarget?.totalAmount || 0)));
+    if (creditCarriedForward > 0) {
+      await db.update(orders).set({
+        creditUsed: (targetCreditUsed + creditCarriedForward).toFixed(2),
+      }).where(eq(orders.id, input.targetOrderId));
+      await recalculateOrderTotals(input.targetOrderId);
+    }
+  }
+  if (sourceCreditUsed > 0) {
+    creditReturnedToSource = creditDisposition === "return_to_source"
+      ? sourceCreditUsed
+      : sourceCreditUsed - creditCarriedForward;
+    if (creditReturnedToSource > 0) {
+      await refundCustomerCredit(source!.customerId!, creditReturnedToSource, input.sourceOrderId, source!.orderNumber || undefined);
+    }
+  }
   const itemSummary = sourceItems.map((item) => ({ orderItemId: item.id, productName: item.productName, quantity: item.quantity }));
-  await logOrderOperation(input.sourceOrderId, "manual_order_merge", `订单已合并至 ${target!.orderNumber}`, JSON.stringify({ targetOrderId: input.targetOrderId, targetOrderNumber: target!.orderNumber, sourceCustomerId: source!.customerId, targetCustomerId: target!.customerId, items: itemSummary }), input.operator);
-  await logOrderOperation(input.targetOrderId, "manual_order_merge", `已合并订单 ${source!.orderNumber}`, JSON.stringify({ sourceOrderId: input.sourceOrderId, sourceOrderNumber: source!.orderNumber, sourceCustomerId: source!.customerId, targetCustomerId: target!.customerId, items: itemSummary }), input.operator);
-  return { sourceOrderId: input.sourceOrderId, sourceOrderNumber: source!.orderNumber, targetOrderId: input.targetOrderId, targetOrderNumber: target!.orderNumber, movedItemCount: sourceItems.length };
+  const creditAudit = {
+    sourceCreditUsed: sourceCreditUsed.toFixed(2),
+    targetCreditUsed: targetCreditUsed.toFixed(2),
+    creditDisposition: sourceCreditUsed > 0 ? creditDisposition : "not_applicable",
+    creditCarriedForward: creditCarriedForward.toFixed(2),
+    creditReturnedToSource: creditReturnedToSource.toFixed(2),
+  };
+  await logOrderOperation(input.sourceOrderId, "manual_order_merge", `订单已合并至 ${target!.orderNumber}`, JSON.stringify({ targetOrderId: input.targetOrderId, targetOrderNumber: target!.orderNumber, sourceCustomerId: source!.customerId, targetCustomerId: target!.customerId, items: itemSummary, credit: creditAudit }), input.operator);
+  await logOrderOperation(input.targetOrderId, "manual_order_merge", `已合并订单 ${source!.orderNumber}`, JSON.stringify({ sourceOrderId: input.sourceOrderId, sourceOrderNumber: source!.orderNumber, sourceCustomerId: source!.customerId, targetCustomerId: target!.customerId, items: itemSummary, credit: creditAudit }), input.operator);
+  return { sourceOrderId: input.sourceOrderId, sourceOrderNumber: source!.orderNumber, targetOrderId: input.targetOrderId, targetOrderNumber: target!.orderNumber, movedItemCount: sourceItems.length, creditDisposition: creditAudit.creditDisposition, creditCarriedForward: creditAudit.creditCarriedForward, creditReturnedToSource: creditAudit.creditReturnedToSource };
 }
 
 // ============================================================================

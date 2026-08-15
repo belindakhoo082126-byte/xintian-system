@@ -215,6 +215,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [mergeSourceOrderId, setMergeSourceOrderId] = useState<number | null>(null);
   const [mergeTargetId, setMergeTargetId] = useState("");
+  const [mergeCreditDisposition, setMergeCreditDisposition] = useState<"carry_forward" | "return_to_source">("carry_forward");
 
   const utils = trpc.useUtils();
 
@@ -518,6 +519,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       setMergeDialogOpen(false);
       setMergeSourceOrderId(null);
       setMergeTargetId("");
+      setMergeCreditDisposition("carry_forward");
       setSelectedIds(new Set());
       utils.orders.invalidate();
     },
@@ -711,6 +713,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     }
     setMergeSourceOrderId(sourceOrderId);
     setMergeTargetId("");
+    setMergeCreditDisposition("carry_forward");
     setMergeDialogOpen(true);
   }
 
@@ -719,6 +722,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const remainingAmount = totalAmount - totalPaid;
   const mergeSourceOrder = (orders || []).find((order: any) => order.id === mergeSourceOrderId) as any;
   const mergeTargetOrder = mergeTargetId ? mergeCandidates.find((order: any) => order.id === Number(mergeTargetId)) as any : null;
+  const mergeSourceCreditUsed = Number(mergeSourceOrder?.creditUsed || 0);
 
   return (
     <div className="space-y-6">
@@ -746,6 +750,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
         if (!open) {
           setMergeSourceOrderId(null);
           setMergeTargetId("");
+          setMergeCreditDisposition("carry_forward");
         }
       }}>
         <DialogContent className="max-w-xl" data-page-merge-dialog>
@@ -801,6 +806,21 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                 </Select>
               </div>
             )}
+            {mergeSourceCreditUsed > 0 && (
+              <div className="space-y-3 rounded-md border border-violet-300 bg-violet-50 p-3 text-sm text-violet-950 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-100" data-merge-credit-disposition>
+                <div>
+                  <p className="font-semibold">{translate("来源订单已使用客户 Credit", "Source order has used customer Credit")}</p>
+                  <p className="mt-1 text-xs opacity-80">{translate(`本订单已使用 RM ${mergeSourceCreditUsed.toFixed(2)}。请选择这笔 Credit 的处理方式；不会自动转给另一位客户。`, `This order used RM ${mergeSourceCreditUsed.toFixed(2)}. Choose how to handle it; it will not automatically move to another customer.`)}</p>
+                </div>
+                <Select value={mergeCreditDisposition} onValueChange={(value) => setMergeCreditDisposition(value as "carry_forward" | "return_to_source")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="carry_forward">{translate("继续用于保留订单（减少保留订单应付金额）", "Use on kept order (reduces its amount due)")}</SelectItem>
+                    <SelectItem value="return_to_source">{translate("退回来源客户 Credit 余额（不用于保留订单）", "Return to source customer Credit balance (do not use on kept order)")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             {mergeSourceOrder && mergeTargetOrder && (
               <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm" data-merge-final-summary>
                 <p className="font-semibold">{translate("请确认合并结果", "Confirm the merge result")}</p>
@@ -816,7 +836,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           <DialogFooter>
             <Button variant="outline" onClick={() => setMergeDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
             <Button
-              onClick={() => mergeSourceOrderId !== null && mergeOrderMutation.mutate({ sourceOrderId: mergeSourceOrderId, targetOrderId: Number(mergeTargetId) })}
+              onClick={() => mergeSourceOrderId !== null && mergeOrderMutation.mutate({ sourceOrderId: mergeSourceOrderId, targetOrderId: Number(mergeTargetId), creditDisposition: mergeCreditDisposition })}
               disabled={!mergeSourceOrderId || !mergeTargetId || mergeOrderMutation.isPending}
             >
               <GitMerge className="mr-2 h-4 w-4" />{translate("确认合并并保留目标订单", "Confirm Merge & Keep Target")}
