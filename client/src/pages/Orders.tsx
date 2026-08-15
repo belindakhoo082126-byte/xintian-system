@@ -14,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, AlertCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, RotateCcw, Bell, Upload, Loader2, Pencil } from "lucide-react";
+import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, AlertCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, RotateCcw, Bell, Upload, Loader2, Pencil, GitMerge } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSearch, useLocation } from "wouter";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
@@ -211,6 +211,10 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const [editableMessage, setEditableMessage] = useState("");
   // V2.0.48: Batch selection
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // 页面级手动合单：从订单列表选择一张来源订单后，再选择要保留的目标订单。
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [mergeSourceOrderId, setMergeSourceOrderId] = useState<number | null>(null);
+  const [mergeTargetId, setMergeTargetId] = useState("");
 
   const utils = trpc.useUtils();
 
@@ -238,6 +242,10 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const { data: orderDetail, refetch: refetchDetail } = trpc.orders.getDetail.useQuery(
     { id: detailOrderId! },
     { enabled: detailOrderId !== null }
+  );
+  const { data: mergeCandidates = [], isLoading: isLoadingMergeCandidates } = trpc.orders.mergeCandidates.useQuery(
+    { sourceOrderId: mergeSourceOrderId! },
+    { enabled: mergeDialogOpen && mergeSourceOrderId !== null },
   );
 
   // Customer search
@@ -504,6 +512,17 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     },
     onError: (e) => toast.error(translate("批量发送失败: {message}", "Batch send failed: {message}", { message: e.message })),
   });
+  const mergeOrderMutation = trpc.orders.merge.useMutation({
+    onSuccess: (result) => {
+      toast.success(translate("订单已合并至 {orderNumber}", "Order merged into {orderNumber}", { orderNumber: result.targetOrderNumber }));
+      setMergeDialogOpen(false);
+      setMergeSourceOrderId(null);
+      setMergeTargetId("");
+      setSelectedIds(new Set());
+      utils.orders.invalidate();
+    },
+    onError: (error: any) => toast.error(translate("合单失败: {message}", "Merge failed: {message}", { message: error.message })),
+  });
 
   function addManualItem() {
     setManualItems((currentItems) => [
@@ -679,6 +698,22 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     cancelOrderMutation.mutate({ id: detailOrderId, reason: cancelReason });
   }
 
+  function openPageMergeDialog() {
+    if (selectedIds.size !== 1) {
+      toast.error(translate("请先在订单列表勾选一张要并入其他订单的来源订单", "Select one source order in the list before merging"));
+      return;
+    }
+    const sourceOrderId = Array.from(selectedIds)[0];
+    const sourceOrder = (orders || []).find((order: any) => order.id === sourceOrderId);
+    if (sourceOrder?.orderCategory === "import") {
+      toast.error(translate("目前手动合单仅适用于本地 XT 未付款订单", "Manual merge is currently available for unpaid local XT orders only"));
+      return;
+    }
+    setMergeSourceOrderId(sourceOrderId);
+    setMergeTargetId("");
+    setMergeDialogOpen(true);
+  }
+
   const totalPaid = orderDetail?.payments?.filter((p: any) => p.reviewStatus === 'approved').reduce((sum: number, p: any) => sum + parseFloat(String(p.amount)), 0) || 0;
   const totalAmount = orderDetail ? parseFloat(String(orderDetail.totalAmount)) : 0;
   const remainingAmount = totalAmount - totalPaid;
@@ -688,12 +723,74 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       <AdminPageHeader
         title={crossChannelMergeToday ? translate("今日跨渠道合单", "Today's Cross-channel Merges") : orderCategory === "import" ? translate("中国代购订单", "Import Orders") : orderCategory === "local" ? translate("本地订单", "Local Orders") : translate("订单管理", "Order Management")}
         description={crossChannelMergeToday ? translate("以下为今天实际追加至未汇款 XT，以及截止日期内 XTC 订单的合单记录；点击订单可查看完整详情。", "These are today's additions to unpaid XT and eligible in-window XTC orders. Click an order for full details.") : orderCategory === "import" ? translate("中国代购订单管理与处理", "Import order management & processing") : orderCategory === "local" ? translate("本地订单管理与处理", "Local order management & processing") : translate("搜索与筛选所有订单", "Search and filter all orders")}
-        actions={orderCategory !== "all" ? (
-          <Button className="w-full sm:w-auto" onClick={() => setLocation(`/orders/create/${orderCategory === "import" ? "import" : "local"}`)}>
-            <Plus className="h-4 w-4 mr-2" />{translate("手动建单", "Create Manual Order")}
-          </Button>
-        ) : undefined}
+        actions={(
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            {orderCategory !== "import" && (
+              <Button variant="outline" className="w-full sm:w-auto" onClick={openPageMergeDialog} data-page-merge-entry>
+                <GitMerge className="mr-2 h-4 w-4" />{translate("合并订单", "Merge Orders")}
+              </Button>
+            )}
+            {orderCategory !== "all" && (
+              <Button className="w-full sm:w-auto" onClick={() => setLocation(`/orders/create/${orderCategory === "import" ? "import" : "local"}`)}>
+                <Plus className="h-4 w-4 mr-2" />{translate("手动建单", "Create Manual Order")}
+              </Button>
+            )}
+          </div>
+        )}
       />
+
+      <Dialog open={mergeDialogOpen} onOpenChange={(open) => {
+        setMergeDialogOpen(open);
+        if (!open) {
+          setMergeSourceOrderId(null);
+          setMergeTargetId("");
+        }
+      }}>
+        <DialogContent className="max-w-xl" data-page-merge-dialog>
+          <DialogHeader>
+            <DialogTitle>{translate("合并订单", "Merge Orders")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              {translate("先在订单列表勾选一张要并入其他订单的来源订单。只可合并同一客户、未付款、无付款凭证且未进入包货的本地 XT 订单；目标订单会保留收件资料与配送方式，来源订单会保留为已取消的操作记录。", "First select one source order in the order list. Only same-customer, unpaid local XT orders with no payment proof and no fulfilment may be merged. The target keeps its recipient and shipping details; the source remains as a cancelled audit record.")}
+            </div>
+            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+              <p className="text-muted-foreground">{translate("要并入的来源订单", "Source order to merge")}</p>
+              <p className="mt-1 font-mono font-semibold">
+                {((orders || []).find((order: any) => order.id === mergeSourceOrderId) as any)?.orderNumber || "-"}
+              </p>
+            </div>
+            {isLoadingMergeCandidates ? (
+              <p className="text-sm text-muted-foreground">{translate("正在查询可合并订单…", "Finding eligible orders…")}</p>
+            ) : mergeCandidates.length === 0 ? (
+              <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{translate("没有符合条件的同客户未付款本地订单。", "No eligible unpaid local order was found for this customer.")}</p>
+            ) : (
+              <div className="space-y-2">
+                <Label>{translate("合并至订单", "Merge into order")}</Label>
+                <Select value={mergeTargetId} onValueChange={setMergeTargetId}>
+                  <SelectTrigger><SelectValue placeholder={translate("请选择保留的目标订单", "Select the order to keep")} /></SelectTrigger>
+                  <SelectContent>
+                    {mergeCandidates.map((candidate: any) => (
+                      <SelectItem key={candidate.id} value={String(candidate.id)}>
+                        {candidate.orderNumber} · RM {Number(candidate.totalAmount || 0).toFixed(2)} · {candidate.physicalStatus === "hold_order" ? translate("保留订单", "Hold order") : translate("未汇款", "Unpaid")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMergeDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button
+              onClick={() => mergeSourceOrderId !== null && mergeOrderMutation.mutate({ sourceOrderId: mergeSourceOrderId, targetOrderId: Number(mergeTargetId) })}
+              disabled={!mergeSourceOrderId || !mergeTargetId || mergeOrderMutation.isPending}
+            >
+              <GitMerge className="mr-2 h-4 w-4" />{translate("确认合并", "Confirm Merge")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {crossChannelMergeToday && (
         <Card className="border-cyan-200 bg-cyan-50/60 dark:border-cyan-900/60 dark:bg-cyan-950/20" data-cross-channel-merge-list>
