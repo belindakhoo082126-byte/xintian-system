@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { useIsMobile } from "@/hooks/useMobile";
 import {
   LayoutDashboard, LogOut, PanelLeft, Package, ShoppingCart, Crown, Users,
   MessageSquare, BarChart3, Truck, PackagePlus, TrendingUp, Facebook,
@@ -314,7 +313,7 @@ function DashboardLayoutContent({
   const { lang, setLang, t } = useI18n();
   const { theme, setTheme } = useTheme();
   const [location, setLocation] = useLocation();
-  const { state, toggleSidebar } = useSidebar();
+  const { state, toggleSidebar, isMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -332,8 +331,6 @@ function DashboardLayoutContent({
 
   const resolveLabel = (label: string | { zh: string; en: string }): string =>
     typeof label === "string" ? t(label) : (lang === "zh" ? label.zh : label.en);
-
-  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (isCollapsed) {
@@ -545,14 +542,16 @@ function DashboardLayoutContent({
         />
       </div>
 
-      <SidebarInset className="relative h-svh min-h-0 w-full min-w-0 max-w-full overflow-hidden">
-        <div data-mobile-menu-bar className="flex h-14 shrink-0 items-center px-3 md:hidden">
-          <SidebarTrigger
-            className="h-11 w-11"
-            aria-label="打开后台菜单"
-            title="打开菜单"
-          />
-        </div>
+      <SidebarInset className="relative flex h-svh min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden">
+        {isMobile && (
+          <div data-mobile-menu-bar className="flex h-14 shrink-0 items-center px-3">
+            <SidebarTrigger
+              className="h-11 w-11"
+              aria-label="打开后台菜单"
+              title="打开菜单"
+            />
+          </div>
+        )}
         <main data-admin-menu-content className="min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4">
           <BackendEnglishFallback>{children}</BackendEnglishFallback>
         </main>

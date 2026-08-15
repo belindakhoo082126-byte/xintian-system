@@ -32,7 +32,8 @@ describe("Chat 客服可视区域布局", () => {
   it("inherits a bounded admin content height so all three chat columns scroll inside the viewport", () => {
     const layoutSource = readFileSync(resolve(process.cwd(), "client/src/components/DashboardLayout.tsx"), "utf8");
 
-    expect(layoutSource).toContain('relative h-svh min-h-0 w-full min-w-0 max-w-full overflow-hidden');
-    expect(layoutSource).toContain('h-full min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4');
+    expect(layoutSource).toContain('relative flex h-svh min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden');
+    expect(layoutSource).toContain('data-admin-menu-content className="min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4"');
+    expect(layoutSource).toContain('{isMobile && (');
   });
 });

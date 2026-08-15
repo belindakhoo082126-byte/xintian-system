@@ -32,8 +32,11 @@ describe("DashboardLayout page title shell", () => {
     expect(layoutSource).toContain('data-language-selector');
     expect(layoutSource).toContain('tooltip={lang === "zh" ? "语言：中文" : "Language: English"}');
     expect(layoutSource.indexOf('data-language-selector')).toBeLessThan(layoutSource.indexOf('{visibleMenu.map'));
-    expect(layoutSource).toContain('<SidebarInset className="relative h-svh min-h-0 w-full min-w-0 max-w-full overflow-hidden">');
-    expect(layoutSource).toContain('data-mobile-menu-bar className="flex h-14 shrink-0 items-center px-3 md:hidden"');
+    expect(layoutSource).toContain('<SidebarInset className="relative flex h-svh min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden">');
+    expect(layoutSource).toContain('const { state, toggleSidebar, isMobile } = useSidebar();');
+    expect(layoutSource).toContain('{isMobile && (');
+    expect(layoutSource).toContain('data-mobile-menu-bar className="flex h-14 shrink-0 items-center px-3"');
+    expect(layoutSource).not.toContain('data-mobile-menu-bar className="flex h-14 shrink-0 items-center px-3 md:hidden"');
     expect(layoutSource).toContain('data-admin-menu-content className="min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto');
     expect(layoutSource).not.toContain("fixed right-3 top-3");
     expect(layoutSource).not.toContain("sticky top-0 z-40 flex h-16");
