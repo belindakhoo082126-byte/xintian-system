@@ -18,6 +18,7 @@ import { Plus, Edit2, Trash2, Search, Copy, Check, AlertCircle, Link as LinkIcon
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
+import { AdminPageHeader } from "@/components/AdminPageHeader";
 import {
   LargeOperationDialogBody,
   LargeOperationDialogContent,
@@ -577,15 +578,14 @@ export default function ProductsV2() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">{translate("共 {count} 个商品", "{count} products total", { count: String(totalCount) })}</p>
-        </div>
-        <Button onClick={openCreate}>
+      <AdminPageHeader
+        title={translate("商品管理", "Product Management")}
+        description={translate("共 {count} 个商品", "{count} products total", { count: String(totalCount) })}
+        actions={<Button onClick={openCreate}>
           <Plus className="h-4 w-4 mr-2" />
           {translate("新增商品", "Add Product")}
-        </Button>
-      </div>
+        </Button>}
+      />
 
       {/* Filters */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(280px,1fr)_repeat(4,minmax(132px,0.52fr))]">

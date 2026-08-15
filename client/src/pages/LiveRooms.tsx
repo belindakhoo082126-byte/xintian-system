@@ -13,6 +13,7 @@ import { Plus, Pencil, Trash2, Video, Calendar, Plane, ChevronRight, Package, Sh
 import { toast } from "sonner";
 import { useI18n } from "@/contexts/I18nContext";
 import LiveRoomDetail from "./LiveRoomDetail";
+import { AdminPageHeader } from "@/components/AdminPageHeader";
 
 const statusColors: Record<string, string> = {
   preparing: "bg-blue-100 text-blue-700",
@@ -206,15 +207,13 @@ export default function LiveRooms() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+      <AdminPageHeader
+        title={<span className="flex items-center gap-2">
             <Radio className="h-6 w-6 text-green-600" />
             {t("liveRooms.title")}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">{t("liveRooms.subtitle")}</p>
-        </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          </span>}
+        description={t("liveRooms.subtitle")}
+        actions={<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={resetForm} className="gap-2">
               <Plus className="h-4 w-4" />
@@ -300,7 +299,8 @@ export default function LiveRooms() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+        }
+      />
 
       {/* Type filter tabs */}
       <div className="flex gap-2">

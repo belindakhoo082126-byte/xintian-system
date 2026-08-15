@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { buildSystemLink, getCompanyLogoChange, getPersistedCompanyLogoUrl, isSupportedCompanyLogo } from "@/lib/settingsLinks";
 import { Building2, Hash, Bell, Shield, Save, Upload, Copy, ExternalLink, Package } from "lucide-react";
+import { AdminPageHeader } from "@/components/AdminPageHeader";
 
 export default function SystemSettings() {
   const { data: settings, isLoading, refetch } = trpc.settings.get.useQuery();
@@ -90,16 +91,14 @@ export default function SystemSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">系统设置</h1>
-          <p className="text-sm text-muted-foreground mt-1">公司资料、编号规则、通知与安全设置</p>
-        </div>
-        <Button onClick={handleSave} disabled={updateMutation.isPending}>
+      <AdminPageHeader
+        title="系统设置"
+        description="公司资料、编号规则、通知与安全设置"
+        actions={<Button className="h-10" onClick={handleSave} disabled={updateMutation.isPending}>
           <Save className="h-4 w-4 mr-2" />
           {updateMutation.isPending ? "保存中..." : "保存"}
-        </Button>
-      </div>
+        </Button>}
+      />
 
       <Tabs defaultValue="company">
         <TabsList>

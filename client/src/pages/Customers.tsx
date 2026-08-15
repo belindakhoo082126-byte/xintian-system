@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useI18n } from "@/contexts/I18nContext";
+import { AdminPageHeader } from "@/components/AdminPageHeader";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -314,14 +315,10 @@ export default function Customers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{translate("客户管理", "Customer Management")}</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {translate("统一客户档案，支持多维度身份识别与合并", "Unified customer profiles, supporting multi-dimensional identification and merging")}
-          </p>
-        </div>
-        <div className="flex gap-2">
+      <AdminPageHeader
+        title={translate("客户管理", "Customer Management")}
+        description={translate("统一客户档案，支持多维度身份识别与合并", "Unified customer profiles, supporting multi-dimensional identification and merging")}
+        actions={<>
           <Button
             variant={mergeSelectMode ? "default" : "outline"}
             onClick={() => mergeSelectMode ? exitMergeMode() : enterMergeMode()}
@@ -333,8 +330,8 @@ export default function Customers() {
             <Plus className="h-4 w-4 mr-2" />
             {translate("新增客户", "Add Customer")}
           </Button>
-        </div>
-      </div>
+        </>}
+      />
 
       {mergeSuggestions && mergeSuggestions.length > 0 && (
         <Card className="border-orange-200 bg-orange-50/50 dark:bg-orange-950/20">

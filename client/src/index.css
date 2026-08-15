@@ -263,3 +263,72 @@
 [data-admin-menu-content] [data-menu-title-duplicate="true"] {
   display: none;
 }
+
+/* 后台页面 Header：标题说明在左，所有主要操作及语言选择在同一正常流式操作组。 */
+[data-admin-menu-content] .header-with-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+[data-admin-menu-content] .header-actions,
+[data-admin-menu-content] [data-admin-page-header-actions] {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+[data-admin-menu-content] .header-actions > button,
+[data-admin-menu-content] [data-admin-page-header-actions] > button,
+[data-admin-menu-content] .header-actions > [role="button"],
+[data-admin-menu-content] [data-admin-page-header-actions] > [role="button"],
+[data-admin-menu-content] .header-language-selector {
+  height: 40px;
+  min-height: 40px;
+  padding-block: 0;
+  line-height: 1;
+  border-radius: 0.5rem;
+}
+
+[data-admin-menu-content] .header-language-selector {
+  display: inline-flex;
+  height: 40px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  padding: 0 0.75rem;
+  color: var(--primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+[data-admin-menu-content] .header-language-selector:hover {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+@media (max-width: 640px) {
+  [data-admin-menu-content] .header-with-actions {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  [data-admin-menu-content] .header-with-actions > :first-child {
+    min-width: 0;
+    flex: 1 1 14rem;
+  }
+
+  [data-admin-menu-content] .header-with-actions .header-actions,
+  [data-admin-menu-content] .header-with-actions [data-admin-page-header-actions] {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}

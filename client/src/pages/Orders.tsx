@@ -20,6 +20,7 @@ import { useSearch, useLocation } from "wouter";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
 import { getSpecialOrderHandlingLabel, getSpecialOrderReasonLabel, SPECIAL_ORDER_FILTER_OPTIONS } from "@shared/specialOrderDisplay";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
+import { AdminPageHeader } from "@/components/AdminPageHeader";
 
 const PHYSICAL_STATUS = {
   pending: { label: "未汇款订单", enLabel: "Unpaid Order", variant: "outline" },
@@ -666,20 +667,15 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">
-            {orderCategory === "import" ? translate("中国代购订单管理与处理", "Import order management & processing") :
-             orderCategory === "local" ? translate("本地订单管理与处理", "Local order management & processing") :
-             translate("搜索与筛选所有订单", "Search and filter all orders")}
-          </p>
-        </div>
-        {orderCategory !== "all" && (
+      <AdminPageHeader
+        title={orderCategory === "import" ? translate("中国代购订单", "Import Orders") : orderCategory === "local" ? translate("本地订单", "Local Orders") : translate("订单管理", "Order Management")}
+        description={orderCategory === "import" ? translate("中国代购订单管理与处理", "Import order management & processing") : orderCategory === "local" ? translate("本地订单管理与处理", "Local order management & processing") : translate("搜索与筛选所有订单", "Search and filter all orders")}
+        actions={orderCategory !== "all" ? (
           <Button className="w-full sm:w-auto" onClick={() => setLocation(`/orders/create/${orderCategory === "import" ? "import" : "local"}`)}>
             <Plus className="h-4 w-4 mr-2" />{translate("手动建单", "Create Manual Order")}
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       <div className="flex items-center gap-3 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
         <div className="relative min-w-[220px] flex-1 sm:max-w-sm">

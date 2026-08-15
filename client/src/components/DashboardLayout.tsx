@@ -1,7 +1,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useI18n } from "@/contexts/I18nContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { Languages, Leaf, Sun, Moon, Sparkles } from "lucide-react";
+import { Leaf, Sun, Moon, Sparkles } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +42,7 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { BackendEnglishFallback } from "./BackendEnglishFallback";
+import { AdminHeaderLanguageBridge } from "./AdminHeaderLanguageBridge";
 
 type MenuChild = {
   icon: any;
@@ -311,7 +312,7 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
-  const { lang, setLang, t } = useI18n();
+  const { lang, t } = useI18n();
   const { theme, setTheme } = useTheme();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
@@ -519,36 +520,9 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset className="relative w-full min-w-0 max-w-full overflow-x-hidden">
-        <div className="fixed right-3 top-3 z-40 flex items-center gap-2 no-print sm:right-4">
-          {isMobile && (
-            <SidebarTrigger className="h-11 w-11 shrink-0 rounded-lg border border-border/80 bg-background shadow-sm" />
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={lang === "zh" ? "选择语言，目前为中文" : "Select language, currently English"}
-              >
-                <Languages className="h-4 w-4" aria-hidden="true" />
-                <span>{lang === "zh" ? "中文" : "EN"}</span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" sideOffset={10} className="min-w-36">
-              <DropdownMenuLabel>语言 / Language</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => setLang("zh")} className="cursor-pointer">
-                <span>中文</span>
-                {lang === "zh" && <span className="ml-auto text-primary">✓</span>}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setLang("en")} className="cursor-pointer">
-                <span>English</span>
-                {lang === "en" && <span className="ml-auto text-primary">✓</span>}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        <main data-admin-menu-content className="min-w-0 max-w-full flex-1 overflow-x-hidden p-3 pt-16 pr-24 sm:p-4 sm:pt-4 sm:pr-24">
+        <main data-admin-menu-content className="min-w-0 max-w-full flex-1 overflow-x-hidden p-3 sm:p-4">
           <BackendEnglishFallback>{children}</BackendEnglishFallback>
+          <AdminHeaderLanguageBridge />
         </main>
       </SidebarInset>
     </>

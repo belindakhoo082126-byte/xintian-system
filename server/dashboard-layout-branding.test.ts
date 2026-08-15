@@ -26,6 +26,14 @@ const indexCssSource = fs.readFileSync(
   path.resolve(process.cwd(), "client/src/index.css"),
   "utf8",
 );
+const languageBridgeSource = fs.readFileSync(
+  path.resolve(process.cwd(), "client/src/components/AdminHeaderLanguageBridge.tsx"),
+  "utf8",
+);
+const adminPageHeaderSource = fs.readFileSync(
+  path.resolve(process.cwd(), "client/src/components/AdminPageHeader.tsx"),
+  "utf8",
+);
 
 describe("侧边栏品牌区与导航分类配色", () => {
   it("uses the approved Xin Tian logo and keeps the sidebar header exclusively for navigation", () => {
@@ -43,47 +51,36 @@ describe("侧边栏品牌区与导航分类配色", () => {
     expect(sidebarHeader).not.toContain("Languages");
   });
 
-  it("renders an independent 44px language menu in the page top bar for desktop and mobile", () => {
-    const sidebarInset = layoutSource.slice(
-      layoutSource.indexOf("<SidebarInset"),
-      layoutSource.indexOf("<main className")
-    );
-
-    expect(sidebarInset).toContain('className="sticky top-0 z-40 flex h-16');
-    expect(sidebarInset).toContain('<SidebarTrigger className="h-11 w-11 shrink-0 rounded-lg bg-background" />');
-    expect(sidebarInset).toContain('className="flex h-11 min-w-11 shrink-0 items-center justify-center');
-    expect(sidebarInset).toContain('aria-label={lang === "zh" ? "选择语言，目前为中文" : "Select language, currently English"}');
-    expect(sidebarInset).toContain('sideOffset={10}');
-    expect(sidebarInset).toContain('onSelect={() => setLang("zh")}');
-    expect(sidebarInset).toContain('onSelect={() => setLang("en")}');
+  it("injects the language selector into the content Header action group for desktop and mobile", () => {
+    expect(layoutSource).toContain("<AdminHeaderLanguageBridge />");
+    expect(layoutSource).not.toContain("sticky top-0 z-40 flex h-16");
+    expect(languageBridgeSource).toContain('data-language-selector');
+    expect(languageBridgeSource).toContain('className="header-language-selector"');
+    expect(languageBridgeSource).toContain('aria-label={lang === "zh" ? "选择语言，目前为中文" : "Select language, currently English"}');
+    expect(languageBridgeSource).toContain('sideOffset={8}');
+    expect(languageBridgeSource).toContain('onSelect={() => setLang("zh")}');
+    expect(languageBridgeSource).toContain('onSelect={() => setLang("en")}');
+    expect(adminPageHeaderSource).toContain("data-admin-page-header-actions");
   });
 
-  it("keeps the current menu title in the top bar, alongside the language selector", () => {
-    const sidebarInset = layoutSource.slice(
-      layoutSource.indexOf("<SidebarInset"),
-      layoutSource.indexOf("<main className")
-    );
-
-    expect(layoutSource).toContain('const menuLeaves = visibleMenu.flatMap((item) => {');
-    expect(layoutSource).toContain('const activeMenuItem = menuLeaves.find((item) => isMenuPathActive(location, item.path));');
-    expect(layoutSource).toContain('const topBarTitle = activeMenuItem ? resolveLabel(activeMenuItem.label) : null;');
-    expect(sidebarInset).toContain("{topBarTitle && (");
-    expect(sidebarInset).toContain('<h1 className="truncate text-2xl font-bold tracking-tight">{topBarTitle}</h1>');
-    expect(dashboardSource).not.toContain('<h1 className="text-2xl font-bold">{t("dashboard.title")}</h1>');
-    expect(productsSource).not.toContain('<h1 className="text-2xl font-semibold tracking-tight">{translate("商品管理", "Product Management")}</h1>');
+  it("keeps the menu title in the content Header, alongside page actions and the language selector", () => {
+    expect(layoutSource).not.toContain("const topBarTitle");
+    expect(layoutSource).not.toContain("data-menu-title-duplicate");
+    expect(dashboardSource).toContain("<AdminPageHeader");
+    expect(productsSource).toContain("<AdminPageHeader");
+    expect(ordersSource).toContain("<AdminPageHeader");
+    expect(adminPageHeaderSource).toContain("header-actions");
+    expect(adminPageHeaderSource).toContain("data-language-selector");
   });
 
-  it("uses the top bar as the single title source for every menu page", () => {
-    expect(layoutSource).toContain('const menuLeaves = visibleMenu.flatMap((item) => {');
-    expect(layoutSource).toContain('const activeMenuItem = menuLeaves.find((item) => isMenuPathActive(location, item.path));');
+  it("uses the content Header as the single title source for every menu page", () => {
     expect(layoutSource).toContain('data-admin-menu-content');
-    expect(layoutSource).toContain('const stripPageHeaderSuffix = (title: string) => title');
-    expect(layoutSource).toContain('管理与处理');
-    expect(layoutSource).toContain('duplicateHeading.dataset.menuTitleDuplicate = "true";');
-    expect(indexCssSource).toContain('[data-admin-menu-content] [data-menu-title-duplicate="true"]');
+    expect(layoutSource).toContain("<AdminHeaderLanguageBridge />");
+    expect(indexCssSource).toContain(".header-with-actions");
+    expect(indexCssSource).toContain(".header-actions");
     expect(membershipSource).not.toContain('translate("会员订单管理", "Membership Order Management")');
     expect(membershipSource).toContain('审核会员费汇款单据，确认后自动发送 Messenger 入群 Flow');
-    expect(ordersSource).not.toContain('translate("中国代购订单", "Import Orders")');
+    expect(ordersSource).toContain("<AdminPageHeader");
     expect(ordersSource).toContain('中国代购订单管理与处理');
   });
 

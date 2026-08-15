@@ -14,6 +14,7 @@ import {
 import { Link } from "wouter";
 import { useI18n } from "@/contexts/I18nContext";
 import { getFollowUpDisplayState } from "./dashboardFollowUp";
+import { AdminPageHeader } from "@/components/AdminPageHeader";
 
 const REMARK_CATEGORY_LABELS: Record<string, { zh: string; en: string; color: string }> = {
   repotting: { zh: "换盆", en: "Repot", color: "bg-green-100 text-green-700" },
@@ -224,7 +225,10 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">{new Date().toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}</p>
+      <AdminPageHeader
+        title={lang === "zh" ? "仪表板" : "Dashboard"}
+        description={new Date().toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}
+      />
 
       {/* V2.3 Row 1: confirmed receipts and net receipts — 4 cards */}
       <div>
