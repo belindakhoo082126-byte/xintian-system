@@ -546,7 +546,14 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset className="relative h-svh min-h-0 w-full min-w-0 max-w-full overflow-hidden">
-        <main data-admin-menu-content className="h-full min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4">
+        <div data-mobile-menu-bar className="flex h-14 shrink-0 items-center px-3 md:hidden">
+          <SidebarTrigger
+            className="h-11 w-11"
+            aria-label="打开后台菜单"
+            title="打开菜单"
+          />
+        </div>
+        <main data-admin-menu-content className="min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4">
           <BackendEnglishFallback>{children}</BackendEnglishFallback>
         </main>
       </SidebarInset>

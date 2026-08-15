@@ -38,7 +38,10 @@ describe("移动端商城、后台与A5包货单回归", () => {
 
   it("后台在手机上使用可收缩主内容区和内容 Header，避免固定宽度裁切", () => {
     expect(dashboardLayoutSource).toContain('SidebarInset className="relative h-svh min-h-0 w-full min-w-0 max-w-full overflow-hidden"');
-    expect(dashboardLayoutSource).toContain('data-admin-menu-content className="h-full min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4"');
+    expect(dashboardLayoutSource).toContain('data-admin-menu-content className="min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4"');
+    expect(dashboardLayoutSource).toContain('data-mobile-menu-bar className="flex h-14 shrink-0 items-center px-3 md:hidden"');
+    expect(dashboardLayoutSource).toContain('<SidebarTrigger');
+    expect(dashboardLayoutSource).toContain('aria-label="打开后台菜单"');
     expect(dashboardLayoutSource).toContain('data-language-selector');
     expect(dashboardLayoutSource).toContain('tooltip={lang === "zh" ? "语言：中文" : "Language: English"}');
     expect(dashboardLayoutSource).not.toContain("<AdminHeaderLanguageBridge />");
