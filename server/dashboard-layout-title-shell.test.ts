@@ -30,8 +30,9 @@ describe("DashboardLayout page title shell", () => {
     expect(layoutSource).not.toContain("querySelectorAll<HTMLElement>(\"h1\")");
   });
 
-  it("uses the shared page header bridge instead of a fixed or bordered title toolbar", () => {
-    expect(layoutSource).toContain("<AdminHeaderLanguageBridge />");
+  it("does not mount a dynamic bridge that mutates traditional page headers", () => {
+    expect(layoutSource).not.toContain("<AdminHeaderLanguageBridge />");
+    expect(layoutSource).not.toContain('from "./AdminHeaderLanguageBridge"');
     expect(layoutSource).toContain('<SidebarInset className="relative w-full min-w-0 max-w-full overflow-x-hidden">');
     expect(layoutSource).not.toContain("fixed right-3 top-3");
     expect(layoutSource).not.toContain("sticky top-0 z-40 flex h-16");
@@ -47,18 +48,9 @@ describe("DashboardLayout page title shell", () => {
     expect(languageBridgeSource).not.toContain("negative margin");
   });
 
-  it("does not mistake its own portaled selector for a page-owned control", () => {
+  it("keeps the experimental bridge isolated from the shared dashboard layout", () => {
     expect(languageBridgeSource).toContain("data-admin-language-bridge-selector");
-    expect(languageBridgeSource).toContain(":not([data-admin-language-bridge-selector])");
-    expect(languageBridgeSource).toContain("current === nextTarget ? current : nextTarget");
-  });
-
-  it("finds traditional page headers without relying on justify-between or an h1", () => {
-    expect(languageBridgeSource).toContain("function containsAction");
-    expect(languageBridgeSource).toContain("const hasSiblingAction");
-    expect(languageBridgeSource).toContain("const rows = Array.from(main.querySelectorAll<HTMLElement>(\"div\"))");
-    expect(languageBridgeSource).toContain("containsAction(row)");
-    expect(languageBridgeSource).not.toContain('classes.includes("justify-between")');
+    expect(layoutSource).not.toContain("AdminHeaderLanguageBridge");
   });
 
   it("migrates core admin pages to the shared Header action container", () => {

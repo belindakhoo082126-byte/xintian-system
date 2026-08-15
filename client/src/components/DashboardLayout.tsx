@@ -42,7 +42,6 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { BackendEnglishFallback } from "./BackendEnglishFallback";
-import { AdminHeaderLanguageBridge } from "./AdminHeaderLanguageBridge";
 
 type MenuChild = {
   icon: any;
@@ -522,7 +521,6 @@ function DashboardLayoutContent({
       <SidebarInset className="relative w-full min-w-0 max-w-full overflow-x-hidden">
         <main data-admin-menu-content className="min-w-0 max-w-full flex-1 overflow-x-hidden p-3 sm:p-4">
           <BackendEnglishFallback>{children}</BackendEnglishFallback>
-          <AdminHeaderLanguageBridge />
         </main>
       </SidebarInset>
     </>
