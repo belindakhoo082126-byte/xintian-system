@@ -61,7 +61,7 @@ function resolveActions(header: HTMLElement, title: HTMLElement | null) {
     return containsAction(child);
   }) as HTMLElement | undefined;
 
-  if (rightBranch) {
+  if (rightBranch && !rightBranch.matches("button, [role='button']")) {
     rightBranch.classList.add("header-actions");
     return rightBranch;
   }
@@ -69,7 +69,15 @@ function resolveActions(header: HTMLElement, title: HTMLElement | null) {
   const host = document.createElement("div");
   host.className = "header-actions";
   host.dataset.adminLanguageBridgeHost = "true";
-  header.appendChild(host);
+  if (rightBranch) {
+    // Some legacy headers place a Button directly beside the title. Keep that
+    // React-owned button in place and add a sibling action host before it,
+    // rather than creating an invalid button-inside-button portal.
+    host.classList.add("ml-auto", "mr-3");
+    header.insertBefore(host, rightBranch);
+  } else {
+    header.appendChild(host);
+  }
   return host;
 }
 
@@ -102,7 +110,6 @@ export function AdminHeaderLanguageBridge() {
         return;
       }
 
-      header.classList.add("header-with-actions");
       const title = header.querySelector<HTMLElement>("h1");
       const nextTarget = resolveActions(header, title);
       setTarget((current) => (current === nextTarget ? current : nextTarget));

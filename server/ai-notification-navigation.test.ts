@@ -12,7 +12,7 @@ describe("自动通知独立后台子菜单", () => {
   const aiBrain = read("client/src/pages/AiBrain.tsx");
 
   it("在 AI 客服分组中提供自动通知独立子菜单", () => {
-    expect(sidebar).toContain('label: { zh: "自动通知", en: "Auto Notifications" }, path: "/auto-notifications"');
+    expect(sidebar).toContain('label: { zh: "自动通知", en: "Automated Notifications" }, path: "/auto-notifications"');
     expect(sidebar).toContain("BellRing");
   });
 

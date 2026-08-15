@@ -30,9 +30,9 @@ describe("DashboardLayout page title shell", () => {
     expect(layoutSource).not.toContain("querySelectorAll<HTMLElement>(\"h1\")");
   });
 
-  it("does not mount a dynamic bridge that mutates traditional page headers", () => {
-    expect(layoutSource).not.toContain("<AdminHeaderLanguageBridge />");
-    expect(layoutSource).not.toContain('from "./AdminHeaderLanguageBridge"');
+  it("mounts a bridge for legacy page language controls without a fixed toolbar", () => {
+    expect(layoutSource).toContain("<AdminHeaderLanguageBridge />");
+    expect(layoutSource).toContain('from "./AdminHeaderLanguageBridge"');
     expect(layoutSource).toContain('<SidebarInset className="relative h-svh min-h-0 w-full min-w-0 max-w-full overflow-hidden">');
     expect(layoutSource).toContain('data-admin-menu-content className="h-full min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto');
     expect(layoutSource).not.toContain("fixed right-3 top-3");
@@ -49,9 +49,12 @@ describe("DashboardLayout page title shell", () => {
     expect(languageBridgeSource).not.toContain("negative margin");
   });
 
-  it("keeps the experimental bridge isolated from the shared dashboard layout", () => {
+  it("keeps the legacy bridge inside existing action groups without adding a header layout class", () => {
     expect(languageBridgeSource).toContain("data-admin-language-bridge-selector");
-    expect(layoutSource).not.toContain("AdminHeaderLanguageBridge");
+    expect(languageBridgeSource).toContain("[data-admin-page-header-actions], [data-page-header-actions], .header-actions");
+    expect(languageBridgeSource).not.toContain('header.classList.add("header-with-actions")');
+    expect(languageBridgeSource).toContain('!rightBranch.matches("button, [role=\'button\']")');
+    expect(languageBridgeSource).toContain("header.insertBefore(host, rightBranch)");
   });
 
   it("migrates core admin pages to the shared Header action container", () => {

@@ -42,6 +42,7 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { BackendEnglishFallback } from "./BackendEnglishFallback";
+import { AdminHeaderLanguageBridge } from "./AdminHeaderLanguageBridge";
 
 type MenuChild = {
   icon: any;
@@ -523,6 +524,7 @@ function DashboardLayoutContent({
           <BackendEnglishFallback>{children}</BackendEnglishFallback>
         </main>
       </SidebarInset>
+      <AdminHeaderLanguageBridge />
     </>
   );
 }

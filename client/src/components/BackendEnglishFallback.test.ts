@@ -22,6 +22,10 @@ describe("BackendEnglishFallback", () => {
     expect(translateBackendStaticText("自动通知")).toBe("Automated Notifications");
     expect(translateBackendStaticText("最近订单")).toBe("Recent Orders");
     expect(translateBackendStaticText("Flow 编辑器")).toBe("Flow Editor");
+    expect(translateBackendStaticText("付款设定")).toBe("Payment Settings");
+    expect(translateBackendStaticText("草稿订单（AI 生成）")).toBe("Draft Orders (AI-generated)");
+    expect(translateBackendStaticText("订单变更请求（AI 生成）")).toBe("Order Change Requests (AI-generated)");
+    expect(translateBackendStaticText("采购批次管理")).toBe("Import Batch Management");
     expect(translateBackendStaticText("XT-00001")).toBe("XT-00001");
   });
 });

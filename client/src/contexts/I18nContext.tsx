@@ -446,6 +446,13 @@ const translations: Record<string, Record<Lang, string>> = {
   "orders.productImage": { zh: "商品图片", en: "Image" },
   "orders.sku": { zh: "SKU", en: "SKU" },
 };
+
+/** Resolves a shared translation key without coupling tests to React state. */
+export function resolveTranslation(key: string, lang: Lang, params?: TranslationParams): string {
+  const entry = translations[key];
+  return interpolateTranslation(entry?.[lang] || entry?.zh || key, params);
+}
+
 interface I18nContextType {
   lang: Lang;
   setLang: (lang: Lang) => void;
@@ -523,9 +530,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   };
 
   const t = (key: string, params?: TranslationParams): string => {
-    const entry = translations[key];
-    const value = entry?.[lang] || entry?.zh || key;
-    return interpolateTranslation(value, params);
+    return resolveTranslation(key, lang, params);
   };
 
   const translate = (zh: string, en: string, params?: TranslationParams): string =>
