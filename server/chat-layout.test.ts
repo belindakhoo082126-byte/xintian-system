@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 const chatSource = readFileSync(resolve(process.cwd(), "client/src/pages/Chat.tsx"), "utf8");
 
 describe("Chat 客服可视区域布局", () => {
-  it("uses the actual visual viewport instead of an oversized page height", () => {
-    expect(chatSource).toContain('h-[calc(100dvh-2rem)] min-h-0 overflow-hidden');
+  it("inherits the actual available admin content height instead of creating a second viewport height", () => {
+    expect(chatSource).toContain('flex h-full min-h-0 max-h-full overflow-hidden');
     expect(chatSource).not.toContain('h-[calc(100vh-3.5rem)]');
   });
 
@@ -27,5 +27,12 @@ describe("Chat 客服可视区域布局", () => {
   it("keeps the conversation header and message input as non-shrinking siblings of the scroll area", () => {
     expect(chatSource).toContain('className="shrink-0 p-3 border-b flex items-center gap-2"');
     expect(chatSource).toContain('className="shrink-0 p-3 border-t flex gap-2"');
+  });
+
+  it("inherits a bounded admin content height so all three chat columns scroll inside the viewport", () => {
+    const layoutSource = readFileSync(resolve(process.cwd(), "client/src/components/DashboardLayout.tsx"), "utf8");
+
+    expect(layoutSource).toContain('relative h-svh min-h-0 w-full min-w-0 max-w-full overflow-hidden');
+    expect(layoutSource).toContain('h-full min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4');
   });
 });

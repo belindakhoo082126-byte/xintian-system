@@ -334,7 +334,7 @@ export default function Chat() {
 
   return (
     <>
-    <div className="flex h-[calc(100dvh-2rem)] min-h-0 overflow-hidden">
+    <div className="flex h-full min-h-0 max-h-full overflow-hidden">
       {/* Left Column — Conversation List */}
       <div className={`${selectedConvId ? "hidden" : "flex"} w-full min-h-0 shrink-0 border-r flex-col md:flex md:w-80`}>
         <div className="shrink-0 p-3 border-b space-y-2">
