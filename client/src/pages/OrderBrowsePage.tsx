@@ -97,6 +97,8 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const [editPaymentForm, setEditPaymentForm] = useState({ amount: "", paymentMethod: "", receiptUrl: "", notes: "" });
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitQuantities, setSplitQuantities] = useState<Record<number, number>>({});
+  const [newOrderAllocatedPayment, setNewOrderAllocatedPayment] = useState("0");
+  const [newOrderAllocatedCredit, setNewOrderAllocatedCredit] = useState("0");
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTargetId, setMergeTargetId] = useState<string>("");
   const [mergeCreditDisposition, setMergeCreditDisposition] = useState<"carry_forward" | "return_to_source">("carry_forward");
@@ -328,6 +330,8 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
       toast.success(translate("订单已拆分，已建立 {orderNumber}", "Order split. {orderNumber} created", { orderNumber: result.newOrderNumber }));
       setSplitOpen(false);
       setSplitQuantities({});
+      setNewOrderAllocatedPayment("0");
+      setNewOrderAllocatedCredit("0");
       utils.orders.getDetail.invalidate({ id: orderId });
       utils.orders.list.invalidate();
     },
@@ -498,14 +502,20 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const balance = totalAmount - paidAmount;
   const discountAmount = parseFloat(o.discountAmount || "0");
   const detailItems = (o.items || []) as any[];
-  const canSplitOrder = !isImportOrder && o.orderType === "physical" && ["pending", "receipt_uploaded", "hold_order"].includes(o.physicalStatus || "")
-    && paidAmount === 0 && creditUsed === 0 && discountAmount === 0 && promotionDiscount === 0 && extraCharge === 0 && detailItems.length > 1;
+  const canSplitOrder = !isImportOrder && o.orderType === "physical" && ["pending", "receipt_uploaded", "partial_payment", "hold_order"].includes(o.physicalStatus || "")
+    && discountAmount === 0 && promotionDiscount === 0 && extraCharge === 0 && detailItems.length > 1;
   const canMergeOrder = !isImportOrder && o.orderType === "physical" && ["pending", "hold_order"].includes(o.physicalStatus || "")
     && paidAmount === 0 && creditUsed === 0 && discountAmount === 0 && promotionDiscount === 0 && extraCharge === 0 && !o.receiptUrl;
   const selectedSplitItems = detailItems
     .filter((item) => Number(splitQuantities[item.id] || 0) > 0)
     .map((item) => ({ orderItemId: item.id, quantity: Number(splitQuantities[item.id]) }));
   const leavesItemsOnOriginalOrder = detailItems.some((item) => Number(splitQuantities[item.id] || 0) < Number(item.quantity));
+  const allocatedSplitPayment = Math.max(0, Number(newOrderAllocatedPayment || 0));
+  const allocatedSplitCredit = Math.max(0, Number(newOrderAllocatedCredit || 0));
+  const retainedSplitPayment = Math.max(0, paidAmount - allocatedSplitPayment);
+  const retainedSplitCredit = Math.max(0, creditUsed - allocatedSplitCredit);
+  const isSplitPaymentAllocationValid = Number.isFinite(allocatedSplitPayment) && allocatedSplitPayment <= paidAmount;
+  const isSplitCreditAllocationValid = Number.isFinite(allocatedSplitCredit) && allocatedSplitCredit <= creditUsed;
 
   return (
     <div className="container max-w-5xl mx-auto px-4 py-6 space-y-4">
@@ -545,7 +555,11 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
             <Edit className="h-3 w-3 mr-1" />{translate("编辑", "Edit")}
           </Button>
           {canSplitOrder && (
-            <Button variant="outline" size="sm" onClick={() => setSplitOpen(true)}>
+            <Button variant="outline" size="sm" onClick={() => {
+              setNewOrderAllocatedPayment("0");
+              setNewOrderAllocatedCredit("0");
+              setSplitOpen(true);
+            }}>
               <GitFork className="h-3 w-3 mr-1" />{translate("拆分订单", "Split Order")}
             </Button>
           )}
@@ -1102,13 +1116,20 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
         </DialogContent>
       </Dialog>
 
-      <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
+      <Dialog open={splitOpen} onOpenChange={(open) => {
+        setSplitOpen(open);
+        if (!open) {
+          setSplitQuantities({});
+          setNewOrderAllocatedPayment("0");
+          setNewOrderAllocatedCredit("0");
+        }
+      }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{translate("拆分订单", "Split Order")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">{translate("选择要拆到新订单的商品数量。原订单必须至少保留一项商品或数量；拆单只适用于未确认付款的本地实体订单。", "Choose quantities to move to a new order. The original order must retain at least one item or quantity; only unpaid local physical orders can be split.")}</p>
+            <p className="text-sm text-muted-foreground">{translate("选择要拆到新订单的商品数量。原订单必须至少保留一项商品或数量；本地未付款、部分汇款及保留订单都可以拆单。", "Choose quantities to move to a new order. The original order must retain at least one item or quantity; local unpaid, partially paid, and hold orders may be split.")}</p>
             <div className="space-y-2 rounded-lg border p-3">
               {detailItems.map((item) => {
                 const splitQuantity = Number(splitQuantities[item.id] || 0);
@@ -1127,10 +1148,39 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
               })}
             </div>
             {!leavesItemsOnOriginalOrder && <p className="text-sm text-destructive">{translate("原订单必须至少保留一项商品或数量。", "At least one item or quantity must remain on the original order.")}</p>}
+            {(paidAmount > 0 || creditUsed > 0) && (
+              <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div>
+                  <p className="text-sm font-medium text-amber-950">{translate("已收款与 Credit 分配", "Payment & Credit allocation")}</p>
+                  <p className="mt-1 text-xs leading-5 text-amber-900">{translate("请选择要带入新订单的金额。两张订单的已收款与已使用 Credit 合计会保持等于原订单；付款凭据不会复制，仍只保留在原订单及其付款审计中。", "Choose the amount to bring into the new order. Paid amount and Credit remain conserved across both orders; payment proof is not copied and remains only on the original order and its payment audit.")}</p>
+                </div>
+                {paidAmount > 0 && (
+                  <div className="grid gap-2 sm:grid-cols-2 sm:items-end">
+                    <div>
+                      <Label>{translate("带入新订单的已收款（RM）", "Paid amount to new order (RM)")}</Label>
+                      <Input type="number" min="0" max={paidAmount} step="0.01" value={newOrderAllocatedPayment}
+                        onChange={(event) => setNewOrderAllocatedPayment(event.target.value)} />
+                    </div>
+                    <p className="rounded-md bg-white/70 px-3 py-2 text-sm text-amber-950">{translate("原订单保留", "Original keeps")}: <span className="font-semibold">RM {retainedSplitPayment.toFixed(2)}</span></p>
+                  </div>
+                )}
+                {creditUsed > 0 && (
+                  <div className="grid gap-2 sm:grid-cols-2 sm:items-end">
+                    <div>
+                      <Label>{translate("带入新订单的 Credit（RM）", "Credit to new order (RM)")}</Label>
+                      <Input type="number" min="0" max={creditUsed} step="0.01" value={newOrderAllocatedCredit}
+                        onChange={(event) => setNewOrderAllocatedCredit(event.target.value)} />
+                    </div>
+                    <p className="rounded-md bg-white/70 px-3 py-2 text-sm text-amber-950">{translate("原订单保留 Credit", "Original keeps Credit")}: <span className="font-semibold">RM {retainedSplitCredit.toFixed(2)}</span></p>
+                  </div>
+                )}
+                {(!isSplitPaymentAllocationValid || !isSplitCreditAllocationValid) && <p className="text-sm text-destructive">{translate("带入新订单的金额不可超过原订单已收款或已使用 Credit。", "Amounts assigned to the new order cannot exceed the original paid amount or Credit used.")}</p>}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSplitOpen(false)}>{translate("取消", "Cancel")}</Button>
-            <Button onClick={() => splitOrderMutation.mutate({ orderId, items: selectedSplitItems })} disabled={selectedSplitItems.length === 0 || !leavesItemsOnOriginalOrder || splitOrderMutation.isPending}>
+            <Button onClick={() => splitOrderMutation.mutate({ orderId, items: selectedSplitItems, newOrderAllocatedPayment: allocatedSplitPayment, newOrderAllocatedCredit: allocatedSplitCredit })} disabled={selectedSplitItems.length === 0 || !leavesItemsOnOriginalOrder || !isSplitPaymentAllocationValid || !isSplitCreditAllocationValid || splitOrderMutation.isPending}>
               <GitFork className="h-4 w-4 mr-2" />{translate("确认拆分", "Confirm Split")}
             </Button>
           </DialogFooter>

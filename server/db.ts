@@ -7446,10 +7446,19 @@ export function calculateWestMalaysiaShipping(totalWeight: number, orderTotal: n
 }
 
 /**
- * Split complete product rows from an unpaid local physical order. Stock was
- * reserved at original order creation; this only moves order ownership.
+ * Split product rows from a local physical order. Stock was reserved at
+ * original order creation; this only moves order ownership. When the order
+ * already has confirmed payment, the operator must explicitly allocate it
+ * between the original and new order. Receipt evidence always remains on the
+ * original payment records.
  */
-export async function splitUnpaidPhysicalOrder(input: { orderId: number; items: Array<{ orderItemId: number; quantity: number }>; operator: string }) {
+export async function splitUnpaidPhysicalOrder(input: {
+  orderId: number;
+  items: Array<{ orderItemId: number; quantity: number }>;
+  newOrderAllocatedPayment?: number;
+  newOrderAllocatedCredit?: number;
+  operator: string;
+}) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -7465,11 +7474,25 @@ export async function splitUnpaidPhysicalOrder(input: { orderId: number; items: 
   const [source] = await db.select().from(orders).where(eq(orders.id, input.orderId)).limit(1);
   if (!source) throw new Error("订单不存在");
   if (source.orderType !== "physical" || source.orderCategory === "import") throw new Error("目前只支持本地实体订单拆单");
-  if (!['pending', 'receipt_uploaded', 'hold_order'].includes(source.physicalStatus || '')) throw new Error("只有未确认付款或保留中的订单可以拆单");
-  if (Number(source.paidAmount || 0) > 0 || Number(source.creditUsed || 0) > 0) throw new Error("含已确认付款或已使用 Credit 的订单不可拆单");
+  if (!['pending', 'receipt_uploaded', 'partial_payment', 'hold_order'].includes(source.physicalStatus || '')) throw new Error("只有未付款、部分汇款或保留中的订单可以拆单");
   if (Number(source.discountAmount || 0) > 0 || Number(source.promotionDiscount || 0) > 0 || Number(source.extraCharge || 0) > 0) {
     throw new Error("含订单级折扣、促销或额外收费的订单不可拆单，请先处理金额后再拆单");
   }
+
+  const toCents = (value: unknown) => Math.round(Number(value || 0) * 100);
+  const formatCents = (value: number) => (value / 100).toFixed(2);
+  const sourcePaidCents = toCents(source.paidAmount);
+  const sourceCreditCents = toCents(source.creditUsed);
+  const newOrderAllocatedPaymentCents = toCents(input.newOrderAllocatedPayment ?? 0);
+  const newOrderAllocatedCreditCents = toCents(input.newOrderAllocatedCredit ?? 0);
+  if (!Number.isFinite(newOrderAllocatedPaymentCents) || newOrderAllocatedPaymentCents < 0) {
+    throw new Error("新订单分配的已收款金额必须为有效的非负数");
+  }
+  if (!Number.isFinite(newOrderAllocatedCreditCents) || newOrderAllocatedCreditCents < 0) {
+    throw new Error("新订单分配的 Credit 金额必须为有效的非负数");
+  }
+  if (newOrderAllocatedPaymentCents > sourcePaidCents) throw new Error("新订单分配的已收款金额不可超过原订单已收款");
+  if (newOrderAllocatedCreditCents > sourceCreditCents) throw new Error("新订单分配的 Credit 不可超过原订单已使用 Credit");
 
   const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, source.id));
   const knownItemIds = new Set(allItems.map((item) => item.id));
@@ -7503,20 +7526,44 @@ export async function splitUnpaidPhysicalOrder(input: { orderId: number; items: 
   };
   const retainedTotals = calculateTotals(retainedItems);
   const splitTotals = calculateTotals(movedItems);
+  const newOrderNetTotalCents = toCents(splitTotals.totalAmount) - newOrderAllocatedCreditCents;
+  const originalOrderRetainedCreditCents = sourceCreditCents - newOrderAllocatedCreditCents;
+  const originalOrderNetTotalCents = toCents(retainedTotals.totalAmount) - originalOrderRetainedCreditCents;
+  const originalOrderRetainedPaymentCents = sourcePaidCents - newOrderAllocatedPaymentCents;
+  if (newOrderNetTotalCents < 0 || originalOrderNetTotalCents < 0) {
+    throw new Error("Credit 分配不可超过对应拆分订单的应付金额");
+  }
+  if (newOrderAllocatedPaymentCents > newOrderNetTotalCents || originalOrderRetainedPaymentCents > originalOrderNetTotalCents) {
+    throw new Error("已收款分配不可超过对应订单的应付金额，请重新调整分配金额");
+  }
+
+  const resolveSplitPaymentStatus = (currentStatus: string | null, paidCents: number, totalCents: number, isNewOrder: boolean) => {
+    if (paidCents >= totalCents && totalCents > 0) {
+      if (currentStatus === "hold_order") return "hold_order" as const;
+      return source.shippingMethod === "self_pickup" ? "completed" as const : "packing" as const;
+    }
+    if (paidCents > 0) return "partial_payment" as const;
+    if (!isNewOrder && currentStatus === "receipt_uploaded") return "receipt_uploaded" as const;
+    return currentStatus === "hold_order" ? "hold_order" as const : "pending" as const;
+  };
+  const originalOrderStatus = resolveSplitPaymentStatus(source.physicalStatus || null, originalOrderRetainedPaymentCents, originalOrderNetTotalCents, false);
+  const newOrderStatus = resolveSplitPaymentStatus(source.physicalStatus || null, newOrderAllocatedPaymentCents, newOrderNetTotalCents, true);
   const newOrderNumber = await generateOrderNumber("XT");
   const secureToken = generateSecureToken();
+  const splitAt = new Date();
   let newOrderId = 0;
 
   await db.transaction(async (tx) => {
     const result = await tx.insert(orders).values({
       orderNumber: newOrderNumber, customerId: source.customerId, facebookName: source.facebookName, facebookId: source.facebookId, messengerId: source.messengerId,
       orderType: source.orderType, salesChannel: source.salesChannel, physicalSubtotal: splitTotals.physicalSubtotal.toFixed(2), membershipSubtotal: splitTotals.membershipSubtotal.toFixed(2),
-      shippingFee: splitTotals.shippingFee.toFixed(2), totalAmount: splitTotals.totalAmount.toFixed(2), paidAmount: "0.00", physicalStatus: source.physicalStatus,
+      shippingFee: splitTotals.shippingFee.toFixed(2), totalAmount: formatCents(newOrderNetTotalCents), paidAmount: formatCents(newOrderAllocatedPaymentCents), creditUsed: formatCents(newOrderAllocatedCreditCents), physicalStatus: newOrderStatus,
       shippingAddress: source.shippingAddress, shippingMethod: source.shippingMethod, paymentMethodId: source.paymentMethodId, paymentMethodName: source.paymentMethodName,
       orderSource: source.orderSource, sourceName: source.sourceName, totalWeight: splitTotals.totalWeight.toFixed(2), orderCategory: source.orderCategory, orderNature: source.orderNature,
       recipientName: source.recipientName, recipientPhone: source.recipientPhone, addressLine1: source.addressLine1, addressLine2: source.addressLine2, postcode: source.postcode,
       recipientCity: source.recipientCity, recipientState: source.recipientState, recipientPostcode: source.recipientPostcode, recipientCountry: source.recipientCountry,
       parentOrderId: source.id, secureToken, checkoutLink: `/order/${newOrderNumber}/${secureToken}`, notificationStatus: "pending",
+      fullPaymentConfirmedAt: ["packing", "completed"].includes(newOrderStatus) ? splitAt : null,
     });
     newOrderId = Number((result as any)[0]?.insertId);
     if (!newOrderId) throw new Error("无法建立拆分后的订单");
@@ -7564,14 +7611,68 @@ export async function splitUnpaidPhysicalOrder(input: { orderId: number; items: 
     }
     await tx.update(orders).set({
       physicalSubtotal: retainedTotals.physicalSubtotal.toFixed(2), membershipSubtotal: retainedTotals.membershipSubtotal.toFixed(2), shippingFee: retainedTotals.shippingFee.toFixed(2),
-      totalWeight: retainedTotals.totalWeight.toFixed(2), totalAmount: retainedTotals.totalAmount.toFixed(2),
+      totalWeight: retainedTotals.totalWeight.toFixed(2), totalAmount: formatCents(originalOrderNetTotalCents), paidAmount: formatCents(originalOrderRetainedPaymentCents), creditUsed: formatCents(originalOrderRetainedCreditCents),
+      physicalStatus: originalOrderStatus,
+      fullPaymentConfirmedAt: ["packing", "completed"].includes(originalOrderStatus) ? (source.fullPaymentConfirmedAt || splitAt) : source.fullPaymentConfirmedAt,
     }).where(eq(orders.id, source.id));
+
+    // Keep the original receipt-bearing payment records on the original order.
+    // A paired, receipt-free ledger transfer makes both order-level paidAmount
+    // values durable when later payment edits trigger recalculateOrderBalance.
+    const approvedPayments = await tx.select().from(orderPayments)
+      .where(and(eq(orderPayments.orderId, source.id), eq(orderPayments.reviewStatus, "approved")));
+    const approvedPaymentCents = approvedPayments.reduce((sum, payment) => sum + toCents(payment.amount), 0);
+    const reconciliationCents = sourcePaidCents - approvedPaymentCents;
+    if (reconciliationCents !== 0) {
+      await tx.insert(orderPayments).values({
+        orderId: source.id,
+        amount: formatCents(reconciliationCents),
+        paymentDate: splitAt,
+        purpose: "拆单前已收款余额校正",
+        operatorName: input.operator,
+        notes: "用于使历史订单已收款金额与付款流水一致；不含付款凭据。",
+        paymentSource: "order_split_reconciliation",
+        reviewStatus: "approved",
+      });
+    }
+    if (newOrderAllocatedPaymentCents > 0) {
+      await tx.insert(orderPayments).values({
+        orderId: source.id,
+        amount: formatCents(-newOrderAllocatedPaymentCents),
+        paymentDate: splitAt,
+        purpose: "拆单已收款分配（转出）",
+        operatorName: input.operator,
+        notes: `已分配 RM${formatCents(newOrderAllocatedPaymentCents)} 至拆分订单 ${newOrderNumber}；原付款凭据仍只保留在本订单。`,
+        paymentSource: "order_split_allocation",
+        reviewStatus: "approved",
+      });
+      await tx.insert(orderPayments).values({
+        orderId: newOrderId,
+        amount: formatCents(newOrderAllocatedPaymentCents),
+        paymentDate: splitAt,
+        purpose: "拆单已收款分配（转入）",
+        operatorName: input.operator,
+        notes: `由原订单 ${source.orderNumber} 分配；付款凭据仍只保留在原订单。`,
+        paymentSource: "order_split_allocation",
+        reviewStatus: "approved",
+      });
+    }
   });
 
   const splitAuditItems = movedItems.map((item) => ({ orderItemId: item.id, quantity: item.quantity, productName: item.productName }));
-  await logOrderOperation(source.id, "split", `订单拆单：已移出 ${movedItems.length} 项商品至 ${newOrderNumber}`, JSON.stringify({ newOrderId, newOrderNumber, items: splitAuditItems }), input.operator);
-  await logOrderOperation(newOrderId, "split", `由订单 ${source.orderNumber} 拆分建立`, JSON.stringify({ parentOrderId: source.id, items: splitAuditItems }), input.operator);
-  return { originalOrderId: source.id, originalOrderNumber: source.orderNumber, newOrderId, newOrderNumber };
+  const paymentAllocation = {
+    originalPaidAmount: formatCents(sourcePaidCents),
+    newOrderAllocatedPayment: formatCents(newOrderAllocatedPaymentCents),
+    originalOrderRetainedPayment: formatCents(originalOrderRetainedPaymentCents),
+    originalCreditUsed: formatCents(sourceCreditCents),
+    newOrderAllocatedCredit: formatCents(newOrderAllocatedCreditCents),
+    originalOrderRetainedCredit: formatCents(originalOrderRetainedCreditCents),
+    receiptEvidence: "retained_on_original_order_only",
+  };
+  await logOrderOperation(source.id, "split", `订单拆单：已移出 ${movedItems.length} 项商品至 ${newOrderNumber}；已收款保留 RM${formatCents(originalOrderRetainedPaymentCents)}`, JSON.stringify({ newOrderId, newOrderNumber, items: splitAuditItems, paymentAllocation }), input.operator);
+  await logOrderOperation(newOrderId, "split", `由订单 ${source.orderNumber} 拆分建立；已收款带入 RM${formatCents(newOrderAllocatedPaymentCents)}`, JSON.stringify({ parentOrderId: source.id, items: splitAuditItems, paymentAllocation }), input.operator);
+  broadcastChanges(["orders", "dashboard", "customers"]);
+  return { originalOrderId: source.id, originalOrderNumber: source.orderNumber, newOrderId, newOrderNumber, paymentAllocation };
 }
 
 /**

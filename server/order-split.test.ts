@@ -8,17 +8,19 @@ const detailSource = fs.readFileSync(path.resolve(process.cwd(), "client/src/pag
 const browseSource = fs.readFileSync(path.resolve(process.cwd(), "client/src/pages/OrderBrowsePage.tsx"), "utf8");
 const ordersSource = fs.readFileSync(path.resolve(process.cwd(), "client/src/pages/Orders.tsx"), "utf8");
 
-describe("未付款订单拆单", () => {
-  it("仅提供本地未付款实体订单的按商品数量拆单服务，并拒绝已履约或已结算订单", () => {
+describe("本地订单拆单", () => {
+  it("仅提供本地未付款、部分汇款或保留实体订单的按商品数量拆单服务，并拒绝已履约或已结算订单", () => {
     expect(dbSource).toContain("export async function splitUnpaidPhysicalOrder");
     expect(dbSource).toContain('source.orderType !== "physical" || source.orderCategory === "import"');
-    expect(dbSource).toContain("['pending', 'receipt_uploaded', 'hold_order']");
-    expect(dbSource).toContain("只有未确认付款或保留中的订单可以拆单");
-    expect(dbSource).toContain("含已确认付款或已使用 Credit 的订单不可拆单");
+    expect(dbSource).toContain("['pending', 'receipt_uploaded', 'partial_payment', 'hold_order']");
+    expect(dbSource).toContain("只有未付款、部分汇款或保留中的订单可以拆单");
+    expect(dbSource).not.toContain("含已确认付款或已使用 Credit 的订单不可拆单");
     expect(dbSource).toContain("请至少保留一项商品在原订单");
     expect(dbSource).toContain("requestedQuantities");
     expect(routerSource).toContain("orderItemId: z.number().int().positive()");
     expect(routerSource).toContain("quantity: z.number().int().positive()");
+    expect(routerSource).toContain("newOrderAllocatedPayment: z.number().finite().min(0).optional()");
+    expect(routerSource).toContain("newOrderAllocatedCredit: z.number().finite().min(0).optional()");
   });
 
   it("拆单会安全拆分部分数量，使用当前V2.2规则重算两张订单且不建立第二次库存保留", () => {
@@ -37,6 +39,28 @@ describe("未付款订单拆单", () => {
     expect((dbSource.match(/logOrderOperation\([^\n]+"split"/g) || []).length).toBeGreaterThanOrEqual(2);
   });
 
+  it("部分汇款拆单对已收款与Credit实行受控分配，并校验两张订单金额守恒", () => {
+    expect(dbSource).toContain("newOrderAllocatedPayment?: number");
+    expect(dbSource).toContain("newOrderAllocatedCredit?: number");
+    expect(dbSource).toContain("sourcePaidCents");
+    expect(dbSource).toContain("originalOrderRetainedPaymentCents");
+    expect(dbSource).toContain("originalOrderRetainedCreditCents");
+    expect(dbSource).toContain("新订单分配的已收款金额不可超过原订单已收款");
+    expect(dbSource).toContain("新订单分配的 Credit 不可超过原订单已使用 Credit");
+    expect(dbSource).toContain("已收款分配不可超过对应订单的应付金额，请重新调整分配金额");
+    expect(dbSource).toContain("resolveSplitPaymentStatus");
+  });
+
+  it("部分汇款拆单以无凭据付款流水转移金额，付款凭据只留在原订单且审计可追溯", () => {
+    expect(dbSource).toContain("拆单已收款分配（转出）");
+    expect(dbSource).toContain("拆单已收款分配（转入）");
+    expect(dbSource).toContain('paymentSource: "order_split_allocation"');
+    expect(dbSource).toContain("receiptEvidence: \"retained_on_original_order_only\"");
+    expect(dbSource).toContain("原付款凭据仍只保留在本订单");
+    expect(dbSource).toContain("付款凭据仍只保留在原订单");
+    expect(dbSource).not.toMatch(/orderId:\s*newOrderId,[\s\S]{0,300}receiptUrl:/);
+  });
+
   it("订单详情展示原价、特价、Credit、额外收费、折扣、运费和拆单入口", () => {
     ["原价商品", "特价商品", "Credit 抵扣", "额外收费", "折扣", "运费", "拆分订单"].forEach((label) => {
       expect(detailSource).toContain(label);
@@ -46,13 +70,16 @@ describe("未付款订单拆单", () => {
     expect(detailSource).toContain("拆分数量");
   });
 
-  it("后台订单详情保留受限的拆单与合单入口，并清楚说明不同客户未付款本地订单可合并", () => {
+  it("后台订单详情提供部分汇款拆单的受控金额分配，并保留合单入口", () => {
     expect(browseSource).toContain("拆分订单");
     expect(browseSource).toContain("合并订单");
     expect(browseSource).toContain("trpc.orders.split.useMutation");
     expect(browseSource).toContain("trpc.orders.merge.useMutation");
     expect(browseSource).toContain("trpc.orders.mergeCandidates.useQuery");
-    expect(browseSource).toContain("only unpaid local physical orders can be split");
+    expect(browseSource).toContain("local unpaid, partially paid, and hold orders may be split");
+    expect(browseSource).toContain("newOrderAllocatedPayment");
+    expect(browseSource).toContain("newOrderAllocatedCredit");
+    expect(browseSource).toContain("付款凭据不会复制，仍只保留在原订单及其付款审计中");
     expect(browseSource).toContain("不同客户也可合并");
     expect(browseSource).toContain("未付款或保留订单");
   });

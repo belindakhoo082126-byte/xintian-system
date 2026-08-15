@@ -1824,6 +1824,8 @@ export const appRouter = router({
           orderItemId: z.number().int().positive(),
           quantity: z.number().int().positive(),
         })).min(1).max(100),
+        newOrderAllocatedPayment: z.number().finite().min(0).optional(),
+        newOrderAllocatedCredit: z.number().finite().min(0).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         return db.splitUnpaidPhysicalOrder({
