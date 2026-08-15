@@ -5,7 +5,8 @@ import { useLocation } from "wouter";
 const TARGET_PATHS = [
   "/marketing", "/import-batches", "/draft-orders", "/order-change-requests",
   "/product-bundles", "/inventory-log", "/chat", "/ai-handover", "/ai-brain",
-  "/live-ai-flows", "/logistics", "/payment-settings", "/system-settings", "/customers",
+  "/ai-knowledge", "/reply-rules", "/auto-notifications", "/flows", "/live-ai-flows",
+  "/logistics", "/payment-settings", "/system-settings", "/customers",
 ];
 
 /** Static interface terms only. Customer messages, names, order content and AI content are never translated here. */
@@ -28,13 +29,20 @@ export const BACKEND_ENGLISH_TEXT: Record<string, string> = {
   "组合包管理": "Product Bundles", "新增组合包": "New Product Bundle", "编辑组合包": "Edit Product Bundle", "组合包名称": "Bundle Name",
   "组合商品": "Bundle Items", "组合价格": "Bundle Price", "库存日志": "Inventory Log", "库存调整": "Inventory Adjustment",
   "商品": "Product", "数量": "Quantity", "操作人": "Operator", "操作时间": "Operation Time", "备注": "Notes",
-  "商品 #": "Product #", "AI 客服": "AI Customer Service", "会话": "Conversations", "客户资料": "Customer Details",
+  "商品 #": "Product #", "AI 客服": "AI Customer Service", "Chat 客服": "Chat Support", "AI 转人工通知": "AI Handover Alerts",
+  "AI 大脑": "AI Brain", "自动通知": "Automated Notifications", "Flow 管理": "Flow Management", "直播AI": "Live AI",
+  "会话": "Conversations", "客户资料": "Customer Details", "最近订单": "Recent Orders", "暂无订单": "No recent orders", "快捷操作": "Quick Actions",
   "发送消息": "Send Message", "输入消息...": "Type a message...", "未结账订单": "Unpaid Orders", "已发货订单": "Shipped Orders",
   "人工接手": "Human Handover", "等待人工处理": "Awaiting Human Support", "最久等待": "Longest Wait", "接手": "Take Over",
   "打开对话": "Open Chat", "转人工原因": "Handover Reason", "AI摘要": "AI Summary", "未知客户": "Unknown Customer",
   "AI 知识库": "AI Knowledge Base", "新增知识": "Add Knowledge", "编辑知识": "Edit Knowledge", "知识内容": "Knowledge Content",
   "触发关键词": "Trigger Keywords", "优先级": "Priority", "使用次数": "Usage Count", "审核发布": "Review & Publish",
-  "直播AI": "Live AI", "新增 Flow": "New Flow", "编辑 Flow": "Edit Flow", "Flow 名称": "Flow Name", "启用": "Enabled", "停用": "Disabled",
+  "AI 回复规则": "AI Reply Rules", "新增规则": "Add Rule", "回复规则": "Reply Rules", "规则名称": "Rule Name", "匹配条件": "Match Conditions",
+  "自动通知中心": "Automated Notifications", "通知记录": "Notification History", "通知预览": "Notification Preview", "待发送": "Pending Send", "已发送": "Sent", "发送失败": "Failed",
+  "新增 Flow": "New Flow", "编辑 Flow": "Edit Flow", "Flow 名称": "Flow Name", "Flow 编辑器": "Flow Editor", "Flow 模板": "Flow Templates", "启用": "Enabled", "停用": "Disabled",
+  "人工审核并修订 AI 聊天回复": "Review and refine AI chat replies", "聊天训练草稿": "Chat Training Drafts", "保存训练草稿": "Save Training Draft",
+  "训练草稿已审核发布": "Training draft published", "草稿未启用，需在 AI 知识库审核发布后才会影响自动回复。": "This draft is inactive and will affect auto-replies only after review and publishing in AI Knowledge Base.",
+  "语音欢迎讯息（可选）": "Voice welcome message (optional)", "上传语音": "Upload voice", "移除语音": "Remove voice", "语音已上传": "Voice uploaded",
   "物流整合": "Logistics Integration", "物流供应商": "Logistics Provider", "测试连接": "Test Connection", "刷新余额": "Refresh Balance",
   "环境": "Environment", "账户余额": "Account Balance", "最后同步": "Last Synced", "已配置（服务器端存储）": "Configured (stored server-side)",
   "支持的快递": "Supported Couriers", "启用手动发货": "Enable Manual Shipping", "可用服务列表": "Available Services",

@@ -33,7 +33,8 @@ describe("DashboardLayout page title shell", () => {
   it("does not mount a dynamic bridge that mutates traditional page headers", () => {
     expect(layoutSource).not.toContain("<AdminHeaderLanguageBridge />");
     expect(layoutSource).not.toContain('from "./AdminHeaderLanguageBridge"');
-    expect(layoutSource).toContain('<SidebarInset className="relative w-full min-w-0 max-w-full overflow-x-hidden">');
+    expect(layoutSource).toContain('<SidebarInset className="relative h-svh min-h-0 w-full min-w-0 max-w-full overflow-hidden">');
+    expect(layoutSource).toContain('data-admin-menu-content className="h-full min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto');
     expect(layoutSource).not.toContain("fixed right-3 top-3");
     expect(layoutSource).not.toContain("sticky top-0 z-40 flex h-16");
   });
@@ -58,6 +59,16 @@ describe("DashboardLayout page title shell", () => {
       expect(pageSource).toContain('import { AdminPageHeader } from "@/components/AdminPageHeader"');
       expect(pageSource).toContain("<AdminPageHeader");
     }
+  });
+
+  it("provides complete English labels for every AI customer service menu entry", () => {
+    expect(layoutSource).toContain('label: { zh: "AI 客服", en: "AI Customer Service" }');
+    expect(layoutSource).toContain('label: { zh: "Chat 客服", en: "Chat Support" }');
+    expect(layoutSource).toContain('label: { zh: "AI 转人工通知", en: "AI Handover Notifications" }');
+    expect(layoutSource).toContain('label: { zh: "AI 大脑", en: "AI Brain" }');
+    expect(layoutSource).toContain('label: { zh: "自动通知", en: "Automated Notifications" }');
+    expect(layoutSource).toContain('label: { zh: "Flow 管理", en: "Flow Management" }');
+    expect(layoutSource).toContain('label: { zh: "直播AI", en: "Live AI" }');
   });
 
   it("normalizes action height, alignment, spacing, and small-screen wrapping", () => {
