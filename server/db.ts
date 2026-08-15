@@ -1821,6 +1821,12 @@ export async function updateOrderDetails(id: number, data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const currentOrder = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
+  const existingOrder = currentOrder[0];
+  const effectiveShippingMethod = data.shippingMethod ?? existingOrder?.shippingMethod;
+  // Walk-in is a local self-pickup flow. Never allow a manual edit to restore
+  // a delivery charge, and keep China import orders on their own shipping rules.
+  const isWalkInSelfPickup = existingOrder?.orderCategory !== "import" && effectiveShippingMethod === "self_pickup";
   const updateData: any = {};
   if (data.shippingAddress !== undefined) updateData.shippingAddress = data.shippingAddress;
   if (data.shippingMethod !== undefined) updateData.shippingMethod = data.shippingMethod;
@@ -1842,8 +1848,21 @@ export async function updateOrderDetails(id: number, data: {
   if (data.promotionId !== undefined) updateData.promotionId = data.promotionId;
   if (data.promotionName !== undefined) updateData.promotionName = data.promotionName;
   if (data.promotionDiscount !== undefined) updateData.promotionDiscount = data.promotionDiscount;
-  if (data.shippingFee !== undefined) updateData.shippingFee = data.shippingFee;
-  if (data.totalAmount !== undefined) updateData.totalAmount = data.totalAmount;
+  if (isWalkInSelfPickup) {
+    updateData.shippingMethod = "self_pickup";
+    updateData.shippingFee = "0.00";
+    updateData.customerPaidShipping = "0.00";
+    const physicalSubtotal = Number(existingOrder?.physicalSubtotal || "0");
+    const membershipSubtotal = Number(existingOrder?.membershipSubtotal || "0");
+    const promotionDiscount = Number(data.promotionDiscount ?? existingOrder?.promotionDiscount ?? "0");
+    const discountAmount = Number(data.discountAmount ?? existingOrder?.discountAmount ?? "0");
+    const extraCharge = Number(data.extraCharge ?? existingOrder?.extraCharge ?? "0");
+    const creditUsed = Number(existingOrder?.creditUsed || "0");
+    updateData.totalAmount = (physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge - creditUsed).toFixed(2);
+  } else {
+    if (data.shippingFee !== undefined) updateData.shippingFee = data.shippingFee;
+    if (data.totalAmount !== undefined) updateData.totalAmount = data.totalAmount;
+  }
   if (data.physicalStatus !== undefined) {
     updateData.physicalStatus = data.physicalStatus;
     if (data.physicalStatus === "receipt_uploaded") updateData.paymentUploadedAt = new Date();
@@ -2250,10 +2269,10 @@ export async function recalculateOrderBalance(orderId: number) {
   if (!lockedStatuses.includes(order[0].physicalStatus || '')) {
     if (totalPaid >= totalAmount && totalAmount > 0) {
       // Fully paid or overpaid
-      if (order[0].shippingMethod === 'self_pickup') {
+      if (order[0].shippingMethod === 'self_pickup' && order[0].orderCategory !== 'import') {
         // Walk-in orders are collected at the shop. Once their payment is
         // confirmed in full, no packing or courier dispatch is required.
-        newStatus = 'shipped' as any;
+        newStatus = 'completed' as any;
       } else if (order[0].physicalStatus === 'hold_order') {
         newStatus = 'hold_order' as any;
       } else if (order[0].physicalStatus === 'pending') {
@@ -2337,6 +2356,9 @@ export async function recalculateOrderBalance(orderId: number) {
   };
   if (importStatusUpdate) {
     updateSet.importStatus = importStatusUpdate;
+  }
+  if (newStatus === 'completed' && order[0].physicalStatus !== 'completed') {
+    updateSet.completedAt = new Date();
   }
   await db.update(orders).set(updateSet).where(eq(orders.id, orderId));
 

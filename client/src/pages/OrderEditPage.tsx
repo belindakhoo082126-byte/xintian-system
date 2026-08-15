@@ -423,11 +423,11 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   const discountNum = parseFloat(formData.discountAmount) || 0;
   const extraChargeNum = parseFloat(formData.extraCharge) || 0;
   const creditUsedNum = parseFloat(formData.creditUsed) || 0;
-  const shippingFeeNum = parseFloat(formData.shippingFee) || 0;
+  const isSelfPickup = formData.shippingMethod === "self_pickup";
+  const shippingFeeNum = isSelfPickup ? 0 : (parseFloat(formData.shippingFee) || 0);
   const totalAmount = itemsSubtotal - discountNum + extraChargeNum + shippingFeeNum - creditUsedNum;
 
   // Payment method filtering based on shipping method
-  const isSelfPickup = formData.shippingMethod === "self_pickup";
   const filteredPaymentMethods = useMemo(() => {
     if (!paymentMethods) return [];
     return paymentMethods.filter((method: any) => {
@@ -477,6 +477,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     updateDetailsMutation.mutate({
       id: orderId,
       ...formData,
+      shippingFee: isSelfPickup ? "0.00" : formData.shippingFee,
       totalAmount: totalAmount.toFixed(2),
     });
   }
@@ -728,7 +729,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
             </div>
             <div>
               <Label className="text-xs">{translate("配送方式", "Shipping Method")}</Label>
-              <Select value={formData.shippingMethod} onValueChange={(v) => setFormData({ ...formData, shippingMethod: v })}>
+              <Select value={formData.shippingMethod} onValueChange={(v) => setFormData({ ...formData, shippingMethod: v, shippingFee: v === "self_pickup" ? "0.00" : formData.shippingFee })}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(SHIPPING_METHODS).map(([k, v]) => (
@@ -900,10 +901,16 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               <Label className="text-xs">{translate("使用Credit (自动)", "Credit Used (Auto)")}</Label>
               <Input type="number" value={formData.creditUsed} readOnly disabled className="bg-gray-100 dark:bg-gray-800 cursor-not-allowed" />
             </div>
-            <div>
-              <Label className="text-xs">{translate("运费", "Shipping Fee")}</Label>
-              <Input type="number" value={formData.shippingFee} onChange={(e) => setFormData({ ...formData, shippingFee: e.target.value })} placeholder="0" />
-            </div>
+            {isSelfPickup ? (
+              <div className="col-span-2 flex items-end rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                {translate("Walk-in 自取订单，不收取运费", "Walk-in self-pickup order: no shipping fee")}
+              </div>
+            ) : (
+              <div>
+                <Label className="text-xs">{translate("运费", "Shipping Fee")}</Label>
+                <Input type="number" value={formData.shippingFee} onChange={(e) => setFormData({ ...formData, shippingFee: e.target.value })} placeholder="0" />
+              </div>
+            )}
           </div>
 
           <Separator />
@@ -912,7 +919,11 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
             <div className="flex justify-between"><span>{translate("商品小计", "Items Subtotal")}</span><span>RM {itemsSubtotal.toFixed(2)}</span></div>
             {discountNum > 0 && <div className="flex justify-between text-red-600"><span>{translate("折扣", "Discount")}</span><span>-RM {discountNum.toFixed(2)}</span></div>}
             {extraChargeNum > 0 && <div className="flex justify-between"><span>{translate("额外收费", "Extra Charge")}</span><span>+RM {extraChargeNum.toFixed(2)}</span></div>}
-            <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")}</span><span>RM {shippingFeeNum.toFixed(2)}</span></div>
+            {isSelfPickup ? (
+              <div className="flex justify-between"><span>{translate("Walk-in 自取", "Walk-in Self Pickup")}</span><span>{translate("不收取运费", "No shipping fee")}</span></div>
+            ) : (
+              <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")}</span><span>RM {shippingFeeNum.toFixed(2)}</span></div>
+            )}
             {creditUsedNum > 0 && <div className="flex justify-between text-blue-600"><span>{translate("使用Credit", "Credit Used")}</span><span>-RM {creditUsedNum.toFixed(2)}</span></div>}
             <Separator />
             <div className="flex justify-between font-bold text-base">
