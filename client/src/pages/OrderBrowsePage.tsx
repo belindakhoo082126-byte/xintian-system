@@ -748,7 +748,9 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           {extraCharge > 0 && (
             <div className="flex justify-between"><span>{translate("额外收费", "Extra Charge")}{o.extraChargeDescription && ` (${o.extraChargeDescription})`}</span><span>+RM {extraCharge.toFixed(2)}</span></div>
           )}
-          <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")}</span><span>RM {shippingFee.toFixed(2)}</span></div>
+          {o.shippingMethod !== "self_pickup" && (
+            <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")}</span><span>RM {shippingFee.toFixed(2)}</span></div>
+          )}
           {creditUsed > 0 && (
             <div className="flex justify-between text-blue-600"><span>{translate("使用Credit", "Credit Used")}</span><span>-RM {creditUsed.toFixed(2)}</span></div>
           )}

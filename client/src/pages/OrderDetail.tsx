@@ -486,10 +486,12 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                   <span>+RM {Number(order.extraCharge).toFixed(2)}</span>
                 </div>
               )}
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">{translate("运费", "Shipping Fee")}</span>
-                <span>RM {Number(order.shippingFee).toFixed(2)}</span>
-              </div>
+              {order.shippingMethod !== "self_pickup" && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{translate("运费", "Shipping Fee")}</span>
+                  <span>RM {Number(order.shippingFee).toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">{translate("总重量", "Total Weight")}</span>
                 <span>{Number(order.totalWeight).toFixed(2)} kg</span>

@@ -668,7 +668,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             <div className="flex justify-between"><span>{translate("商品小计", "Items Subtotal")}</span><span>RM {itemsSubtotal.toFixed(2)}</span></div>
             {discountNum > 0 && <div className="flex justify-between text-red-600"><span>{translate("人工折扣", "Manual Discount")}</span><span>-RM {discountNum.toFixed(2)}</span></div>}
             {extraChargeNum > 0 && <div className="flex justify-between"><span>{translate("额外收费", "Extra Charge")}</span><span>+RM {extraChargeNum.toFixed(2)}</span></div>}
-            <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")} {freeShipping && <Badge variant="secondary" className="ml-1 text-xs">{translate("免邮", "Free Shipping")}</Badge>}</span><span>RM {shippingFee.toFixed(2)}</span></div>
+            {!isWalkIn && <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")} {freeShipping && <Badge variant="secondary" className="ml-1 text-xs">{translate("免邮", "Free Shipping")}</Badge>}</span><span>RM {shippingFee.toFixed(2)}</span></div>}
             {creditUsedNum > 0 && <div className="flex justify-between text-blue-600"><span>{translate("使用Credit", "Credit Used")}</span><span>-RM {creditUsedNum.toFixed(2)}</span></div>}
             <Separator />
             <div className="flex justify-between font-bold text-base"><span>{translate("总金额", "Total Amount")}</span><span>RM {totalAmount.toFixed(2)}</span></div>
@@ -1327,10 +1327,12 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                 )}
               </div>
             )}
-            <div className="flex justify-between">
-              <span>{translate("运费", "Shipping Fee")} {freeShipping && <Badge variant="secondary" className="ml-1 text-xs">{translate("免邮", "Free Shipping")}</Badge>}</span>
-              <span className="font-medium">RM {shippingFee.toFixed(2)}</span>
-            </div>
+            {!isWalkIn && (
+              <div className="flex justify-between">
+                <span>{translate("运费", "Shipping Fee")} {freeShipping && <Badge variant="secondary" className="ml-1 text-xs">{translate("免邮", "Free Shipping")}</Badge>}</span>
+                <span className="font-medium">RM {shippingFee.toFixed(2)}</span>
+              </div>
+            )}
             {creditUsedNum > 0 && (
               <div className="flex justify-between text-blue-600">
                 <span>{translate("使用Credit", "Credit Used")}</span>

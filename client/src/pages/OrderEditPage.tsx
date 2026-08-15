@@ -901,11 +901,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               <Label className="text-xs">{translate("使用Credit (自动)", "Credit Used (Auto)")}</Label>
               <Input type="number" value={formData.creditUsed} readOnly disabled className="bg-gray-100 dark:bg-gray-800 cursor-not-allowed" />
             </div>
-            {isSelfPickup ? (
-              <div className="col-span-2 flex items-end rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
-                {translate("Walk-in 自取订单，不收取运费", "Walk-in self-pickup order: no shipping fee")}
-              </div>
-            ) : (
+            {!isSelfPickup && (
               <div>
                 <Label className="text-xs">{translate("运费", "Shipping Fee")}</Label>
                 <Input type="number" value={formData.shippingFee} onChange={(e) => setFormData({ ...formData, shippingFee: e.target.value })} placeholder="0" />
@@ -919,9 +915,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
             <div className="flex justify-between"><span>{translate("商品小计", "Items Subtotal")}</span><span>RM {itemsSubtotal.toFixed(2)}</span></div>
             {discountNum > 0 && <div className="flex justify-between text-red-600"><span>{translate("折扣", "Discount")}</span><span>-RM {discountNum.toFixed(2)}</span></div>}
             {extraChargeNum > 0 && <div className="flex justify-between"><span>{translate("额外收费", "Extra Charge")}</span><span>+RM {extraChargeNum.toFixed(2)}</span></div>}
-            {isSelfPickup ? (
-              <div className="flex justify-between"><span>{translate("Walk-in 自取", "Walk-in Self Pickup")}</span><span>{translate("不收取运费", "No shipping fee")}</span></div>
-            ) : (
+            {!isSelfPickup && (
               <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")}</span><span>RM {shippingFeeNum.toFixed(2)}</span></div>
             )}
             {creditUsedNum > 0 && <div className="flex justify-between text-blue-600"><span>{translate("使用Credit", "Credit Used")}</span><span>-RM {creditUsedNum.toFixed(2)}</span></div>}

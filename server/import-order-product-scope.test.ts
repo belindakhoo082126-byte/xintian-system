@@ -6,6 +6,8 @@ const dbSource = fs.readFileSync(path.join(process.cwd(), "server/db.ts"), "utf8
 const routerSource = fs.readFileSync(path.join(process.cwd(), "server/routers.ts"), "utf8");
 const createSource = fs.readFileSync(path.join(process.cwd(), "client/src/pages/OrderCreatePage.tsx"), "utf8");
 const editOrderSource = fs.readFileSync(path.join(process.cwd(), "client/src/pages/OrderEditPage.tsx"), "utf8");
+const browseOrderSource = fs.readFileSync(path.join(process.cwd(), "client/src/pages/OrderBrowsePage.tsx"), "utf8");
+const detailOrderSource = fs.readFileSync(path.join(process.cwd(), "client/src/pages/OrderDetail.tsx"), "utf8");
 const businessAiSource = fs.readFileSync(path.join(process.cwd(), "server/businessAi.ts"), "utf8");
 const productSchemaSource = fs.readFileSync(path.join(process.cwd(), "drizzle/schema.ts"), "utf8");
 const productsPageSource = fs.readFileSync(path.join(process.cwd(), "client/src/pages/ProductsV2.tsx"), "utf8");
@@ -77,7 +79,14 @@ describe("中国代购订单与Walk in范围", () => {
     expect(dbSource).toContain('updateData.shippingFee = "0.00"');
     expect(dbSource).toContain('updateData.customerPaidShipping = "0.00"');
     expect(editOrderSource).toContain('shippingFee: isSelfPickup ? "0.00" : formData.shippingFee');
-    expect(editOrderSource).toContain('Walk-in 自取订单，不收取运费');
+  });
+
+  it("在 Walk-in 的建立、编辑、浏览及详情金额摘要中完整移除运费文字与金额行", () => {
+    expect(createSource).toContain('!isWalkIn && <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")}');
+    expect(createSource).toContain('{!isWalkIn && (');
+    expect(editOrderSource).toContain('{!isSelfPickup && (');
+    expect(browseOrderSource).toContain('{o.shippingMethod !== "self_pickup" && (');
+    expect(detailOrderSource).toContain('{order.shippingMethod !== "self_pickup" && (');
   });
 
   it("将区域7实际全额确认付款的本地 Walk-in 自取订单直接流转为已完成", () => {
