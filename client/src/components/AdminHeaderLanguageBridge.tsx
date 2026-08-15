@@ -94,15 +94,18 @@ export function AdminHeaderLanguageBridge() {
         return;
       }
 
-      // AdminPageHeader already owns a language selector; do not add a second one.
-      if (header.querySelector("[data-language-selector]")) {
-        setTarget(null);
+      // A shared AdminPageHeader (or another page-owned selector) already owns
+      // its language control. Exclude our own Portal button: otherwise the
+      // MutationObserver sees it, unmounts it, then mounts it again forever.
+      if (header.querySelector("[data-language-selector]:not([data-admin-language-bridge-selector])")) {
+        setTarget((current) => (current ? null : current));
         return;
       }
 
       header.classList.add("header-with-actions");
       const title = header.querySelector<HTMLElement>("h1");
-      setTarget(resolveActions(header, title));
+      const nextTarget = resolveActions(header, title);
+      setTarget((current) => (current === nextTarget ? current : nextTarget));
     };
 
     const frame = window.requestAnimationFrame(sync);
@@ -120,9 +123,10 @@ export function AdminHeaderLanguageBridge() {
   return createPortal(
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          data-language-selector
-          className="header-language-selector"
+          <button
+            data-language-selector
+            data-admin-language-bridge-selector
+            className="header-language-selector"
           aria-label={lang === "zh" ? "选择语言，目前为中文" : "Select language, currently English"}
         >
           <Languages className="h-4 w-4" aria-hidden="true" />

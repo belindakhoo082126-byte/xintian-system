@@ -47,6 +47,12 @@ describe("DashboardLayout page title shell", () => {
     expect(languageBridgeSource).not.toContain("negative margin");
   });
 
+  it("does not mistake its own portaled selector for a page-owned control", () => {
+    expect(languageBridgeSource).toContain("data-admin-language-bridge-selector");
+    expect(languageBridgeSource).toContain(":not([data-admin-language-bridge-selector])");
+    expect(languageBridgeSource).toContain("current === nextTarget ? current : nextTarget");
+  });
+
   it("finds traditional page headers without relying on justify-between or an h1", () => {
     expect(languageBridgeSource).toContain("function containsAction");
     expect(languageBridgeSource).toContain("const hasSiblingAction");
