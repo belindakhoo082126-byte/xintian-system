@@ -739,6 +739,7 @@ export async function getOrders(filters?: {
   salesChannel?: string;
   hasRemark?: boolean;
   notificationStatus?: string;
+  crossChannelMergeToday?: boolean;
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -792,6 +793,13 @@ export async function getOrders(filters?: {
   }).from(orders)
     .leftJoin(customers, eq(orders.customerId, customers.id)) as any;
   const conditions: any[] = [];
+  let todayCrossChannelMergeLogs: Array<{
+    orderId: number;
+    description: string | null;
+    changes: string | null;
+    operator: string | null;
+    createdAt: Date;
+  }> | null = null;
   if (filters?.physicalStatus) conditions.push(eq(orders.physicalStatus, filters.physicalStatus as any));
   if (filters?.importStatus) conditions.push(eq((orders as any).importStatus, filters.importStatus as any));
   if (filters?.membershipStatus) conditions.push(eq(orders.membershipStatus, filters.membershipStatus as any));
@@ -826,6 +834,26 @@ export async function getOrders(filters?: {
     today.setHours(0, 0, 0, 0);
     conditions.push(gte(orders.createdAt, today));
   }
+  if (filters?.crossChannelMergeToday) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    todayCrossChannelMergeLogs = await db.select({
+      orderId: orderOperationLogs.orderId,
+      description: orderOperationLogs.description,
+      changes: orderOperationLogs.changes,
+      operator: orderOperationLogs.operator,
+      createdAt: orderOperationLogs.createdAt,
+    }).from(orderOperationLogs).where(and(
+      eq(orderOperationLogs.operationType, "cross_channel_merge"),
+      gte(orderOperationLogs.createdAt, today),
+      lt(orderOperationLogs.createdAt, tomorrow),
+    ));
+    const mergedOrderIds = Array.from(new Set(todayCrossChannelMergeLogs.map((log) => log.orderId)));
+    if (mergedOrderIds.length === 0) return [];
+    conditions.push(inArray(orders.id, mergedOrderIds) as any);
+  }
   if (filters?.search) {
     conditions.push(or(
       like(orders.orderNumber, `%${filters.search}%`),
@@ -839,7 +867,35 @@ export async function getOrders(filters?: {
   if (conditions.length > 0) {
     query = query.where(and(...conditions)) as any;
   }
-  return await query.orderBy(desc(orders.createdAt));
+  const result = await query.orderBy(desc(orders.createdAt));
+  if (!todayCrossChannelMergeLogs) return result;
+
+  return result.map((order: any) => ({
+    ...order,
+    crossChannelMergeDetails: todayCrossChannelMergeLogs!
+      .filter((log) => log.orderId === order.id)
+      .map((log) => {
+        let changes: { addedAmount?: string | number; items?: Array<{ quantity?: number; unitPrice?: string | number; itemSource?: string }> } = {};
+        try {
+          changes = JSON.parse(log.changes || "{}") || {};
+        } catch {
+          // Historical malformed audit payloads remain visible through the
+          // original description, while amount and source fall back safely.
+        }
+        const fallbackAmount = (changes.items || []).reduce(
+          (sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0),
+          0,
+        );
+        return {
+          mergedAt: log.createdAt,
+          addedAmount: (Number(changes.addedAmount ?? fallbackAmount) || 0).toFixed(2),
+          addedSources: Array.from(new Set((changes.items || []).map((item) => item.itemSource).filter(Boolean))),
+          itemSummary: log.description || "-",
+          operator: log.operator || "-",
+        };
+      })
+      .sort((a, b) => new Date(b.mergedAt).getTime() - new Date(a.mergedAt).getTime()),
+  }));
 }
 
 export async function getOrderById(id: number) {

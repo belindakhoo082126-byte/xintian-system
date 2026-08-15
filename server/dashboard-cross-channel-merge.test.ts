@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
-import { getDashboardV11Stats, getDb } from "./db";
+import { getDashboardV11Stats, getDb, getOrders } from "./db";
 import { customers, orderOperationLogs, orders } from "../drizzle/schema";
 
 describe.sequential("Dashboard 今日跨渠道合单统计", () => {
@@ -58,14 +58,14 @@ describe.sequential("Dashboard 今日跨渠道合单统计", () => {
         orderId,
         operationType: "cross_channel_merge",
         description: "QA 商城自动合单",
-        changes: JSON.stringify({ addedAmount: "12.50" }),
+        changes: JSON.stringify({ addedAmount: "12.50", items: [{ quantity: 1, unitPrice: "12.50", itemSource: "mall" }] }),
         operator: "QA",
       },
       {
         orderId,
         operationType: "cross_channel_merge",
         description: "QA 直播自动合单",
-        changes: JSON.stringify({ items: [{ quantity: 2, unitPrice: "7.25" }] }),
+        changes: JSON.stringify({ items: [{ quantity: 2, unitPrice: "7.25", itemSource: "facebook_live" }] }),
         operator: "QA",
       },
       {
@@ -83,5 +83,12 @@ describe.sequential("Dashboard 今日跨渠道合单统计", () => {
       Number(baseline.crossChannelMerge.addedAmount) + 27,
       2,
     );
+
+    const mergeOrders = await getOrders({ orderCategory: "local", crossChannelMergeToday: true }) as any[];
+    const mergeOrder = mergeOrders.find((entry) => entry.id === orderId);
+    expect(mergeOrder).toBeTruthy();
+    expect(mergeOrder.crossChannelMergeDetails).toHaveLength(2);
+    expect(mergeOrder.crossChannelMergeDetails.map((detail: any) => detail.addedAmount).sort()).toEqual(["12.50", "14.50"]);
+    expect(mergeOrder.crossChannelMergeDetails.flatMap((detail: any) => detail.addedSources).sort()).toEqual(["facebook_live", "mall"]);
   }, 20_000);
 });

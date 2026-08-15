@@ -63,6 +63,19 @@ const ORDER_SOURCE = {
   manual: { label: "Admin手动", enLabel: "Admin Manual" },
 } as const;
 
+const MERGE_SOURCE_LABELS: Record<string, { zh: string; en: string }> = {
+  mall: { zh: "商城", en: "Mall" },
+  store: { zh: "商城", en: "Mall" },
+  facebook_live: { zh: "FB直播", en: "FB Live" },
+  facebook_post: { zh: "FB贴文", en: "FB Post" },
+  facebook_reel: { zh: "FB短片", en: "FB Reel" },
+  messenger: { zh: "Messenger 私聊", en: "Messenger chat" },
+  private_chat: { zh: "Messenger 私聊", en: "Messenger chat" },
+  ai: { zh: "AI 客服", en: "AI assistant" },
+  manual: { zh: "后台手动", en: "Admin manual" },
+  admin: { zh: "后台手动", en: "Admin manual" },
+};
+
 const CANCEL_REASONS = [
   { zh: "客户取消", en: "Customer cancelled" },
   { zh: "缺货", en: "Out of stock" },
@@ -95,6 +108,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const urlChannel = new URLSearchParams(searchParams).get("channel");
   const urlSpecial = new URLSearchParams(searchParams).get("special");
   const urlSpecialType = new URLSearchParams(searchParams).get("type");
+  const urlCrossChannelMergeToday = new URLSearchParams(searchParams).get("crossChannelMergeToday");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(urlStatus || "all");
   const [todayOnly, setTodayOnly] = useState(urlToday === "1");
@@ -105,6 +119,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const [sourceFilter, setSourceFilter] = useState("all");
   const [remarkFilter, setRemarkFilter] = useState("all");
   const [notificationFilter, setNotificationFilter] = useState("all");
+  const [crossChannelMergeToday, setCrossChannelMergeToday] = useState(urlCrossChannelMergeToday === "1");
 
   useEffect(() => {
     const handlePopState = () => {
@@ -115,12 +130,14 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
       const newChannel = params.get('channel');
       const newSpecial = params.get('special');
       const newSpecialType = params.get('type');
+      const newCrossChannelMergeToday = params.get('crossChannelMergeToday');
       if (newStatus !== null) setStatusFilter(newStatus);
       setSpecialFilter(newSpecial === '1' || Boolean(newSpecialType));
       setSpecialTypeFilter(newSpecialType || 'all');
       if (newToday !== null) setTodayOnly(newToday === '1');
       if (newNature !== null) setNatureFilter(newNature);
       if (newChannel !== null) setChannelFilter(newChannel);
+      setCrossChannelMergeToday(newCrossChannelMergeToday === '1');
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -214,6 +231,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     isSpecialOrder: specialFilter || undefined,
     specialOrderStatus: specialFilter && specialStatusFilter && specialStatusFilter !== "all" ? specialStatusFilter : undefined,
     specialOrderType: specialFilter && specialTypeFilter !== "all" ? specialTypeFilter : undefined,
+    crossChannelMergeToday: crossChannelMergeToday || undefined,
   } as any);
 
   // Get order detail with items, payments, and logs
@@ -668,14 +686,68 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   return (
     <div className="space-y-6">
       <AdminPageHeader
-        title={orderCategory === "import" ? translate("中国代购订单", "Import Orders") : orderCategory === "local" ? translate("本地订单", "Local Orders") : translate("订单管理", "Order Management")}
-        description={orderCategory === "import" ? translate("中国代购订单管理与处理", "Import order management & processing") : orderCategory === "local" ? translate("本地订单管理与处理", "Local order management & processing") : translate("搜索与筛选所有订单", "Search and filter all orders")}
+        title={crossChannelMergeToday ? translate("今日跨渠道合单", "Today's Cross-channel Merges") : orderCategory === "import" ? translate("中国代购订单", "Import Orders") : orderCategory === "local" ? translate("本地订单", "Local Orders") : translate("订单管理", "Order Management")}
+        description={crossChannelMergeToday ? translate("以下为今天实际追加至未汇款 XT 订单的合单记录；点击订单可查看完整详情。", "These are today's additions to unpaid XT orders. Click an order for full details.") : orderCategory === "import" ? translate("中国代购订单管理与处理", "Import order management & processing") : orderCategory === "local" ? translate("本地订单管理与处理", "Local order management & processing") : translate("搜索与筛选所有订单", "Search and filter all orders")}
         actions={orderCategory !== "all" ? (
           <Button className="w-full sm:w-auto" onClick={() => setLocation(`/orders/create/${orderCategory === "import" ? "import" : "local"}`)}>
             <Plus className="h-4 w-4 mr-2" />{translate("手动建单", "Create Manual Order")}
           </Button>
         ) : undefined}
       />
+
+      {crossChannelMergeToday && (
+        <Card className="border-cyan-200 bg-cyan-50/60 dark:border-cyan-900/60 dark:bg-cyan-950/20" data-cross-channel-merge-list>
+          <CardContent className="space-y-3 p-4 sm:p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold text-cyan-900 dark:text-cyan-100">{translate("今天实际发生的合单明细", "Today's actual merge details")}</p>
+                <p className="text-sm text-muted-foreground">{translate("每一项代表一次追加动作；同一订单当天可出现多次。", "Each item is one addition action; an order can appear more than once today.")}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => { setCrossChannelMergeToday(false); setLocation("/orders/local"); }}>
+                {translate("查看全部本地订单", "View all local orders")}
+              </Button>
+            </div>
+            {isLoading ? (
+              <p className="text-sm text-muted-foreground">{translate("加载合单明细中...", "Loading merge details...")}</p>
+            ) : orders?.length === 0 ? (
+              <p className="rounded-md border border-dashed bg-background/60 p-4 text-sm text-muted-foreground">{translate("今天暂时没有跨渠道合单记录。", "No cross-channel merge records today.")}</p>
+            ) : (
+              <div className="space-y-2">
+                {(orders || []).flatMap((order: any) => ((order.crossChannelMergeDetails || []).map((detail: any, index: number) => ({ order, detail, index })))).map(({ order, detail, index }: any) => {
+                  const originalSource = ORDER_SOURCE[order.orderSource as keyof typeof ORDER_SOURCE];
+                  const addedSources = (detail.addedSources || []).map((source: string) => {
+                    const label = MERGE_SOURCE_LABELS[source];
+                    return label ? translate(label.zh, label.en) : source;
+                  }).join("、") || detail.operator;
+                  return (
+                    <button
+                      type="button"
+                      key={`${order.id}-${detail.mergedAt}-${index}`}
+                      className="grid w-full gap-2 rounded-lg border bg-background/75 p-3 text-left transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 sm:grid-cols-[minmax(120px,0.8fr)_minmax(120px,0.9fr)_minmax(150px,1.4fr)_auto] sm:items-center"
+                      onClick={() => openDetail(order.id)}
+                      aria-label={translate("查看订单 {orderNumber} 的合单详情", "View merge details for order {orderNumber}", { orderNumber: order.orderNumber })}
+                    >
+                      <div>
+                        <p className="font-mono text-sm font-semibold text-cyan-800 dark:text-cyan-200">{order.orderNumber}</p>
+                        <p className="text-xs text-muted-foreground">{order.customerName || order.facebookName || "-"}</p>
+                      </div>
+                      <div className="text-sm">
+                        <p>{translate("原订单来源：{source}", "Original source: {source}", { source: originalSource ? translate(originalSource.label, originalSource.enLabel) : "-" })}</p>
+                        <p className="text-muted-foreground">{translate("新增来源：{source}", "Added from: {source}", { source: addedSources })}</p>
+                      </div>
+                      <div className="min-w-0 text-sm">
+                        <p className="truncate" title={detail.itemSummary}>{detail.itemSummary}</p>
+                        <p className="text-xs text-muted-foreground">{new Date(detail.mergedAt).toLocaleString(lang === "zh" ? "zh-MY" : "en-MY", { dateStyle: "short", timeStyle: "short" })}</p>
+                      </div>
+                      <p className="text-base font-bold text-cyan-700 dark:text-cyan-300">RM {Number(detail.addedAmount || 0).toFixed(2)}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex items-center gap-3 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
         <div className="relative min-w-[220px] flex-1 sm:max-w-sm">

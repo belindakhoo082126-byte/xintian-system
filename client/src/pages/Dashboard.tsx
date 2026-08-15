@@ -255,33 +255,35 @@ export default function Dashboard() {
 
       <div>
         <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "跨渠道合单（今日）" : "Cross-channel Merges (Today)"}</h2>
-        <Card className="border-cyan-200 bg-cyan-50/60 dark:border-cyan-900/60 dark:bg-cyan-950/20">
-          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-cyan-100 p-3 text-cyan-700 dark:bg-cyan-900/60 dark:text-cyan-200">
-                <ShoppingCart className="h-6 w-6" />
+        <Link href="/orders/local?crossChannelMergeToday=1" aria-label={lang === "zh" ? "查看今日跨渠道合单订单" : "View today's cross-channel merge orders"}>
+          <Card className="cursor-pointer border-cyan-200 bg-cyan-50/60 transition-shadow hover:shadow-md dark:border-cyan-900/60 dark:bg-cyan-950/20">
+            <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-cyan-100 p-3 text-cyan-700 dark:bg-cyan-900/60 dark:text-cyan-200">
+                  <ShoppingCart className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold">{lang === "zh" ? "今日跨渠道合单" : "Today's Cross-channel Merges"}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {lang === "zh"
+                      ? "点击查看已合并订单：商城、直播、私聊、AI、帖子及后台追加至未汇款 XT 订单"
+                      : "Click to view merged orders from mall, live, chat, AI, posts, and admin"}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="font-semibold">{lang === "zh" ? "今日跨渠道合单" : "Today's Cross-channel Merges"}</p>
-                <p className="text-sm text-muted-foreground">
-                  {lang === "zh"
-                    ? "商城、直播、私聊、AI、帖子及后台追加至未汇款 XT 订单"
-                    : "Additions from mall, live, chat, AI, posts, and admin to unpaid XT orders"}
-                </p>
+              <div className="flex gap-6 sm:gap-8">
+                <div>
+                  <p className="text-xs text-muted-foreground">{lang === "zh" ? "合单次数" : "Merge Actions"}</p>
+                  <p className="mt-1 text-2xl font-bold text-cyan-700 dark:text-cyan-300">{Number(crossChannelMerge.count || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">{lang === "zh" ? "新增商品金额" : "Added Item Amount"}</p>
+                  <p className="mt-1 text-2xl font-bold text-cyan-700 dark:text-cyan-300">RM {Number(crossChannelMerge.addedAmount || 0).toFixed(2)}</p>
+                </div>
               </div>
-            </div>
-            <div className="flex gap-6 sm:gap-8">
-              <div>
-                <p className="text-xs text-muted-foreground">{lang === "zh" ? "合单次数" : "Merge Actions"}</p>
-                <p className="mt-1 text-2xl font-bold text-cyan-700 dark:text-cyan-300">{Number(crossChannelMerge.count || 0)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">{lang === "zh" ? "新增商品金额" : "Added Item Amount"}</p>
-                <p className="mt-1 text-2xl font-bold text-cyan-700 dark:text-cyan-300">RM {Number(crossChannelMerge.addedAmount || 0).toFixed(2)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* V2.0.51: Notification Success Rate */}

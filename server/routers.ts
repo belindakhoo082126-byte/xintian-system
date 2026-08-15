@@ -1641,6 +1641,7 @@ export const appRouter = router({
         salesChannel: z.string().optional(),
         hasRemark: z.boolean().optional(),
         notificationStatus: z.string().optional(),
+        crossChannelMergeToday: z.boolean().optional(),
       }).optional())
       .query(async ({ input }) => {
         return await db.getOrders(input || {});
