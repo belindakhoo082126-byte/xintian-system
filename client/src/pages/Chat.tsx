@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import {
   MessageSquare, Send, Bot, User, Phone, Facebook,
   ShoppingBag, AlertCircle, CheckCircle2, Clock, Zap, Search,
-  Package, MapPin, CreditCard, FileText, ArrowRight, Copy, Eye
+  Package, MapPin, CreditCard, FileText, ArrowRight, ChevronLeft, Copy, Eye
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
@@ -334,10 +334,10 @@ export default function Chat() {
 
   return (
     <>
-    <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
+    <div className="flex h-[calc(100dvh-2rem)] min-h-0 overflow-hidden">
       {/* Left Column — Conversation List */}
-      <div className="w-80 border-r flex flex-col shrink-0">
-        <div className="p-3 border-b space-y-2">
+      <div className={`${selectedConvId ? "hidden" : "flex"} w-full min-h-0 shrink-0 border-r flex-col md:flex md:w-80`}>
+        <div className="shrink-0 p-3 border-b space-y-2">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold flex items-center gap-2">
               <MessageSquare className="h-4 w-4" />
@@ -369,7 +369,7 @@ export default function Chat() {
           </Tabs>
         </div>
 
-        <ScrollArea className="flex-1" ref={scrollAreaRef as any}>
+        <ScrollArea className="min-h-0 flex-1" ref={scrollAreaRef as any}>
           {conversationsError ? (
             <div className="m-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive space-y-2">
               <p>对话同步失败：{conversationsErrorDetail?.message || "请检查网络后重试"}</p>
@@ -435,10 +435,20 @@ export default function Chat() {
       </div>
 
       {/* Middle Column — Chat Messages */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className={`${selectedConvId ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 flex-col md:flex`}>
         {selectedConv ? (
           <>
-            <div className="p-3 border-b flex items-center gap-2">
+            <div className="shrink-0 p-3 border-b flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 md:hidden"
+                onClick={() => setSelectedConvId(null)}
+                aria-label="返回对话列表"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="text-xs">
                   {(selectedConv.customerName || selectedConv.facebookName || selectedConv.platformId || "?").charAt(0)}
@@ -471,7 +481,7 @@ export default function Chat() {
                   <span className="text-[10px] text-muted-foreground">语音讯息会保留为附件；当前未启用自动语音转文字或自动训练。</span>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <div className="flex items-center gap-1.5">
                   <Bot className="h-4 w-4 text-muted-foreground" />
                   <Switch
@@ -496,7 +506,7 @@ export default function Chat() {
               </div>
             </div>
 
-            <ScrollArea className="flex-1">
+            <ScrollArea className="min-h-0 flex-1">
               <div className="p-4 space-y-3">
                 {messagesError ? (
                   <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive space-y-2">
@@ -571,7 +581,7 @@ export default function Chat() {
               <div ref={messagesEndRef} />
             </ScrollArea>
 
-            <div className="p-3 border-t flex gap-2">
+            <div className="shrink-0 p-3 border-t flex gap-2">
               <Input
                 placeholder="输入消息..."
                 value={messageInput}
@@ -604,7 +614,7 @@ export default function Chat() {
       </div>
 
       {/* Right Column — Customer Info */}
-      <div className="w-72 border-l shrink-0 overflow-y-auto">
+      <div className="hidden w-72 min-h-0 shrink-0 border-l overflow-y-auto lg:block">
         {selectedConv ? (
           <div className="p-4 space-y-4">
             <div>
