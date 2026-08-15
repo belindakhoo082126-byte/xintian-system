@@ -687,7 +687,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     <div className="space-y-6">
       <AdminPageHeader
         title={crossChannelMergeToday ? translate("今日跨渠道合单", "Today's Cross-channel Merges") : orderCategory === "import" ? translate("中国代购订单", "Import Orders") : orderCategory === "local" ? translate("本地订单", "Local Orders") : translate("订单管理", "Order Management")}
-        description={crossChannelMergeToday ? translate("以下为今天实际追加至未汇款 XT 订单的合单记录；点击订单可查看完整详情。", "These are today's additions to unpaid XT orders. Click an order for full details.") : orderCategory === "import" ? translate("中国代购订单管理与处理", "Import order management & processing") : orderCategory === "local" ? translate("本地订单管理与处理", "Local order management & processing") : translate("搜索与筛选所有订单", "Search and filter all orders")}
+        description={crossChannelMergeToday ? translate("以下为今天实际追加至未汇款 XT，以及截止日期内 XTC 订单的合单记录；点击订单可查看完整详情。", "These are today's additions to unpaid XT and eligible in-window XTC orders. Click an order for full details.") : orderCategory === "import" ? translate("中国代购订单管理与处理", "Import order management & processing") : orderCategory === "local" ? translate("本地订单管理与处理", "Local order management & processing") : translate("搜索与筛选所有订单", "Search and filter all orders")}
         actions={orderCategory !== "all" ? (
           <Button className="w-full sm:w-auto" onClick={() => setLocation(`/orders/create/${orderCategory === "import" ? "import" : "local"}`)}>
             <Plus className="h-4 w-4 mr-2" />{translate("手动建单", "Create Manual Order")}
@@ -703,8 +703,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                 <p className="font-semibold text-cyan-900 dark:text-cyan-100">{translate("今天实际发生的合单明细", "Today's actual merge details")}</p>
                 <p className="text-sm text-muted-foreground">{translate("每一项代表一次追加动作；同一订单当天可出现多次。", "Each item is one addition action; an order can appear more than once today.")}</p>
               </div>
-              <Button variant="outline" size="sm" onClick={() => { setCrossChannelMergeToday(false); setLocation("/orders/local"); }}>
-                {translate("查看全部本地订单", "View all local orders")}
+              <Button variant="outline" size="sm" onClick={() => { setCrossChannelMergeToday(false); setLocation("/orders"); }}>
+                {translate("查看全部订单", "View all orders")}
               </Button>
             </div>
             {isLoading ? (
@@ -730,6 +730,9 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                       <div>
                         <p className="font-mono text-sm font-semibold text-cyan-800 dark:text-cyan-200">{order.orderNumber}</p>
                         <p className="text-xs text-muted-foreground">{order.customerName || order.facebookName || "-"}</p>
+                        <p className="mt-1 text-xs font-medium text-cyan-700 dark:text-cyan-300">
+                          {order.orderCategory === "import" ? translate("XTC 中国代购", "XTC Import") : translate("XT 本地订单", "XT Local")}
+                        </p>
                       </div>
                       <div className="text-sm">
                         <p>{translate("原订单来源：{source}", "Original source: {source}", { source: originalSource ? translate(originalSource.label, originalSource.enLabel) : "-" })}</p>

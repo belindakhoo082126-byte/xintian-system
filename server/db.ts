@@ -793,8 +793,18 @@ export async function getOrders(filters?: {
   }).from(orders)
     .leftJoin(customers, eq(orders.customerId, customers.id)) as any;
   const conditions: any[] = [];
+  // XTC 合单是否可发生，已经由各下单入口的直播截止日期和商品范围守卫处理。
+  // Dashboard 只读取实际写入的追加审计事件，避免以当前截止时间反推历史事件而改变统计。
+  const dashboardMergeOperationTypes = [
+    "cross_channel_merge",
+    "import_ai_merge",
+    "import_manual_merge",
+    "import_mall_merge",
+    "import_live_merge",
+  ] as const;
   let todayCrossChannelMergeLogs: Array<{
     orderId: number;
+    operationType: string;
     description: string | null;
     changes: string | null;
     operator: string | null;
@@ -841,12 +851,13 @@ export async function getOrders(filters?: {
     tomorrow.setDate(tomorrow.getDate() + 1);
     todayCrossChannelMergeLogs = await db.select({
       orderId: orderOperationLogs.orderId,
+      operationType: orderOperationLogs.operationType,
       description: orderOperationLogs.description,
       changes: orderOperationLogs.changes,
       operator: orderOperationLogs.operator,
       createdAt: orderOperationLogs.createdAt,
     }).from(orderOperationLogs).where(and(
-      eq(orderOperationLogs.operationType, "cross_channel_merge"),
+      inArray(orderOperationLogs.operationType, dashboardMergeOperationTypes as any),
       gte(orderOperationLogs.createdAt, today),
       lt(orderOperationLogs.createdAt, tomorrow),
     ));
@@ -888,6 +899,7 @@ export async function getOrders(filters?: {
         );
         return {
           mergedAt: log.createdAt,
+          mergeOperationType: log.operationType,
           addedAmount: (Number(changes.addedAmount ?? fallbackAmount) || 0).toFixed(2),
           addedSources: Array.from(new Set((changes.items || []).map((item) => item.itemSource).filter(Boolean))),
           itemSummary: log.description || "-",
@@ -9188,15 +9200,21 @@ export async function getDashboardV11Stats() {
     .where(gte(orders.createdAt, today)) as any[];
   const monthSales = await db.select({ total: sql`COALESCE(SUM(totalAmount), 0)` }).from(orders)
     .where(gte(orders.createdAt, firstOfMonth)) as any[];
-  // Cross-channel merge is tracked at the append-operation level rather than
-  // by counting order creation, because one existing XT order can receive
-  // several independent additions from different channels in a single day.
+  // 合单按追加审计动作而非订单建立次数统计。一张 XT 或合资格 XTC 订单
+  // 可在同一天收到多次不同来源的追加；XTC 审计只会在既有截止日期守卫通过后写入。
+  const dashboardMergeOperationTypes = [
+    "cross_channel_merge",
+    "import_ai_merge",
+    "import_manual_merge",
+    "import_mall_merge",
+    "import_live_merge",
+  ] as const;
   const todayCrossChannelMergeRows = await db.select({
     orderId: orderOperationLogs.orderId,
     changes: orderOperationLogs.changes,
   }).from(orderOperationLogs)
     .where(and(
-      eq(orderOperationLogs.operationType, "cross_channel_merge"),
+      inArray(orderOperationLogs.operationType, dashboardMergeOperationTypes as any),
       gte(orderOperationLogs.createdAt, today),
       lt(orderOperationLogs.createdAt, tomorrow),
     ));

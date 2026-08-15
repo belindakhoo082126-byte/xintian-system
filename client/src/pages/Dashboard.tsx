@@ -255,7 +255,7 @@ export default function Dashboard() {
 
       <div>
         <h2 className="text-sm font-medium text-muted-foreground mb-3">{lang === "zh" ? "跨渠道合单（今日）" : "Cross-channel Merges (Today)"}</h2>
-        <Link href="/orders/local?crossChannelMergeToday=1" aria-label={lang === "zh" ? "查看今日跨渠道合单订单" : "View today's cross-channel merge orders"}>
+        <Link href="/orders?crossChannelMergeToday=1" aria-label={lang === "zh" ? "查看今日 XT 与 XTC 跨渠道合单订单" : "View today's XT and XTC cross-channel merge orders"}>
           <Card className="cursor-pointer border-cyan-200 bg-cyan-50/60 transition-shadow hover:shadow-md dark:border-cyan-900/60 dark:bg-cyan-950/20">
             <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
@@ -266,8 +266,8 @@ export default function Dashboard() {
                   <p className="font-semibold">{lang === "zh" ? "今日跨渠道合单" : "Today's Cross-channel Merges"}</p>
                   <p className="text-sm text-muted-foreground">
                     {lang === "zh"
-                      ? "点击查看已合并订单：商城、直播、私聊、AI、帖子及后台追加至未汇款 XT 订单"
-                      : "Click to view merged orders from mall, live, chat, AI, posts, and admin"}
+                      ? "点击查看已合并订单：未汇款 XT，以及截止日期内已合并的 XTC 订单"
+                      : "Click to view unpaid XT and eligible in-window XTC merged orders"}
                   </p>
                 </div>
               </div>
