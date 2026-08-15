@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { isBackendEnglishFallbackPath, translateBackendStaticText } from "./BackendEnglishFallback";
 
 describe("BackendEnglishFallback", () => {
-  it("only applies to the administrator pages specified for English fallback", () => {
+  it("applies to every administrator route while preserving public-page isolation", () => {
     expect(isBackendEnglishFallbackPath("/marketing")).toBe(true);
     expect(isBackendEnglishFallbackPath("/import-batches?tab=ib")).toBe(true);
+    expect(isBackendEnglishFallbackPath("/orders")).toBe(true);
+    expect(isBackendEnglishFallbackPath("/refunds")).toBe(true);
+    expect(isBackendEnglishFallbackPath("/products")).toBe(true);
     expect(isBackendEnglishFallbackPath("/auto-notifications")).toBe(true);
     expect(isBackendEnglishFallbackPath("/flows")).toBe(true);
     expect(isBackendEnglishFallbackPath("/ai-knowledge")).toBe(true);

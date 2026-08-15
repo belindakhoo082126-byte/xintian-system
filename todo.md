@@ -3345,3 +3345,7 @@
 ## AI 客服菜单英文翻译
 
 - [x] 补齐 AI 客服分组及其子菜单在 English 模式下的导航翻译：AI Customer Service、Chat Support、AI Handover Notifications、AI Brain、Automated Notifications、Flow Management、Live AI 均有明确英文标签；同时补齐对应页面的英文显示回退，未改动菜单路径、顺序、权限或页面功能
+
+## 全系统语言切换恢复
+
+- [x] 恢复原有全系统中英文切换与英文回退覆盖范围：后台共用回退已恢复覆盖所有管理路由，商城与公开政策页面仍明确排除；AI 客服子菜单英文翻译保留，未修改其他业务功能；专项回归与 TypeScript 检查通过

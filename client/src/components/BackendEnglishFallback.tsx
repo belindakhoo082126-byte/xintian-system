@@ -2,12 +2,8 @@ import { useI18n } from "@/contexts/I18nContext";
 import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 
-const TARGET_PATHS = [
-  "/marketing", "/import-batches", "/draft-orders", "/order-change-requests",
-  "/product-bundles", "/inventory-log", "/chat", "/ai-handover", "/ai-brain",
-  "/ai-knowledge", "/reply-rules", "/auto-notifications", "/flows", "/live-ai-flows",
-  "/logistics", "/payment-settings", "/system-settings", "/customers",
-];
+/** This component is mounted by DashboardLayout only. Keep public routes explicitly excluded for testability. */
+const PUBLIC_PATHS = ["/mall", "/privacy-policy", "/terms-of-service", "/data-deletion"];
 
 /** Static interface terms only. Customer messages, names, order content and AI content are never translated here. */
 export const BACKEND_ENGLISH_TEXT: Record<string, string> = {
@@ -62,7 +58,7 @@ export function translateBackendStaticText(value: string) {
 
 export function isBackendEnglishFallbackPath(pathname: string) {
   const normalizedPath = pathname.split(/[?#]/, 1)[0];
-  return TARGET_PATHS.some(path => normalizedPath === path || normalizedPath.startsWith(`${path}/`));
+  return !PUBLIC_PATHS.some(path => normalizedPath === path || normalizedPath.startsWith(`${path}/`));
 }
 
 export function BackendEnglishFallback({ children }: { children: React.ReactNode }) {
