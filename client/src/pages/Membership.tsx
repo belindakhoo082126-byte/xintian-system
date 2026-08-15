@@ -319,7 +319,7 @@ export default function Membership() {
                   {detailReview.flowSentAt && (
                     <div>
                       <p className="text-muted-foreground">{translate("Flow 发送时间", "Flow Sent Time")}</p>
-                      <p className="text-sm">{new Date(detailReview.flowSentAt).toLocaleString("zh-CN")}</p>
+                      <p className="text-sm">{new Date(detailReview.flowSentAt).toLocaleString(lang === "zh" ? "zh-MY" : "en-MY")}</p>
                     </div>
                   )}
                   {detailReview.flowErrorMessage && (

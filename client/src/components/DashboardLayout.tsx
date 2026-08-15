@@ -35,14 +35,13 @@ import {
   FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings,
   Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle, AlertCircle,
   ClipboardList, Video, Plane, ChevronDown, Bot, Home, FileText, Receipt, Brain, FileEdit,
-  Megaphone, Undo2, BellRing,
+  Megaphone, Undo2, BellRing, Languages,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { BackendEnglishFallback } from "./BackendEnglishFallback";
-import { AdminHeaderLanguageBridge } from "./AdminHeaderLanguageBridge";
 
 type MenuChild = {
   icon: any;
@@ -312,7 +311,7 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
-  const { lang, t } = useI18n();
+  const { lang, setLang, t } = useI18n();
   const { theme, setTheme } = useTheme();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
@@ -421,6 +420,33 @@ function DashboardLayoutContent({
 
           <SidebarContent className="gap-0 overflow-y-auto">
             <SidebarMenu className="px-2 py-1">
+              <SidebarMenuItem>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <SidebarMenuButton
+                      data-language-selector
+                      tooltip={lang === "zh" ? "语言：中文" : "Language: English"}
+                      className="h-10 font-medium text-primary hover:bg-primary/10 data-[state=open]:bg-primary/10"
+                      aria-label={lang === "zh" ? "选择语言，目前为中文" : "Select language, currently English"}
+                    >
+                      <Languages className="h-4 w-4" aria-hidden="true" />
+                      <span>{lang === "zh" ? "中文" : "English"}</span>
+                    </SidebarMenuButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" sideOffset={8} className="min-w-36">
+                    <DropdownMenuLabel>语言 / Language</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => setLang("zh")} className="cursor-pointer">
+                      <span>中文</span>
+                      {lang === "zh" && <span className="ml-auto text-primary">✓</span>}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setLang("en")} className="cursor-pointer">
+                      <span>English</span>
+                      {lang === "en" && <span className="ml-auto text-primary">✓</span>}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </SidebarMenuItem>
               {visibleMenu.map((item, idx) => {
                 if (isGroup(item)) {
                   const groupActive = isGroupActive(item);
@@ -524,7 +550,6 @@ function DashboardLayoutContent({
           <BackendEnglishFallback>{children}</BackendEnglishFallback>
         </main>
       </SidebarInset>
-      <AdminHeaderLanguageBridge />
     </>
   );
 }

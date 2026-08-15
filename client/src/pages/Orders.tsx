@@ -64,12 +64,12 @@ const ORDER_SOURCE = {
 } as const;
 
 const CANCEL_REASONS = [
-  "客户取消",
-  "缺货",
-  "重复订单",
-  "错误下单",
-  "客户未付款",
-  "其他",
+  { zh: "客户取消", en: "Customer cancelled" },
+  { zh: "缺货", en: "Out of stock" },
+  { zh: "重复订单", en: "Duplicate order" },
+  { zh: "错误下单", en: "Incorrect order" },
+  { zh: "客户未付款", en: "Customer did not pay" },
+  { zh: "其他", en: "Other" },
 ];
 
 interface ManualOrderItem {
@@ -1845,8 +1845,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                   <SelectValue placeholder={translate("请选择取消原因", "Please select a cancel reason")} />
                 </SelectTrigger>
                 <SelectContent>
-                  {CANCEL_REASONS.map(r => (
-                    <SelectItem key={r} value={r}>{translate(r, r)}</SelectItem>
+                  {CANCEL_REASONS.map(reason => (
+                    <SelectItem key={reason.zh} value={reason.zh}>{translate(reason.zh, reason.en)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

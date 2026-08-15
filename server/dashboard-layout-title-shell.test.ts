@@ -10,10 +10,6 @@ const pageHeaderSource = readFileSync(
   resolve(process.cwd(), "client/src/components/AdminPageHeader.tsx"),
   "utf8",
 );
-const languageBridgeSource = readFileSync(
-  resolve(process.cwd(), "client/src/components/AdminHeaderLanguageBridge.tsx"),
-  "utf8",
-);
 const globalStyles = readFileSync(resolve(process.cwd(), "client/src/index.css"), "utf8");
 const migratedPageSources = [
   "Dashboard.tsx",
@@ -30,31 +26,25 @@ describe("DashboardLayout page title shell", () => {
     expect(layoutSource).not.toContain("querySelectorAll<HTMLElement>(\"h1\")");
   });
 
-  it("mounts a bridge for legacy page language controls without a fixed toolbar", () => {
-    expect(layoutSource).toContain("<AdminHeaderLanguageBridge />");
-    expect(layoutSource).toContain('from "./AdminHeaderLanguageBridge"');
+  it("keeps the sole language control in the sidebar without a fixed toolbar", () => {
+    expect(layoutSource).not.toContain("<AdminHeaderLanguageBridge />");
+    expect(layoutSource).not.toContain('from "./AdminHeaderLanguageBridge"');
+    expect(layoutSource).toContain('data-language-selector');
+    expect(layoutSource).toContain('tooltip={lang === "zh" ? "语言：中文" : "Language: English"}');
+    expect(layoutSource.indexOf('data-language-selector')).toBeLessThan(layoutSource.indexOf('{visibleMenu.map'));
     expect(layoutSource).toContain('<SidebarInset className="relative h-svh min-h-0 w-full min-w-0 max-w-full overflow-hidden">');
     expect(layoutSource).toContain('data-admin-menu-content className="h-full min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto');
     expect(layoutSource).not.toContain("fixed right-3 top-3");
     expect(layoutSource).not.toContain("sticky top-0 z-40 flex h-16");
   });
 
-  it("keeps the language selector in the same semantic action group as page controls", () => {
+  it("keeps page actions separate from the sidebar-only language selector", () => {
     expect(pageHeaderSource).toContain("data-admin-page-header-actions");
     expect(pageHeaderSource).toContain("header-actions flex shrink-0 flex-wrap items-center justify-end gap-3");
-    expect(pageHeaderSource).toContain("data-language-selector");
-    expect(languageBridgeSource).toContain("createPortal");
-    expect(languageBridgeSource).toContain("[data-admin-page-header-actions], [data-page-header-actions], .header-actions");
-    expect(languageBridgeSource).not.toContain("position: absolute");
-    expect(languageBridgeSource).not.toContain("negative margin");
-  });
-
-  it("keeps the legacy bridge inside existing action groups without adding a header layout class", () => {
-    expect(languageBridgeSource).toContain("data-admin-language-bridge-selector");
-    expect(languageBridgeSource).toContain("[data-admin-page-header-actions], [data-page-header-actions], .header-actions");
-    expect(languageBridgeSource).not.toContain('header.classList.add("header-with-actions")');
-    expect(languageBridgeSource).toContain('!rightBranch.matches("button, [role=\'button\']")');
-    expect(languageBridgeSource).toContain("header.insertBefore(host, rightBranch)");
+    expect(pageHeaderSource).not.toContain("data-language-selector");
+    expect(pageHeaderSource).not.toContain("DropdownMenu");
+    expect(layoutSource).toContain('onSelect={() => setLang("zh")}');
+    expect(layoutSource).toContain('onSelect={() => setLang("en")}');
   });
 
   it("migrates core admin pages to the shared Header action container", () => {

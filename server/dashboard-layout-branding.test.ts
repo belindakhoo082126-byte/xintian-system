@@ -26,10 +26,6 @@ const indexCssSource = fs.readFileSync(
   path.resolve(process.cwd(), "client/src/index.css"),
   "utf8",
 );
-const languageBridgeSource = fs.readFileSync(
-  path.resolve(process.cwd(), "client/src/components/AdminHeaderLanguageBridge.tsx"),
-  "utf8",
-);
 const adminPageHeaderSource = fs.readFileSync(
   path.resolve(process.cwd(), "client/src/components/AdminPageHeader.tsx"),
   "utf8",
@@ -51,31 +47,31 @@ describe("侧边栏品牌区与导航分类配色", () => {
     expect(sidebarHeader).not.toContain("Languages");
   });
 
-  it("injects the language selector into the content Header action group for desktop and mobile", () => {
-    expect(layoutSource).toContain("<AdminHeaderLanguageBridge />");
+  it("keeps the sole language selector above the Dashboard navigation for desktop and mobile", () => {
+    expect(layoutSource).not.toContain("<AdminHeaderLanguageBridge />");
+    expect(layoutSource).toContain("<Languages className=\"h-4 w-4\"");
+    expect(layoutSource).toContain('data-language-selector');
+    expect(layoutSource).toContain('tooltip={lang === "zh" ? "语言：中文" : "Language: English"}');
+    expect(layoutSource).toContain('onSelect={() => setLang("zh")}');
+    expect(layoutSource).toContain('onSelect={() => setLang("en")}');
+    expect(layoutSource.indexOf('data-language-selector')).toBeLessThan(layoutSource.indexOf('{visibleMenu.map'));
     expect(layoutSource).not.toContain("sticky top-0 z-40 flex h-16");
-    expect(languageBridgeSource).toContain('data-language-selector');
-    expect(languageBridgeSource).toContain('className="header-language-selector"');
-    expect(languageBridgeSource).toContain('aria-label={lang === "zh" ? "选择语言，目前为中文" : "Select language, currently English"}');
-    expect(languageBridgeSource).toContain('sideOffset={8}');
-    expect(languageBridgeSource).toContain('onSelect={() => setLang("zh")}');
-    expect(languageBridgeSource).toContain('onSelect={() => setLang("en")}');
     expect(adminPageHeaderSource).toContain("data-admin-page-header-actions");
   });
 
-  it("keeps the menu title in the content Header, alongside page actions and the language selector", () => {
+  it("keeps the menu title in the content Header while language selection remains sidebar-only", () => {
     expect(layoutSource).not.toContain("const topBarTitle");
     expect(layoutSource).not.toContain("data-menu-title-duplicate");
     expect(dashboardSource).toContain("<AdminPageHeader");
     expect(productsSource).toContain("<AdminPageHeader");
     expect(ordersSource).toContain("<AdminPageHeader");
     expect(adminPageHeaderSource).toContain("header-actions");
-    expect(adminPageHeaderSource).toContain("data-language-selector");
+    expect(adminPageHeaderSource).not.toContain("data-language-selector");
   });
 
   it("uses the content Header as the single title source for every menu page", () => {
     expect(layoutSource).toContain('data-admin-menu-content');
-    expect(layoutSource).toContain("<AdminHeaderLanguageBridge />");
+    expect(layoutSource).toContain('data-language-selector');
     expect(indexCssSource).toContain(".header-with-actions");
     expect(indexCssSource).toContain(".header-actions");
     expect(membershipSource).not.toContain('translate("会员订单管理", "Membership Order Management")');

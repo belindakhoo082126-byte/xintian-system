@@ -1,4 +1,5 @@
 import { useI18n } from "@/contexts/I18nContext";
+import { AUDITED_BACKEND_ENGLISH_TEXT } from "@/components/AuditedBackendEnglishText";
 import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 
@@ -49,11 +50,39 @@ export const BACKEND_ENGLISH_TEXT: Record<string, string> = {
   "创建时间": "Created At", "更新时间": "Updated At", "排序": "Sort Order", "名称": "Name", "类型": "Type", "QR / 银行资料": "QR / Bank Details", "状态": "Status", "金额": "Amount", "客户": "Customer", "平台": "Platform",
   "确认": "Confirm", "返回": "Back", "关闭": "Close", "重试": "Retry", "搜索": "Search", "筛选": "Filter",
   "是": "Yes", "否": "No", "成功": "Success", "失败": "Failed", "错误": "Error", "说明": "Description",
+  "统一管理活动、优惠、抽奖、客户召回与营销消息。所有实体赠品、加价购和奖品会在加入原订单时才通过既有库存服务占用库存。": "Manage campaigns, offers, prize draws, customer re-engagement, and marketing messages in one place. Physical gifts, add-on purchases, and prizes reserve stock only when added to the original order.",
+  "启用规则": "Enabled Rules", "成功投递": "Successful Deliveries", "客户分群": "Customer Segments", "营销活动": "Campaigns",
+  "活动与优惠规则": "Campaigns & Offer Rules", "先建立活动，再加入可叠加或互斥的优惠规则。": "Create a campaign first, then add stackable or mutually exclusive offer rules.",
+  "正在读取营销活动…": "Loading marketing campaigns…", "尚未建立活动。可先从右上角新增营销活动开始。": "No campaigns yet. Start by creating a campaign from the top-right.",
+  "未填写活动说明": "No campaign description", "商城展示": "Shown in Mall", "后台活动": "Back-office Campaign", "开始：": "Starts:", "结束：": "Ends:", "每客限制：": "Per-customer limit:", "总使用上限：": "Total usage limit:", "不限": "Unlimited", "尚未加入优惠规则": "No offer rules added",
+  "幸运轮盘与直播抽奖": "Lucky Wheel & Live Draw", "实体奖品仅于领取并合并到原订单时占用库存；抽奖本身不会先扣库存。": "Physical prizes reserve stock only when claimed and merged into the original order; the draw itself does not reserve stock.",
+  "选择活动": "Select campaign", "请先建立营销活动，才可配置抽奖奖品与资格。": "Create a marketing campaign first to configure prizes and eligibility.",
+  "可用奖品": "Available Prizes", "概率与数量上限由后台配置，开奖后保留完整审计。": "Probability and quantity limits are configured in the back office; the draw keeps a complete audit trail.",
+  "权重": "Weight", "剩余": "Remaining", "件": "items", "尚未配置奖品。": "No prizes configured.",
+  "抽奖资格": "Draw Eligibility", "符合活动门槛后建立资格；管理员针对某一资格执行开奖。": "Eligibility is created after campaign criteria are met; an administrator runs the draw for a selected entry.",
+  "资格 #": "Entry #", "客户 #": "Customer #", "开奖": "Draw", "该活动目前没有符合条件的抽奖资格。": "There are currently no eligible draw entries for this campaign.",
+  "请输入要模拟的留言内容": "Enter a comment to simulate", "以客户类别、回购条件和互动状态建立可复用受众。": "Create reusable audiences using customer type, purchase conditions, and engagement status.",
+  "新增分群": "New Segment", "营销消息": "Marketing Messages", "建立 Messenger 或人工复制用的合规文案模板。": "Create compliant templates for Messenger or manual copy.", "新增模板": "New Template",
+  "新规则预设为暂停；发送前可预演名单与合规窗口。": "New rules are paused by default; preview recipients and compliance windows before sending.",
+  "自动营销控制台": "Automation Console", "新规则先暂停。请先运行启用前检查，再开启自动排程；近期没有 Messenger 合规互动窗口的客户不会自动私聊，会生成可审计的人工发送文案。": "New rules start paused. Run the preflight check before enabling a schedule; customers without a recent Messenger compliance window will not be messaged automatically and will receive an auditable manual-send copy.",
+  "自动排程": "Automated schedule", "单次排程": "One-time schedule", "事件触发": "Event trigger", "已绑定后台任务": "Background task linked", "上次执行：": "Last run:", "设定时间：": "Scheduled for:",
+  "启用前检查": "Preflight check", "预演名单": "Preview recipients", "立即执行": "Run now", "暂停": "Pause", "尚未建立自动营销规则。": "No automation rules yet.",
+  "最近执行记录": "Recent Execution Records", "按每一笔实际投递审计显示自动发送、失败和人工回退结果；一次执行涉及多位客户时会保留多笔客户级记录，方便追查。": "Shows automated sends, failures, and manual fallbacks by actual delivery audit. Runs involving multiple customers retain one record per customer for traceability.",
+  "规则 #": "Rule #", "人工发送文案": "Manual-send copy", "Messenger 自动发送": "Messenger automated send", "尚未产生营销投递记录。启用规则后，系统会在这里保留每位客户的实际投递结果。": "No marketing delivery records yet. Once a rule is enabled, this area retains each customer's actual delivery outcome.",
+  "营销效果分析": "Marketing Performance Analysis", "所有金额、订单与投递数据均读取实际活动归因和投递审计记录；未使用任何模拟指标。": "All amounts, orders, and delivery data come from actual campaign attribution and delivery audit records; no simulated metrics are used.",
+  "归因订单": "Attributed Orders", "状态为已应用的活动归因记录": "Campaign attribution records with applied status", "归因营收": "Attributed Revenue", "来自活动关联订单的实际金额": "Actual amount from campaign-linked orders", "营销优惠": "Marketing Discounts", "不包含客户 Credit": "Excludes customer Credit", "次点击": "clicks", "次转化": "conversions",
+  "活动效果明细": "Campaign Performance Details", "按营销活动汇总实际归因订单、营收、优惠、运费补贴和投递互动。": "Summarises actual attributed orders, revenue, discounts, shipping subsidies, and delivery engagement by campaign.",
+  "订单：": "Orders:", "营收：": "Revenue:", "优惠：": "Discounts:", "投递：": "Deliveries:", "点击": "clicks", "转化": "conversions", "尚未产生可归因的营销订单或投递记录。": "No attributable marketing orders or delivery records yet.",
+  "归因边界": "Attribution Boundaries", "实体赠品、加价购与中奖商品只在写入原订单项目时占用库存；开奖或营销提示不会预扣商品。": "Physical gifts, add-on purchases, and prize items reserve stock only when written to the original order; draws and marketing prompts do not reserve products in advance.", "系统将营销优惠、运费补贴与客户 Credit 分开记录。Credit 不是活动折扣，利润与报表计算不会重复扣除。": "Marketing discounts, shipping subsidies, and customer Credit are recorded separately. Credit is not a campaign discount and is not deducted twice in profit or report calculations.",
+  "操作说明": "Operating Guide", "营销中心管理员操作说明": "Marketing Center Administrator Guide", "此入口汇总当前营销中心的实际操作边界；不会替代 Campaign Flow 的独立流程配置说明。": "This guide summarises the current operating boundaries of Marketing Center; it does not replace the separate Campaign Flow configuration guide.",
+  "关键词模拟测试": "Keyword Simulation", "使用真实的关键词解析与商品匹配规则预览触发效果；本工具只读，不会发送消息、建立订单或预留库存。": "Preview trigger results using the real keyword parsing and product-matching rules. This read-only tool does not send messages, create orders, or reserve stock.",
+  "模拟中…": "Simulating…", "开始模拟": "Start Simulation", "已匹配关键词": "Keywords Matched", "没有匹配商品": "No Products Matched", "解析词：": "Parsed terms:", "未识别": "Not recognised", "匹配关键词": "Matched keyword", "请检查商品关键词、留言格式或直播商品配置。": "Check product keywords, comment format, or live product configuration.", "未匹配：": "Unmatched:",
+  "预计触发边界": "Expected Trigger Boundaries", "公开回复：": "Public reply:", "私聊：": "Private message:",
 };
 
 export function translateBackendStaticText(value: string) {
   const trimmed = value.trim();
-  const translated = BACKEND_ENGLISH_TEXT[trimmed];
+  const translated = BACKEND_ENGLISH_TEXT[trimmed] ?? AUDITED_BACKEND_ENGLISH_TEXT[trimmed];
   return translated ? value.replace(trimmed, translated) : value;
 }
 

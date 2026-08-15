@@ -11,9 +11,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useI18n } from "@/contexts/I18nContext";
 
 const money = (value: number | string | null | undefined) => `RM ${Number(value ?? 0).toFixed(2)}`;
-const formatDate = (value: Date | string | null | undefined) => value ? new Date(value).toLocaleString("zh-MY", { dateStyle: "medium", timeStyle: "short" }) : "未设定";
+const formatDate = (value: Date | string | null | undefined, lang: "zh" | "en" = "zh", emptyLabel?: string) => value ? new Date(value).toLocaleString(lang === "zh" ? "zh-MY" : "en-MY", { dateStyle: "medium", timeStyle: "short" }) : (emptyLabel ?? (lang === "zh" ? "未设定" : "Not set"));
 
 const statusStyle: Record<string, string> = {
   active: "bg-emerald-100 text-emerald-800", scheduled: "bg-blue-100 text-blue-800", draft: "bg-slate-100 text-slate-700", paused: "bg-amber-100 text-amber-800", ended: "bg-rose-100 text-rose-800",
@@ -21,12 +22,15 @@ const statusStyle: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const names: Record<string, string> = { active: "进行中", scheduled: "已排程", draft: "草稿", paused: "已暂停", ended: "已结束", sent: "已发送", pending: "待发送", failed: "发送失败" };
+  const { translate: tt } = useI18n();
+  const names: Record<string, string> = { active: tt("进行中", "Active"), scheduled: tt("已排程", "Scheduled"), draft: tt("草稿", "Draft"), paused: tt("已暂停", "Paused"), ended: tt("已结束", "Ended"), sent: tt("已发送", "Sent"), pending: tt("待发送", "Pending"), failed: tt("发送失败", "Failed") };
   return <Badge className={statusStyle[status] ?? "bg-slate-100 text-slate-700"}>{names[status] ?? status}</Badge>;
 }
 
 export default function MarketingCenter() {
   const utils = trpc.useUtils();
+  const { translate: tt, lang } = useI18n();
+  const marketingDate = (value: Date | string | null | undefined) => formatDate(value, lang, tt("未设定", "Not set"));
   const { data: campaigns = [], isLoading: campaignsLoading } = trpc.marketing.listCampaigns.useQuery();
   const { data: templates = [] } = trpc.marketing.listMessageTemplates.useQuery();
   const { data: segments = [] } = trpc.marketing.listSegments.useQuery();
@@ -51,18 +55,18 @@ export default function MarketingCenter() {
       utils.marketing.listAutomationRules.invalidate(), utils.marketing.listMessageDeliveries.invalidate(), utils.marketing.effectSummary.invalidate(), utils.marketing.listLotteryEntries.invalidate(), utils.marketing.listAvailableLotteryPrizes.invalidate(),
     ]);
   };
-  const createCampaign = trpc.marketing.createCampaign.useMutation({ onSuccess: async () => { await refresh(); toast.success("营销活动已建立"); } });
-  const createRule = trpc.marketing.createRule.useMutation({ onSuccess: async () => { await refresh(); toast.success("营销规则已加入活动"); } });
-  const createPrize = trpc.marketing.createLotteryPrize.useMutation({ onSuccess: async () => { await refresh(); toast.success("抽奖奖品已建立"); } });
-  const drawPrize = trpc.marketing.drawLotteryPrize.useMutation({ onSuccess: async (result) => { await refresh(); toast.success(result ? "已完成开奖" : "没有可开奖的资格"); } });
-  const createTemplate = trpc.marketing.createMessageTemplate.useMutation({ onSuccess: async () => { await refresh(); toast.success("消息模板已储存"); } });
-  const createSegment = trpc.marketing.createSegment.useMutation({ onSuccess: async () => { await refresh(); toast.success("客户分群已建立"); } });
-  const createAutomation = trpc.marketing.createAutomationRule.useMutation({ onSuccess: async () => { await refresh(); toast.success("自动营销规则已建立，预设为暂停"); } });
-  const pauseAutomation = trpc.marketing.pauseAutomationRule.useMutation({ onSuccess: async () => { await refresh(); toast.success("自动营销已暂停"); } });
-  const runAutomation = trpc.marketing.runAutomationNow.useMutation({ onSuccess: async (result) => { await refresh(); toast.success(`已执行：${result.sent} 条发送，${result.manualCopy} 条待人工处理`); } });
-  const previewAutomation = trpc.marketing.previewAutomationRun.useMutation({ onSuccess: (result) => toast.info(`预演完成：${result.queued + result.manualCopy} 位客户符合条件，不会发送任何消息`) });
-  const preflightAutomation = trpc.marketing.preflightAutomationRule.useMutation({ onSuccess: (result) => { setPreflightResult(result); toast.success(result.canEnable ? "启用前检查完成" : "预检发现必须修正的问题"); } });
-  const scheduleAutomation = trpc.marketing.scheduleAutomationRule.useMutation({ onSuccess: async () => { await refresh(); toast.success("自动排程已启用；系统会按设定时间在后台执行"); } });
+  const createCampaign = trpc.marketing.createCampaign.useMutation({ onSuccess: async () => { await refresh(); toast.success(tt("营销活动已建立", "Marketing campaign created")); } });
+  const createRule = trpc.marketing.createRule.useMutation({ onSuccess: async () => { await refresh(); toast.success(tt("营销规则已加入活动", "Marketing rule added to campaign")); } });
+  const createPrize = trpc.marketing.createLotteryPrize.useMutation({ onSuccess: async () => { await refresh(); toast.success(tt("抽奖奖品已建立", "Lottery prize created")); } });
+  const drawPrize = trpc.marketing.drawLotteryPrize.useMutation({ onSuccess: async (result) => { await refresh(); toast.success(result ? tt("已完成开奖", "Draw completed") : tt("没有可开奖的资格", "No eligible entries available")); } });
+  const createTemplate = trpc.marketing.createMessageTemplate.useMutation({ onSuccess: async () => { await refresh(); toast.success(tt("消息模板已储存", "Message template saved")); } });
+  const createSegment = trpc.marketing.createSegment.useMutation({ onSuccess: async () => { await refresh(); toast.success(tt("客户分群已建立", "Customer segment created")); } });
+  const createAutomation = trpc.marketing.createAutomationRule.useMutation({ onSuccess: async () => { await refresh(); toast.success(tt("自动营销规则已建立，预设为暂停", "Automation rule created and paused by default")); } });
+  const pauseAutomation = trpc.marketing.pauseAutomationRule.useMutation({ onSuccess: async () => { await refresh(); toast.success(tt("自动营销已暂停", "Automation paused")); } });
+  const runAutomation = trpc.marketing.runAutomationNow.useMutation({ onSuccess: async (result) => { await refresh(); toast.success(tt(`已执行：${result.sent} 条发送，${result.manualCopy} 条待人工处理`, `Run complete: ${result.sent} sent, ${result.manualCopy} require manual handling`)); } });
+  const previewAutomation = trpc.marketing.previewAutomationRun.useMutation({ onSuccess: (result) => toast.info(tt(`预演完成：${result.queued + result.manualCopy} 位客户符合条件，不会发送任何消息`, `Preview complete: ${result.queued + result.manualCopy} eligible customers; no messages were sent`)) });
+  const preflightAutomation = trpc.marketing.preflightAutomationRule.useMutation({ onSuccess: (result) => { setPreflightResult(result); toast.success(result.canEnable ? tt("启用前检查完成", "Preflight check complete") : tt("预检发现必须修正的问题", "Preflight found issues requiring attention")); } });
+  const scheduleAutomation = trpc.marketing.scheduleAutomationRule.useMutation({ onSuccess: async () => { await refresh(); toast.success(tt("自动排程已启用；系统会按设定时间在后台执行", "Automation schedule enabled; it will run in the background at the selected time")); } });
 
   const analytics = useMemo(() => {
     const sent = deliveries.filter((d: any) => d.status === "sent").length;
@@ -79,23 +83,23 @@ export default function MarketingCenter() {
         <div className="relative flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-rose-700"><WandSparkles className="h-5 w-5" /><span className="text-sm font-semibold">Marketing Center</span></div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">营销中心</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">统一管理活动、优惠、抽奖、客户召回与营销消息。所有实体赠品、加价购和奖品会在加入原订单时才通过既有库存服务占用库存。</p>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">{tt("营销中心", "Marketing Center")}</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{tt("统一管理活动、优惠、抽奖、客户召回与营销消息。所有实体赠品、加价购和奖品会在加入原订单时才通过既有库存服务占用库存。", "Manage campaigns, offers, prize draws, customer re-engagement, and marketing messages in one place. Physical gifts, add-on purchases, and prizes reserve stock only when added to the original order through the existing inventory service.")}</p>
           </div>
           <div className="flex flex-wrap gap-2"><MarketingGuideDialog /><CampaignDialog onSubmit={(input) => createCampaign.mutate(input)} loading={createCampaign.isPending} /></div>
         </div>
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon={Megaphone} label="进行中活动" value={analytics.active} hint={`${campaigns.length} 个活动记录`} tone="rose" />
-        <MetricCard icon={Target} label="启用规则" value={analytics.activeRules} hint="优惠与资格规则" tone="amber" />
-        <MetricCard icon={Send} label="成功投递" value={analytics.sent} hint={analytics.failed ? `${analytics.failed} 条失败待检查` : "没有失败投递"} tone="emerald" />
-        <MetricCard icon={Users} label="客户分群" value={segments.filter((s: any) => s.isActive).length} hint={`${automations.filter((r: any) => r.status === "active").length} 条自动规则启用`} tone="violet" />
+        <MetricCard icon={Megaphone} label={tt("进行中活动", "Active campaigns")} value={analytics.active} hint={tt(`${campaigns.length} 个活动记录`, `${campaigns.length} campaign records`)} tone="rose" />
+        <MetricCard icon={Target} label={tt("启用规则", "Enabled rules")} value={analytics.activeRules} hint={tt("优惠与资格规则", "Offer and eligibility rules")} tone="amber" />
+        <MetricCard icon={Send} label={tt("成功投递", "Successful deliveries")} value={analytics.sent} hint={analytics.failed ? tt(`${analytics.failed} 条失败待检查`, `${analytics.failed} failed deliveries require review`) : tt("没有失败投递", "No failed deliveries")} tone="emerald" />
+        <MetricCard icon={Users} label={tt("客户分群", "Customer segments")} value={segments.filter((s: any) => s.isActive).length} hint={tt(`${automations.filter((r: any) => r.status === "active").length} 条自动规则启用`, `${automations.filter((r: any) => r.status === "active").length} automation rules enabled`)} tone="violet" />
       </section>
 
       <Tabs defaultValue="campaigns" className="space-y-5">
         <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-2xl bg-slate-100 p-1">
-          <TabsTrigger value="campaigns">营销活动</TabsTrigger><TabsTrigger value="lottery">幸运抽奖</TabsTrigger><TabsTrigger value="automation">自动营销</TabsTrigger><TabsTrigger value="analysis">效果分析</TabsTrigger>
+          <TabsTrigger value="campaigns">{tt("营销活动", "Campaigns")}</TabsTrigger><TabsTrigger value="lottery">{tt("幸运抽奖", "Lucky Draw")}</TabsTrigger><TabsTrigger value="automation">{tt("自动营销", "Automation")}</TabsTrigger><TabsTrigger value="analysis">{tt("效果分析", "Analytics")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="campaigns" className="space-y-5">
@@ -158,7 +162,8 @@ function EmptyCard({ text }: { text: string }) { return <Card><CardContent class
 function ComposerCard({ title, description, children }: { title: string; description: string; button: string; children: React.ReactNode }) { return <Card><CardHeader><CardTitle className="text-base">{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent>{children}</CardContent></Card>; }
 
 function MarketingGuideDialog() {
-  return <Dialog><DialogTrigger asChild><Button variant="outline" className="border-rose-200 bg-white/80 text-rose-700 hover:bg-rose-50"><BookOpen className="mr-2 h-4 w-4" />操作说明</Button></DialogTrigger><DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle className="flex items-center gap-2"><BookOpen className="h-5 w-5 text-rose-600" />营销中心管理员操作说明</DialogTitle><DialogDescription>此入口汇总当前营销中心的实际操作边界；不会替代 Campaign Flow 的独立流程配置说明。</DialogDescription></DialogHeader><div className="space-y-4 text-sm leading-6 text-slate-700"><GuideSection title="一、营销活动与优惠规则" content="先建立活动，再新增优惠规则。优惠只在客户实际下单并符合规则时计算；实体赠品、加价购与抽奖实物只会在写入原订单时占用库存，不会因建立活动或开奖预先扣库存。" /><GuideSection title="二、幸运抽奖" content="选择已建立的活动，建立奖品后再从符合资格的客户记录执行开奖。开奖结果会保留审计；实体奖品仍须领取并加入原订单后才会影响库存。" /><GuideSection title="三、客户分群与营销消息" content="分群只负责筛选受众，不会修改客户资料。消息模板用于 Messenger 或人工复制；自动 Messenger 发送须同时满足客户具备 Messenger 身份及最近 24 小时互动窗口。" /><GuideSection title="四、关键词模拟测试" content="输入模拟留言后，系统使用与直播捉单相同的关键词解析与商品匹配规则，显示已匹配与未匹配词。模拟永远不会公开回复、私聊客户、建立订单、预留库存或改动任何真实记录。" /><GuideSection title="五、自动营销" content="新增规则默认暂停。先使用「启用前检查」核对目标客户数、模板完整性与 Messenger 互动窗口，再设定自动排程或手动执行。窗口外客户不会被自动私聊，系统会保留可审计的人工发送文案。" /><GuideSection title="六、投递审计与效果分析" content="每次成功、失败、待发送或改为人工处理的投递都会保存审计，便于避免与订单通知或 AI 客服重复发送。效果分析只计算真实活动归因订单与投递记录，不使用模拟数据。" /><p className="rounded-xl bg-amber-50 p-3 text-amber-900">操作提示：若测试结果没有匹配商品，请核对直播／帖子商品的关键词是否已建立、留言格式是否正确，以及商品是否仍可销售。关键词匹配本身不代表一定建单，实际捉单仍会经过库存、资格、订单合并和渠道规则检查。</p></div><DialogFooter><Button variant="outline" onClick={() => window.print()}>打印此说明</Button></DialogFooter></DialogContent></Dialog>;
+  const { translate: tt } = useI18n();
+  return <Dialog><DialogTrigger asChild><Button variant="outline" className="border-rose-200 bg-white/80 text-rose-700 hover:bg-rose-50"><BookOpen className="mr-2 h-4 w-4" />{tt("操作说明", "Operating Guide")}</Button></DialogTrigger><DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle className="flex items-center gap-2"><BookOpen className="h-5 w-5 text-rose-600" />{tt("营销中心管理员操作说明", "Marketing Center Administrator Guide")}</DialogTitle><DialogDescription>{tt("此入口汇总当前营销中心的实际操作边界；不会替代 Campaign Flow 的独立流程配置说明。", "This guide summarises the operating boundaries of Marketing Center; it does not replace the separate Campaign Flow configuration guide.")}</DialogDescription></DialogHeader><div className="space-y-4 text-sm leading-6 text-slate-700"><GuideSection title={tt("一、营销活动与优惠规则", "1. Campaigns and offer rules")} content={tt("先建立活动，再新增优惠规则。优惠只在客户实际下单并符合规则时计算；实体赠品、加价购与抽奖实物只会在写入原订单时占用库存，不会因建立活动或开奖预先扣库存。", "Create a campaign first, then add offer rules. Offers apply only when a customer actually orders and meets the rules. Physical gifts, add-on purchases, and draw prizes reserve stock only when written to the order; creating a campaign or drawing a winner does not reserve stock in advance.")} /><GuideSection title={tt("二、幸运抽奖", "2. Lucky draw")} content={tt("选择已建立的活动，建立奖品后再从符合资格的客户记录执行开奖。开奖结果会保留审计；实体奖品仍须领取并加入原订单后才会影响库存。", "Choose an existing campaign, add prizes, then run a draw from eligible customer entries. Results are audited; physical prizes affect stock only after being claimed and added to the original order.")} /><GuideSection title={tt("三、客户分群与营销消息", "3. Customer segments and marketing messages")} content={tt("分群只负责筛选受众，不会修改客户资料。消息模板用于 Messenger 或人工复制；自动 Messenger 发送须同时满足客户具备 Messenger 身份及最近 24 小时互动窗口。", "Segments only select audiences and do not change customer data. Message templates are for Messenger or manual copy. Automated Messenger sending requires both a Messenger identity and a recent 24-hour interaction window.")} /><GuideSection title={tt("四、关键词模拟测试", "4. Keyword simulation")} content={tt("输入模拟留言后，系统使用与直播捉单相同的关键词解析与商品匹配规则，显示已匹配与未匹配词。模拟永远不会公开回复、私聊客户、建立订单、预留库存或改动任何真实记录。", "After entering a simulated comment, the system uses the same keyword parsing and product matching rules as live order capture, showing matched and unmatched terms. Simulation never replies publicly, messages a customer, creates an order, reserves stock, or changes real records.")} /><GuideSection title={tt("五、自动营销", "5. Marketing automation")} content={tt("新增规则默认暂停。先使用「启用前检查」核对目标客户数、模板完整性与 Messenger 互动窗口，再设定自动排程或手动执行。窗口外客户不会被自动私聊，系统会保留可审计的人工发送文案。", "New rules are paused by default. Use Preflight Check to verify target customers, template completeness, and Messenger interaction windows before scheduling or running manually. Customers outside the window are not messaged automatically; the system keeps auditable manual-send copy.")} /><GuideSection title={tt("六、投递审计与效果分析", "6. Delivery audit and performance analysis")} content={tt("每次成功、失败、待发送或改为人工处理的投递都会保存审计，便于避免与订单通知或 AI 客服重复发送。效果分析只计算真实活动归因订单与投递记录，不使用模拟数据。", "Every successful, failed, pending, or manually handled delivery is audited to prevent duplication with order notifications or AI support. Performance analysis uses only real campaign-attributed orders and delivery records, never simulated data.")} /><p className="rounded-xl bg-amber-50 p-3 text-amber-900">{tt("操作提示：若测试结果没有匹配商品，请核对直播／帖子商品的关键词是否已建立、留言格式是否正确，以及商品是否仍可销售。关键词匹配本身不代表一定建单，实际捉单仍会经过库存、资格、订单合并和渠道规则检查。", "Tip: If the test finds no matching product, verify that live or post product keywords exist, the comment format is correct, and the item is still sellable. A keyword match does not guarantee an order; real capture still passes stock, eligibility, order-merging, and channel checks.")}</p></div><DialogFooter><Button variant="outline" onClick={() => window.print()}>{tt("打印此说明", "Print this guide")}</Button></DialogFooter></DialogContent></Dialog>;
 }
 
 function GuideSection({ title, content }: { title: string; content: string }) { return <section className="rounded-xl border border-slate-200 bg-slate-50 p-4"><h3 className="font-semibold text-slate-900">{title}</h3><p className="mt-1">{content}</p></section>; }

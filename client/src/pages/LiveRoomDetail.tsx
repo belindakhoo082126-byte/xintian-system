@@ -75,11 +75,29 @@ const matchResultColors: Record<string, string> = {
 };
 
 export default function LiveRoomDetail(props: any) {
-  const { t } = useI18n();
+  const { t, translate: tt, lang } = useI18n();
   const roomId = props.roomId ?? (props.match?.params?.id ? parseInt(props.match.params.id) : 0);
   const onBack = props.onBack ?? (() => window.history.back());
   const queryClient = trpc.useUtils();
-  const { translate: tt } = useI18n();
+  const roomStatusLabel = (status: string) => ({
+    preparing: tt("准备中", "Preparing"),
+    live: tt("直播中", "Live"),
+    ended: tt("已结束", "Ended"),
+    closed: tt("已截止", "Closed"),
+  }[status] ?? status);
+  const matchResultLabel = (status: string) => ({
+    matched: tt("已捉单", "Order captured"),
+    no_match: tt("未匹配", "No match"),
+    paused: tt("商品暂停", "Product paused"),
+    sold_out: tt("已售完", "Sold out"),
+    preorder: tt("预购", "Pre-order"),
+    duplicate: tt("重复留言", "Duplicate comment"),
+    ignored: tt("已忽略", "Ignored"),
+    ai_replied: tt("AI回复", "AI replied"),
+    order_merged: tt("已合单", "Order merged"),
+  }[status] ?? status);
+  const formatLiveDate = (value: Date | string) =>
+    new Date(value).toLocaleString(lang === "zh" ? "zh-MY" : "en-MY");
 
   // Queries
   const roomQuery = trpc.liveRooms.getById.useQuery({ id: roomId });
@@ -285,9 +303,9 @@ export default function LiveRoomDetail(props: any) {
       );
       queryClient.liveRooms.getById.invalidate({ id: roomId });
       queryClient.liveRooms.list.invalidate();
-      toast.success("直播备忘录已保存");
+      toast.success(tt("直播备忘录已保存", "Live memo saved"));
     },
-    onError: (e: any) => toast.error("备忘录保存失败：" + e.message),
+    onError: (e: any) => toast.error(`${tt("备忘录保存失败", "Failed to save live memo")}: ${e.message}`),
   });
 
   const startLiveMutation = trpc.liveRooms.startLive.useMutation({
@@ -506,7 +524,7 @@ export default function LiveRoomDetail(props: any) {
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={onBack} className="gap-2">
             <ArrowLeft className="h-4 w-4" />
-            返回
+            {tt("返回", "Back")}
           </Button>
           <div>
             <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
@@ -520,7 +538,7 @@ export default function LiveRoomDetail(props: any) {
                 <Badge variant="secondary" className="text-xs">{t("live.localLive")}</Badge>
               )}
               <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${roomStatusColors[room.status] || ""}`}>
-                {roomStatusLabels[room.status] || room.status}
+                {roomStatusLabel(room.status)}
               </span>
               {room.streamerName && (
                 <span className="text-xs text-muted-foreground">{t("live.streamer")} {room.streamerName}</span>
@@ -572,7 +590,7 @@ export default function LiveRoomDetail(props: any) {
                       </CardTitle>
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="sm" className="h-6 gap-1 text-xs" onClick={(e) => { e.stopPropagation(); setVideoClosed(true); }}>
-                          <XCircle className="h-3 w-3" /> 关闭
+                          <XCircle className="h-3 w-3" /> {tt("关闭", "Close")}
                         </Button>
                         <Button variant="ghost" size="sm" className="h-6 text-xs">
                           {videoCollapsed ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
@@ -588,7 +606,7 @@ export default function LiveRoomDetail(props: any) {
                         <AlertCircle className="h-6 w-6 mb-1 text-orange-500" />
                         <p className="text-xs">{t("live.videoLoadFailed")}</p>
                         <Button variant="outline" size="sm" className="mt-1 text-xs gap-1" onClick={() => setVideoError(false)}>
-                          <Video className="h-3 w-3" /> 重试
+                          <Video className="h-3 w-3" /> {tt("重试", "Retry")}
                         </Button>
                       </div>
                     ) : (
@@ -625,19 +643,21 @@ export default function LiveRoomDetail(props: any) {
             <CardContent className="space-y-2 py-2.5">
               <div className="flex items-center gap-2">
                 <StickyNote className="h-4 w-4 shrink-0 text-amber-700" />
-                <span className="text-xs font-semibold text-amber-900">直播备忘录</span>
-                <span className="text-[11px] text-muted-foreground">仅后台可见</span>
+                <span className="text-xs font-semibold text-amber-900">{tt("直播备忘录", "Live memo")}</span>
+                <span className="text-[11px] text-muted-foreground">{tt("仅后台可见", "Visible to staff only")}</span>
               </div>
               <Textarea
                 value={roomNotes}
                 onChange={(event) => setRoomNotes(event.target.value)}
-                placeholder="记录本场规则、补货提醒或交接事项；保存后会立即在此处显示。"
-                aria-label="直播备忘录"
+                placeholder={tt("记录本场规则、补货提醒或交接事项；保存后会立即在此处显示。", "Record rules, restock reminders, or handover notes for this live; saved notes appear here immediately.")}
+                aria-label={tt("直播备忘录", "Live memo")}
                 className="min-h-16 resize-y bg-background text-xs"
               />
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[11px] text-muted-foreground">
-                  {(room.notes || "").trim() ? "已载入最近保存的备忘录" : "尚未保存备忘录"}
+                  {(room.notes || "").trim()
+                    ? tt("已载入最近保存的备忘录", "Most recently saved memo loaded")
+                    : tt("尚未保存备忘录", "No memo has been saved")}
                 </span>
                 <Button
                   type="button"
@@ -646,7 +666,7 @@ export default function LiveRoomDetail(props: any) {
                   disabled={saveRoomNotesMutation.isPending || roomNotes.trim() === (room.notes || "").trim()}
                   onClick={() => saveRoomNotesMutation.mutate({ liveRoomId: roomId, content: roomNotes })}
                 >
-                  {saveRoomNotesMutation.isPending ? "保存中…" : "保存备忘"}
+                  {saveRoomNotesMutation.isPending ? tt("保存中…", "Saving…") : tt("保存备忘", "Save memo")}
                 </Button>
               </div>
             </CardContent>
@@ -1176,8 +1196,8 @@ onClick={() => setOrderViewMode("byCustomer")}>
                   <AvatarFallback className={`text-xs ${selectedComment.isCustomerBlacklisted ? "bg-black text-white" : ""}`}>{(selectedComment.commenterName || "?").charAt(0)}</AvatarFallback>
                 </Avatar>
                 <div>
-                  <p className="text-sm font-medium">{selectedComment.commenterName} {selectedComment.isCustomerBlacklisted && <Badge variant="destructive" className="ml-1 h-5 text-[10px]">黑名单／不可捉单</Badge>}</p>
-                  <p className="text-xs text-muted-foreground">{new Date(selectedComment.createdAt).toLocaleString("zh-CN")}</p>
+                  <p className="text-sm font-medium">{selectedComment.commenterName} {selectedComment.isCustomerBlacklisted && <Badge variant="destructive" className="ml-1 h-5 text-[10px]">{tt("黑名单／不可捉单", "Blacklisted / no order capture")}</Badge>}</p>
+                  <p className="text-xs text-muted-foreground">{formatLiveDate(selectedComment.createdAt)}</p>
                 </div>
               </div>
               <div className="bg-muted/50 rounded p-2 text-sm">{selectedComment.commentMessage}</div>
@@ -1186,7 +1206,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
                 <div><span className="text-muted-foreground">{t("live.quantity")}</span> {selectedComment.parsedQuantity || "-"}</div>
                 <div><span className="text-muted-foreground">{t("live.matchResult")}</span>
                   <span className={`ml-1 inline-flex px-1.5 py-0.5 rounded text-xs ${matchResultColors[selectedComment.matchResult] || ""}`}>
-                    {matchResultLabels[selectedComment.matchResult] || selectedComment.matchResult}
+                    {matchResultLabel(selectedComment.matchResult)}
                   </span>
                 </div>
                 <div><span className="text-muted-foreground">{t("live.product")}</span> {selectedComment.matchedProductName || "-"}</div>
@@ -1207,10 +1227,10 @@ onClick={() => setOrderViewMode("byCustomer")}>
                   <div key={note.id} className="bg-amber-50 dark:bg-amber-900/20 rounded p-2 text-xs">
                     <p>{note.content}</p>
                     <div className="flex items-center justify-between mt-1">
-                      <span className="text-muted-foreground">{note.createdBy || "Admin"} · {new Date(note.createdAt).toLocaleString("zh-CN")}</span>
+                      <span className="text-muted-foreground">{note.createdBy || "Admin"} · {formatLiveDate(note.createdAt)}</span>
                       <Button variant="ghost" size="sm" className="h-5 px-1 text-xs text-destructive"
                         onClick={() => { deleteNoteMutation.mutate({ id: note.id }); }}>
-                        删除
+                        {tt("删除", "Delete")}
                       </Button>
                     </div>
                   </div>
@@ -1251,7 +1271,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
                       });
                     }
                   }}>
-                  添加
+                  {tt("添加", "Add")}
                 </Button>
               </div>
             </div>
@@ -1319,7 +1339,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
 // ============ Sub Components ============
 
 function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePreorder, onAdjustStock, onPriceEdit, onPreview, onDelete, onCopyKeyword }: any) {
-  const { t } = useI18n();
+  const { t, translate: tt } = useI18n();
   const variations = group.variations || [];
   const hasMultiple = variations.length > 1;
   const totalAvailable = variations.reduce((sum: number, v: any) => sum + (v.availableStock || 0), 0);
@@ -1348,9 +1368,9 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
           <button
             type="button"
             className={`${imgSize} group relative rounded-lg overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-primary`}
-            title={imgUrl ? "点击放大商品照片" : "商品暂未上传照片"}
+            title={imgUrl ? tt("点击放大商品照片", "Click to enlarge product photo") : tt("商品暂未上传照片", "No product photo uploaded")}
             disabled={!imgUrl}
-            onClick={() => imgUrl && onPreview(imgUrl, group.productName || variations[0]?.displayName || "商品照片")}
+            onClick={() => imgUrl && onPreview(imgUrl, group.productName || variations[0]?.displayName || tt("商品照片", "Product photo"))}
           >
             {imgUrl ? (
               <img
@@ -1409,7 +1429,7 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
                     <span className="text-xl font-bold">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
                   )}
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">直播价只用于本场新建订单；订单利润按订单商品的成本快照／FIFO成本计算。</p>
+                <p className="mt-1 text-xs text-muted-foreground">{tt("直播价只用于本场新建订单；订单利润按订单商品的成本快照／FIFO成本计算。", "The live price applies only to orders created in this session; order profit uses the item's cost snapshot / FIFO cost.")}</p>
                 <div className="flex items-center gap-3 mt-2 text-base">
                   <span className="text-muted-foreground">{t("live.inStock")}<b className="text-foreground ml-0.5">{onHand}</b></span>
                   <span className="text-muted-foreground">{t("live.called")}<b className="text-orange-600 ml-0.5">{totalReserved}</b></span>

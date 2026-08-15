@@ -1,14 +1,4 @@
 import type { ReactNode } from "react";
-import { Languages } from "lucide-react";
-import { useI18n } from "@/contexts/I18nContext";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 type AdminPageHeaderProps = {
   title: ReactNode;
@@ -20,8 +10,8 @@ type AdminPageHeaderProps = {
 /**
  * Shared header for every back-office content page.
  *
- * Actions and the language selector intentionally live in the same flex group:
- * no fixed positioning, manual top offset or negative margin is needed.
+ * Page actions remain in the normal header flex group. The sole global language
+ * selector is intentionally placed in the Dashboard sidebar above its navigation.
  */
 export function AdminPageHeader({
   title,
@@ -29,8 +19,6 @@ export function AdminPageHeader({
   actions,
   className = "",
 }: AdminPageHeaderProps) {
-  const { lang, setLang } = useI18n();
-
   return (
     <header
       data-admin-page-header
@@ -46,30 +34,6 @@ export function AdminPageHeader({
         className="header-actions flex shrink-0 flex-wrap items-center justify-end gap-3 sm:flex-nowrap"
       >
         {actions}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              data-language-selector
-              className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-3 text-sm font-semibold leading-none text-primary transition-colors hover:bg-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label={lang === "zh" ? "选择语言，目前为中文" : "Select language, currently English"}
-            >
-              <Languages className="h-4 w-4" aria-hidden="true" />
-              <span>{lang === "zh" ? "中文" : "EN"}</span>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={8} className="min-w-36">
-            <DropdownMenuLabel>语言 / Language</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => setLang("zh")} className="cursor-pointer">
-              <span>中文</span>
-              {lang === "zh" && <span className="ml-auto text-primary">✓</span>}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setLang("en")} className="cursor-pointer">
-              <span>English</span>
-              {lang === "en" && <span className="ml-auto text-primary">✓</span>}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
     </header>
   );
