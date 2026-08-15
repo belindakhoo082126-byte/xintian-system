@@ -717,6 +717,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const totalPaid = orderDetail?.payments?.filter((p: any) => p.reviewStatus === 'approved').reduce((sum: number, p: any) => sum + parseFloat(String(p.amount)), 0) || 0;
   const totalAmount = orderDetail ? parseFloat(String(orderDetail.totalAmount)) : 0;
   const remainingAmount = totalAmount - totalPaid;
+  const mergeSourceOrder = (orders || []).find((order: any) => order.id === mergeSourceOrderId) as any;
+  const mergeTargetOrder = mergeTargetId ? mergeCandidates.find((order: any) => order.id === Number(mergeTargetId)) as any : null;
 
   return (
     <div className="space-y-6">
@@ -754,11 +756,31 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               {translate("先在订单列表勾选一张要并入其他订单的来源订单。不同客户也可合并，但两张订单都必须是未付款或保留订单、无付款凭证且未进入包货；目标订单会保留客户、收件资料与配送方式，来源订单会保留为已取消的操作记录。", "First select one source order in the order list. Different customers may merge when both local XT orders are unpaid or on hold, have no payment proof, and have not entered fulfilment. The target keeps its customer, recipient, and shipping details; the source remains as a cancelled audit record.")}
             </div>
-            <div className="rounded-md border bg-muted/30 p-3 text-sm">
-              <p className="text-muted-foreground">{translate("要并入的来源订单", "Source order to merge")}</p>
-              <p className="mt-1 font-mono font-semibold">
-                {((orders || []).find((order: any) => order.id === mergeSourceOrderId) as any)?.orderNumber || "-"} · {((orders || []).find((order: any) => order.id === mergeSourceOrderId) as any)?.customerName || ((orders || []).find((order: any) => order.id === mergeSourceOrderId) as any)?.facebookName || translate("未命名客户", "Unnamed customer")}
-              </p>
+            <div className="grid gap-3 sm:grid-cols-2" data-merge-order-role-summary>
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100" data-merge-source-closes>
+                <Badge variant="outline" className="border-amber-500 bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100">
+                  {translate("来源订单 · 合并后关闭", "Source order · closes after merge")}
+                </Badge>
+                <p className="mt-2 font-mono font-semibold">
+                  {mergeSourceOrder?.orderNumber || "-"} · {mergeSourceOrder?.customerName || mergeSourceOrder?.facebookName || translate("未命名客户", "Unnamed customer")}
+                </p>
+                <p className="mt-1 text-xs opacity-80">{translate("商品及金额会转入右侧保留订单；本单不会删除，会保留合并审计记录。", "Items and amount move to the kept order. This order is not deleted; its merge audit record remains.")}</p>
+              </div>
+              <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-100" data-merge-target-keeps>
+                <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                  {translate("保留订单 · 用于付款与收货", "Kept order · payment & delivery")}
+                </Badge>
+                {mergeTargetOrder ? (
+                  <>
+                    <p className="mt-2 font-mono font-semibold">
+                      {mergeTargetOrder.orderNumber} · {mergeTargetOrder.customerName || mergeTargetOrder.facebookName || translate("未命名客户", "Unnamed customer")}
+                    </p>
+                    <p className="mt-1 text-xs opacity-80">{translate("此订单的客户、收件资料与配送方式会保留，并作为客户最终付款订单。", "This order keeps its customer, recipient, and shipping details and becomes the final payment order.")}</p>
+                  </>
+                ) : (
+                  <p className="mt-2 text-muted-foreground">{translate("请从下方选择要保留的目标订单。", "Select the target order to keep below.")}</p>
+                )}
+              </div>
             </div>
             {isLoadingMergeCandidates ? (
               <p className="text-sm text-muted-foreground">{translate("正在查询可合并订单…", "Finding eligible orders…")}</p>
@@ -779,6 +801,17 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                 </Select>
               </div>
             )}
+            {mergeSourceOrder && mergeTargetOrder && (
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm" data-merge-final-summary>
+                <p className="font-semibold">{translate("请确认合并结果", "Confirm the merge result")}</p>
+                <p className="mt-1 text-muted-foreground">
+                  {translate(
+                    `「${mergeSourceOrder.orderNumber}」会并入并关闭；「${mergeTargetOrder.orderNumber}」会保留，继续作为付款与收货订单。`,
+                    `“${mergeSourceOrder.orderNumber}” will merge in and close; “${mergeTargetOrder.orderNumber}” will remain as the payment and delivery order.`,
+                  )}
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMergeDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
@@ -786,7 +819,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               onClick={() => mergeSourceOrderId !== null && mergeOrderMutation.mutate({ sourceOrderId: mergeSourceOrderId, targetOrderId: Number(mergeTargetId) })}
               disabled={!mergeSourceOrderId || !mergeTargetId || mergeOrderMutation.isPending}
             >
-              <GitMerge className="mr-2 h-4 w-4" />{translate("确认合并", "Confirm Merge")}
+              <GitMerge className="mr-2 h-4 w-4" />{translate("确认合并并保留目标订单", "Confirm Merge & Keep Target")}
             </Button>
           </DialogFooter>
         </DialogContent>
