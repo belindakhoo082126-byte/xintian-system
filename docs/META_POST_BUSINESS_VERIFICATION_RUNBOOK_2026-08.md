@@ -11,6 +11,18 @@
 
 目前 Meta 企业验证已显示“审核中”，平台提示约需两个工作日。系统已具备已验证的 Webhook 回调、Page 订阅基础、访问令牌、App Secret 签名校验、公开隐私政策／条款／资料删除页，以及私聊 AI 的待审核草稿、订单变更请求和付款凭据人工审核边界。
 
+### 已完成的生产链接核验（2026-08-15）
+
+以下页面已从未登录的生产域名直接取得内容，适合填入 Meta App 的公开政策字段；不需要系统账号或后台登录。
+
+| Meta 字段 | 已核验的生产链接 | 用途 |
+|---|---|---|
+| Privacy Policy URL | `https://www.xintian.com.my/privacy-policy` | 说明客户资料的收集、用途、保留与联系渠道 |
+| Terms of Service URL | `https://www.xintian.com.my/terms-of-service` | 说明商城与服务条款 |
+| User Data Deletion URL | `https://www.xintian.com.my/data-deletion` | 提供 Facebook／Messenger 用户资料删除申请流程 |
+
+现有 Messenger Webhook 保持为 `https://xintianfb-mkjyuzze.manus.space/api/facebook/webhook`。服务器会验证 Meta 的 Webhook 验证握手，并以 `X-Hub-Signature-256` 对入站事件验签；App Secret、Page access token 与 Verify Token 不会出现在本手册、前端代码或审核录屏中。
+
 企业验证通过并不是功能已自动上线。它只是使 App 可以提交 Advanced Access 审核的前置条件；每个权限仍须获得 Meta 批准，并要在真实 Page 上完成受控事件验收。[1]
 
 | 工作流 | 当前申请范围 | 正式启用前的必要条件 |
@@ -46,6 +58,19 @@
 7. 附上简短录屏或按 Meta 当前界面要求提供可登录的测试路径。录屏必须展示“客户发讯息 → 系统记录 → 管理员审核”的完整闭环；不要展示 App Secret、Page Token、验证码、完整企业文件或真实客户付款资料。
 8. 提交前由业务负责人确认：说明中没有承诺 AI 自动确认订单、自动更改订单或自动确认付款。
 9. 由业务负责人在 Meta 页面提交。提交是对外申报动作，必须由负责人自行点击最终提交按钮。
+
+### D. 业务负责人提交前的最后核对
+
+| 核对项目 | 应有状态 |
+|---|---|
+| 企业验证 | ECOLAND NURSERY 显示已验证；若仍显示审核中，则等待结果而不重复提交 |
+| 审核权限 | 仅有 `pages_messaging`，不加入公开留言、广告、Instagram、WhatsApp 或 Human Agent 权限 |
+| 审核说明 | 使用本手册第 B 节的实际私聊用途说明，明确所有订单、变更和凭据均须人工审核 |
+| 测试资料 | Enabelle Khoo 与 XinTian Garden 的测试路径可重现，使用测试商品、测试地址及测试凭据 |
+| 公开链接 | 填入本节“已完成的生产链接核验”中三条 `www.xintian.com.my` HTTPS 链接 |
+| 审核录屏 | 仅展示客户主动私信、草稿／变更／凭据审核闭环，不展示任何密钥、令牌、验证码或真实客户资料 |
+
+> 最终提交、权限申请、App 模式切换及任何会向 Meta 发出请求的按钮，均由业务负责人在 Meta Developers 后台确认后亲自执行。本项目此次核验**没有**新增、变更或提交任何 Meta 权限。
 
 ### C. `pages_messaging` 获批后的受控真实演练
 
