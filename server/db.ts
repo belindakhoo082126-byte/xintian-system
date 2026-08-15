@@ -7569,25 +7569,28 @@ export async function splitUnpaidPhysicalOrder(input: { orderId: number; items: 
 }
 
 /**
- * Lists other genuinely unpaid local XT orders for the same customer.  These
- * are the only orders that an administrator may select as a manual merge
- * target.  XTC is deliberately excluded because its merge rules depend on a
- * live-window context rather than the local-order flow.
+ * Lists other genuinely unpaid local XT orders that an administrator may
+ * select as a manual merge target.  The target may belong to another customer:
+ * this supports joint payment and delivery arrangements such as siblings
+ * placing separate orders. XTC remains excluded because its merge rules depend
+ * on a live-window context rather than the local-order flow.
  */
 export async function getManualOrderMergeCandidates(sourceOrderId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const [source] = await db.select({ id: orders.id, customerId: orders.customerId })
+  const [source] = await db.select({ id: orders.id })
     .from(orders).where(eq(orders.id, sourceOrderId)).limit(1);
   if (!source) throw new Error("订单不存在");
 
   return unwrapMySqlRows<any>(await db.execute(sql`
-    SELECT o.id, o.orderNumber, o.physicalStatus, o.totalAmount, o.shippingMethod,
+    SELECT o.id, o.orderNumber, o.customerId,
+           COALESCE(NULLIF(c.displayName, ''), NULLIF(c.name, ''), NULLIF(c.facebookName, ''), NULLIF(o.facebookName, ''), CONCAT('Customer #', o.customerId)) AS customerName,
+           o.physicalStatus, o.totalAmount, o.shippingMethod,
            o.shippingAddress, o.createdAt
     FROM orders o
-    WHERE o.customerId = ${source.customerId}
-      AND o.id <> ${sourceOrderId}
+    LEFT JOIN customers c ON c.id = o.customerId
+    WHERE o.id <> ${sourceOrderId}
       AND o.orderCategory = 'local'
       AND o.orderType = 'physical'
       AND o.physicalStatus IN ('pending', 'hold_order')
@@ -7609,10 +7612,11 @@ export async function getManualOrderMergeCandidates(sourceOrderId: number) {
 }
 
 /**
- * Combines one pending local XT order into another.  Inventory stays reserved
+ * Combines one pending local XT order into another. Inventory stays reserved
  * exactly once because existing order-item snapshots are moved rather than
- * recreated.  The target order retains its delivery details; the source is
- * kept as a zero-value cancelled audit record instead of being deleted.
+ * recreated. The target remains the final payer and recipient even when the
+ * source belongs to a different customer; the source is kept as a zero-value
+ * cancelled audit record instead of being deleted.
  */
 export async function mergeUnpaidLocalOrders(input: { sourceOrderId: number; targetOrderId: number; operator: string }) {
   const db = await getDb();
@@ -7640,7 +7644,6 @@ export async function mergeUnpaidLocalOrders(input: { sourceOrderId: number; tar
 
   await validate(source, "原订单");
   await validate(target, "目标订单");
-  if (source!.customerId !== target!.customerId) throw new Error("仅可合并同一客户的订单");
   const sourceItems = await db.select({ id: orderItems.id, productName: orderItems.productName, quantity: orderItems.quantity })
     .from(orderItems).where(eq(orderItems.orderId, input.sourceOrderId));
   if (sourceItems.length === 0) throw new Error("原订单没有可合并的商品");
@@ -7659,8 +7662,8 @@ export async function mergeUnpaidLocalOrders(input: { sourceOrderId: number; tar
 
   await recalculateOrderTotals(input.targetOrderId);
   const itemSummary = sourceItems.map((item) => ({ orderItemId: item.id, productName: item.productName, quantity: item.quantity }));
-  await logOrderOperation(input.sourceOrderId, "manual_order_merge", `订单已合并至 ${target!.orderNumber}`, JSON.stringify({ targetOrderId: input.targetOrderId, targetOrderNumber: target!.orderNumber, items: itemSummary }), input.operator);
-  await logOrderOperation(input.targetOrderId, "manual_order_merge", `已合并订单 ${source!.orderNumber}`, JSON.stringify({ sourceOrderId: input.sourceOrderId, sourceOrderNumber: source!.orderNumber, items: itemSummary }), input.operator);
+  await logOrderOperation(input.sourceOrderId, "manual_order_merge", `订单已合并至 ${target!.orderNumber}`, JSON.stringify({ targetOrderId: input.targetOrderId, targetOrderNumber: target!.orderNumber, sourceCustomerId: source!.customerId, targetCustomerId: target!.customerId, items: itemSummary }), input.operator);
+  await logOrderOperation(input.targetOrderId, "manual_order_merge", `已合并订单 ${source!.orderNumber}`, JSON.stringify({ sourceOrderId: input.sourceOrderId, sourceOrderNumber: source!.orderNumber, sourceCustomerId: source!.customerId, targetCustomerId: target!.customerId, items: itemSummary }), input.operator);
   return { sourceOrderId: input.sourceOrderId, sourceOrderNumber: source!.orderNumber, targetOrderId: input.targetOrderId, targetOrderNumber: target!.orderNumber, movedItemCount: sourceItems.length };
 }
 

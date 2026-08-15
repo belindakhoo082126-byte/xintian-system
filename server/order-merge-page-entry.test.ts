@@ -19,10 +19,12 @@ describe("订单管理页面级合并订单入口", () => {
     expect(ordersPage).toContain("utils.orders.invalidate()");
   });
 
-  it("将来源订单、资格说明和目标订单选择均呈现在页面级对话框中", () => {
+  it("将来源订单、不同客户合并资格与目标订单客户资料均呈现在页面级对话框中", () => {
     expect(ordersPage).toContain("data-page-merge-dialog");
     expect(ordersPage).toContain('translate("要并入的来源订单", "Source order to merge")');
     expect(ordersPage).toContain('translate("合并至订单", "Merge into order")');
     expect(ordersPage).toContain("mergeCandidates.map");
+    expect(ordersPage).toContain("不同客户也可合并");
+    expect(ordersPage).toContain("candidate.customerName");
   });
 });

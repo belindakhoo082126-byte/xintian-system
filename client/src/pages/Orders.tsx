@@ -752,18 +752,18 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           </DialogHeader>
           <div className="space-y-4">
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              {translate("先在订单列表勾选一张要并入其他订单的来源订单。只可合并同一客户、未付款、无付款凭证且未进入包货的本地 XT 订单；目标订单会保留收件资料与配送方式，来源订单会保留为已取消的操作记录。", "First select one source order in the order list. Only same-customer, unpaid local XT orders with no payment proof and no fulfilment may be merged. The target keeps its recipient and shipping details; the source remains as a cancelled audit record.")}
+              {translate("先在订单列表勾选一张要并入其他订单的来源订单。不同客户也可合并，但两张订单都必须是未付款或保留订单、无付款凭证且未进入包货；目标订单会保留客户、收件资料与配送方式，来源订单会保留为已取消的操作记录。", "First select one source order in the order list. Different customers may merge when both local XT orders are unpaid or on hold, have no payment proof, and have not entered fulfilment. The target keeps its customer, recipient, and shipping details; the source remains as a cancelled audit record.")}
             </div>
             <div className="rounded-md border bg-muted/30 p-3 text-sm">
               <p className="text-muted-foreground">{translate("要并入的来源订单", "Source order to merge")}</p>
               <p className="mt-1 font-mono font-semibold">
-                {((orders || []).find((order: any) => order.id === mergeSourceOrderId) as any)?.orderNumber || "-"}
+                {((orders || []).find((order: any) => order.id === mergeSourceOrderId) as any)?.orderNumber || "-"} · {((orders || []).find((order: any) => order.id === mergeSourceOrderId) as any)?.customerName || ((orders || []).find((order: any) => order.id === mergeSourceOrderId) as any)?.facebookName || translate("未命名客户", "Unnamed customer")}
               </p>
             </div>
             {isLoadingMergeCandidates ? (
               <p className="text-sm text-muted-foreground">{translate("正在查询可合并订单…", "Finding eligible orders…")}</p>
             ) : mergeCandidates.length === 0 ? (
-              <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{translate("没有符合条件的同客户未付款本地订单。", "No eligible unpaid local order was found for this customer.")}</p>
+              <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{translate("没有符合条件的未付款或保留本地订单。", "No eligible unpaid or hold local order was found.")}</p>
             ) : (
               <div className="space-y-2">
                 <Label>{translate("合并至订单", "Merge into order")}</Label>
@@ -772,7 +772,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                   <SelectContent>
                     {mergeCandidates.map((candidate: any) => (
                       <SelectItem key={candidate.id} value={String(candidate.id)}>
-                        {candidate.orderNumber} · RM {Number(candidate.totalAmount || 0).toFixed(2)} · {candidate.physicalStatus === "hold_order" ? translate("保留订单", "Hold order") : translate("未汇款", "Unpaid")}
+                        {candidate.orderNumber} · {candidate.customerName || candidate.facebookName || translate("未命名客户", "Unnamed customer")} · RM {Number(candidate.totalAmount || 0).toFixed(2)} · {candidate.physicalStatus === "hold_order" ? translate("保留订单", "Hold order") : translate("未汇款", "Unpaid")}
                       </SelectItem>
                     ))}
                   </SelectContent>

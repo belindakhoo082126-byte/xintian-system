@@ -46,22 +46,26 @@ describe("未付款订单拆单", () => {
     expect(detailSource).toContain("拆分数量");
   });
 
-  it("后台订单详情恢复受限的拆单与合单入口，且复用同客户未付款本地订单边界", () => {
+  it("后台订单详情保留受限的拆单与合单入口，并清楚说明不同客户未付款本地订单可合并", () => {
     expect(browseSource).toContain("拆分订单");
     expect(browseSource).toContain("合并订单");
     expect(browseSource).toContain("trpc.orders.split.useMutation");
     expect(browseSource).toContain("trpc.orders.merge.useMutation");
     expect(browseSource).toContain("trpc.orders.mergeCandidates.useQuery");
     expect(browseSource).toContain("only unpaid local physical orders can be split");
-    expect(browseSource).toContain("同一客户、未付款、无付款凭证");
+    expect(browseSource).toContain("不同客户也可合并");
+    expect(browseSource).toContain("未付款或保留订单");
   });
 
-  it("手动合单只移动既有库存保留的订单项目，保留来源审计且拒绝跨客户、XTC或付款订单", () => {
+  it("手动合单允许不同客户的未付款本地订单，仍保留来源审计并拒绝XTC、付款或履约订单", () => {
     expect(dbSource).toContain("export async function getManualOrderMergeCandidates");
     expect(dbSource).toContain("export async function mergeUnpaidLocalOrders");
     expect(dbSource).toContain("AND o.orderCategory = 'local'");
     expect(dbSource).toContain("AND o.orderType = 'physical'");
-    expect(dbSource).toContain("仅可合并同一客户的订单");
+    expect(dbSource).toContain("LEFT JOIN customers c ON c.id = o.customerId");
+    expect(dbSource).not.toContain("AND o.customerId = ${source.customerId}");
+    expect(dbSource).not.toContain("仅可合并同一客户的订单");
+    expect(dbSource).toContain("sourceCustomerId: source!.customerId");
     expect(dbSource).toContain("tx.update(orderItems).set({ orderId: input.targetOrderId })");
     expect(dbSource).toContain("await recalculateOrderTotals(input.targetOrderId)");
     expect(dbSource).toContain('"manual_order_merge"');

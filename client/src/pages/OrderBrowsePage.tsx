@@ -1142,10 +1142,10 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           </DialogHeader>
           <div className="space-y-4">
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              {translate("只可合并同一客户、未付款、无付款凭证且未进入包货的本地 XT 订单。合并后会保留所选目标订单的收件资料与配送方式，目前订单会保留为已取消的操作记录。", "Only same-customer, unpaid local XT orders with no payment proof and no fulfilment may be merged. The selected target keeps its recipient and shipping details; this order remains as a cancelled audit record.")}
+              {translate("不同客户也可合并，但两张订单都必须是未付款或保留订单、无付款凭证且未进入包货的本地 XT 订单。合并后会保留所选目标订单的客户、收件资料与配送方式，目前订单会保留为已取消的操作记录。", "Different customers may merge when both local XT orders are unpaid or on hold, have no payment proof, and have not entered fulfilment. The selected target keeps its customer, recipient, and shipping details; this order remains as a cancelled audit record.")}
             </div>
             {isLoadingMergeCandidates ? <p className="text-sm text-muted-foreground">{translate("正在查询可合并订单…", "Finding eligible orders…")}</p> : mergeCandidates.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{translate("没有符合条件的同客户未付款本地订单。", "No eligible unpaid local order was found for this customer.")}</p>
+              <p className="text-sm text-muted-foreground">{translate("没有符合条件的未付款或保留本地订单。", "No eligible unpaid or hold local order was found.")}</p>
             ) : (
               <div className="space-y-2">
                 <Label>{translate("合并至订单", "Merge into order")}</Label>
@@ -1153,7 +1153,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
                   <SelectTrigger><SelectValue placeholder={translate("请选择保留的目标订单", "Select the order to keep")} /></SelectTrigger>
                   <SelectContent>
                     {mergeCandidates.map((candidate: any) => <SelectItem key={candidate.id} value={String(candidate.id)}>
-                      {candidate.orderNumber} · RM {Number(candidate.totalAmount || 0).toFixed(2)} · {candidate.physicalStatus === "hold_order" ? translate("保留订单", "Hold order") : translate("未汇款", "Unpaid")}
+                      {candidate.orderNumber} · {candidate.customerName || candidate.facebookName || translate("未命名客户", "Unnamed customer")} · RM {Number(candidate.totalAmount || 0).toFixed(2)} · {candidate.physicalStatus === "hold_order" ? translate("保留订单", "Hold order") : translate("未汇款", "Unpaid")}
                     </SelectItem>)}
                   </SelectContent>
                 </Select>
