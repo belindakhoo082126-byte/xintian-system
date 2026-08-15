@@ -75,6 +75,7 @@ export default function PackingDetail() {
   const [customerAction, setCustomerAction] = useState<"replace_product" | "wait_restock" | "refund" | "pending">("pending");
   const [refundMethod, setRefundMethod] = useState<"credit" | "tng" | "cash">("credit");
   const [customerRefundDetails, setCustomerRefundDetails] = useState("");
+  const [customerRefundQrUrl, setCustomerRefundQrUrl] = useState("");
   const [refundAttachmentUrls, setRefundAttachmentUrls] = useState<string[]>([]);
   const [refundInternalNotes, setRefundInternalNotes] = useState("");
   const [uploadingRefundAttachment, setUploadingRefundAttachment] = useState(false);
@@ -255,6 +256,7 @@ export default function PackingDetail() {
       setCustomerAction("pending");
       setRefundMethod("credit");
       setCustomerRefundDetails("");
+      setCustomerRefundQrUrl("");
       setRefundAttachmentUrls([]);
       setRefundInternalNotes("");
       setProductSearchQuery("");
@@ -269,7 +271,7 @@ export default function PackingDetail() {
 
   const { data: exceptions } = trpc.orderException.list.useQuery({ orderId }, { enabled: !!detail });
 
-  async function uploadRefundAttachment(file: File) {
+  async function uploadRefundAttachment(file: File, target: "attachment" | "customer_qr" = "attachment") {
     if (file.size > 10 * 1024 * 1024) {
       toast.error(translate("文件不能超过 10MB", "File must not exceed 10MB"));
       return;
@@ -289,8 +291,9 @@ export default function PackingDetail() {
       });
       const payload = await response.json();
       if (!response.ok || !payload.url) throw new Error(payload.error || "Upload failed");
-      setRefundAttachmentUrls((urls) => [...urls, payload.url]);
-      toast.success(translate("客户退款资料附件已上传", "Customer refund attachment uploaded"));
+      if (target === "customer_qr") setCustomerRefundQrUrl(payload.url);
+      else setRefundAttachmentUrls((urls) => [...urls, payload.url]);
+      toast.success(translate(target === "customer_qr" ? "客户退款收款二维码已上传" : "客户问题附件已上传", target === "customer_qr" ? "Customer refund QR uploaded" : "Customer issue attachment uploaded"));
     } catch (error: any) {
       toast.error(error?.message || translate("上传失败", "Upload failed"));
     } finally {
@@ -1130,7 +1133,15 @@ export default function PackingDetail() {
                         <Textarea value={customerRefundDetails} onChange={(event) => setCustomerRefundDetails(event.target.value)} placeholder={translate("QR收款人、姓名、电话号码／DuitNow号码，或银行名称、户口姓名与号码", "QR recipient, name, phone/DuitNow number, or bank, account holder and account number")} />
                       </div>
                       <div className="space-y-2">
-                        <Label>{translate("客户QR／问题照片／聊天截图", "Customer QR / issue photo / chat screenshot")}</Label>
+                        <Label>{translate("客户退款收款二维码／QR图片", "Customer refund QR image")}</Label>
+                        <div className="flex items-center gap-2">
+                          <Input type="file" accept="image/*" disabled={uploadingRefundAttachment} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadRefundAttachment(file, "customer_qr"); }} />
+                          <FileUp className="h-4 w-4 shrink-0 text-violet-700" />
+                        </div>
+                        {customerRefundQrUrl && <a href={customerRefundQrUrl} target="_blank" rel="noreferrer" className="block truncate text-xs text-primary hover:underline">{translate("预览客户收款二维码", "Preview customer refund QR")}</a>}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{translate("客户问题照片／聊天截图", "Customer issue photo / chat screenshot")}</Label>
                         <div className="flex items-center gap-2">
                           <Input type="file" accept="image/*,.pdf" disabled={uploadingRefundAttachment} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadRefundAttachment(file); }} />
                           <FileUp className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -1205,6 +1216,7 @@ export default function PackingDetail() {
                                 replacementUnitPrice: customerAction === "replace_product" ? replacementUnitPrice : undefined,
                                 refundMethod: customerAction === "refund" ? refundMethod : undefined,
                                 customerRefundDetails: customerAction === "refund" ? customerRefundDetails.trim() || undefined : undefined,
+                                customerRefundQrUrl: customerAction === "refund" ? customerRefundQrUrl || undefined : undefined,
                                 attachmentUrls: customerAction === "refund" && refundAttachmentUrls.length ? JSON.stringify(refundAttachmentUrls) : undefined,
                                 internalNotes: customerAction === "refund" ? refundInternalNotes.trim() || undefined : undefined,
                                 scrapItems: exceptionType === "quality_issue" && exceptionItemId ? (d.items as any[])

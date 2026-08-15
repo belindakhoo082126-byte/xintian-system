@@ -2619,7 +2619,8 @@ export async function getRefundOrderDetail(orderId: number) {
 
 export async function createRefundRequest(data: {
   orderId: number; requestedAmount: number; refundMethod: string; refundReason?: string; issueDescription?: string;
-  customerRefundDetails?: string; attachmentUrls?: string; internalNotes?: string; requestedBy: string; items: RefundItemInput[];
+  refundReasonCode?: string; refundSource?: 'manual' | 'packing'; customerRefundDetails?: string; customerRefundQrUrl?: string;
+  attachmentUrls?: string; internalNotes?: string; requestedBy: string; items: RefundItemInput[];
   // 仅包货异常可在发货前建立正式“未处理”退款；后台手动退款仍限制已发货／已完成订单。
   sourceExceptionId?: number;
 }) {
@@ -2646,7 +2647,8 @@ export async function createRefundRequest(data: {
     const inserted = await tx.insert(orderRefunds).values({
       orderId: data.orderId, refundNumber, status: 'pending', requestedAmount: data.requestedAmount.toFixed(2), amount: '0', refundMethod: data.refundMethod,
       sourceExceptionId: data.sourceExceptionId || null,
-      refundReason: data.refundReason || null, issueDescription: data.issueDescription || null, customerRefundDetails: data.customerRefundDetails || null,
+      refundReason: data.refundReason || null, refundReasonCode: data.refundReasonCode || null, refundSource: data.refundSource || 'manual',
+      issueDescription: data.issueDescription || null, customerRefundDetails: data.customerRefundDetails || null, customerRefundQrUrl: data.customerRefundQrUrl || null,
       attachmentUrls: data.attachmentUrls || null, internalNotes: data.internalNotes || null, requestedBy: data.requestedBy,
     });
     const id = Number((inserted as any)[0]?.insertId);
@@ -2676,6 +2678,7 @@ export async function createPackingExceptionRefund(data: {
   refundAmount?: number;
   refundMethod?: 'credit' | 'tng' | 'cash';
   customerRefundDetails?: string;
+  customerRefundQrUrl?: string;
   attachmentUrls?: string;
   internalNotes?: string;
 }) {
@@ -2704,9 +2707,12 @@ export async function createPackingExceptionRefund(data: {
     orderId: exception.orderId,
     requestedAmount,
     refundMethod: data.refundMethod === 'tng' ? 'tng_qr' : (data.refundMethod || 'credit'),
-    refundReason: `包货异常：${exception.exceptionType}`,
+    refundReason: `包货异常：${({ out_of_stock: '商品缺货', quality_issue: '商品瑕疵', overcharged_shipping: '运费多收', delivery_delay: '配送延迟', cancelled_item: '商品取消', other: '其他异常' } as Record<string, string>)[exception.exceptionType] || '其他异常'}`,
+    refundReasonCode: exception.exceptionType,
+    refundSource: 'packing',
     issueDescription: exception.description || undefined,
     customerRefundDetails: data.customerRefundDetails,
+    customerRefundQrUrl: data.customerRefundQrUrl,
     attachmentUrls: data.attachmentUrls,
     internalNotes: [`来源：包货异常 #${exception.id}`, data.internalNotes].filter(Boolean).join('\n'),
     requestedBy: data.requestedBy,
@@ -10010,6 +10016,7 @@ export async function resolveOrderException(
     // V2.1.26补充6: orderId for quantity sync and credit refund
     orderId?: number;
     customerRefundDetails?: string;
+    customerRefundQrUrl?: string;
     attachmentUrls?: string;
     internalNotes?: string;
   },
@@ -10056,6 +10063,7 @@ export async function resolveOrderException(
       refundAmount: options?.refundAmount,
       refundMethod: options?.refundMethod,
       customerRefundDetails: options?.customerRefundDetails,
+      customerRefundQrUrl: options?.customerRefundQrUrl,
       attachmentUrls: options?.attachmentUrls,
       internalNotes: options?.internalNotes,
     });

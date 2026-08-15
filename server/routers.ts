@@ -1546,8 +1546,10 @@ export const appRouter = router({
         requestedAmount: z.number().positive(),
         refundMethod: z.enum(['credit', 'tng_qr', 'duitnow_qr', 'bank_transfer', 'cash', 'other']),
         refundReason: z.string().trim().max(255).optional(),
+        refundReasonCode: z.enum(['out_of_stock', 'quality_issue', 'wrong_or_missing_item', 'shipping_damage', 'overcharged_shipping', 'delivery_delay', 'cancelled_item', 'other']).optional(),
         issueDescription: z.string().trim().max(5000).optional(),
         customerRefundDetails: z.string().trim().max(5000).optional(),
+        customerRefundQrUrl: z.string().trim().max(500).optional(),
         attachmentUrls: z.string().max(10000).optional(),
         internalNotes: z.string().trim().max(5000).optional(),
         items: z.array(z.object({
@@ -5006,6 +5008,7 @@ export const appRouter = router({
       replacementUnitPrice: z.number().optional(),
       refundMethod: z.enum(["credit", "tng", "cash"]).optional(),
       customerRefundDetails: z.string().max(5000).optional(),
+      customerRefundQrUrl: z.string().max(500).optional(),
       attachmentUrls: z.string().max(10000).optional(),
       internalNotes: z.string().max(5000).optional(),
     })).mutation(async ({ input, ctx }) => {
@@ -5028,6 +5031,7 @@ export const appRouter = router({
           quantity: input.quantity,
           orderId: input.orderId,
           customerRefundDetails: input.customerRefundDetails,
+          customerRefundQrUrl: input.customerRefundQrUrl,
           attachmentUrls: input.attachmentUrls,
           internalNotes: input.internalNotes,
         },

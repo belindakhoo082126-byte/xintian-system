@@ -2593,8 +2593,14 @@ export const orderRefunds = mysqlTable("order_refunds", {
   refundDate: timestamp("refundDate"),
   receiptUrl: varchar("receiptUrl", { length: 500 }),
   refundReason: varchar("refundReason", { length: 255 }),
+  // 统一、可筛选的退款原因代码；不再从自由备注推断业务原因。
+  refundReasonCode: varchar("refundReasonCode", { length: 50 }),
+  // manual = 退款管理手动建立；packing = 包货工作台异常建立。
+  refundSource: varchar("refundSource", { length: 20 }).default("manual").notNull(),
   issueDescription: text("issueDescription"),
   customerRefundDetails: text("customerRefundDetails"), // JSON: QR / TNG / bank recipient data
+  // 客户提供的收款二维码，与问题照片／聊天截图附件分开保存。
+  customerRefundQrUrl: varchar("customerRefundQrUrl", { length: 500 }),
   attachmentUrls: text("attachmentUrls"), // JSON: customer issue photos / chat screenshots
   internalNotes: text("internalNotes"),
   notes: text("notes"),

@@ -169,22 +169,38 @@ describe("包货异常退款桥接", () => {
     expect(exceptionRefund).not.toContain("customerCreditLedger");
   });
 
-  it("包货与退款管理均保留客户退款资料、QR附件及关联退款状态，并提供可操作入口", () => {
+  it("客户收款二维码独立于问题附件保存，并以结构化原因和来源贯通手动与包货退款", () => {
     const exceptionList = sourceBlock(
       "export async function getOrderExceptions",
       "export async function createOrderException",
+    );
+    const exceptionRefund = sourceBlock(
+      "export async function createPackingExceptionRefund",
+      "const refundProofRequired",
     );
 
     expect(exceptionList).toContain("linkedRefund");
     expect(exceptionList).toContain("customerRefundDetails");
     expect(exceptionList).toContain("attachmentUrls");
+    expect(schemaSource).toContain('customerRefundQrUrl: varchar("customerRefundQrUrl"');
+    expect(schemaSource).toContain('refundReasonCode: varchar("refundReasonCode"');
+    expect(schemaSource).toContain('refundSource: varchar("refundSource"');
+    expect(exceptionRefund).toContain("refundReasonCode: exception.exceptionType");
+    expect(exceptionRefund).toContain("refundSource: 'packing'");
+    expect(dbSource).toContain("refundSource: data.refundSource || 'manual'");
+    expect(routerSource).toContain("refundReasonCode: z.enum");
+    expect(routerSource).toContain("customerRefundQrUrl: z.string()");
     expect(packingPageSource).toContain("uploadRefundAttachment");
     expect(packingPageSource).toContain("customerRefundDetails");
+    expect(packingPageSource).toContain("customerRefundQrUrl");
     expect(packingPageSource).toContain("refundAttachmentUrls");
     expect(packingPageSource).toContain("关联退款");
     expect(packingPageSource).toContain('href="/admin/refunds"');
     expect(refundPageSource).toContain("parseAttachmentUrls");
     expect(refundPageSource).toContain("copyRefundDetails");
-    expect(refundPageSource).toContain("客户QR／问题附件");
+    expect(refundPageSource).toContain("客户退款收款二维码／QR 图片");
+    expect(refundPageSource).toContain("客户问题照片／聊天截图");
+    expect(refundPageSource).toContain("REFUND_REASON_META");
+    expect(refundPageSource).toContain("包货工作台");
   });
 });
