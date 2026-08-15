@@ -483,6 +483,11 @@ export default function MallHome() {
               {translate("购物条款与政策", "Shopping terms & policies")}
             </button>
           )}
+          <nav aria-label={translate("公开政策", "Public policies")} className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs font-medium">
+            <Link href="/privacy-policy" className="underline-offset-4 hover:underline">{translate("隐私政策", "Privacy policy")}</Link>
+            <Link href="/terms-of-service" className="underline-offset-4 hover:underline">{translate("服务条款", "Terms of service")}</Link>
+            <Link href="/data-deletion" className="underline-offset-4 hover:underline">{translate("用户资料删除", "Data deletion")}</Link>
+          </nav>
           <p>© {new Date().getFullYear()} {settings?.shopName || "心田 Xintian"}. All rights reserved.</p>
         </div>
       </footer>

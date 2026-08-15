@@ -66,6 +66,7 @@ import OrderBrowsePage from "@/pages/OrderBrowsePage";
 import OrderEditPage from "@/pages/OrderEditPage";
 import MarketingCenter from "@/pages/MarketingCenter";
 import RefundManagement from "@/pages/RefundManagement";
+import PublicPolicy from "@/pages/PublicPolicy";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -171,6 +172,9 @@ function App() {
             <Route path={"/mall/bundle/:id"} component={MallBundleDetail} />
             <Route path={"/mall/product/:id"} component={MallProductDetail} />
             <Route path={"/mall"} component={MallHome} />
+            <Route path={"/privacy-policy"} component={() => <PublicPolicy kind="privacy" />} />
+            <Route path={"/terms-of-service"} component={() => <PublicPolicy kind="terms" />} />
+            <Route path={"/data-deletion"} component={() => <PublicPolicy kind="dataDeletion" />} />
             <Route path={"/order-tracking"} component={CustomerOrderTracking} />
             <Route path={"/order/:orderNumber/:token"} component={({ params }: any) => <CustomerOrderPage orderNumber={params.orderNumber} token={params.token} />} />
             <Route>
