@@ -46,7 +46,7 @@ describe("订单管理页面级合并订单入口", () => {
     expect(dbSource).toContain("原订单已使用客户 Credit，请选择带入保留订单或退回来源客户余额");
   });
 
-  it("将已取消订单排除在候选名单之外，并由合并事务再次拒绝", () => {
+  it("只允许待付款或保留订单合并，已取消、待发货与已完成状态均由候选查询和事务再次拒绝", () => {
     expect(dbSource).toContain("AND o.physicalStatus IN ('pending', 'hold_order')");
     expect(dbSource).toContain('!["pending", "hold_order"].includes(order.physicalStatus || "")');
     expect(dbSource).toContain("${label}不是可合并的未付款订单");
