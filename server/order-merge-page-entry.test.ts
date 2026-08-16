@@ -46,6 +46,12 @@ describe("订单管理页面级合并订单入口", () => {
     expect(dbSource).toContain("原订单已使用客户 Credit，请选择带入保留订单或退回来源客户余额");
   });
 
+  it("将已取消订单排除在候选名单之外，并由合并事务再次拒绝", () => {
+    expect(dbSource).toContain("AND o.physicalStatus IN ('pending', 'hold_order')");
+    expect(dbSource).toContain('!["pending", "hold_order"].includes(order.physicalStatus || "")');
+    expect(dbSource).toContain("${label}不是可合并的未付款订单");
+  });
+
   it("在两个合并入口均明确让员工选择带入 Credit 或退回来源客户余额", () => {
     expect(ordersPage).toContain("data-merge-credit-disposition");
     expect(ordersPage).toContain('value="carry_forward"');
