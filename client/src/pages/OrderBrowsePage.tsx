@@ -1188,11 +1188,11 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
       </Dialog>
 
       <Dialog open={mergeOpen} onOpenChange={(open) => { setMergeOpen(open); if (!open) { setMergeTargetId(""); setMergeCreditDisposition("carry_forward"); } }}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-xl flex-col gap-0 overflow-hidden p-0 sm:max-h-[calc(100vh-4rem)] sm:w-full" data-order-detail-merge-dialog>
+          <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 sm:border-0 sm:px-6 sm:pb-0">
             <DialogTitle>{translate("合并订单", "Merge Order")}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               {translate("不同客户也可合并，但两张订单都必须是未付款或保留订单、无付款凭证且未进入包货的本地 XT 订单。合并后会保留所选目标订单的客户、收件资料与配送方式，目前订单会保留为已取消的操作记录。", "Different customers may merge when both local XT orders are unpaid or on hold, have no payment proof, and have not entered fulfilment. The selected target keeps its customer, recipient, and shipping details; this order remains as a cancelled audit record.")}
             </div>
@@ -1227,7 +1227,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
               </div>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-background px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:border-0 sm:px-6 sm:pb-6">
             <Button variant="outline" onClick={() => setMergeOpen(false)}>{translate("取消", "Cancel")}</Button>
             <Button onClick={() => mergeOrderMutation.mutate({ sourceOrderId: orderId, targetOrderId: Number(mergeTargetId), creditDisposition: mergeCreditDisposition })} disabled={!mergeTargetId || mergeOrderMutation.isPending}>
               <GitMerge className="h-4 w-4 mr-2" />{translate("确认合并", "Confirm Merge")}

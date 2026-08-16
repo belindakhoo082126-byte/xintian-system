@@ -753,11 +753,11 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
           setMergeCreditDisposition("carry_forward");
         }
       }}>
-        <DialogContent className="max-w-xl" data-page-merge-dialog>
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-xl flex-col gap-0 overflow-hidden p-0 sm:max-h-[calc(100vh-4rem)] sm:w-full" data-page-merge-dialog>
+          <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 sm:border-0 sm:px-6 sm:pb-0">
             <DialogTitle>{translate("合并订单", "Merge Orders")}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               {translate("先在订单列表勾选一张要并入其他订单的来源订单。不同客户也可合并，但两张订单都必须是未付款或保留订单、无付款凭证且未进入包货；目标订单会保留客户、收件资料与配送方式，来源订单会保留为已取消的操作记录。", "First select one source order in the order list. Different customers may merge when both local XT orders are unpaid or on hold, have no payment proof, and have not entered fulfilment. The target keeps its customer, recipient, and shipping details; the source remains as a cancelled audit record.")}
             </div>
@@ -833,7 +833,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               </div>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-background px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:border-0 sm:px-6 sm:pb-6">
             <Button variant="outline" onClick={() => setMergeDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
             <Button
               onClick={() => mergeSourceOrderId !== null && mergeOrderMutation.mutate({ sourceOrderId: mergeSourceOrderId, targetOrderId: Number(mergeTargetId), creditDisposition: mergeCreditDisposition })}

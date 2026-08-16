@@ -54,6 +54,16 @@ describe("订单管理页面级合并订单入口", () => {
     expect(orderBrowsePage).toContain("creditDisposition: mergeCreditDisposition");
   });
 
+  it("让两个合并对话框在手机上保留固定操作栏，并只让中间内容区滚动", () => {
+    for (const source of [ordersPage, orderBrowsePage]) {
+      expect(source).toContain("max-h-[calc(100dvh-1rem)]");
+      expect(source).toContain("w-[calc(100vw-1rem)]");
+      expect(source).toContain("min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain");
+      expect(source).toContain("shrink-0 border-t bg-background");
+      expect(source).toContain("pb-[max(1rem,env(safe-area-inset-bottom))]");
+    }
+  });
+
   it("在合并时清除来源订单 Credit、只带入可抵扣部分并记录两种金额结果", () => {
     expect(dbSource).toContain('creditUsed: "0.00"');
     expect(dbSource).toContain("creditCarriedForward = Math.min(sourceCreditUsed");
