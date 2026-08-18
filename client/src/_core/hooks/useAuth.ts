@@ -18,7 +18,9 @@ export function useAuth(options?: UseAuthOptions) {
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
     retry: false,
-    refetchOnWindowFocus: false,
+    // Multi-device sync: refetch auth state on window focus so
+    // login/logout on another device is reflected immediately
+    refetchOnWindowFocus: true,
   });
 
   const logoutMutation = trpc.auth.logout.useMutation({

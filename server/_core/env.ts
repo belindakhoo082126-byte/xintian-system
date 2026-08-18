@@ -7,4 +7,17 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+
+  // 以下为保留的基线集成配置。正式版当前不配置任何实际值，服务层会维持禁用状态。
+  parceldailyMerchantId: process.env.PARCELDAILY_MERCHANT_ID ?? "",
+  parceldailyToken: process.env.PARCELDAILY_TOKEN ?? "",
+  parceldailyEnv: (process.env.PARCELDAILY_ENV as "production" | "sandbox") ?? "production",
+  parcelkingApiKey: process.env.PARCELKING_API_KEY ?? "",
+  parcelkingEnv: (process.env.PARCELKING_ENV as "test" | "live") ?? "test",
+  fbAppId: process.env.FB_APP_ID ?? "",
+  fbAppSecret: process.env.FB_APP_SECRET ?? "",
+  fbPageId: process.env.FB_PAGE_ID ?? "",
+  fbPageAccessToken: process.env.FB_PAGE_ACCESS_TOKEN ?? "",
+  fbVerifyToken: process.env.FB_VERIFY_TOKEN ?? "",
+  aiLogRetentionDays: parseInt(process.env.AI_LOG_RETENTION_DAYS ?? "90", 10),
 };

@@ -1,0 +1,510 @@
+import { useState, useEffect, useMemo } from "react";
+import { Link, useLocation } from "wouter";
+import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Search, ShoppingCart, MessageCircle, MapPin, Package, Boxes, Facebook, Navigation, X, Star, TrendingDown, Sparkles, Megaphone, Heart } from "lucide-react";
+import { MallLangToggle } from "@/components/MallLangToggle";
+import { getMallTheme } from "@/lib/mallTheme";
+import { MallThemeDecorations } from "@/components/MallThemeArtwork";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useI18n } from "@/contexts/I18nContext";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
+
+function translateMallNotice(notice: string, translate: (zh: string, en: string) => string) {
+  const normalized = notice.replace(/\s+/g, "").toLowerCase();
+  if (normalized.includes("免费换盆")) {
+    return translate("免费换盆服务：购买植物并同单加购花盆，结账时可选择免费换盆。", "Free repotting: buy plants and pots in the same order, then select complimentary repotting at checkout.");
+  }
+  if (normalized.includes("rm150") || normalized.includes("150免邮")) {
+    return translate("西马消费满 RM150 首 10kg 免邮，续重 RM3/kg；不含特价商品及会员费用。", "Spend RM150 for free delivery on the first 10kg; RM3/kg thereafter. Special-price items and membership fees are excluded.");
+  }
+  if (normalized.includes("7天") || normalized.includes("保留")) {
+    return translate("本地订单可保留 7 天，逾期系统将自动取消。", "Local orders are reserved for 7 days and will be cancelled automatically after expiry.");
+  }
+  return notice;
+}
+
+export default function MallHome() {
+  const [search, setSearch] = useState("");
+  const [location, setLocation] = useLocation();
+  const { translate, lang } = useI18n();
+  const searchParams = new URLSearchParams(location.split("?")[1] || "");
+  const categoryId = searchParams.get("categoryId") ? parseInt(searchParams.get("categoryId")!) : undefined;
+  const searchQuery = searchParams.get("q") || search;
+  const browseContextParams = new URLSearchParams();
+  if (categoryId && categoryId > 0) browseContextParams.set("categoryId", String(categoryId));
+  if (searchQuery.trim()) browseContextParams.set("q", searchQuery.trim());
+  const browseContextQuery = browseContextParams.toString();
+  const productDetailHref = (id: number) => `/mall/product/${id}${browseContextQuery ? `?${browseContextQuery}` : ""}`;
+
+  const { data: settings } = trpc.mall.settings.useQuery();
+  const { data: banners } = trpc.mall.banners.useQuery({ type: "home_16x9" });
+  const { data: notices } = trpc.mall.notices.useQuery();
+  const { data: quickContacts } = trpc.mall.quickContacts.useQuery();
+  const { data: categories } = trpc.mall.categories.useQuery();
+  const { data: products, isLoading: isProductsLoading } = trpc.mall.products.useQuery({ categoryId, search: searchQuery || undefined });
+  const { data: bundles } = trpc.productBundles.mallList.useQuery();
+
+  // Theme colours and visual language from settings
+  const theme = useMemo(() => {
+    return getMallTheme(settings?.activeTheme, settings?.customThemeColors);
+  }, [settings?.activeTheme, settings?.customThemeColors]);
+
+  // V2.0.93: Use state + event listener so cart count updates in real time when items are added
+  const [cart, setCart] = useState<any[]>([]);
+  useEffect(() => {
+    const loadCart = () => {
+      try { setCart(JSON.parse(localStorage.getItem("mall_cart") || "[]")); } catch { setCart([]); }
+    };
+    loadCart();
+    window.addEventListener("cart-updated", loadCart);
+    return () => window.removeEventListener("cart-updated", loadCart);
+  }, []);
+
+  const cartCount = cart.reduce((sum: number, i: any) => sum + i.quantity, 0);
+  const [addOnOrder, setAddOnOrder] = useState<any>(null);
+  const [showAddOnBanner, setShowAddOnBanner] = useState(false);
+  const [isPoliciesOpen, setIsPoliciesOpen] = useState(false);
+  const policySections = [
+    { title: translate("配送说明", "Shipping information"), content: settings?.shippingPolicy },
+    { title: translate("退款条例", "Refund policy"), content: settings?.refundPolicy },
+    { title: translate("服务条款", "Terms of service"), content: settings?.serviceTerms },
+  ].filter((section) => Boolean(section.content?.trim()));
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("xintian_mall_add_on_order");
+      if (saved) {
+        setAddOnOrder(JSON.parse(saved));
+        setShowAddOnBanner(true);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // Category click handler - use setLocation for proper navigation
+  function handleCategoryClick(id?: number) {
+    const nextParams = new URLSearchParams();
+    if (id) nextParams.set("categoryId", String(id));
+    if (searchQuery.trim()) nextParams.set("q", searchQuery.trim());
+    setLocation(`/mall${nextParams.size ? `?${nextParams.toString()}` : ""}`);
+  }
+
+  function handleSearch() {
+    const nextParams = new URLSearchParams();
+    if (categoryId) nextParams.set("categoryId", String(categoryId));
+    if (search.trim()) nextParams.set("q", search.trim());
+    setLocation(`/mall${nextParams.size ? `?${nextParams.toString()}` : ""}`);
+  }
+
+  return (
+    <div className="relative min-h-screen overflow-x-hidden" style={{ backgroundColor: theme.background, backgroundImage: theme.visual.pattern, color: theme.font }}>
+      <style>{`
+        .mall-theme-primary { color: ${theme.primary}; }
+        .mall-theme-bg-primary { background-color: ${theme.primary}; }
+        .mall-theme-bg-button { background-color: ${theme.button}; }
+        .mall-theme-border-primary { border-color: ${theme.primary}; }
+        .mall-theme-text-font { color: ${theme.font}; }
+        .mall-card-hover { transition: transform 260ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 260ms cubic-bezier(0.23, 1, 0.32, 1); will-change: transform; }
+        .mall-card-hover:hover { box-shadow: 0 18px 36px rgba(36, 68, 44, 0.18); transform: translateY(-6px) scale(1.018); }
+        .mall-card-hover:focus-within { box-shadow: 0 18px 36px rgba(36, 68, 44, 0.18); transform: translateY(-4px) scale(1.012); }
+        .mall-img-zoom { transition: transform 420ms cubic-bezier(0.23, 1, 0.32, 1); }
+        .mall-card-hover:hover .mall-img-zoom { transform: scale(1.075); }
+        @media (prefers-reduced-motion: reduce) { .mall-card-hover, .mall-img-zoom { transition: none; } .mall-card-hover:hover, .mall-card-hover:focus-within { transform: none; } }
+        .mall-theme-card { border: 1px solid ${theme.secondary}9c; box-shadow: 0 10px 28px ${theme.primary}14; }
+        .mall-theme-edge { position: relative; }
+        .mall-theme-edge::before { content: ""; position: absolute; z-index: 2; left: 0; right: 0; top: 0; height: 4px; background: ${theme.visual.edge}; }
+      `}</style>
+      <MallThemeDecorations theme={theme} />
+      <div className="relative z-10">
+
+      {/* Header */}
+      <header className="sticky top-0 z-50 border-b shadow-sm" style={{ backgroundColor: `${theme.background}f2`, borderColor: `${theme.secondary}8c`, backdropFilter: "blur(12px)" }}>
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-2 px-3 py-3 sm:flex-nowrap sm:gap-4 sm:px-4">
+          <Link href="/mall" className="flex min-w-0 items-center gap-2 shrink-0">
+            {settings?.logoUrl ? (
+              <img src={settings.logoUrl} alt={settings.shopName} className="h-10 w-10 rounded-lg object-contain" />
+            ) : (
+              <img src={import.meta.env.VITE_APP_LOGO || ""} alt={settings?.shopName || "心田"} className="h-10 w-10 rounded-lg object-contain" />
+            )}
+            <span className="max-w-[11rem] truncate font-bold text-base mall-theme-primary sm:max-w-none sm:text-lg">{settings?.shopName || "心田 Xintian"}</span>
+          </Link>
+          <div className="order-3 w-full basis-full sm:order-none sm:flex-1 sm:basis-auto sm:max-w-md sm:mx-auto">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={translate("搜索植物...", "Search plants...")}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
+                className="pl-10 rounded-full"
+                style={{ borderColor: theme.secondary }}
+              />
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" className="shrink-0 px-2 text-xs" onClick={() => setIsPoliciesOpen(true)}>
+            {translate("购物条款与政策", "Policies")}
+          </Button>
+          <Link href="/mall/checkout" className="shrink-0">
+            <Button id="mall-cart-anchor" variant="ghost" className="relative" size="icon">
+              <ShoppingCart className="h-5 w-5" style={{ color: theme.primary }} />
+              {cartCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs" style={{ backgroundColor: theme.button }}>{cartCount}</Badge>}
+            </Button>
+          </Link>
+          <Link href="/mall/favorites" className="shrink-0">
+            <Button variant="ghost" size="icon" aria-label={translate("我的收藏", "My favorites")}><Heart className="h-5 w-5" style={{ color: theme.primary }} /></Button>
+          </Link>
+          {addOnOrder ? (
+            <a href={`/order/${addOnOrder.orderNumber}/${addOnOrder.token}`} className="shrink-0">
+              <Button variant="ghost" size="sm" className="mall-theme-primary">{translate("返回原订单", "Back to original order")}</Button>
+            </a>
+          ) : null}
+          <MallLangToggle />
+        </div>
+        {/* Category bar */}
+        {categories && categories.length > 0 && (
+          <div className="border-t" style={{ borderColor: theme.secondary + "40" }}>
+            <div className="max-w-6xl mx-auto px-4 py-2 flex gap-2 overflow-x-auto">
+              <button
+                onClick={() => handleCategoryClick(undefined)}
+                className="px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all"
+                style={categoryId ? { color: theme.font } : { backgroundColor: theme.primary, color: "#fff" }}
+              >
+                {translate("全部", "All")}
+              </button>
+              {categories.map((c: any) => (
+                <button
+                  key={c.id}
+                  onClick={() => handleCategoryClick(c.id)}
+                  className="px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all"
+                  style={categoryId === c.id ? { backgroundColor: theme.primary, color: "#fff" } : { color: theme.font, backgroundColor: theme.secondary + "20" }}
+                >
+                  {translate(c.nameZh, c.nameEn || c.nameZh)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* Notices */}
+      {notices && notices.length > 0 && (
+        <section className="relative z-10 border-y" style={{ backgroundColor: `${theme.secondary}1c`, borderColor: `${theme.secondary}74` }} aria-label={translate("商城公告", "Store announcements")}>
+          <div className="max-w-6xl mx-auto px-4 py-2">
+            <div className="flex items-start gap-2.5 rounded-xl border bg-white/80 px-3 py-2 shadow-sm backdrop-blur-sm sm:px-4" style={{ borderColor: `${theme.secondary}92`, boxShadow: `0 8px 22px ${theme.primary}0d` }}>
+              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white" style={{ background: theme.visual.edge }}><Megaphone className="h-3.5 w-3.5" /></div>
+              <div className="min-w-0 flex-1">
+                <p className="mb-0.5 text-[11px] font-bold tracking-[0.14em]" style={{ color: theme.primary }}>{translate("商城公告", "Store announcements")}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {notices.map((n: any, index: number) => (
+                    <span key={n.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs leading-4" style={{ backgroundColor: `${theme.background}cc`, borderColor: `${theme.secondary}8a`, color: theme.font }}>
+                      <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ backgroundColor: theme.primary }}>{index + 1}</span>
+                      <span className="break-words">{lang === "en" && n.announcementEn?.trim() ? n.announcementEn : translateMallNotice(n.announcement, translate)}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Banners */}
+      {banners && banners.length > 0 && (
+        <div className="max-w-6xl mx-auto px-4 pt-4">
+          <div className="grid grid-cols-1 gap-3">
+            {banners.slice(0, 1).map((b: any) => (
+              <Link key={b.id} href={b.linkUrl || "#"} className="block">
+                <img src={b.imageUrl} alt="banner" className="w-full rounded-2xl object-cover aspect-[16/9] shadow-md" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Bundles Section */}
+      {bundles && bundles.length > 0 && !searchQuery && !categoryId && (
+        <main className="max-w-6xl mx-auto px-4 py-6">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="h-7 w-1.5 rounded-full" style={{ backgroundColor: theme.primary }} />
+            <Sparkles className="h-5 w-5" style={{ color: theme.primary }} />
+            <h2 className="text-xl font-bold" style={{ color: theme.font }}>{translate("组合优惠", "Bundle offers")}</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {bundles.map((b: any) => (
+              <Card
+                key={b.id}
+                role="link"
+                tabIndex={0}
+                onClick={() => setLocation(`/mall/bundle/${b.id}`)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setLocation(`/mall/bundle/${b.id}`);
+                  }
+                }}
+                className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                style={{ borderRadius: "16px" }}
+              >
+                  <div className="aspect-square overflow-hidden bg-gray-50 relative">
+                    {b.coverImage ? (
+                      <>
+                        <ProductImagePreview
+                          src={b.coverImage}
+                          alt={b.name}
+                          label={translate("放大查看组合包封面", "Zoom bundle cover")}
+                          className="h-full w-full rounded-none border-0 bg-transparent"
+                          imageClassName="mall-img-zoom"
+                        />
+                      </>
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-300"><Boxes className="h-12 w-12" /></div>
+                    )}
+                    <div className="absolute top-2 left-2">
+                      <Badge className="shadow-sm" style={{ backgroundColor: theme.primary, color: "#fff" }}>{translate("组合包", "Bundle")}</Badge>
+                    </div>
+                    {b.bundleStock <= 0 && (
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <Badge variant="destructive" className="text-base px-4 py-1">{translate("售罄", "Sold out")}</Badge>
+                      </div>
+                    )}
+                  </div>
+                  <CardContent className="p-3">
+                    <p className="text-sm font-medium line-clamp-2 mb-1" style={{ color: theme.font }}>{b.name}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {b.specialPrice && parseFloat(b.specialPrice) > 0 ? (
+                        <>
+                          <span className="text-lg font-bold" style={{ color: theme.button }}>RM {b.specialPrice}</span>
+                          <span className="text-xs text-muted-foreground line-through">RM {b.sellingPrice}</span>
+                        </>
+                      ) : (
+                        <span className="text-lg font-bold" style={{ color: theme.primary }}>RM {b.sellingPrice}</span>
+                      )}
+                      {b.originalTotalPrice && parseFloat(b.originalTotalPrice) > parseFloat(b.sellingPrice) && (
+                        <span className="text-xs text-muted-foreground line-through">RM {b.originalTotalPrice}</span>
+                      )}
+                    </div>
+                    {b.items && b.items.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                        {translate("包含", "Includes")}: {b.items.map((i: any) => i.productName).join('、')}
+                      </p>
+                    )}
+                    <div className="mt-3 flex items-center justify-center rounded-lg px-2 py-2 text-xs font-bold text-white transition-transform group-hover:scale-[1.02]" style={{ backgroundColor: theme.button }}>
+                      {translate("查看组合详情", "View bundle details")}
+                    </div>
+                  </CardContent>
+              </Card>
+            ))}
+          </div>
+        </main>
+      )}
+
+      {/* Products Grid */}
+      <main className="max-w-6xl mx-auto px-4 py-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="h-7 w-1.5 rounded-full" style={{ backgroundColor: theme.primary }} />
+            <h2 className="text-xl font-bold" style={{ color: theme.font }}>
+              {searchQuery ? `${translate("搜索", "Search")}: "${searchQuery}"` : categoryId ? translate("分类商品", "Category products") : translate("全部商品", "All products")}
+            </h2>
+          </div>
+          <span className="text-sm text-muted-foreground">{isProductsLoading ? translate("商品加载中…", "Loading products…") : translate("{count} 件商品", "{count} products", { count: products?.length ?? 0 })}</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+          {isProductsLoading && Array.from({ length: 4 }).map((_, index) => (
+            <Card key={`product-skeleton-${index}`} className="mall-theme-card overflow-hidden bg-white/90" style={{ borderRadius: "16px" }}>
+              <div className="aspect-square animate-pulse bg-gray-100" />
+              <CardContent className="space-y-2 p-3">
+                <div className="h-4 w-3/4 animate-pulse rounded bg-gray-100" />
+                <div className="h-5 w-1/2 animate-pulse rounded bg-gray-100" />
+              </CardContent>
+            </Card>
+          ))}
+          {!isProductsLoading && products?.map((p: any) => (
+              <Card
+                key={p.id}
+                role="link"
+                tabIndex={0}
+                onClick={() => setLocation(productDetailHref(p.id))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setLocation(productDetailHref(p.id));
+                  }
+                }}
+                className="mall-theme-card mall-theme-edge overflow-hidden mall-card-hover cursor-pointer group bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                style={{ borderRadius: "16px" }}
+              >
+                <div className="aspect-square overflow-hidden bg-gray-50 relative">
+                  {p.coverImageUrl ? (
+                    <>
+                      <ProductImagePreview
+                        src={p.coverImageUrl}
+                        alt={p.name}
+                        label={translate("放大查看商品照片", "Zoom product photo")}
+                        className="h-full w-full rounded-none border-0 bg-transparent"
+                        imageClassName="mall-img-zoom"
+                      />
+                    </>
+                  ) : p.images ? (
+                    <>
+                      <ProductImagePreview
+                        src={p.images}
+                        alt={p.name}
+                        label={translate("放大查看商品照片", "Zoom product photo")}
+                        className="h-full w-full rounded-none border-0 bg-transparent"
+                        imageClassName="mall-img-zoom"
+                      />
+                    </>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-300"><Package className="h-12 w-12" /></div>
+                  )}
+                  {p.isFeatured && (
+                    <div className="absolute top-2 left-2">
+                      <Badge className="shadow-sm flex items-center gap-0.5" style={{ backgroundColor: theme.primary, color: "#fff" }}>
+                        <Star className="h-3 w-3" /> {translate("推荐", "Featured")}
+                      </Badge>
+                    </div>
+                  )}
+                  {p.isSpecial && (
+                    <div className="absolute top-2 right-2">
+                      <Badge className="shadow-sm flex items-center gap-0.5" style={{ backgroundColor: "#ea580c", color: "#fff" }}>
+                        <TrendingDown className="h-3 w-3" /> {translate("特价", "Special")}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+                <CardContent className="p-3">
+                  <p className="text-sm font-medium line-clamp-2 mb-1" style={{ color: theme.font }}>{p.name}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {p.isSpecial && p.specialPrice && parseFloat(p.specialPrice) > 0 ? (
+                      <>
+                        <span className="text-lg font-bold" style={{ color: "#ea580c" }}>RM {p.specialPrice}</span>
+                        <span className="text-xs text-muted-foreground line-through">RM {p.sellingPrice}</span>
+                      </>
+                    ) : (
+                      <span className="text-lg font-bold" style={{ color: theme.primary }}>RM {p.sellingPrice}</span>
+                    )}
+                    {p.compareAtPrice && parseFloat(p.compareAtPrice) > 0 && !p.isSpecial && (
+                      <span className="text-xs text-muted-foreground line-through">RM {p.compareAtPrice}</span>
+                    )}
+                  </div>
+                  {(p.shortDescEn || p.shortDescZh) && (
+                    <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{translate(p.shortDescZh || p.shortDescEn, p.shortDescEn || p.shortDescZh)}</p>
+                  )}
+                  <div className="mt-3 flex items-center justify-center rounded-lg px-2 py-2 text-xs font-bold text-white transition-transform group-hover:scale-[1.02]" style={{ backgroundColor: theme.button }}>
+                    {translate("查看商品详情", "View product details")}
+                  </div>
+                </CardContent>
+              </Card>
+          ))}
+        </div>
+        {!isProductsLoading && products?.length === 0 && (
+          <div className="text-center py-20 text-muted-foreground">
+            <Package className="h-16 w-16 mx-auto mb-4 opacity-30" />
+            <p className="text-lg">{translate("暂无商品", "No products available")}</p>
+          </div>
+        )}
+      </main>
+
+      {/* Add-on Order Banner */}
+      {showAddOnBanner && addOnOrder && (
+        <div className="sticky top-0 z-[60] text-white" style={{ backgroundColor: theme.primary }}>
+          <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm">
+              <Package className="h-4 w-4 shrink-0" />
+              <span>{translate("正在为订单 {orderNumber} 加单 — 选购完成后前往结算", "Adding to order {orderNumber} — proceed to checkout when you are ready", { orderNumber: addOnOrder.orderNumber })}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {cartCount > 0 && (
+                <Link href="/mall/checkout">
+                  <Button size="sm" variant="secondary" className="bg-white" style={{ color: theme.primary }}>{translate("去结算", "Checkout")} ({cartCount})</Button>
+                </Link>
+              )}
+              <button
+                onClick={() => { setShowAddOnBanner(false); }}
+                className="text-white/80 hover:text-white p-1"
+                title={translate("隐藏提示", "Hide notice")}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Contact Floating Buttons */}
+      {quickContacts && quickContacts.length > 0 && (
+        <div className="fixed bottom-5 right-4 z-50 flex flex-col gap-2.5">
+          {quickContacts.map((c: any) => {
+            const iconMap: Record<string, { Icon: any; bg: string; label: string }> = {
+              whatsapp: { Icon: MessageCircle, bg: "bg-[#25D366] hover:bg-[#1da851]", label: "WhatsApp" },
+              messenger: { Icon: MessageCircle, bg: "bg-[#0084FF] hover:bg-[#0066cc]", label: "FB 私聊" },
+              facebook_page: { Icon: Facebook, bg: "bg-[#1877F2] hover:bg-[#0d5fb8]", label: "FB Page" },
+              waze: { Icon: Navigation, bg: "bg-[#33CCFF] hover:bg-[#1ab5e6]", label: "Waze" },
+              google_map: { Icon: MapPin, bg: "bg-[#EA4335] hover:bg-[#c53224]", label: "Location" },
+            };
+            const cfg = iconMap[c.type] || { Icon: MessageCircle, bg: "bg-gray-600 hover:bg-gray-700", label: c.name };
+            const { Icon } = cfg;
+            return (
+              <a
+                key={c.id}
+                href={c.linkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`group flex items-center gap-2 ${cfg.bg} text-white shadow-lg rounded-full pl-3 pr-3 py-2.5 transition-all hover:scale-105 hover:shadow-xl`}
+                title={c.name}
+              >
+                <Icon className="h-5 w-5 shrink-0" />
+                <span className="text-xs font-medium whitespace-nowrap max-w-0 overflow-hidden group-hover:max-w-[100px] transition-all duration-300 opacity-0 group-hover:opacity-100">{cfg.label}</span>
+              </a>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Footer */}
+      <footer className="border-t mt-8" style={{ backgroundColor: "rgba(255,255,255,0.8)", borderColor: theme.secondary + "30" }}>
+        <div className="max-w-6xl mx-auto px-4 py-8 text-center text-sm text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 mb-3">
+            {settings?.logoUrl ? (
+              <img src={settings.logoUrl} alt={settings.shopName} className="h-8 w-8 rounded object-contain" />
+            ) : (
+              <img src={import.meta.env.VITE_APP_LOGO || ""} alt={settings?.shopName || "心田"} className="h-8 w-8 rounded object-contain" />
+            )}
+            <span className="font-bold mall-theme-primary">{settings?.shopName || "心田 Xintian"}</span>
+          </div>
+          <p className="mb-2">{settings?.companyName || "ECOLAND NURSERY"}</p>
+          {settings?.address && <p className="mb-1">{settings.address}</p>}
+          {settings?.phone && <p className="mb-1">📞 {settings.phone}</p>}
+          {policySections.length > 0 && (
+            <button type="button" onClick={() => setIsPoliciesOpen(true)} className="mt-3 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-white/80" style={{ borderColor: `${theme.secondary}b0`, color: theme.primary }}>
+              {translate("购物条款与政策", "Shopping terms & policies")}
+            </button>
+          )}
+          <nav aria-label={translate("公开政策", "Public policies")} className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs font-medium">
+            <Link href="/privacy-policy" className="underline-offset-4 hover:underline">{translate("隐私政策", "Privacy policy")}</Link>
+            <Link href="/terms-of-service" className="underline-offset-4 hover:underline">{translate("服务条款", "Terms of service")}</Link>
+            <Link href="/data-deletion" className="underline-offset-4 hover:underline">{translate("用户资料删除", "Data deletion")}</Link>
+          </nav>
+          <p>© {new Date().getFullYear()} {settings?.shopName || "心田 Xintian"}. All rights reserved.</p>
+        </div>
+      </footer>
+      <Dialog open={isPoliciesOpen} onOpenChange={setIsPoliciesOpen}>
+        <DialogContent className="max-h-[80vh] max-w-lg overflow-y-auto rounded-2xl border-white/80 bg-white/95" style={{ borderColor: `${theme.secondary}b8`, boxShadow: `0 18px 48px ${theme.primary}22` }}>
+          <DialogHeader><DialogTitle style={{ color: theme.font }}>{translate("购物条款与政策", "Shopping terms & policies")}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            {policySections.map((section) => (
+              <section key={section.title} className="rounded-xl border p-4" style={{ backgroundColor: `${theme.background}b8`, borderColor: `${theme.secondary}85` }}>
+                <h3 className="mb-2 text-sm font-bold" style={{ color: theme.primary }}>{section.title}</h3>
+                <p className="whitespace-pre-wrap text-sm leading-6" style={{ color: theme.font }}>{section.content}</p>
+              </section>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+      </div>
+    </div>
+  );
+}

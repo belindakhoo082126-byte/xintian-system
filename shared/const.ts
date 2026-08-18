@@ -35,3 +35,11 @@ export const decodeOAuthState = (state: string): OAuthState => {
   }
   return { redirectUri: decoded };
 };
+
+// V2.0.95: Item source labels for order_items.itemSource
+export const ITEM_SOURCE_LABELS: Record<string, string> = {
+  admin: "🟠 Admin 建单",
+  facebook_live: "🟢 直播下单",
+  mall: "🔵 商城加单",
+  messenger: "🤖 Messenger AI 下单",
+};

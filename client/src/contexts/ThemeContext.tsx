@@ -1,30 +1,36 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 
-type Theme = "light" | "dark";
+/**
+ * XLCS Design System — Admin Theme Types
+ * - "nature" = 🌿 Xintian Nature (default light, sage green / cream)
+ * - "dark"   = 🌙 Dark Mode (deep forest-night)
+ *
+ * The mall has its own independent theme system and does NOT use this context.
+ * All admin/packing/AI/customer-tracking pages share this theme globally.
+ */
+type AdminTheme = "nature" | "dark";
 
 interface ThemeContextType {
-  theme: Theme;
-  toggleTheme?: () => void;
-  switchable: boolean;
+  theme: AdminTheme;
+  setTheme: (theme: AdminTheme) => void;
+  toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-interface ThemeProviderProps {
-  children: React.ReactNode;
-  defaultTheme?: Theme;
-  switchable?: boolean;
-}
+const STORAGE_KEY = "xlcs-admin-theme";
 
 export function ThemeProvider({
   children,
-  defaultTheme = "light",
-  switchable = false,
-}: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (switchable) {
-      const stored = localStorage.getItem("theme");
-      return (stored as Theme) || defaultTheme;
+  defaultTheme = "nature",
+}: {
+  children: React.ReactNode;
+  defaultTheme?: AdminTheme;
+}) {
+  const [theme, setThemeState] = useState<AdminTheme>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored === "nature" || stored === "dark") return stored;
     }
     return defaultTheme;
   });
@@ -36,20 +42,14 @@ export function ThemeProvider({
     } else {
       root.classList.remove("dark");
     }
+    localStorage.setItem(STORAGE_KEY, theme);
+  }, [theme]);
 
-    if (switchable) {
-      localStorage.setItem("theme", theme);
-    }
-  }, [theme, switchable]);
-
-  const toggleTheme = switchable
-    ? () => {
-        setTheme(prev => (prev === "light" ? "dark" : "light"));
-      }
-    : undefined;
+  const setTheme = (t: AdminTheme) => setThemeState(t);
+  const toggleTheme = () => setThemeState(prev => (prev === "nature" ? "dark" : "nature"));
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, switchable }}>
+    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

@@ -42,75 +42,128 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* ============================================================================
+   XLCS Design System — Theme: Xintian Nature (Default Light)
+   Brand: 心田 (Xintian) — Garden / Nursery / Natural / Fresh
+   Palette: Sage Green, Olive Green, Cream, Light Wood
+   ============================================================================ */
 :root {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-600);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
+  /* Primary — Sage Green */
+  --primary: oklch(0.58 0.12 145);
+  --primary-foreground: oklch(0.98 0.01 145);
+
+  /* Sidebar — slightly deeper sage for visual hierarchy */
+  --sidebar-primary: oklch(0.52 0.13 145);
+  --sidebar-primary-foreground: oklch(0.98 0.01 145);
+
+  /* Charts — graduated sage/olive greens */
+  --chart-1: oklch(0.70 0.10 145);
+  --chart-2: oklch(0.60 0.12 145);
+  --chart-3: oklch(0.52 0.13 145);
+  --chart-4: oklch(0.45 0.11 140);
+  --chart-5: oklch(0.38 0.09 135);
+
   --radius: 0.65rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.235 0.015 65);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.235 0.015 65);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.235 0.015 65);
-  --secondary: oklch(0.98 0.001 286.375);
-  --secondary-foreground: oklch(0.4 0.015 65);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.141 0.005 285.823);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.623 0.214 259.815);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.235 0.015 65);
-  --sidebar-accent: oklch(0.967 0.001 286.375);
-  --sidebar-accent-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.623 0.214 259.815);
+
+  /* Background — warm cream (slight yellow-green tint) */
+  --background: oklch(0.985 0.005 95);
+  --foreground: oklch(0.26 0.015 80);
+
+  /* Card — pure cream white */
+  --card: oklch(0.995 0.003 95);
+  --card-foreground: oklch(0.26 0.015 80);
+
+  /* Popover — same as card */
+  --popover: oklch(0.995 0.003 95);
+  --popover-foreground: oklch(0.26 0.015 80);
+
+  /* Secondary — soft sage tint */
+  --secondary: oklch(0.95 0.012 145);
+  --secondary-foreground: oklch(0.40 0.02 145);
+
+  /* Muted — light warm gray with green undertone */
+  --muted: oklch(0.95 0.008 95);
+  --muted-foreground: oklch(0.52 0.015 90);
+
+  /* Accent — sage-tinted hover */
+  --accent: oklch(0.93 0.015 145);
+  --accent-foreground: oklch(0.30 0.02 145);
+
+  /* Destructive — warm terracotta red */
+  --destructive: oklch(0.58 0.20 28);
+  --destructive-foreground: oklch(0.98 0.01 28);
+
+  /* Border — soft warm border */
+  --border: oklch(0.90 0.006 95);
+  --input: oklch(0.90 0.006 95);
+  --ring: oklch(0.58 0.12 145);
+
+  /* Sidebar — cream with sage tint */
+  --sidebar: oklch(0.97 0.008 95);
+  --sidebar-foreground: oklch(0.26 0.015 80);
+  --sidebar-accent: oklch(0.93 0.015 145);
+  --sidebar-accent-foreground: oklch(0.30 0.02 145);
+  --sidebar-border: oklch(0.90 0.006 95);
+  --sidebar-ring: oklch(0.58 0.12 145);
 }
 
+/* ============================================================================
+   XLCS Design System — Theme: Dark Mode
+   Deep forest-night palette, easy on eyes for evening work
+   ============================================================================ */
 .dark {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-500);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.85 0.005 65);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.85 0.005 65);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.85 0.005 65);
-  --secondary: oklch(0.24 0.006 286.033);
-  --secondary-foreground: oklch(0.7 0.005 65);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground:  oklch(0.92 0.005 65);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.488 0.243 264.376);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.85 0.005 65);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground:  oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.488 0.243 264.376);
+  /* Primary — brighter sage for dark bg contrast */
+  --primary: oklch(0.65 0.13 145);
+  --primary-foreground: oklch(0.16 0.02 145);
+
+  --sidebar-primary: oklch(0.58 0.13 145);
+  --sidebar-primary-foreground: oklch(0.98 0.01 145);
+
+  /* Background — deep charcoal with green undertone */
+  --background: oklch(0.18 0.008 150);
+  --foreground: oklch(0.88 0.008 95);
+
+  /* Card — slightly lighter than bg */
+  --card: oklch(0.22 0.008 150);
+  --card-foreground: oklch(0.88 0.008 95);
+
+  --popover: oklch(0.22 0.008 150);
+  --popover-foreground: oklch(0.88 0.008 95);
+
+  /* Secondary — muted sage on dark */
+  --secondary: oklch(0.28 0.010 145);
+  --secondary-foreground: oklch(0.75 0.010 145);
+
+  /* Muted — subtle dark surface */
+  --muted: oklch(0.26 0.008 150);
+  --muted-foreground: oklch(0.65 0.012 95);
+
+  /* Accent — sage hover on dark */
+  --accent: oklch(0.30 0.012 145);
+  --accent-foreground: oklch(0.90 0.008 95);
+
+  /* Destructive — warm red, slightly muted for dark */
+  --destructive: oklch(0.65 0.18 25);
+  --destructive-foreground: oklch(0.98 0.01 25);
+
+  /* Border — low-contrast warm */
+  --border: oklch(0.30 0.006 150);
+  --input: oklch(0.30 0.006 150);
+  --ring: oklch(0.65 0.13 145);
+
+  --chart-1: oklch(0.70 0.10 145);
+  --chart-2: oklch(0.60 0.12 145);
+  --chart-3: oklch(0.52 0.13 145);
+  --chart-4: oklch(0.45 0.11 140);
+  --chart-5: oklch(0.38 0.09 135);
+
+  /* Sidebar — darker than main bg */
+  --sidebar: oklch(0.16 0.008 150);
+  --sidebar-foreground: oklch(0.88 0.008 95);
+  --sidebar-accent: oklch(0.28 0.012 145);
+  --sidebar-accent-foreground: oklch(0.90 0.008 95);
+  --sidebar-border: oklch(0.28 0.006 150);
+  --sidebar-ring: oklch(0.65 0.13 145);
 }
 
 @layer base {
@@ -119,6 +172,9 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    font-variation-settings: "opsz" 32;
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -173,5 +229,106 @@
       padding-right: 2rem;
       max-width: 1280px; /* Standard content width */
     }
+  }
+}
+
+/* V2.0.44: Print styles for order browse */
+/* V2.1.26: print-only class - only visible when printing */
+.print-only {
+  display: none;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  /* V2.1.26: print-hide class - hidden when printing */
+  .print-hide {
+    display: none !important;
+  }
+  /* V2.1.26: print-only class - only visible when printing */
+  .print-only {
+    display: block !important;
+  }
+  body {
+    background: white !important;
+  }
+  .container {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+}
+
+/* 后台菜单标题统一显示在顶部栏；内容区同页的「管理／列表」一级标题不再占用空间。 */
+[data-admin-menu-content] [data-menu-title-duplicate="true"] {
+  display: none;
+}
+
+/* 后台页面 Header：标题说明在左，所有主要操作及语言选择在同一正常流式操作组。 */
+[data-admin-menu-content] .header-with-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+[data-admin-menu-content] .header-actions,
+[data-admin-menu-content] [data-admin-page-header-actions] {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+[data-admin-menu-content] .header-actions > button,
+[data-admin-menu-content] [data-admin-page-header-actions] > button,
+[data-admin-menu-content] .header-actions > [role="button"],
+[data-admin-menu-content] [data-admin-page-header-actions] > [role="button"],
+[data-admin-menu-content] .header-language-selector {
+  height: 40px;
+  min-height: 40px;
+  padding-block: 0;
+  line-height: 1;
+  border-radius: 0.5rem;
+}
+
+[data-admin-menu-content] .header-language-selector {
+  display: inline-flex;
+  height: 40px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  padding: 0 0.75rem;
+  color: var(--primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+[data-admin-menu-content] .header-language-selector:hover {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+@media (max-width: 640px) {
+  [data-admin-menu-content] .header-with-actions {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  [data-admin-menu-content] .header-with-actions > :first-child {
+    min-width: 0;
+    flex: 1 1 14rem;
+  }
+
+  [data-admin-menu-content] .header-with-actions .header-actions,
+  [data-admin-menu-content] .header-with-actions [data-admin-page-header-actions] {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 }

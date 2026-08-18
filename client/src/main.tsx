@@ -5,10 +5,47 @@ import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
+import { I18nProvider } from "./contexts/I18nContext";
 import { startLogin } from "./const";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Multi-device sync: refetch on window focus so data stays fresh
+      // when user switches between phone/tablet/desktop
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      // Data is considered stale after 5s — SSE events trigger immediate
+      // invalidation, but this ensures freshness even if SSE drops
+      staleTime: 5 * 1000,
+      // Poll every 30s as a fallback to SSE push notifications
+      // This catches changes even if the SSE connection is temporarily down
+      refetchInterval: 30 * 1000,
+      // Retry failed queries quickly to recover from transient errors
+      retry: 2,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
+    },
+  },
+});
+
+// Cross-tab sync: when one tab mutates data, broadcast to other tabs
+// so they invalidate their caches and refetch immediately
+if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+  const channel = new BroadcastChannel("xintian-sync");
+  channel.onmessage = (event) => {
+    if (event.data?.type === "invalidate") {
+      queryClient.invalidateQueries();
+    }
+  };
+
+  // Hook into mutation cache to broadcast invalidations
+  queryClient.getMutationCache().subscribe((event) => {
+    if (event.type === "updated" && event.action.type === "success") {
+      channel.postMessage({ type: "invalidate" });
+    }
+  });
+}
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
@@ -75,7 +112,9 @@ const trpcClient = trpc.createClient({
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <I18nProvider>
+        <App />
+      </I18nProvider>
     </QueryClientProvider>
   </trpc.Provider>
 );

@@ -1,0 +1,1069 @@
+import { useState } from "react";
+import { useI18n } from "@/contexts/I18nContext";
+import { trpc } from "@/lib/trpc";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { toast } from "sonner";
+import { ArrowLeft, Package, Truck, CheckCircle, Clock, AlertCircle, PauseCircle, Bell, History, FileText, MessageSquare, User, Lock, Trash2, Plus, Sprout, Calendar, AlertTriangle, RotateCw, GitFork } from "lucide-react";
+import { ITEM_SOURCE_LABELS } from "@shared/const";
+
+const HOLD_TYPE_LABELS_RAW: Record<string, { zh: string; en: string }> = {
+  wait_next_live: { zh: "等待下次直播", en: "Wait for next live" },
+  scheduled_shipping: { zh: "指定日期发货", en: "Scheduled Shipping" },
+  wait_stock: { zh: "等待缺货商品", en: "Wait for out of stock products" },
+  other: { zh: "其他", en: "Other" },
+};
+
+const STATUS_CONFIG_RAW: Record<string, { zh: string; en: string; variant: any; color: string }> = {
+  pending: { zh: "未汇款订单", en: "Unpaid Order", variant: "outline", color: "text-yellow-600" },
+  receipt_uploaded: { zh: "待审核付款凭证", en: "Pending Payment Verification", variant: "secondary", color: "text-blue-600" },
+  partial_payment: { zh: "部分汇款", en: "Partial Payment", variant: "secondary", color: "text-amber-600" },
+  hold_order: { zh: "保留订单", en: "Hold Order", variant: "secondary", color: "text-purple-600" },
+  packing: { zh: "待包货", en: "Pending Packing", variant: "default", color: "text-cyan-600" },
+  partial_shipped: { zh: "部分发货", en: "Partial Shipped", variant: "secondary", color: "text-teal-600" },
+  shipped: { zh: "已发货", en: "Shipped", variant: "default", color: "text-green-600" },
+  completed: { zh: "已完成", en: "Completed", variant: "default", color: "text-green-700" },
+  cancelled: { zh: "已取消", en: "Cancelled", variant: "destructive", color: "text-red-600" },
+};
+
+// XTC (中国代购) import order status config
+const IMPORT_STATUS_CONFIG_RAW: Record<string, { zh: string; en: string; variant: any; color: string }> = {
+  pending: { zh: "挂单", en: "Pending", variant: "outline", color: "text-yellow-600" },
+  receipt_uploaded: { zh: "待审核付款凭证", en: "Pending Payment Verification", variant: "secondary", color: "text-blue-600" },
+  partial_payment: { zh: "部分汇款", en: "Partial Payment", variant: "secondary", color: "text-amber-600" },
+  waiting_stock: { zh: "待备货", en: "Waiting Stock", variant: "secondary", color: "text-orange-600" },
+  ready_to_ship: { zh: "待发货", en: "Ready to Ship", variant: "default", color: "text-cyan-600" },
+  scheduled_ship: { zh: "预约发货", en: "Scheduled Ship", variant: "secondary", color: "text-indigo-600" },
+  partial_shipped: { zh: "部分发货", en: "Partial Shipped", variant: "secondary", color: "text-teal-600" },
+  shipped: { zh: "已发货", en: "Shipped", variant: "default", color: "text-green-600" },
+  completed: { zh: "已完成", en: "Completed", variant: "default", color: "text-green-700" },
+  cancelled: { zh: "取消", en: "Cancelled", variant: "destructive", color: "text-red-600" },
+};
+
+const SOURCE_LABELS_RAW: Record<string, { zh: string; en: string }> = {
+  facebook_live: { zh: "Facebook 直播", en: "Facebook Live" },
+  facebook_post: { zh: "Facebook 帖子", en: "Facebook Post" },
+  facebook_reel: { zh: "Facebook 短视频", en: "Facebook Reel" },
+  messenger: { zh: "Messenger", en: "Messenger" },
+  store: { zh: "商城", en: "Store" },
+  manual: { zh: "手动", en: "Manual" },
+};
+
+export default function OrderDetail({ orderId, onBack }: { orderId: number; onBack: () => void }) {
+  const { translate, lang } = useI18n();
+  const [holdOpen, setHoldOpen] = useState(false);
+  const [statusTransitionOpen, setStatusTransitionOpen] = useState(false);
+  const [remarkText, setRemarkText] = useState("");
+  const [remarkType, setRemarkType] = useState<"live" | "customer" | "internal">("live");
+  const [repotOpen, setRepotOpen] = useState(false);
+  const [repotForm, setRepotForm] = useState<any>({ orderItemId: 0, productId: 0, productName: "", potProductId: 0, potProductName: "", quantity: 1 });
+  const [scheduledDate, setScheduledDate] = useState("");
+  const [holdForm, setHoldForm] = useState<any>({
+    holdType: "wait_next_live",
+    scheduledShippingDate: "",
+    allowAutoMerge: true,
+    holdRemark: "",
+  });
+  const [targetStatus, setTargetStatus] = useState("");
+  const [transitionNotes, setTransitionNotes] = useState("");
+  const [specialStatusOpen, setSpecialStatusOpen] = useState(false);
+  const [specialStatusForm, setSpecialStatusForm] = useState({ type: "", reason: "" });
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitQuantities, setSplitQuantities] = useState<Record<number, number>>({});
+  const utils = trpc.useUtils();
+
+  const { data: orderData, isLoading } = trpc.orders.getById.useQuery({ id: orderId });
+  const order = orderData as any;
+  const items = (orderData as any)?.items || [];
+  const { data: statusLogs } = trpc.orderWorkflow.getStatusLogs.useQuery({ orderId });
+  const { data: holdInfo } = trpc.holdOrders.getInfo.useQuery({ orderId });
+  const { data: notifications } = trpc.notifications.list.useQuery({ orderId });
+  const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
+  const { data: repots } = trpc.repots.list.useQuery({ orderId });
+  const { data: potProducts } = trpc.repots.potProducts.useQuery();
+
+  const resendCheckoutMutation = trpc.orders.resendCheckout.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      utils.notifications.invalidate();
+      toast.success(translate("通知已重新发送到 Messenger", "Notification resent to Messenger"));
+    },
+    onError: (e) => toast.error(translate("重新发送失败: {message}", "Resend failed: {message}", { message: e.message })),
+  });
+
+  const confirmPaymentMutation = trpc.orderWorkflow.confirmPayment.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      utils.orderWorkflow.invalidate();
+      toast.success(translate("付款已确认", "Payment confirmed"));
+    },
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
+  });
+
+  const transitionMutation = trpc.orderWorkflow.transition.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      utils.orderWorkflow.invalidate();
+      toast.success(translate("订单状态已更新", "Order status updated"));
+      setStatusTransitionOpen(false);
+      setTransitionNotes("");
+    },
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
+  });
+
+  const createHoldMutation = trpc.holdOrders.create.useMutation({
+    onSuccess: () => {
+      utils.holdOrders.invalidate();
+      utils.orders.invalidate();
+      toast.success(translate("保留订单已创建", "Hold order created"));
+      setHoldOpen(false);
+    },
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
+  });
+
+  const releaseHoldMutation = trpc.holdOrders.release.useMutation({
+    onSuccess: () => {
+      utils.holdOrders.invalidate();
+      utils.orders.invalidate();
+      toast.success(translate("保留订单已释放，状态已更新为待包货", "Hold order released, status updated to packing"));
+    },
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
+  });
+
+  const createRemarkMutation = trpc.orderRemarks.create.useMutation({
+    onSuccess: () => {
+      utils.orderRemarks.invalidate();
+      setRemarkText("");
+      toast.success(translate("备注已添加", "Remark added"));
+    },
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
+  });
+
+  const deleteRemarkMutation = trpc.orderRemarks.delete.useMutation({
+    onSuccess: () => {
+      utils.orderRemarks.invalidate();
+      toast.success(translate("备注已删除", "Remark deleted"));
+    },
+  });
+
+  const createRepotMutation = trpc.repots.create.useMutation({
+    onSuccess: () => {
+      utils.repots.invalidate();
+      setRepotOpen(false);
+      toast.success(translate("换盆已安排", "Repot arranged"));
+      setRepotForm({ orderItemId: 0, productId: 0, productName: "", potProductId: 0, potProductName: "", quantity: 1 });
+    },
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
+  });
+
+  const deleteRepotMutation = trpc.repots.delete.useMutation({
+    onSuccess: () => {
+      utils.repots.invalidate();
+      toast.success(translate("换盆已取消", "Repot cancelled"));
+    },
+  });
+
+  const setScheduledDateMutation = trpc.scheduledShipping.setDate.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      toast.success(scheduledDate ? translate("预约发货日期已设置", "Scheduled shipping date set") : translate("预约发货日期已取消", "Scheduled shipping date cancelled"));
+    },
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
+  });
+
+  const updateSpecialStatusMutation = trpc.orders.updateSpecialStatus.useMutation({
+    onSuccess: () => {
+      utils.orders.invalidate();
+      utils.orders.followUpStats.invalidate();
+      utils.orders.followUpList.invalidate();
+      toast.success(translate("特别状态已更新", "Special status updated"));
+      setSpecialStatusOpen(false);
+      setSpecialStatusForm({ type: "", reason: "" });
+    },
+    onError: (e) => toast.error(translate("操作失败", "Operation failed") + `: ${e.message}`),
+  });
+
+  const splitOrderMutation = trpc.orders.split.useMutation({
+    onSuccess: (result) => {
+      utils.orders.invalidate();
+      toast.success(translate("订单已拆分，新订单号：{number}", "Order split. New order: {number}", { number: result.newOrderNumber }));
+      setSplitQuantities({});
+      setSplitOpen(false);
+    },
+    onError: (e) => toast.error(translate("拆单失败", "Split failed") + `: ${e.message}`),
+  });
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center py-20 text-muted-foreground">{translate("加载中...", "Loading...")}</div>;
+  }
+
+  if (!order) {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />{translate("返回", "Back")}</Button>
+        <p className="text-center text-muted-foreground py-20">{translate("订单不存在", "Order does not exist")}</p>
+      </div>
+    );
+  }
+
+  const isImportOrder = order?.orderCategory === 'import';
+  const activeStatusConfig = isImportOrder ? IMPORT_STATUS_CONFIG_RAW : STATUS_CONFIG_RAW;
+  const activeStatusValue = isImportOrder ? (order?.importStatus || "pending") : (order?.physicalStatus || "pending");
+  const statusCfgRaw = activeStatusConfig[activeStatusValue] || activeStatusConfig.pending;
+  const statusCfg = {
+    label: translate(statusCfgRaw.zh, statusCfgRaw.en),
+    variant: statusCfgRaw.variant,
+    color: statusCfgRaw.color,
+  };
+  const canSplitOrder = !isImportOrder && order.orderType === "physical" && ["pending", "receipt_uploaded", "hold_order"].includes(order.physicalStatus || "") && Number(order.paidAmount || 0) === 0 && Number(order.creditUsed || 0) === 0 && Number(order.discountAmount || 0) === 0 && Number(order.promotionDiscount || 0) === 0 && Number(order.extraCharge || 0) === 0 && items.length > 1;
+  const regularSubtotal = items.filter((item: any) => item.priceType !== "special").reduce((sum: number, item: any) => sum + Number(item.subtotal || 0), 0);
+  const specialSubtotal = items.filter((item: any) => item.priceType === "special").reduce((sum: number, item: any) => sum + Number(item.subtotal || 0), 0);
+  const selectedSplitItems = items
+    .filter((item: any) => Number(splitQuantities[item.id] || 0) > 0)
+    .map((item: any) => ({ orderItemId: item.id, quantity: Number(splitQuantities[item.id]) }));
+  const leavesItemsOnOriginalOrder = items.some((item: any) => Number(splitQuantities[item.id] || 0) < Number(item.quantity));
+
+  function handleConfirmPayment() {
+    const hasHold = !!holdInfo?.isActive;
+    confirmPaymentMutation.mutate({ orderId, hasHoldOrder: hasHold });
+  }
+
+  function handleCreateHold() {
+    createHoldMutation.mutate({
+      orderId,
+      holdType: holdForm.holdType,
+      scheduledShippingDate: holdForm.scheduledShippingDate ? new Date(holdForm.scheduledShippingDate).getTime() : undefined,
+      allowAutoMerge: holdForm.allowAutoMerge,
+      holdRemark: holdForm.holdRemark || undefined,
+    });
+  }
+
+  function handleTransition() {
+    if (!targetStatus) {
+      toast.error(translate("请选择目标状态", "Please select target status"));
+      return;
+    }
+    transitionMutation.mutate({ orderId, toStatus: targetStatus as any, notes: transitionNotes || undefined });
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />{translate("返回", "Back")}</Button>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {translate("订单详情", "Order Detail")} <span className="font-mono text-lg text-muted-foreground">#{order.orderNumber}</span>
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {new Date(order.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")} · {translate(SOURCE_LABELS_RAW[order.orderSource]?.zh || order.orderSource, SOURCE_LABELS_RAW[order.orderSource]?.en || order.orderSource)}
+              {order.sourceName && ` · ${order.sourceName}`}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Badge variant={statusCfg.variant} className={statusCfg.color}>
+            {statusCfg.label}
+          </Badge>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-wrap gap-2">
+        {((isImportOrder ? order?.importStatus : order?.physicalStatus) === "receipt_uploaded" || (isImportOrder ? order?.importStatus : order?.physicalStatus) === "partial_payment") && (
+          <Button onClick={handleConfirmPayment} disabled={confirmPaymentMutation.isPending} className="bg-primary">
+            <CheckCircle className="h-4 w-4 mr-2" />
+            {translate("确认汇款", "Confirm Payment")}
+          </Button>
+        )}
+        {((isImportOrder ? order?.importStatus : order?.physicalStatus) === "receipt_uploaded" || (isImportOrder ? order?.importStatus : order?.physicalStatus) === "partial_payment") && (
+          <Button variant="outline" onClick={() => setHoldOpen(true)}>
+            <PauseCircle className="h-4 w-4 mr-2" />
+            {translate("保留订单", "Hold Order")}
+          </Button>
+        )}
+        {(isImportOrder ? order?.importStatus : order?.physicalStatus) === "hold_order" && holdInfo?.isActive && (
+          <Button onClick={() => releaseHoldMutation.mutate({ orderId })} disabled={releaseHoldMutation.isPending}>
+            <Package className="h-4 w-4 mr-2" />
+            {translate("释放保留 → 待包货", "Release Hold → Packing")}
+          </Button>
+        )}
+        <Button variant="outline" onClick={() => setStatusTransitionOpen(true)}>
+          <History className="h-4 w-4 mr-2" />
+            {translate("手动变更状态", "Change Status Manually")}
+        </Button>
+        {canSplitOrder && (
+          <Button variant="outline" onClick={() => setSplitOpen(true)}>
+            <GitFork className="h-4 w-4 mr-2" />
+            {translate("拆分订单", "Split Order")}
+          </Button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left: Order Items + Source Info */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Order Items (Snapshots) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                {translate("商品明细 (快照)", "Order Items (Snapshot)")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{translate("商品名称", "Product Name")}</TableHead>
+                    <TableHead>{translate("来源", "Source")}</TableHead>
+                    <TableHead>{translate("规格", "Specification")}</TableHead>
+                    <TableHead>{translate("FB Keyword", "FB Keyword")}</TableHead>
+                    <TableHead className="text-right">{translate("数量", "Quantity")}</TableHead>
+                    <TableHead className="text-right">{translate("单价", "Unit Price")}</TableHead>
+                    <TableHead className="text-right">{translate("折扣", "Discount")}</TableHead>
+                    <TableHead className="text-right">{translate("小计", "Subtotal")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items?.length === 0 ? (
+                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{translate("暂无商品", "No products yet")}</TableCell></TableRow>
+                  ) : items?.map((item: any) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-medium">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{item.productName}</span>
+                          {item.priceType === "special" ? <Badge className="bg-rose-600 hover:bg-rose-600">{translate("特价", "Special")}</Badge> : <Badge variant="outline">{translate("原价", "Regular")}</Badge>}
+                        </div>
+                        {item.priceType === "special" && Number(item.originalUnitPrice || 0) > 0 && (
+                          <p className="mt-1 text-xs text-muted-foreground line-through">{translate("原价", "Regular")}: RM {Number(item.originalUnitPrice).toFixed(2)}</p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{ITEM_SOURCE_LABELS[item.itemSource] || item.itemSource || "-"}</TableCell>
+                      <TableCell className="text-sm">{item.variationName || "-"}</TableCell>
+                      <TableCell>
+                        {item.facebookKeyword ? (
+                          <Badge variant="outline" className="font-mono">{item.facebookKeyword}</Badge>
+                        ) : "-"}
+                      </TableCell>
+                      <TableCell className="text-right">{item.quantity}</TableCell>
+                      <TableCell className="text-right">RM {Number(item.unitPrice).toFixed(2)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {Number(item.discount) > 0 ? `-RM ${Number(item.discount).toFixed(2)}` : "-"}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">RM {Number(item.subtotal).toFixed(2)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Facebook Comment Info */}
+          {order.originalCustomerComment && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  {translate("Facebook 留言资料", "Facebook Comment Info")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="p-3 bg-muted rounded-lg">
+                  <p className="text-sm font-mono whitespace-pre-wrap">{order.originalCustomerComment}</p>
+                </div>
+                {order.commentDate && (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      {translate("留言时间", "Comment Time")}: {new Date(order.commentDate).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
+                    </p>
+                    {order.commentLink && (
+                      <p className="text-sm text-muted-foreground">
+                        {translate("留言链接", "Comment Link")}: <a href={order.commentLink} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{translate("查看留言", "View Comment")}</a>
+                      </p>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Status History */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                {translate("状态变更记录", "Status Change History")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{translate("时间", "Time")}</TableHead>
+                    <TableHead>{translate("从", "From")}</TableHead>
+                    <TableHead>{translate("到", "To")}</TableHead>
+                    <TableHead>{translate("操作人", "Operator")}</TableHead>
+                    <TableHead>{translate("备注", "Notes")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {statusLogs?.length === 0 ? (
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">{translate("暂无记录", "No records yet")}</TableCell></TableRow>
+                  ) : statusLogs?.map((log: any) => (
+                    <TableRow key={log.id}>
+                      <TableCell className="text-sm">{new Date(log.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</TableCell>
+                      <TableCell>
+                                                {log.fromStatus ? (
+                          <Badge variant="outline">{translate((isImportOrder ? IMPORT_STATUS_CONFIG_RAW : STATUS_CONFIG_RAW)[log.fromStatus]?.zh || log.fromStatus, (isImportOrder ? IMPORT_STATUS_CONFIG_RAW : STATUS_CONFIG_RAW)[log.fromStatus]?.en || log.fromStatus)}</Badge>
+                        ) : "-"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="default">{translate((isImportOrder ? IMPORT_STATUS_CONFIG_RAW : STATUS_CONFIG_RAW)[log.toStatus]?.zh || log.toStatus, (isImportOrder ? IMPORT_STATUS_CONFIG_RAW : STATUS_CONFIG_RAW)[log.toStatus]?.en || log.toStatus)}</Badge>
+                      </TableCell>
+                      <TableCell className="text-sm">{log.changedBy || "-"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{log.notes || "-"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right: Order Summary + Hold Info + Notifications */}
+        <div className="space-y-6">
+          {/* Order Summary */}
+          <Card>
+            <CardHeader><CardTitle>{translate("订单摘要", "Order Summary")}</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{translate("原价商品", "Regular-price Items")}</span>
+                <span>RM {regularSubtotal.toFixed(2)}</span>
+              </div>
+              {specialSubtotal > 0 && (
+                <div className="flex justify-between text-rose-600">
+                  <span>{translate("特价商品", "Special-price Items")}</span>
+                  <span>RM {specialSubtotal.toFixed(2)}</span>
+                </div>
+              )}
+              {Number(order.membershipSubtotal || 0) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{translate("会员费用", "Membership Fee")}</span>
+                  <span>RM {Number(order.membershipSubtotal).toFixed(2)}</span>
+                </div>
+              )}
+              {Number(order.creditUsed || 0) > 0 && (
+                <div className="flex justify-between text-indigo-600">
+                  <span>{translate("Credit 抵扣", "Credit Applied")}</span>
+                  <span>-RM {Number(order.creditUsed).toFixed(2)}</span>
+                </div>
+              )}
+              {Number(order.promotionDiscount || 0) > 0 && (
+                <div className="flex justify-between text-orange-600">
+                  <span>{translate("促销折扣", "Promotion Discount")}</span>
+                  <span>-RM {Number(order.promotionDiscount).toFixed(2)}</span>
+                </div>
+              )}
+              {Number(order.discountAmount) > 0 && (
+                <div className="flex justify-between text-orange-600">
+                  <span>{translate("折扣", "Discount")}{order.discountReason ? ` (${order.discountReason})` : ""}</span>
+                  <span>-RM {Number(order.discountAmount).toFixed(2)}</span>
+                </div>
+              )}
+              {Number(order.extraCharge) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{translate("额外收费", "Extra Charge")}{order.extraChargeDescription ? ` (${order.extraChargeDescription})` : ""}</span>
+                  <span>+RM {Number(order.extraCharge).toFixed(2)}</span>
+                </div>
+              )}
+              {order.shippingMethod !== "self_pickup" && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{translate("运费", "Shipping Fee")}</span>
+                  <span>RM {Number(order.shippingFee).toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{translate("总重量", "Total Weight")}</span>
+                <span>{Number(order.totalWeight).toFixed(2)} kg</span>
+              </div>
+              <div className="border-t pt-3 flex justify-between font-bold text-lg">
+                <span>{translate("总额", "Total Amount")}</span>
+                <span>RM {Number(order.totalAmount).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{translate("已付", "Paid")}</span>
+                <span className={Number(order.paidAmount) > 0 ? "text-green-600 font-medium" : ""}>
+                  RM {Number(order.paidAmount).toFixed(2)}
+                </span>
+              </div>
+              {Number(order.paidAmount) < Number(order.totalAmount) && Number(order.paidAmount) > 0 && (
+                <div className="flex justify-between text-orange-600">
+                  <span>{translate("未付", "Unpaid")}</span>
+                  <span>RM {(Number(order.totalAmount) - Number(order.paidAmount)).toFixed(2)}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Payment Method */}
+          <Card>
+            <CardHeader><CardTitle>{translate("付款方式", "Payment Method")}</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{translate("方式", "Method")}</span>
+                <span className="font-medium">{order.paymentMethodName || "-"}</span>
+              </div>
+              {order.receiptUrl && (
+                <div>
+                  <a href={order.receiptUrl} target="_blank" rel="noopener noreferrer">
+                    <Button variant="outline" size="sm" className="w-full">
+                      <FileText className="h-4 w-4 mr-2" />{translate("查看付款凭证", "View Payment Proof")}
+                    </Button>
+                  </a>
+                </div>
+              )}
+              {order.paymentUploadedAt && (
+                <p className="text-xs text-muted-foreground">
+                  {translate("上传时间", "Upload Time")}: {new Date(order.paymentUploadedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Hold Order Info */}
+          {holdInfo?.isActive && (
+            <Card className="border-purple-200">
+              <CardHeader><CardTitle className="text-purple-700">{translate("保留订单", "Hold Order")}</CardTitle></CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{translate("类型", "Type")}</span>
+                  <span className="font-medium">
+                    {translate(HOLD_TYPE_LABELS_RAW[holdInfo.holdType]?.zh || holdInfo.holdType, HOLD_TYPE_LABELS_RAW[holdInfo.holdType]?.en || holdInfo.holdType)}
+                  </span>
+                </div>
+                {holdInfo.scheduledShippingDate && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{translate("预定发货日", "Scheduled Shipping Date")}</span>
+                    <span>{new Date(holdInfo.scheduledShippingDate).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US")}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{translate("允许自动合并", "Allow Auto Merge")}</span>
+                  <Badge variant={holdInfo.allowAutoMerge ? "default" : "outline"}>
+                    {holdInfo.allowAutoMerge ? translate("是", "Yes") : translate("否", "No")}
+                  </Badge>
+                </div>
+                {holdInfo.holdRemark && (
+                  <p className="text-muted-foreground italic">"{holdInfo.holdRemark}"</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {translate("保留时间", "Hold Time")}: {new Date(holdInfo.holdCreatedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Notification History */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bell className="h-5 w-5" />
+                {translate("通知记录", "Notification History")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {notifications?.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{translate("暂无通知记录", "No notification records yet")}</p>
+              ) : notifications?.map((n: any) => (
+                <div key={n.id} className="flex items-start gap-2 text-sm p-2 border rounded-lg">
+                  <Badge variant={n.status === "sent" ? "default" : n.status === "failed" ? "destructive" : "outline"}>
+                    {n.status === "sent" ? translate("已发送", "Sent") : n.status === "failed" ? translate("失败", "Failed") : translate("待发送", "Pending")}
+                  </Badge>
+                  <div className="flex-1">
+                    <p className="text-xs text-muted-foreground">{n.channel} · {n.type}</p>
+                    {n.errorMessage && <p className="text-xs text-destructive">{n.errorMessage}</p>}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {new Date(n.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
+                    </p>
+                  </div>
+                  {n.status === "failed" && n.type === "checkout_reminder" && order?.checkoutLink && order?.messengerId && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 shrink-0 gap-1 text-xs"
+                      onClick={() => resendCheckoutMutation.mutate({ orderId })}
+                      disabled={resendCheckoutMutation.isPending}
+                    >
+                      <RotateCw className="h-3.5 w-3.5" />
+                      {translate("重新发送", "Resend")}
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* V3.2: Special Status Section */}
+      <Card className={order?.isSpecialOrder ? "border-orange-200 bg-orange-50/30 dark:border-orange-900/60 dark:bg-orange-950/10" : ""}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-orange-500" />
+            {translate("特别状态", "Special Status")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {order?.isSpecialOrder && order?.specialOrderStatus === "pending" ? (
+            <>
+              <div className="flex items-center gap-2">
+                <Badge className={
+                  order.specialOrderType === "pending_shipping" ? "bg-orange-100 text-orange-700" :
+                  order.specialOrderType === "pending_refund" ? "bg-red-100 text-red-700" :
+                  order.specialOrderType === "logistics_error" ? "bg-yellow-100 text-yellow-700" :
+                  order.specialOrderType === "incomplete_info" ? "bg-blue-100 text-blue-700" :
+                  order.specialOrderType === "notification_failed" ? "bg-purple-100 text-purple-700" :
+                  order.specialOrderType === "stock_exception" ? "bg-amber-100 text-amber-700" :
+                  order.specialOrderType === "overdue" ? "bg-red-100 text-red-700" :
+                  order.specialOrderType === "partial_payment" ? "bg-orange-100 text-orange-700" :
+                  order.specialOrderType === "over_payment" ? "bg-red-100 text-red-700" :
+                  order.specialOrderType === "amount_changed" ? "bg-red-100 text-red-700" :
+                  order.specialOrderType === "other" ? "bg-gray-100 text-gray-700" :
+                  "bg-gray-100 text-gray-700"
+                } variant="secondary">
+                  {order.specialOrderType === "pending_shipping" ? translate("待补运费", "Pending Shipping") :
+                   order.specialOrderType === "pending_refund" ? translate("待退款", "Pending Refund") :
+                   order.specialOrderType === "logistics_error" ? translate("物流异常", "Logistics Error") :
+                   order.specialOrderType === "incomplete_info" ? translate("资料异常", "Incomplete Info") :
+                   order.specialOrderType === "notification_failed" ? translate("通知失败", "Notification Failed") :
+                   order.specialOrderType === "stock_exception" ? translate("库存异常", "Stock Exception") :
+                   order.specialOrderType === "overdue" ? translate("超时未处理", "Overdue >24h") :
+                   order.specialOrderType === "partial_payment" ? translate("部分汇款", "Partial Payment") :
+                   order.specialOrderType === "over_payment" ? translate("多汇款", "Over Payment") :
+                   order.specialOrderType === "amount_changed" ? translate("金额异常", "Amount Changed") :
+                   order.specialOrderType === "other" ? translate("其他", "Other") :
+                   translate("其他", "Other")}
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {order.specialOrderSource === "system" ? translate("系统自动", "System Auto") : translate("人工设置", "Manual")}
+                </Badge>
+              </div>
+              {order.specialOrderReason && (
+                <p className="text-sm text-muted-foreground">{order.specialOrderReason}</p>
+              )}
+              {order.specialOrderBy && (
+                <p className="text-xs text-muted-foreground">
+                  {translate("操作人", "Operator")}: {order.specialOrderBy}
+                  {order.specialOrderUpdatedAt && ` · ${new Date(order.specialOrderUpdatedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}`}
+                </p>
+              )}
+              <div className="flex gap-2 pt-2">
+                <Button size="sm" variant="outline" onClick={() => setSpecialStatusOpen(true)}>
+                  {translate("修改特别状态", "Edit Special Status")}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => {
+                  updateSpecialStatusMutation.mutate({ orderId, action: "remove", reason: translate("管理员手动移除特别状态", "Admin manually removed special status") });
+                }}>
+                  {translate("移除特别状态", "Remove Special Status")}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => setSpecialStatusOpen(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                {translate("设置特别状态", "Set Special Status")}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* V1.1: Remarks Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+                {translate("订单备注 (3种类型)", "Order Remarks (3 Types)")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Add Remark Form */}
+          <div className="flex gap-2 items-start">
+            <Select value={remarkType} onValueChange={(v) => setRemarkType(v as any)}>
+              <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="live">{translate("直播备注", "Live Remark")}</SelectItem>
+                <SelectItem value="customer">{translate("客户备注", "Customer Remark")}</SelectItem>
+                <SelectItem value="internal">{translate("内部备注", "Internal Remark")}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              value={remarkText}
+              onChange={(e) => setRemarkText(e.target.value)}
+              placeholder={translate("输入备注内容...", "Enter remark content...")}
+              className="flex-1"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && remarkText.trim()) {
+                  createRemarkMutation.mutate({ orderId, type: remarkType, content: remarkText.trim() });
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              onClick={() => remarkText.trim() && createRemarkMutation.mutate({ orderId, type: remarkType, content: remarkText.trim() })}
+              disabled={!remarkText.trim() || createRemarkMutation.isPending}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Remarks List */}
+          <div className="space-y-2">
+            {remarks?.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">{translate("暂无备注", "No remarks yet")}</p>
+            ) : remarks?.map((r: any) => (
+              <div key={r.id} className="flex items-start gap-2 p-3 border rounded-lg">
+                {r.type === "live" ? <MessageSquare className="h-4 w-4 text-blue-500 mt-0.5" /> :
+                 r.type === "customer" ? <User className="h-4 w-4 text-green-500 mt-0.5" /> :
+                 <Lock className="h-4 w-4 text-orange-500 mt-0.5" />}
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className={r.type === "live" ? "text-blue-600" : r.type === "customer" ? "text-green-600" : "text-orange-600"}>
+                      {r.type === "live" ? translate("直播", "Live") : r.type === "customer" ? translate("客户", "Customer") : translate("内部", "Internal")}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{r.createdBy} · {new Date(r.createdAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}</span>
+                  </div>
+                  <p className="text-sm mt-1">{r.content}</p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => deleteRemarkMutation.mutate({ id: r.id })}>
+                  <Trash2 className="h-3 w-3 text-muted-foreground" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* V1.1: Repot (换盆) Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sprout className="h-5 w-5" />
+            {translate("换盆安排", "Repot Arrangement")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button size="sm" onClick={() => setRepotOpen(true)} disabled={items.length === 0}>
+            <Plus className="h-4 w-4 mr-2" />
+            {translate("新增换盆", "Add Repot")}
+          </Button>
+
+          {/* Repots List */}
+          <div className="space-y-2">
+            {repots?.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">{translate("暂无换盆安排", "No repot arrangements yet")}</p>
+            ) : repots?.map((r: any) => (
+              <div key={r.id} className="flex items-center gap-3 p-3 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                <Sprout className="h-5 w-5 text-blue-500" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">{r.productName} → {r.potProductName}</p>
+                  <p className="text-xs text-muted-foreground">{translate("数量", "Quantity")}: {r.quantity}</p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => deleteRepotMutation.mutate({ id: r.id })}>
+                  <Trash2 className="h-3 w-3 text-muted-foreground" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* V1.1: Scheduled Shipping Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            {translate("预约发货", "Scheduled Shipping")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center gap-3">
+          <Input
+            type="date"
+            value={scheduledDate || (order?.scheduledShippingDate ? new Date(order.scheduledShippingDate).toISOString().split("T")[0] : "")}
+            onChange={(e) => setScheduledDate(e.target.value)}
+            className="w-48"
+          />
+          <Button
+            size="sm"
+            onClick={() => setScheduledDateMutation.mutate({ orderId, date: scheduledDate || null })}
+            disabled={setScheduledDateMutation.isPending}
+          >
+            {translate("设置预约", "Set Schedule")}
+          </Button>
+          {order?.scheduledShippingDate && (
+            <Button size="sm" variant="outline" onClick={() => { setScheduledDate(""); setScheduledDateMutation.mutate({ orderId, date: null }); }}>
+              {translate("取消预约", "Cancel Schedule")}
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Hold Order Dialog */}
+      <Dialog open={holdOpen} onOpenChange={setHoldOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("保留订单", "Hold Order")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("保留类型", "Hold Type")}</Label>
+              <Select value={holdForm.holdType} onValueChange={(v) => setHoldForm((p: any) => ({ ...p, holdType: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="wait_next_live">{translate("等待下次直播加单", "Wait for next live order")}</SelectItem>
+                  <SelectItem value="scheduled_shipping">{translate("指定日期发货", "Scheduled Shipping")}</SelectItem>
+                  <SelectItem value="wait_stock">{translate("等待缺货商品", "Wait for out of stock products")}</SelectItem>
+                  <SelectItem value="other">{translate("其他", "Other")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {holdForm.holdType === "scheduled_shipping" && (
+              <div>
+                <Label>{translate("预定发货日期", "Scheduled Shipping Date")}</Label>
+                <Input
+                  type="date"
+                  value={holdForm.scheduledShippingDate}
+                  onChange={(e) => setHoldForm((p: any) => ({ ...p, scheduledShippingDate: e.target.value }))}
+                />
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={holdForm.allowAutoMerge}
+                onChange={(e) => setHoldForm((p: any) => ({ ...p, allowAutoMerge: e.target.checked }))}
+                className="rounded"
+              />
+              <Label>{translate("允许自动合并新订单", "Allow automatic merging of new orders")}</Label>
+            </div>
+            <div>
+              <Label>{translate("保留备注", "Hold Remark")}</Label>
+              <Textarea
+                value={holdForm.holdRemark}
+                onChange={(e) => setHoldForm((p: any) => ({ ...p, holdRemark: e.target.value }))}
+                placeholder={translate("保留原因说明...", "Reason for hold...")}
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHoldOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={handleCreateHold} disabled={createHoldMutation.isPending}>{translate("确认保留", "Confirm Hold")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* V1.1: Repot Dialog */}
+      <Dialog open={repotOpen} onOpenChange={setRepotOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("新增换盆", "Add Repot")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("选择商品", "Select Product")}</Label>
+              <Select value={String(repotForm.orderItemId)} onValueChange={(v) => {
+                const item = items.find((i: any) => i.id === Number(v));
+                if (item) {
+                  setRepotForm((p: any) => ({ ...p, orderItemId: Number(v), productId: item.productId, productName: item.productName }));
+                }
+              }}>
+                <SelectTrigger><SelectValue placeholder={translate("选择订单商品", "Select order product")} /></SelectTrigger>
+                <SelectContent>
+                  {items.map((item: any) => (
+                    <SelectItem key={item.id} value={String(item.id)}>
+                      {item.productName} (x{item.quantity})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{translate("选择花盆", "Select Pot")}</Label>
+              <Select value={String(repotForm.potProductId)} onValueChange={(v) => {
+                const pot = potProducts?.find((p: any) => p.id === Number(v));
+                if (pot) {
+                  setRepotForm((p: any) => ({ ...p, potProductId: Number(v), potProductName: pot.name }));
+                }
+              }}>
+                <SelectTrigger><SelectValue placeholder={translate("选择花盆商品", "Select pot product")} /></SelectTrigger>
+                <SelectContent>
+                  {potProducts?.map((pot: any) => (
+                    <SelectItem key={pot.id} value={String(pot.id)}>
+                      {pot.name} {pot.potCapacity ? `(${pot.potCapacity})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{translate("换盆数量", "Repot Quantity")}</Label>
+              <Input
+                type="number"
+                min={1}
+                value={repotForm.quantity}
+                onChange={(e) => setRepotForm((p: any) => ({ ...p, quantity: Number(e.target.value) }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRepotOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button
+              onClick={() => createRepotMutation.mutate(repotForm)}
+              disabled={!repotForm.orderItemId || !repotForm.potProductId || createRepotMutation.isPending}
+            >
+              {translate("确认换盆", "Confirm Repot")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* V3.2: Special Status Dialog */}
+      <Dialog open={specialStatusOpen} onOpenChange={setSpecialStatusOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("设置/修改特别状态", "Set/Edit Special Status")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("特别状态类型", "Special Status Type")}</Label>
+              <Select value={specialStatusForm.type} onValueChange={(v) => setSpecialStatusForm((p) => ({ ...p, type: v }))}>
+                <SelectTrigger><SelectValue placeholder={translate("选择特别状态", "Select Special Status")} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending_shipping">{translate("待补运费", "Pending Shipping")}</SelectItem>
+                  <SelectItem value="pending_refund">{translate("待退款", "Pending Refund")}</SelectItem>
+                  <SelectItem value="logistics_error">{translate("物流异常", "Logistics Error")}</SelectItem>
+                  <SelectItem value="incomplete_info">{translate("资料异常", "Incomplete Info")}</SelectItem>
+                  <SelectItem value="notification_failed">{translate("通知失败", "Notification Failed")}</SelectItem>
+                  <SelectItem value="stock_exception">{translate("库存异常", "Stock Exception")}</SelectItem>
+                  <SelectItem value="partial_payment">{translate("部分汇款", "Partial Payment")}</SelectItem>
+                  <SelectItem value="over_payment">{translate("多汇款", "Over Payment")}</SelectItem>
+                  <SelectItem value="amount_changed">{translate("金额异常", "Amount Changed")}</SelectItem>
+                  <SelectItem value="other">{translate("其他（Admin手动）", "Other (Manual)")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{translate("修改原因", "Reason")}</Label>
+              <Textarea
+                value={specialStatusForm.reason}
+                onChange={(e) => setSpecialStatusForm((p) => ({ ...p, reason: e.target.value }))}
+                placeholder={translate("请填写修改原因...", "Enter reason for change...")}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSpecialStatusOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button
+              onClick={() => updateSpecialStatusMutation.mutate({
+                orderId,
+                action: "set",
+                specialOrderType: specialStatusForm.type,
+                reason: specialStatusForm.reason,
+              })}
+              disabled={!specialStatusForm.type || updateSpecialStatusMutation.isPending}
+            >
+              {translate("确认", "Confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Status Transition Dialog */}
+      <Dialog open={statusTransitionOpen} onOpenChange={setStatusTransitionOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("手动变更订单状态", "Manually Change Order Status")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{translate("当前状态", "Current Status")}</Label>
+              <Badge variant={statusCfg.variant} className={statusCfg.color}>{statusCfg.label}</Badge>
+            </div>
+            <div>
+              <Label>{translate("目标状态", "Target Status")}</Label>
+              <Select value={targetStatus} onValueChange={setTargetStatus}>
+                <SelectTrigger><SelectValue placeholder={translate("选择状态", "Select Status")} /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(isImportOrder ? IMPORT_STATUS_CONFIG_RAW : STATUS_CONFIG_RAW).map(([key, cfg]) => (
+                    <SelectItem key={key} value={key}>{translate(cfg.zh, cfg.en)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{translate("备注", "Notes")}</Label>
+              <Textarea
+                value={transitionNotes}
+                onChange={(e) => setTransitionNotes(e.target.value)}
+                placeholder={translate("变更原因...", "Reason for change...")}
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStatusTransitionOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={handleTransition} disabled={transitionMutation.isPending}>{translate("确认变更", "Confirm Change")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={splitOpen} onOpenChange={(open) => { setSplitOpen(open); if (!open) setSplitQuantities({}); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{translate("拆分订单", "Split Order")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">{translate("选择要移至新订单的商品和数量。系统会按现行运费规则重新计算两张订单；不会重复占用库存。", "Select products and quantities to move. Both orders will be recalculated under current shipping rules; stock will not be reserved twice.")}</p>
+            <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border p-3">
+              {items.map((item: any) => {
+                const splitQuantity = Number(splitQuantities[item.id] || 0);
+                return (
+                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-muted">
+                    <span className="flex items-center gap-3">
+                      <input type="checkbox" checked={splitQuantity > 0} onChange={(e) => setSplitQuantities((current) => ({ ...current, [item.id]: e.target.checked ? 1 : 0 }))} className="h-4 w-4 rounded border" />
+                      <span><span className="block font-medium">{item.productName}</span><span className="text-xs text-muted-foreground">x{item.quantity}{item.priceType === "special" ? ` · ${translate("特价", "Special")}` : ""}</span></span>
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <Input aria-label={translate("拆分数量", "Split quantity")} type="number" min={1} max={item.quantity} value={splitQuantity || ""} disabled={splitQuantity === 0} onChange={(e) => setSplitQuantities((current) => ({ ...current, [item.id]: Math.min(Number(item.quantity), Math.max(1, Number(e.target.value) || 1)) }))} className="h-8 w-20" />
+                      <span className="w-24 text-right text-sm font-medium">RM {((Number(item.subtotal || 0) / Number(item.quantity || 1)) * splitQuantity).toFixed(2)}</span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {!leavesItemsOnOriginalOrder && <p className="text-sm text-destructive">{translate("原订单必须至少保留一项商品或数量。", "At least one item or quantity must remain on the original order.")}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSplitOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={() => splitOrderMutation.mutate({ orderId, items: selectedSplitItems })} disabled={selectedSplitItems.length === 0 || !leavesItemsOnOriginalOrder || splitOrderMutation.isPending}>
+              <GitFork className="h-4 w-4 mr-2" />{translate("确认拆分", "Confirm Split")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

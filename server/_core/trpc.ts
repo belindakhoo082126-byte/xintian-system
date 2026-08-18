@@ -5,6 +5,13 @@ import type { TrpcContext } from "./context";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
+  errorFormatter({ shape }) {
+    const { stack: _stack, ...safeData } = shape.data;
+    return {
+      ...shape,
+      data: safeData,
+    };
+  },
 });
 
 export const router = t.router;
@@ -26,6 +33,9 @@ const requireUser = t.middleware(async opts => {
 });
 
 export const protectedProcedure = t.procedure.use(requireUser);
+
+// 配送人员只能使用包货相关流程；与一般登录验证分开，便于审计权限边界。
+export const shippingProcedure = protectedProcedure;
 
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {

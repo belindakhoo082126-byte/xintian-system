@@ -1,0 +1,1 @@
+ALTER TABLE `reply_rules` MODIFY COLUMN `channels` varchar(255) NOT NULL DEFAULT '["messenger","whatsapp"]';

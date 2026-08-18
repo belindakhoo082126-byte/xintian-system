@@ -1,0 +1,2 @@
+ALTER TABLE `ai_persona` MODIFY COLUMN `supportedLanguages` varchar(255) NOT NULL DEFAULT '["zh","en","ms"]';--> statement-breakpoint
+ALTER TABLE `ai_persona` MODIFY COLUMN `ctaTemplate` varchar(1000) DEFAULT '还有什么小田可以帮到你的吗？😊';

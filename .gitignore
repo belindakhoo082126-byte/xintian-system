@@ -7,12 +7,9 @@ dist/
 build/
 *.dist
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Environment variables and secrets
+.env*
+!.env.example
 
 # IDE and editor files
 .vscode/
@@ -112,3 +109,13 @@ temp/
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
 .project-config.json
+
+# Local runtime and managed development logs
+.manus-logs/
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt

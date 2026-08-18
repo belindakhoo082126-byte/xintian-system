@@ -1,0 +1,848 @@
+import { useState, useRef, useEffect, useMemo } from "react";
+import { trpc } from "@/lib/trpc";
+import { buildCheckoutNotification, buildShippingNotification } from "@/lib/chatNotifications";
+import { dedupeAndSortConversations, dedupeAndSortMessages } from "@/lib/chatSynchronization";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+import {
+  MessageSquare, Send, Bot, User, Phone, Facebook,
+  ShoppingBag, AlertCircle, CheckCircle2, Clock, Zap, Search,
+  Package, MapPin, CreditCard, FileText, ArrowRight, ChevronLeft, Copy, Eye
+} from "lucide-react";
+import { Link, useLocation } from "wouter";
+
+type ConversationFilter = "all" | "unread" | "messenger" | "whatsapp" | "needsHuman" | "aiDisabled" | "hasOrder";
+
+export default function Chat() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [location] = useLocation();
+  const [selectedConvId, setSelectedConvId] = useState<number | null>(null);
+  const [filter, setFilter] = useState<ConversationFilter>("all");
+  const [search, setSearch] = useState("");
+  const [messageInput, setMessageInput] = useState("");
+  const [searchDebounced, setSearchDebounced] = useState("");
+  const [sseConnected, setSseConnected] = useState(true);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [copiedCheckoutOrderId, setCopiedCheckoutOrderId] = useState<number | null>(null);
+  const [copiedShippingOrderId, setCopiedShippingOrderId] = useState<number | null>(null);
+  const [trainingDraft, setTrainingDraft] = useState<any>(null);
+  const [notificationPreview, setNotificationPreview] = useState<{ title: string; content: string } | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const sseRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // SSE real-time connection for chat updates
+  useEffect(() => {
+    let mounted = true;
+
+    const connectSSE = () => {
+      if (!mounted) return;
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
+
+      const es = new EventSource("/api/sync");
+      sseRef.current = es;
+
+      es.onopen = () => {
+        if (mounted) setSseConnected(true);
+        // On reconnect, invalidate all chat queries to get fresh data
+        queryClient.invalidateQueries({ queryKey: ["chat"] });
+        queryClient.invalidateQueries({ queryKey: ["aiHandover"] });
+      };
+
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (!data || !data.category) return;
+
+          if (data.category === "chat" || data.category === "all" || data.type === "connected") {
+            // Invalidate chat queries to trigger refetch
+            queryClient.invalidateQueries({ queryKey: ["chat"] });
+            if (data.category === "all") {
+              queryClient.invalidateQueries({ queryKey: ["aiHandover"] });
+            }
+            if (mounted) setLastSyncTime(new Date());
+          }
+        } catch {
+          // Ignore parse errors (e.g. heartbeat comments)
+        }
+      };
+
+      es.onerror = () => {
+        if (mounted) setSseConnected(false);
+        es.close();
+        sseRef.current = null;
+        if (mounted) {
+          reconnectTimerRef.current = setTimeout(connectSSE, 3000);
+        }
+      };
+    };
+
+    connectSSE();
+
+    return () => {
+      mounted = false;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
+    };
+  }, [queryClient]);
+
+  // Parse URL param ?conv=ID to auto-select conversation
+  useEffect(() => {
+    const params = new URLSearchParams(location.split("?")[1] || "");
+    const convId = params.get("conv");
+    if (convId) {
+      const id = parseInt(convId, 10);
+      if (!isNaN(id)) setSelectedConvId(id);
+    }
+  }, [location]);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchDebounced(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Build query input from filter
+  const queryInput = useMemo(() => {
+    const input: any = { limit: 100 };
+    if (filter === "unread") input.unreadOnly = true;
+    else if (filter === "messenger") input.platform = "messenger";
+    else if (filter === "whatsapp") input.platform = "whatsapp";
+    else if (filter === "needsHuman") input.needsHuman = true;
+    else if (filter === "aiDisabled") input.aiDisabled = true;
+    if (searchDebounced) input.search = searchDebounced;
+    return input;
+  }, [filter, searchDebounced]);
+
+  const {
+    data: conversations,
+    isLoading: convsLoading,
+    isError: conversationsError,
+    error: conversationsErrorDetail,
+    refetch: refetchConversations,
+  } = trpc.chat.listConversations.useQuery(queryInput, {
+    staleTime: 0, // Always refetch when invalidated by SSE
+    refetchOnWindowFocus: true,
+  });
+  const {
+    data: messages,
+    isError: messagesError,
+    error: messagesErrorDetail,
+    refetch: refetchMessages,
+  } = trpc.chat.getMessages.useQuery(
+    { conversationId: selectedConvId || 0 },
+    { enabled: !!selectedConvId, staleTime: 0, refetchOnWindowFocus: true }
+  );
+
+  const visibleConversations = useMemo(() => dedupeAndSortConversations(conversations), [conversations]);
+  const visibleMessages = useMemo(() => dedupeAndSortMessages(messages), [messages]);
+  const selectedConv = visibleConversations.find((c: any) => c.id === selectedConvId);
+
+  const {
+    data: customerInfo,
+    isError: customerInfoError,
+    error: customerInfoErrorDetail,
+    refetch: refetchCustomerInfo,
+  } = trpc.chat.getCustomerInfo.useQuery(
+    { customerId: selectedConv?.customerId || 0 },
+    { enabled: !!selectedConv?.customerId }
+  );
+
+  const sendMessageMut = trpc.chat.sendMessage.useMutation({
+    onSuccess: () => {
+      setMessageInput("");
+    },
+  });
+
+  const markReadMut = trpc.chat.markRead.useMutation();
+  const toggleAIMut = trpc.chat.toggleAI.useMutation();
+  const handoverMut = trpc.chat.handover.useMutation();
+  const resumeAIMut = trpc.chat.resumeAI.useMutation();
+  const createTrainingFeedbackMut = trpc.chat.createTrainingFeedback.useMutation({
+    onSuccess: () => {
+      toast.success("已保存为知识库训练草稿", { description: "草稿未启用，需在 AI 知识库审核发布后才会影响自动回复。" });
+      setTrainingDraft(null);
+    },
+    onError: (error) => toast.error(`保存训练草稿失败：${error.message}`),
+  });
+
+  // Mark as read when selecting a conversation
+  useEffect(() => {
+    if (selectedConvId && selectedConv?.unreadCount > 0) {
+      markReadMut.mutate({ conversationId: selectedConvId });
+    }
+  }, [selectedConvId, selectedConv?.unreadCount]);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [messages]);
+
+  const retryChatSync = async () => {
+    const requests: Promise<unknown>[] = [refetchConversations()];
+    if (selectedConvId) requests.push(refetchMessages());
+    if (selectedConv?.customerId) requests.push(refetchCustomerInfo());
+    await Promise.all(requests);
+    toast.success("已重新加载聊天资料");
+  };
+
+  const handleSend = () => {
+    if (!messageInput.trim() || !selectedConvId) return;
+    sendMessageMut.mutate({
+      conversationId: selectedConvId,
+      content: messageInput.trim(),
+    });
+  };
+
+  const handleToggleAI = (enabled: boolean) => {
+    if (!selectedConvId) return;
+    toggleAIMut.mutate({ conversationId: selectedConvId, enabled });
+  };
+
+  const handleHandover = () => {
+    if (!selectedConvId) return;
+    handoverMut.mutate({ conversationId: selectedConvId });
+  };
+
+  const handleResumeAI = () => {
+    if (!selectedConvId) return;
+    resumeAIMut.mutate({ conversationId: selectedConvId });
+  };
+
+  const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+  };
+
+  const getCheckoutNotification = (order: { orderNumber: string; secureToken?: string | null }) => {
+    return buildCheckoutNotification(order, window.location.origin);
+  };
+
+  const getShippingNotification = (order: { orderNumber: string; courierCompany?: string | null; trackingNumber?: string | null }) => {
+    return buildShippingNotification(order);
+  };
+
+  const handleCopyCheckoutLink = async (order: { id: number; orderNumber: string; secureToken?: string | null }) => {
+    const notification = getCheckoutNotification(order);
+    if (!notification) return;
+    await copyText(notification);
+    setCopiedCheckoutOrderId(order.id);
+    window.setTimeout(() => setCopiedCheckoutOrderId((current) => current === order.id ? null : current), 2000);
+  };
+
+  const handleCopyShippingNotification = async (order: { id: number; orderNumber: string; courierCompany?: string | null; trackingNumber?: string | null }) => {
+    await copyText(getShippingNotification(order));
+    setCopiedShippingOrderId(order.id);
+    window.setTimeout(() => setCopiedShippingOrderId((current) => current === order.id ? null : current), 2000);
+  };
+
+  const openTrainingFeedback = (aiMessage: any) => {
+    const messageIndex = messages?.findIndex((message: any) => message.id === aiMessage.id) ?? -1;
+    const customerPrompt = messageIndex > -1
+      ? [...(messages || []).slice(0, messageIndex)].reverse().find((message: any) => message.senderType === "customer")?.content || ""
+      : "";
+    setTrainingDraft({
+      messageId: aiMessage.id,
+      category: "customer_service",
+      topic: `聊天训练｜${selectedConv?.customerName || selectedConv?.platformId || "客户咨询"}`,
+      triggerKeywords: customerPrompt.slice(0, 160) || "客户咨询",
+      content: aiMessage.content || "",
+      sourceNote: "人工审核并修订 AI 聊天回复",
+    });
+  };
+
+  const submitTrainingFeedback = () => {
+    if (!selectedConvId || !trainingDraft) return;
+    createTrainingFeedbackMut.mutate({
+      conversationId: selectedConvId,
+      messageId: trainingDraft.messageId,
+      category: trainingDraft.category,
+      topic: trainingDraft.topic,
+      triggerKeywords: trainingDraft.triggerKeywords,
+      content: trainingDraft.content,
+      sourceNote: trainingDraft.sourceNote,
+    });
+  };
+
+  const getSenderIcon = (senderType: string) => {
+    switch (senderType) {
+      case "customer": return <User className="h-4 w-4" />;
+      case "ai": return <Bot className="h-4 w-4" />;
+      case "staff": return <User className="h-4 w-4" />;
+      case "system": return <AlertCircle className="h-4 w-4" />;
+      default: return <MessageSquare className="h-4 w-4" />;
+    }
+  };
+
+  const getPlatformIcon = (platform: string) => {
+    return platform === "messenger" ? <Facebook className="h-3 w-3" /> : <Phone className="h-3 w-3" />;
+  };
+
+  const getPlatformLabel = (platform: string) => {
+    return platform === "messenger" ? "Messenger" : "WhatsApp";
+  };
+
+  const formatTime = (date: string | Date) => {
+    const d = new Date(date);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+
+    if (diffMin < 1) return "刚刚";
+    if (diffMin < 60) return `${diffMin}分钟前`;
+    if (diffHour < 24) return `${diffHour}小时前`;
+    if (diffDay < 7) return `${diffDay}天前`;
+    return d.toLocaleDateString("zh-CN");
+  };
+
+  return (
+    <>
+    <div className="flex h-full min-h-0 max-h-full overflow-hidden">
+      {/* Left Column — Conversation List */}
+      <div className={`${selectedConvId ? "hidden" : "flex"} w-full min-h-0 shrink-0 border-r flex-col md:flex md:w-80`}>
+        <div className="shrink-0 p-3 border-b space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              客服对话
+            </h2>
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${sseConnected ? "bg-green-500" : "bg-red-500"}`} />
+              <span className="text-[10px] text-muted-foreground">
+                {sseConnected ? (lastSyncTime ? `同步 ${lastSyncTime.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "已连接") : "重连中..."}
+              </span>
+            </div>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="搜索客户/电话/Messenger ID..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 pl-8 text-sm"
+            />
+          </div>
+          <Tabs value={filter} onValueChange={(v) => setFilter(v as ConversationFilter)}>
+            <TabsList className="grid grid-cols-4 h-8 text-xs">
+              <TabsTrigger value="all" className="text-xs">全部</TabsTrigger>
+              <TabsTrigger value="unread" className="text-xs">未读</TabsTrigger>
+              <TabsTrigger value="needsHuman" className="text-xs">人工</TabsTrigger>
+              <TabsTrigger value="aiDisabled" className="text-xs">AI关</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        <ScrollArea className="min-h-0 flex-1" ref={scrollAreaRef as any}>
+          {conversationsError ? (
+            <div className="m-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive space-y-2">
+              <p>对话同步失败：{conversationsErrorDetail?.message || "请检查网络后重试"}</p>
+              <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => void retryChatSync()}>重新加载</Button>
+            </div>
+          ) : convsLoading ? (
+            <div className="p-4 text-center text-sm text-muted-foreground">加载中...</div>
+          ) : visibleConversations.length === 0 ? (
+            <div className="p-4 text-center text-sm text-muted-foreground">暂无对话</div>
+          ) : (
+            <div className="divide-y">
+              {visibleConversations.map((conv: any) => (
+                <div
+                  key={conv.id}
+                  onClick={() => setSelectedConvId(conv.id)}
+                  className={`p-3 cursor-pointer hover:bg-muted/50 transition-colors ${
+                    selectedConvId === conv.id ? "bg-muted" : ""
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <Avatar className="h-9 w-9 shrink-0">
+                      <AvatarFallback className="text-xs">
+                        {(conv.customerName || conv.facebookName || conv.platformId || "?").charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-medium truncate">
+                          {conv.customerName || conv.facebookName || conv.platformId || "未知客户"}
+                        </span>
+                        {getPlatformIcon(conv.platform)}
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        {conv.lastMessagePreview || "(无消息)"}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="text-[10px] text-muted-foreground">
+                          {conv.lastMessageAt ? formatTime(conv.lastMessageAt) : ""}
+                        </span>
+                        {conv.unreadCount > 0 && (
+                          <Badge variant="destructive" className="text-[10px] h-4 px-1">
+                            {conv.unreadCount}
+                          </Badge>
+                        )}
+                        {conv.handoverStatus === "pending" && (
+                          <Badge variant="secondary" className="text-[10px] h-4 px-1 bg-orange-100 text-orange-700">
+                            需人工
+                          </Badge>
+                        )}
+                        {!conv.aiReplyEnabled && (
+                          <Badge variant="outline" className="text-[10px] h-4 px-1">
+                            AI关
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+
+      {/* Middle Column — Chat Messages */}
+      <div className={`${selectedConvId ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 flex-col md:flex`}>
+        {selectedConv ? (
+          <>
+            <div className="shrink-0 p-3 border-b flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 md:hidden"
+                onClick={() => setSelectedConvId(null)}
+                aria-label="返回对话列表"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Avatar className="h-8 w-8">
+                <AvatarFallback className="text-xs">
+                  {(selectedConv.customerName || selectedConv.facebookName || selectedConv.platformId || "?").charAt(0)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium truncate">
+                    {selectedConv.customerName || selectedConv.facebookName || selectedConv.platformId || "未知客户"}
+                  </span>
+                  {getPlatformIcon(selectedConv.platform)}
+                  <span className="text-xs text-muted-foreground">{getPlatformLabel(selectedConv.platform)}</span>
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  {selectedConv.handoverStatus === "pending" && (
+                    <Badge variant="secondary" className="text-[10px] h-4 bg-orange-100 text-orange-700">
+                      等待人工接手
+                    </Badge>
+                  )}
+                  {selectedConv.handoverStatus === "claimed" && (
+                    <Badge variant="secondary" className="text-[10px] h-4 bg-green-100 text-green-700">
+                      已接手: {selectedConv.handoverClaimedBy}
+                    </Badge>
+                  )}
+                  {selectedConv.aiToggledBy && (
+                    <span className="text-[10px] text-muted-foreground">
+                      AI由{selectedConv.aiToggledBy}于{selectedConv.aiToggledAt ? new Date(selectedConv.aiToggledAt).toLocaleString("zh-CN") : ""}切换
+                    </span>
+                  )}
+                  <span className="text-[10px] text-muted-foreground">语音讯息会保留为附件；当前未启用自动语音转文字或自动训练。</span>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Bot className="h-4 w-4 text-muted-foreground" />
+                  <Switch
+                    checked={selectedConv.aiReplyEnabled}
+                    onCheckedChange={handleToggleAI}
+                    disabled={toggleAIMut.isPending}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {selectedConv.aiReplyEnabled ? "AI开" : "AI关"}
+                  </span>
+                </div>
+                {selectedConv.handoverStatus === "pending" && (
+                  <Button size="sm" variant="default" onClick={handleHandover} disabled={handoverMut.isPending}>
+                    人工接手
+                  </Button>
+                )}
+                {selectedConv.handoverStatus === "claimed" && (
+                  <Button size="sm" variant="outline" onClick={handleResumeAI} disabled={resumeAIMut.isPending}>
+                    <Bot className="h-3 w-3 mr-1" /> 恢复AI
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="p-4 space-y-3">
+                {messagesError ? (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive space-y-2">
+                    <p>消息同步失败：{messagesErrorDetail?.message || "请检查网络后重试"}</p>
+                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => void retryChatSync()}>重新加载</Button>
+                  </div>
+                ) : visibleMessages.length === 0 ? (
+                  <div className="text-center text-sm text-muted-foreground py-8">暂无消息记录</div>
+                ) : (
+                  visibleMessages.map((msg: any) => (
+                    <div
+                      key={msg.id}
+                      className={`flex gap-2 ${msg.senderType === "customer" ? "justify-start" : "justify-end"}`}
+                    >
+                      {msg.senderType === "customer" && (
+                        <Avatar className="h-7 w-7 shrink-0">
+                          <AvatarFallback className="text-[10px]">
+                            {(selectedConv.customerName || "C").charAt(0)}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
+                      <div className={`max-w-[70%] ${msg.senderType === "customer" ? "" : "items-end"}`}>
+                        <div className={`flex items-center gap-1 mb-0.5 ${msg.senderType === "customer" ? "" : "justify-end"}`}>
+                          <span className="text-[10px] text-muted-foreground">
+                            {msg.senderType === "customer" ? "客户" :
+                             msg.senderType === "ai" ? "AI" :
+                             msg.senderType === "staff" ? msg.senderName || "工作人员" :
+                             "系统"}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(msg.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          {msg.status === "failed" && (
+                            <AlertCircle className="h-3 w-3 text-destructive" />
+                          )}
+                        </div>
+                        <div
+                          className={`rounded-lg px-3 py-2 text-sm ${
+                            msg.senderType === "customer"
+                              ? "bg-muted"
+                              : msg.senderType === "ai"
+                              ? "bg-blue-100 text-blue-900 dark:bg-blue-900 dark:text-blue-100"
+                              : msg.senderType === "system"
+                              ? "bg-yellow-100 text-yellow-900 dark:bg-yellow-900 dark:text-yellow-100 text-xs"
+                              : "bg-primary text-primary-foreground"
+                          }`}
+                        >
+                          {msg.messageType === "image" && msg.mediaUrl && (
+                            <img src={msg.mediaUrl} alt="image" className="rounded mb-1 max-w-full" />
+                          )}
+                          {msg.content}
+                        </div>
+                        {msg.senderType === "ai" && (
+                          <Button type="button" variant="ghost" size="sm" className="mt-1 h-6 px-1.5 text-[11px]" onClick={() => openTrainingFeedback(msg)}>
+                            <FileText className="mr-1 h-3 w-3" />标记为训练草稿
+                          </Button>
+                        )}
+                      </div>
+                      {msg.senderType !== "customer" && (
+                        <Avatar className="h-7 w-7 shrink-0">
+                          <AvatarFallback className="text-[10px]">
+                            {msg.senderType === "ai" ? <Bot className="h-3 w-3" /> :
+                             msg.senderType === "system" ? <AlertCircle className="h-3 w-3" /> :
+                             <User className="h-3 w-3" />}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+              <div ref={messagesEndRef} />
+            </ScrollArea>
+
+            <div className="shrink-0 p-3 border-t flex gap-2">
+              <Input
+                placeholder="输入消息..."
+                value={messageInput}
+                onChange={(e) => setMessageInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                disabled={sendMessageMut.isPending}
+              />
+              <Button
+                size="icon"
+                onClick={handleSend}
+                disabled={!messageInput.trim() || sendMessageMut.isPending}
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            <div className="text-center">
+              <MessageSquare className="h-12 w-12 mx-auto mb-2 opacity-30" />
+              <p>选择左侧对话开始客服聊天</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Right Column — Customer Info */}
+      <div className="hidden w-72 min-h-0 shrink-0 border-l overflow-y-auto lg:block">
+        {selectedConv ? (
+          <div className="p-4 space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold mb-2">客户资料</h3>
+              {selectedConv.customerId ? (
+                customerInfoError ? (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive space-y-2">
+                    <p>客户资料同步失败：{customerInfoErrorDetail?.message || "请重新加载"}</p>
+                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => void retryChatSync()}>重新加载</Button>
+                  </div>
+                ) : customerInfo ? (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">姓名</span>
+                      <span className="font-medium">{customerInfo.name || "-"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">电话</span>
+                      <span>{customerInfo.phone || "-"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">WhatsApp</span>
+                      <span>{customerInfo.whatsappPhone || "-"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">FB名称</span>
+                      <span>{customerInfo.facebookName || "-"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Messenger ID</span>
+                      <span className="text-xs">{selectedConv.platformId || customerInfo.messengerId || "-"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">客户类型</span>
+                      <Badge variant="outline" className="text-xs">{customerInfo.customerType}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Credit余额</span>
+                      <span>RM {customerInfo.creditBalance || "0.00"}</span>
+                    </div>
+                    {customerInfo.shippingAddress && (
+                      <div>
+                        <span className="text-muted-foreground">收件地址</span>
+                        <p className="mt-1 text-xs bg-muted rounded p-2">{customerInfo.shippingAddress}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">加载中...</p>
+                )
+              ) : (
+                <p className="text-sm text-muted-foreground">未关联客户（仅平台ID: {selectedConv.platformId}）</p>
+              )}
+            </div>
+
+            <Separator />
+
+            <div>
+              <h3 className="text-sm font-semibold mb-2">未结账订单</h3>
+              {customerInfo?.unpaidOrders?.length ? (
+                <div className="space-y-2">
+                  {customerInfo.unpaidOrders.map((order: any) => (
+                    <div key={order.id} className="rounded border p-2 text-sm">
+                      <div className="flex justify-between gap-2"><b>{order.orderNumber}</b><Badge variant="outline" className="text-[10px]">{order.customerStatus}</Badge></div>
+                      <p className="mt-1 text-xs text-muted-foreground">RM {order.totalAmount}</p>
+                      <div className="mt-1.5 flex flex-wrap gap-1"><Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs" disabled={!order.secureToken} onClick={() => { const content = getCheckoutNotification(order); if (content) setNotificationPreview({ title: `${order.orderNumber} 结账通知预览`, content }); }}><Eye className="mr-1 h-3 w-3" />通知预览</Button><Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs" disabled={!order.secureToken} onClick={() => void handleCopyCheckoutLink(order)}><Copy className="mr-1 h-3 w-3" />{copiedCheckoutOrderId === order.id ? "已复制" : "复制结账通知"}</Button><Link href={`/orders/${order.id}`}><Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs"><Eye className="mr-1 h-3 w-3" />订单</Button></Link></div>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-sm text-muted-foreground">暂无未结账订单</p>}
+            </div>
+
+            <Separator />
+
+            <div>
+              <h3 className="text-sm font-semibold mb-2">已发货订单</h3>
+              {customerInfo?.shippedOrders?.length ? (
+                <div className="space-y-2">
+                  {customerInfo.shippedOrders.map((order: any) => (
+                    <div key={order.id} className="rounded border p-2 text-sm"><div className="flex justify-between gap-2"><b>{order.orderNumber}</b><Badge variant="outline" className="text-[10px]">{order.customerStatus}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{order.courierCompany || "快递待更新"}{order.trackingNumber ? ` · ${order.trackingNumber}` : ""}</p><div className="mt-1.5 flex flex-wrap gap-1"><Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs" onClick={() => setNotificationPreview({ title: `${order.orderNumber} 发货通知预览`, content: getShippingNotification(order) })}><Eye className="mr-1 h-3 w-3" />通知预览</Button><Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs" onClick={() => void handleCopyShippingNotification(order)}><Copy className="mr-1 h-3 w-3" />{copiedShippingOrderId === order.id ? "已复制" : "复制发货通知"}</Button><Link href={`/orders/${order.id}`}><Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs"><Eye className="mr-1 h-3 w-3" />订单</Button></Link></div></div>
+                  ))}
+                </div>
+              ) : <p className="text-sm text-muted-foreground">暂无已发货订单</p>}
+            </div>
+
+            <Separator />
+
+            <div>
+              <h3 className="text-sm font-semibold mb-2">最近 Credit 流水</h3>
+              {customerInfo?.creditTransactions?.length ? <div className="space-y-1.5">{customerInfo.creditTransactions.map((entry: any) => <div key={entry.id} className="rounded bg-muted/60 p-2 text-xs"><div className="flex justify-between"><span className={Number(entry.amount) >= 0 ? "text-emerald-700" : "text-red-700"}>{Number(entry.amount) >= 0 ? "+" : ""}RM {entry.amount}</span><span>余额 RM {entry.balanceAfter}</span></div><p className="mt-1 text-muted-foreground">{entry.reason}{entry.orderNumber ? ` · ${entry.orderNumber}` : ""}</p></div>)}</div> : <p className="text-sm text-muted-foreground">暂无 Credit 流水</p>}
+            </div>
+
+            <Separator />
+
+            <div>
+              <h3 className="text-sm font-semibold mb-2">最近订单</h3>
+              {customerInfo?.recentOrders && customerInfo.recentOrders.length > 0 ? (
+                <div className="space-y-2">
+                  {customerInfo.recentOrders.map((order: any) => (
+                      <div key={order.id} className="p-2 rounded border border-transparent hover:border-border hover:bg-muted/50 text-sm space-y-1">
+                        <div className="flex items-center justify-between">
+                          <p className="font-medium">{order.orderNumber}</p>
+                          <Badge variant="outline" className="text-xs">{order.customerStatus}</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(order.createdAt).toLocaleDateString("zh-CN")} · RM {order.totalAmount}
+                        </p>
+                        {order.specialOrderType && (
+                          <Badge variant="secondary" className="text-[10px] h-4 bg-orange-100 text-orange-700">
+                            {order.specialOrderType === "pending_shipping" ? "待补运费" :
+                             order.specialOrderType === "pending_refund" ? "待退款" :
+                             order.specialOrderType === "logistics_error" ? "物流异常" :
+                             order.specialOrderType === "incomplete_info" ? "客户资料不完整" :
+                             order.specialOrderType === "notification_failed" ? "自动通知失败" :
+                             order.specialOrderType === "stock_exception" ? "库存异常" :
+                             order.specialOrderType === "overdue" ? "超过24小时未处理" : order.specialOrderType}
+                          </Badge>
+                        )}
+                        {order.remarks && order.remarks.length > 0 && (
+                          <div className="space-y-0.5">
+                            {order.remarks.map((r: any) => (
+                              <div key={r.id} className="text-[10px] bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">
+                                {r.remarkCategory === "repotting" ? "🪴 换盆" :
+                                 r.remarkCategory === "desired_delivery_date" ? "📅 希望收货日期" :
+                                 "📝 " + (r.content || "其他")}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1 pt-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-1.5 text-xs"
+                            disabled={!order.secureToken}
+                            onClick={() => void handleCopyCheckoutLink(order)}
+                            title={order.secureToken ? "复制客户结账链接" : "此订单尚未建立安全结账链接"}
+                          >
+                            <Copy className="mr-1 h-3 w-3" />
+                            {copiedCheckoutOrderId === order.id ? "已复制" : "复制结账链接"}
+                          </Button>
+                          <Link href={`/orders/${order.id}`}>
+                            <Button type="button" variant="ghost" size="sm" className="h-7 px-1.5 text-xs">
+                              <Eye className="mr-1 h-3 w-3" />预览
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">暂无订单</p>
+              )}
+            </div>
+
+            <Separator />
+
+            <div>
+              <h3 className="text-sm font-semibold mb-2">快捷操作</h3>
+              <div className="space-y-1.5">
+                {selectedConv.customerId && (
+                  <Link href={`/orders/create?customerId=${selectedConv.customerId}`}>
+                    <Button variant="outline" size="sm" className="w-full justify-start">
+                      <ShoppingBag className="h-4 w-4 mr-2" /> 建立订单
+                    </Button>
+                  </Link>
+                )}
+                {selectedConv.customerId && (
+                  <Link href={`/customers?search=${selectedConv.customerId}`}>
+                    <Button variant="outline" size="sm" className="w-full justify-start">
+                      <User className="h-4 w-4 mr-2" /> 查看客户
+                    </Button>
+                  </Link>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start"
+                  onClick={() => handleToggleAI(!selectedConv.aiReplyEnabled)}
+                >
+                  <Bot className="h-4 w-4 mr-2" />
+                  {selectedConv.aiReplyEnabled ? "关闭AI回复" : "开启AI回复"}
+                </Button>
+                {selectedConv.handoverStatus !== "claimed" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={handleHandover}
+                  >
+                    <User className="h-4 w-4 mr-2" /> 人工接手
+                  </Button>
+                )}
+                {selectedConv.handoverStatus === "claimed" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={handleResumeAI}
+                  >
+                    <Bot className="h-4 w-4 mr-2" /> 恢复AI回复
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 text-center text-sm text-muted-foreground">
+            选择对话查看客户资料
+          </div>
+        )}
+      </div>
+    </div>
+    <Dialog open={!!trainingDraft} onOpenChange={(open) => !open && setTrainingDraft(null)}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>保存 AI 训练草稿</DialogTitle></DialogHeader>
+        {trainingDraft && <div className="space-y-3"><p className="text-sm text-muted-foreground">人工修订后将以<strong>未启用草稿</strong>存入知识库；发布审核前不会改变任何自动回复。</p><div><label className="text-sm font-medium">分类</label><Input value={trainingDraft.category} onChange={(event) => setTrainingDraft({ ...trainingDraft, category: event.target.value })} /></div><div><label className="text-sm font-medium">主题</label><Input value={trainingDraft.topic} onChange={(event) => setTrainingDraft({ ...trainingDraft, topic: event.target.value })} /></div><div><label className="text-sm font-medium">触发关键词／客户问题</label><Textarea rows={2} value={trainingDraft.triggerKeywords} onChange={(event) => setTrainingDraft({ ...trainingDraft, triggerKeywords: event.target.value })} /></div><div><label className="text-sm font-medium">修订后的建议回复</label><Textarea rows={5} value={trainingDraft.content} onChange={(event) => setTrainingDraft({ ...trainingDraft, content: event.target.value })} /></div><div><label className="text-sm font-medium">内部说明</label><Textarea rows={2} value={trainingDraft.sourceNote} onChange={(event) => setTrainingDraft({ ...trainingDraft, sourceNote: event.target.value })} /></div></div>}
+        <DialogFooter><Button variant="outline" onClick={() => setTrainingDraft(null)}>取消</Button><Button onClick={submitTrainingFeedback} disabled={createTrainingFeedbackMut.isPending}>{createTrainingFeedbackMut.isPending ? "保存中..." : "保存训练草稿"}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={!!notificationPreview} onOpenChange={(open) => !open && setNotificationPreview(null)}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{notificationPreview?.title || "客户通知预览"}</DialogTitle></DialogHeader>
+        <p className="rounded-md bg-muted p-3 text-sm whitespace-pre-wrap leading-6">{notificationPreview?.content}</p>
+        <DialogFooter><Button variant="outline" onClick={() => setNotificationPreview(null)}>关闭</Button><Button onClick={() => notificationPreview && void copyText(notificationPreview.content)}>复制此通知</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
+  );
+}
