@@ -73,4 +73,7 @@
 - [ ] 将每个已验收的第二正式版稳定版本推送至私有 GitHub 仓库 `belindakhoo082126-byte/xintian-system` 的版本2主线。
 - [ ] 在所有 GitHub 操作中保护版本1的 `backup/version1-d3b70455` 分支及同名 Tag，绝不覆盖、重写或删除。
 - [ ] 每次稳定交付报告 Checkpoint 版本号、Git Commit、推送分支、测试结果和发布状态；未通过测试不得创建正式 Checkpoint 或推送版本2主线。
-- [ ] 为已通过测试与用户画面验收的 Logo 恢复批次创建稳定 Checkpoint，并以普通推送建立 GitHub `version2` 主线。
+- [x] 为已通过测试与用户画面验收的 Logo 恢复批次创建稳定 Checkpoint，并以普通推送建立 GitHub `version2` 主线。
+- [x] 将包货工作台保持为后台独立一级菜单，并在导航验收中确认其不归入订单管理或商品管理。
+- [ ] 修复商品管理“销售单位”下拉选项仅显示“无单位”且无法选择单位的问题，并完成真实画面验收。
+- [ ] 为已通过测试与用户画面验收的销售单位修复创建稳定 Checkpoint，并以普通推送更新 GitHub `version2` 主线。
