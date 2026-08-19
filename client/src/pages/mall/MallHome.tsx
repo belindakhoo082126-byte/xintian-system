@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearchParams } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,10 @@ import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useI18n } from "@/contexts/I18nContext";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
+import { getSalesUnitLabel } from "@shared/salesUnitDisplay";
+import { XINTIAN_LOGO_URL } from "@shared/brandAssets";
+import { getMallCardImageUrls } from "@shared/mallCardImages";
+import { buildMallBrowseSearch, getMallBrowseFilters } from "@shared/mallBrowseFilters";
 
 function translateMallNotice(notice: string, translate: (zh: string, en: string) => string) {
   const normalized = notice.replace(/\s+/g, "").toLowerCase();
@@ -27,13 +31,34 @@ function translateMallNotice(notice: string, translate: (zh: string, en: string)
   return notice;
 }
 
+function MallProductCardMedia({ product, translate }: { product: any; translate: (zh: string, en: string) => string }) {
+  const imageUrls = getMallCardImageUrls(product.coverImageUrl, product.galleryImageUrls);
+  if (imageUrls.length === 0) return <div className="flex h-full w-full items-center justify-center text-gray-300"><Package className="h-12 w-12" /></div>;
+  const visibleImages = imageUrls.slice(0, 4);
+  return (
+    <div className={`relative grid h-full w-full gap-px bg-white ${visibleImages.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+      {visibleImages.map((imageUrl, index) => (
+        <ProductImagePreview
+          key={imageUrl}
+          src={imageUrl}
+          alt={`${product.name} ${index + 1}`}
+          label={translate("放大查看商品照片", "Zoom product photo")}
+          className="h-full w-full rounded-none border-0 bg-transparent"
+          imageClassName="mall-img-zoom"
+        />
+      ))}
+      {imageUrls.length > visibleImages.length && <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-0.5 text-xs font-medium text-white">+{imageUrls.length - visibleImages.length}</span>}
+    </div>
+  );
+}
+
 export default function MallHome() {
   const [search, setSearch] = useState("");
   const [location, setLocation] = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { translate, lang } = useI18n();
-  const searchParams = new URLSearchParams(location.split("?")[1] || "");
-  const categoryId = searchParams.get("categoryId") ? parseInt(searchParams.get("categoryId")!) : undefined;
-  const searchQuery = searchParams.get("q") || search;
+  const { categoryId, query: queryFromUrl } = getMallBrowseFilters(`?${searchParams.toString()}`);
+  const searchQuery = queryFromUrl || search;
   const browseContextParams = new URLSearchParams();
   if (categoryId && categoryId > 0) browseContextParams.set("categoryId", String(categoryId));
   if (searchQuery.trim()) browseContextParams.set("q", searchQuery.trim());
@@ -85,17 +110,11 @@ export default function MallHome() {
 
   // Category click handler - use setLocation for proper navigation
   function handleCategoryClick(id?: number) {
-    const nextParams = new URLSearchParams();
-    if (id) nextParams.set("categoryId", String(id));
-    if (searchQuery.trim()) nextParams.set("q", searchQuery.trim());
-    setLocation(`/mall${nextParams.size ? `?${nextParams.toString()}` : ""}`);
+    setSearchParams(buildMallBrowseSearch(searchParams.toString(), id, searchQuery));
   }
 
   function handleSearch() {
-    const nextParams = new URLSearchParams();
-    if (categoryId) nextParams.set("categoryId", String(categoryId));
-    if (search.trim()) nextParams.set("q", search.trim());
-    setLocation(`/mall${nextParams.size ? `?${nextParams.toString()}` : ""}`);
+    setSearchParams(buildMallBrowseSearch(searchParams.toString(), categoryId, search));
   }
 
   return (
@@ -126,7 +145,7 @@ export default function MallHome() {
             {settings?.logoUrl ? (
               <img src={settings.logoUrl} alt={settings.shopName} className="h-10 w-10 rounded-lg object-contain" />
             ) : (
-              <img src={import.meta.env.VITE_APP_LOGO || ""} alt={settings?.shopName || "心田"} className="h-10 w-10 rounded-lg object-contain" />
+              <img src={XINTIAN_LOGO_URL} alt={settings?.shopName || "心田"} className="h-10 w-10 rounded-lg object-contain" />
             )}
             <span className="max-w-[11rem] truncate font-bold text-base mall-theme-primary sm:max-w-none sm:text-lg">{settings?.shopName || "心田 Xintian"}</span>
           </Link>
@@ -337,29 +356,7 @@ export default function MallHome() {
                 style={{ borderRadius: "16px" }}
               >
                 <div className="aspect-square overflow-hidden bg-gray-50 relative">
-                  {p.coverImageUrl ? (
-                    <>
-                      <ProductImagePreview
-                        src={p.coverImageUrl}
-                        alt={p.name}
-                        label={translate("放大查看商品照片", "Zoom product photo")}
-                        className="h-full w-full rounded-none border-0 bg-transparent"
-                        imageClassName="mall-img-zoom"
-                      />
-                    </>
-                  ) : p.images ? (
-                    <>
-                      <ProductImagePreview
-                        src={p.images}
-                        alt={p.name}
-                        label={translate("放大查看商品照片", "Zoom product photo")}
-                        className="h-full w-full rounded-none border-0 bg-transparent"
-                        imageClassName="mall-img-zoom"
-                      />
-                    </>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-300"><Package className="h-12 w-12" /></div>
-                  )}
+                  <MallProductCardMedia product={p} translate={translate} />
                   {p.isFeatured && (
                     <div className="absolute top-2 left-2">
                       <Badge className="shadow-sm flex items-center gap-0.5" style={{ backgroundColor: theme.primary, color: "#fff" }}>
@@ -377,6 +374,11 @@ export default function MallHome() {
                 </div>
                 <CardContent className="p-3">
                   <p className="text-sm font-medium line-clamp-2 mb-1" style={{ color: theme.font }}>{p.name}</p>
+                  {getSalesUnitLabel(p, lang) && (
+                    <p className="text-xs font-medium" style={{ color: theme.primary }}>
+                      {translate("销售单位：{unit}", "Sales unit: {unit}", { unit: getSalesUnitLabel(p, lang) })}
+                    </p>
+                  )}
                   <div className="flex items-center gap-2 flex-wrap">
                     {p.isSpecial && p.specialPrice && parseFloat(p.specialPrice) > 0 ? (
                       <>
@@ -471,7 +473,7 @@ export default function MallHome() {
             {settings?.logoUrl ? (
               <img src={settings.logoUrl} alt={settings.shopName} className="h-8 w-8 rounded object-contain" />
             ) : (
-              <img src={import.meta.env.VITE_APP_LOGO || ""} alt={settings?.shopName || "心田"} className="h-8 w-8 rounded object-contain" />
+              <img src={XINTIAN_LOGO_URL} alt={settings?.shopName || "心田"} className="h-8 w-8 rounded object-contain" />
             )}
             <span className="font-bold mall-theme-primary">{settings?.shopName || "心田 Xintian"}</span>
           </div>

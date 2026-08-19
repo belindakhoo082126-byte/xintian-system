@@ -3,6 +3,8 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { parse as parseCookie } from "cookie";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, adminProcedure, protectedProcedure, shippingProcedure, router } from "./_core/trpc";
+import { hasRepeatedVariantKeyword } from "../shared/variantDrafts";
+import { getCompanyLogoUrl } from "../shared/brandAssets";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -796,6 +798,16 @@ export const appRouter = router({
         name: z.string().min(1),
         type: z.enum(['physical', 'membership', 'gift']),
         productMode: z.enum(['simple', 'variant']),
+        initialVariants: z.array(z.object({
+          name: z.string().min(1),
+          keyword: z.string().min(1),
+          sellingPrice: z.string().optional(),
+          compareAtPrice: z.string().optional(),
+          memberPrice: z.string().optional(),
+          status: z.enum(['active', 'inactive', 'hidden']).optional(),
+          sortOrder: z.number().optional(),
+          imageUrl: z.string().optional(),
+        })).optional(),
         categoryId: z.number().optional(),
         unitId: z.number().optional(),
         keyword: z.string().min(1),
@@ -859,6 +871,9 @@ export const appRouter = router({
         const conflict = await db.checkKeywordConflict(input.keyword);
         if (!conflict.available) {
           throw new Error(`关键词「${input.keyword}」已被商品「${conflict.conflictWith?.name}」使用`);
+        }
+        if (input.initialVariants && hasRepeatedVariantKeyword(input.initialVariants.map((variant) => variant.keyword))) {
+          throw new Error("草稿规格关键词不可重复");
         }
         return await db.createProductEnhanced(input);
       }),
@@ -4040,9 +4055,10 @@ export const appRouter = router({
     // Get mall settings (public)
     settings: publicProcedure.query(async () => {
       const settings = await db.getMallSettings() || await db.createMallSettingsIfNotExists();
+      const companySettings = await db.getSystemSettings();
       // Don't expose analytics/pixel IDs to public
       const { facebookPixel, googleAnalytics, ...publicSettings } = settings as any;
-      return publicSettings;
+      return { ...publicSettings, logoUrl: getCompanyLogoUrl(companySettings) };
     }),
 
     // Get enabled banners (public)

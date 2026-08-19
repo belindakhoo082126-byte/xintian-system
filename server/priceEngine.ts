@@ -50,13 +50,7 @@ const num = (v: string | number | null | undefined): number => {
  * Check if special price is currently active (within date range)
  */
 export function isSpecialPriceActive(product: ProductPricing): boolean {
-  if (!product.isSpecial || !product.specialPrice) return false;
-  const now = new Date();
-  const start = product.specialPriceStartDate ? new Date(product.specialPriceStartDate) : null;
-  const end = product.specialPriceEndDate ? new Date(product.specialPriceEndDate) : null;
-  if (start && now < start) return false;
-  if (end && now > end) return false;
-  return true;
+  return isSpecialPriceCurrentlyActive(product);
 }
 
 /**
@@ -243,3 +237,4 @@ export function getAllPriceTiers(product: ProductPricing): Array<{
 
   return tiers;
 }
+import { isSpecialPriceCurrentlyActive } from "../shared/specialPriceSchedule";

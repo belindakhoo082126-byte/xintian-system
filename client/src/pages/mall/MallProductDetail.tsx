@@ -14,6 +14,8 @@ import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { MallCartFlyAnimation, type MallCartFlight } from "@/components/MallCartFlyAnimation";
 import { getMallShareLinks, MALL_FAVORITES_STORAGE_KEY, readMallFavoriteIds, toggleMallFavoriteId } from "@/lib/mallInteractions";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
+import { getSalesUnitLabel } from "@shared/salesUnitDisplay";
+import { getMallDetailDisplayImage, getMallDetailGalleryImages } from "@shared/mallDetailGallery";
 
 function getMallNoticeText(
   announcement: string,
@@ -53,6 +55,7 @@ export default function MallProductDetail() {
   const mallReturnHref = `/mall${mallReturnParams.size ? `?${mallReturnParams.toString()}` : ""}`;
   const [quantity, setQuantity] = useState(1);
   const [selectedVariantId, setSelectedVariantId] = useState<number | undefined>(undefined);
+  const [selectedGalleryImageUrl, setSelectedGalleryImageUrl] = useState<string | undefined>(undefined);
   const [cartCount, setCartCount] = useState(0);
   const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
   const [cartFlight, setCartFlight] = useState<MallCartFlight | null>(null);
@@ -98,9 +101,11 @@ export default function MallProductDetail() {
   }
 
   const images = product.images || [];
+  const galleryImages = getMallDetailGalleryImages(images);
   const detailImages = product.detailImages || [];
   const variants = product.variants || [];
   const selectedVariant = variants.find((v: any) => v.id === selectedVariantId);
+  const mainImageUrl = getMallDetailDisplayImage(product?.coverImageUrl, selectedGalleryImageUrl, selectedVariant?.imageUrl);
   const unitPrice = selectedVariant?.sellingPrice || product!.sellingPrice || "0";
   const subtotal = (parseFloat(unitPrice) * quantity).toFixed(2);
   const selectedVariantStock = selectedVariant as (typeof selectedVariant & { availableStock?: number; allowOversold?: boolean; allowPresale?: boolean }) | undefined;
@@ -116,6 +121,7 @@ export default function MallProductDetail() {
   const shortDescription = bilingualProductText(product.shortDescZh, product.shortDescEn);
   const detailedDescription = bilingualProductText(product.fullDescZh, product.fullDescEn);
   const careInstructions = bilingualProductText(product.careZh, product.careEn);
+  const salesUnitLabel = getSalesUnitLabel(product, lang);
 
   function setSafeQuantity(nextQuantity: number) {
     const requested = Math.max(1, Number.isFinite(nextQuantity) ? nextQuantity : 1);
@@ -243,11 +249,11 @@ export default function MallProductDetail() {
           <div className="space-y-3">
             <Card className="overflow-hidden border-white/80 bg-white/90" style={{ borderColor: `${theme.secondary}a8`, boxShadow: `0 10px 28px ${theme.primary}14` }}>
               <div className="aspect-square bg-gray-100">
-                {product.coverImageUrl ? (
+                {mainImageUrl ? (
                   <ProductImagePreview
-                    src={product.coverImageUrl}
-                    alt={product.name}
-                    label={t("放大查看商品主图", "Zoom product main photo")}
+                    src={mainImageUrl}
+                    alt={selectedVariant?.imageUrl ? `${product.name} · ${selectedVariant.name}` : product.name}
+                    label={selectedVariant?.imageUrl ? t("放大查看已选规格图片", "Zoom selected variant photo") : t("放大查看商品主图", "Zoom product main photo")}
                     className="h-full w-full rounded-none border-0 bg-transparent"
                   />
                 ) : (
@@ -255,16 +261,18 @@ export default function MallProductDetail() {
                 )}
               </div>
             </Card>
-            {images.length > 0 && (
+            {galleryImages.length > 0 && (
               <div className="flex gap-2 overflow-x-auto">
-                {images.map((img: any) => (
-                  <ProductImagePreview
+                {galleryImages.map((img) => (
+                  <button
                     key={img.id}
-                    src={img.imageUrl}
-                    alt={`${product.name} ${t("附加照片", "additional photo")}`}
-                    label={t("放大查看商品附加照片", "Zoom product additional photo")}
-                    className="h-20 w-20 rounded border"
-                  />
+                    type="button"
+                    onClick={() => setSelectedGalleryImageUrl(img.url)}
+                    aria-label={t("切换为商品照片", "Show product photo")}
+                    className={`h-20 w-20 shrink-0 overflow-hidden rounded border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${mainImageUrl === img.url && !selectedVariant?.imageUrl ? "border-primary" : "border-transparent"}`}
+                  >
+                    <img src={img.url} alt={`${product.name} ${t("附加照片", "additional photo")}`} className="h-full w-full object-cover" />
+                  </button>
                 ))}
               </div>
             )}
@@ -293,6 +301,11 @@ export default function MallProductDetail() {
                 <span className="text-lg text-muted-foreground line-through">RM {product.compareAtPrice}</span>
               )}
             </div>
+            {salesUnitLabel && (
+              <p className="text-sm font-medium" style={{ color: theme.primary }}>
+                {t(`销售单位：${salesUnitLabel}`, `Sales unit: ${salesUnitLabel}`)}
+              </p>
+            )}
 
             {/* Variants */}
             {variants.length > 0 && (
@@ -311,14 +324,7 @@ export default function MallProductDetail() {
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedVariant?.imageUrl && (
-                  <ProductImagePreview
-                    src={selectedVariant.imageUrl}
-                    alt={selectedVariant.name}
-                    label={t("放大查看规格照片", "Zoom variant photo")}
-                    className="mt-2 h-24 w-24 rounded-lg border"
-                  />
-                )}
+                {selectedVariant?.imageUrl && <p className="mt-2 text-xs text-muted-foreground">{t("已切换为该规格图片", "Showing the selected variant image")}</p>}
               </div>
             )}
 

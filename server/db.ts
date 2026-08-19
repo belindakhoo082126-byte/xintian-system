@@ -73,6 +73,8 @@ import { calculateMerchandiseNotificationBreakdown, calculateOrderPriceBreakdown
 import { isStockManagedProductType } from "../shared/inventoryStageRules";
 import { isAllowedPhysicalOrderStatusTransition } from "../shared/orderStatusTransitions";
 import { validateBatchInventoryAdjustmentDrafts } from "../shared/inventoryAdjustmentBatch";
+import { normalizeVariantDecimal } from "../shared/variantDecimalValues";
+import { groupVariantSummariesByProduct } from "../shared/variantSummaries";
 import { getPurchaseOrderReceiptDecision } from "../shared/purchaseOrderReceiptRules";
 import { resolveShippableQuantity } from "../shared/shipmentQuantityRules";
 import { deriveOrderStatusAfterPayment } from "../shared/orderPaymentStatusRules";
@@ -4433,7 +4435,28 @@ export async function getProductsEnhanced(params: {
   let orderedMap: Record<number, number> = {};
   let paidMap: Record<number, number> = {};
   let completedMap: Record<number, number> = {};
+  let variantSummaryMap: Record<number, Array<{
+    id: number;
+    productId: number;
+    name: string;
+    keyword: string;
+    stockQuantity: number | null;
+    status: string;
+  }>> = {};
   if (productIds.length > 0) {
+    const variantSummaries = await db.select({
+      id: variants.id,
+      productId: variants.productId,
+      name: variants.name,
+      keyword: variants.keyword,
+      stockQuantity: variants.stockQuantity,
+      status: variants.status,
+    })
+      .from(variants)
+      .where(inArray(variants.productId, productIds))
+      .orderBy(asc(variants.sortOrder), asc(variants.id));
+    variantSummaryMap = groupVariantSummariesByProduct(variantSummaries);
+
     // 三阶段必须互斥：未完成汇款的订单计入已下单；已确认全额汇款的待包货
     // 订单计入已汇款；已实际进入 shipped 包裹的数量计入已完成。
     // legacy special 订单依已付款金额分流，避免该历史状态造成数量遗失或重复。
@@ -4530,6 +4553,7 @@ export async function getProductsEnhanced(params: {
     orderedCount: orderedMap[p.id] || 0,
     paidCount: paidMap[p.id] || 0,
     completedCount: completedMap[p.id] || 0,
+    variantSummaries: variantSummaryMap[p.id] || [],
     // 正式订单已在下单时写入 stockQuantity；尚未转正式订单的 AI 草稿
     // 记录在 reservedQuantity，因此前端可售数只需额外扣除这一类临时预留。
     // 不得再从这里扣 pendingMap，否则会对正式订单发生二次扣减。
@@ -4682,6 +4706,16 @@ export async function createProductEnhanced(data: {
   specialPriceStartDate?: string;
   specialPriceEndDate?: string;
   keywordChannels?: string;
+  initialVariants?: Array<{
+    name: string;
+    keyword: string;
+    sellingPrice?: string;
+    compareAtPrice?: string;
+    memberPrice?: string;
+    status?: string;
+    sortOrder?: number;
+    imageUrl?: string;
+  }>;
 }) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
@@ -4772,6 +4806,9 @@ export async function createProductEnhanced(data: {
         isMain: i === 0,
       });
     }
+  }
+  for (const variant of data.initialVariants || []) {
+    await createVariant({ productId, ...variant });
   }
   return { id: productId, sku };
 }
@@ -5012,12 +5049,12 @@ export async function createVariant(data: {
     name: data.name,
     keyword: normalizedKeyword,
     sku,
-    sellingPrice: data.sellingPrice,
-    compareAtPrice: data.compareAtPrice,
-    memberPrice: data.memberPrice,
-    estimatedCost: data.estimatedCost,
-    currentCost: data.currentCost,
-    weight: data.weight,
+    sellingPrice: normalizeVariantDecimal(data.sellingPrice),
+    compareAtPrice: normalizeVariantDecimal(data.compareAtPrice),
+    memberPrice: normalizeVariantDecimal(data.memberPrice),
+    estimatedCost: normalizeVariantDecimal(data.estimatedCost),
+    currentCost: normalizeVariantDecimal(data.currentCost),
+    weight: normalizeVariantDecimal(data.weight),
     dimensions: data.dimensions,
     status: (data.status as any) || 'active',
     visibility: (data.visibility as any) || 'public',
@@ -5049,6 +5086,9 @@ export async function updateVariant(id: number, data: Partial<{
   const updateData: any = { ...data };
   // Variant quantities are maintained by purchase, order and inventory-ledger flows only.
   delete updateData.stockQuantity;
+  for (const field of ['sellingPrice', 'compareAtPrice', 'memberPrice', 'estimatedCost', 'currentCost', 'weight']) {
+    if (field in updateData) updateData[field] = normalizeVariantDecimal(updateData[field]);
+  }
   if (data.keyword) {
     updateData.keyword = data.keyword.toUpperCase().replace(/\s+/g, '');
   }
@@ -6547,17 +6587,48 @@ export async function getMallProducts(filters?: { categoryId?: number; search?: 
       like(products.keyword, `%${filters.search}%`),
     ));
   }
-  let query = db.select().from(products).where(and(...conditions));
-  return await query.orderBy(asc(products.mallSortOrder), desc(products.createdAt));
+  const rows = await db.select({
+    product: products,
+    unitNameZh: units.nameZh,
+    unitNameEn: units.nameEn,
+  })
+    .from(products)
+    .leftJoin(units, eq(products.unitId, units.id))
+    .where(and(...conditions))
+    .orderBy(asc(products.mallSortOrder), desc(products.createdAt));
+  const productIds = rows.map(({ product }) => product.id);
+  const galleryImageMap: Record<number, string[]> = {};
+  if (productIds.length > 0) {
+    const galleryImages = await db.select({ productId: productImages.productId, url: productImages.url })
+      .from(productImages)
+      .where(inArray(productImages.productId, productIds))
+      .orderBy(asc(productImages.sortOrder), asc(productImages.id));
+    for (const image of galleryImages) {
+      (galleryImageMap[image.productId] ||= []).push(image.url);
+    }
+  }
+  return rows.map(({ product, unitNameZh, unitNameEn }) => ({
+    ...product,
+    unitNameZh,
+    unitNameEn,
+    galleryImageUrls: galleryImageMap[product.id] || [],
+  }));
 }
 
 export async function getMallProductById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(products)
+  const result = await db.select({
+    product: products,
+    unitNameZh: units.nameZh,
+    unitNameEn: units.nameEn,
+  })
+    .from(products)
+    .leftJoin(units, eq(products.unitId, units.id))
     .where(and(eq(products.id, id), eq(products.syncToMall, true)))
     .limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  const row = result[0];
+  return row ? { ...row.product, unitNameZh: row.unitNameZh, unitNameEn: row.unitNameEn } : undefined;
 }
 
 export async function getMallProductVariants(productId: number) {

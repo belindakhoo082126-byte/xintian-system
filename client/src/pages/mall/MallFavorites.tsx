@@ -10,9 +10,11 @@ import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { MALL_FAVORITES_STORAGE_KEY, readMallFavoriteIds } from "@/lib/mallInteractions";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
+import { getSalesUnitLabel } from "@shared/salesUnitDisplay";
+import { XINTIAN_LOGO_URL } from "@shared/brandAssets";
 
 export default function MallFavorites() {
-  const { translate } = useI18n();
+  const { translate, lang } = useI18n();
   const t = (zh: string, en: string) => translate(zh, en);
   const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
   const { data: settings } = trpc.mall.settings.useQuery();
@@ -45,7 +47,7 @@ export default function MallFavorites() {
         <header className="sticky top-0 z-50 border-b shadow-sm backdrop-blur-md" style={{ backgroundColor: `${theme.background}ed`, borderColor: `${theme.secondary}8c` }}>
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
             <Link href="/mall" className="flex items-center gap-2">
-              {settings?.logoUrl ? <img src={settings.logoUrl} alt={settings.shopName} className="h-10 w-10 rounded-lg object-contain" /> : <PackageOpen className="h-9 w-9" style={{ color: theme.primary }} />}
+              {settings?.logoUrl ? <img src={settings.logoUrl} alt={settings.shopName} className="h-10 w-10 rounded-lg object-contain" /> : <img src={XINTIAN_LOGO_URL} alt={settings?.shopName || "心田"} className="h-10 w-10 rounded-lg object-contain" />}
               <span className="font-bold text-lg" style={{ color: theme.primary }}>{settings?.shopName || "心田 Xintian"}</span>
             </Link>
             <Link href="/mall/cart">
@@ -92,6 +94,7 @@ export default function MallFavorites() {
                         <p className="line-clamp-1 font-semibold">{product.nameZh || product.name}</p>
                         {product.nameEn && <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{product.nameEn}</p>}
                         <p className="mt-2 font-bold" style={{ color: theme.primary }}>RM {Number(product.sellingPrice || 0).toFixed(2)}</p>
+                        {getSalesUnitLabel(product, lang) && <p className="mt-0.5 text-xs font-medium" style={{ color: theme.primary }}>{t(`销售单位：${getSalesUnitLabel(product, lang)}`, `Sales unit: ${getSalesUnitLabel(product, lang)}`)}</p>}
                       </Link>
                       <Button variant="outline" size="sm" className="mt-3 w-full text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => removeFavorite(product.id)}><Trash2 className="mr-1.5 h-3.5 w-3.5" />{t("移除收藏", "Remove")}</Button>
                     </CardContent>

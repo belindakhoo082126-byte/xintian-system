@@ -19,6 +19,13 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
 import { AdminPageHeader } from "@/components/AdminPageHeader";
+import { hasDuplicateDraftVariantKeyword, normalizeVariantKeyword } from "@shared/variantDrafts";
+import { getVariantStockQuantity } from "@shared/variantStockDisplay";
+import { removeVariantFromList, upsertVariantInList } from "@shared/variantListSync";
+import { canConfigureSpecialPrice } from "@shared/specialPriceFormPlacement";
+import { shouldShowMallSyncBadge } from "@shared/mallSyncBadge";
+import { getSalesModeFromPresale, isPresaleSalesMode } from "@shared/presaleSalesMode";
+import { isSpecialPriceCurrentlyActive } from "@shared/specialPriceSchedule";
 import {
   LargeOperationDialogBody,
   LargeOperationDialogContent,
@@ -159,10 +166,27 @@ type VariantForm = {
   imageUrl: string;
   stockQuantity: number;
 };
+type DraftVariant = VariantForm & { draftId: string; sku?: string };
 const EMPTY_VARIANT: VariantForm = {
   name: "", keyword: "", sellingPrice: "", compareAtPrice: "", memberPrice: "",
   status: "active", sortOrder: 0, imageUrl: "", stockQuantity: 0,
 };
+
+function VariantSummaryList({ variants, translate }: { variants: any[]; translate: (zh: string, en: string, params?: Record<string, string | number>) => string }) {
+  if (!variants?.length) return null;
+  return (
+    <div className="mt-2 space-y-1 rounded-md border border-sky-100 bg-sky-50/60 px-2 py-1.5 text-xs text-slate-700">
+      <p className="font-medium text-sky-800">{translate("包含规格", "Included variants")}</p>
+      {variants.map((variant) => (
+        <div key={variant.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="font-medium">{variant.name}</span>
+          <span>{translate("库存：{quantity}", "Stock: {quantity}", { quantity: getVariantStockQuantity(variant.stockQuantity) })}</span>
+          <code className="rounded bg-white px-1 text-[11px] text-muted-foreground">{translate("关键词：{keyword}", "Keyword: {keyword}", { keyword: variant.keyword })}</code>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ProductsV2() {
   const { translate, lang } = useI18n();
@@ -200,6 +224,7 @@ export default function ProductsV2() {
   const [variants, setVariants] = useState<any[]>([]);
   const [variantDialogOpen, setVariantDialogOpen] = useState(false);
   const [editingVariantId, setEditingVariantId] = useState<number | null>(null);
+  const [editingDraftVariantId, setEditingDraftVariantId] = useState<string | null>(null);
   const [variantForm, setVariantForm] = useState<VariantForm>(EMPTY_VARIANT);
   const [showMemberLinkDialog, setShowMemberLinkDialog] = useState(false);
   const [currentProductId, setCurrentProductId] = useState<number | null>(null);
@@ -293,7 +318,7 @@ export default function ProductsV2() {
         dimensions: p.dimensions || {},
         isSpecial: p.isSpecial ?? false,
         specialPrice: p.specialPrice || "",
-        allowPresale: p.allowPresale ?? false,
+        allowPresale: isPresaleSalesMode((p as any).salesMode || "normal") || (p.allowPresale ?? false),
         allowStandaloneShipping: p.allowStandaloneShipping ?? false,
         standaloneShippingMethod: (p as any).standaloneShippingMethod || "fixed_fee",
         standaloneShippingFee: (p as any).standaloneShippingFee ? String((p as any).standaloneShippingFee) : "",
@@ -303,7 +328,7 @@ export default function ProductsV2() {
         pruningDesc: p.pruningDesc || "",
         productImages: (p.images || []).map((img: any) => img.url || img),
         videoUrl: (p as any).videoUrl || "",
-        salesMode: (p as any).salesMode || "normal",
+        salesMode: getSalesModeFromPresale(Boolean(p.allowPresale), (p as any).salesMode || "normal"),
         allowImportOrder: (p as any).allowImportOrder ?? false,
         preorderWaitDays: (p as any).preorderWaitDays || "",
         spotSaleEnabled: (p as any).spotSaleEnabled ?? false,
@@ -371,7 +396,13 @@ export default function ProductsV2() {
 
   // Variant mutations
   const createVariantMutation = trpc.variants.create.useMutation({
-    onSuccess: () => {
+    onSuccess: (data, input) => {
+      setVariants((current) => upsertVariantInList(current, {
+        ...input,
+        id: data.id,
+        sku: data.sku,
+        stockQuantity: 0,
+      }));
       utils.productsV2.invalidate();
       if (editingId) utils.productsV2.getById.invalidate({ id: editingId });
       toast.success(translate("规格添加成功", "Variant added successfully"));
@@ -382,7 +413,8 @@ export default function ProductsV2() {
   });
 
   const updateVariantMutation = trpc.variants.update.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, input) => {
+      setVariants((current) => current.map((variant) => variant.id === input.id ? { ...variant, ...input } : variant));
       utils.productsV2.invalidate();
       if (editingId) utils.productsV2.getById.invalidate({ id: editingId });
       toast.success(translate("规格更新成功", "Variant updated successfully"));
@@ -394,7 +426,8 @@ export default function ProductsV2() {
   });
 
   const deleteVariantMutation = trpc.variants.delete.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, input) => {
+      setVariants((current) => removeVariantFromList(current, input.id));
       utils.productsV2.invalidate();
       if (editingId) utils.productsV2.getById.invalidate({ id: editingId });
       toast.success(translate("规格已删除", "Variant deleted"));
@@ -446,6 +479,7 @@ export default function ProductsV2() {
     hydratedEditingIdRef.current = null;
     setForm(EMPTY_FORM);
     setVariants([]);
+    setEditingDraftVariantId(null);
     setStep(0);
     setEditingId(null);
     setCurrentProductId(null);
@@ -480,6 +514,7 @@ export default function ProductsV2() {
     const data: any = {
       ...form,
       salesMode: form.salesMode,
+      allowPresale: isPresaleSalesMode(form.salesMode),
       preorderWaitDays: form.preorderWaitDays || undefined,
       spotSaleEnabled: form.spotSaleEnabled,
       spotSaleQty: form.spotSaleQty,
@@ -494,6 +529,18 @@ export default function ProductsV2() {
       aiTags: JSON.stringify(form.aiTags),
       aiSellingPoints: form.aiSellingPoints || undefined,
       syncToMall: form.syncToMall,
+      initialVariants: !editingId && form.productMode === "variant"
+        ? variants.map(({ name, keyword, sellingPrice, compareAtPrice, memberPrice, status, sortOrder, imageUrl }: DraftVariant) => ({
+          name,
+          keyword: normalizeVariantKeyword(keyword),
+          sellingPrice: sellingPrice || undefined,
+          compareAtPrice: compareAtPrice || undefined,
+          memberPrice: memberPrice || undefined,
+          status,
+          sortOrder,
+          imageUrl: imageUrl || undefined,
+        }))
+        : undefined,
     };
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...data });
@@ -505,11 +552,13 @@ export default function ProductsV2() {
   function openAddVariant() {
     setVariantForm(EMPTY_VARIANT);
     setEditingVariantId(null);
+    setEditingDraftVariantId(null);
     setVariantDialogOpen(true);
   }
 
   function openEditVariant(v: any) {
-    setEditingVariantId(v.id);
+    setEditingVariantId(editingId ? v.id : null);
+    setEditingDraftVariantId(!editingId ? v.draftId : null);
     setVariantForm({
       id: v.id,
       name: v.name || "",
@@ -536,7 +585,23 @@ export default function ProductsV2() {
       return;
     }
     if (!editingId) {
-      toast.error(translate("请先保存商品再添加规格", "Please save the product before adding variants"));
+      if (hasDuplicateDraftVariantKeyword(variants, variantForm.keyword, editingDraftVariantId)) {
+        toast.error(translate("草稿规格关键词不可重复", "Draft variant keywords must be unique"));
+        return;
+      }
+      const nextDraft: DraftVariant = {
+        ...variantForm,
+        keyword: normalizeVariantKeyword(variantForm.keyword),
+        draftId: editingDraftVariantId || `draft-${Date.now()}`,
+        sku: "",
+        stockQuantity: 0,
+      };
+      setVariants((current) => editingDraftVariantId
+        ? current.map((variant) => variant.draftId === editingDraftVariantId ? nextDraft : variant)
+        : [...current, nextDraft]);
+      setVariantDialogOpen(false);
+      setVariantForm(EMPTY_VARIANT);
+      setEditingDraftVariantId(null);
       return;
     }
     if (editingVariantId) {
@@ -689,14 +754,14 @@ export default function ProductsV2() {
                     <TableCell className="font-medium">
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="shrink-0"><ProductImagePreview src={p.coverImageUrl} alt={p.name} className="h-20 w-20" label={translate("预览商品图片", "Preview product image")} /></div>
-                        <div className="min-w-0 space-y-1.5"><p className="text-lg font-semibold leading-snug line-clamp-2" title={p.name}>{p.name}</p><code className="block truncate rounded bg-muted px-1.5 py-0.5 text-sm text-muted-foreground" title={p.keyword || undefined}>{p.keyword || translate("未设关键词", "No keyword")}</code></div>
+                        <div className="min-w-0 space-y-1.5"><p className="text-lg font-semibold leading-snug line-clamp-2" title={p.name}>{p.name}</p><code className="block truncate rounded bg-muted px-1.5 py-0.5 text-sm text-muted-foreground" title={p.keyword || undefined}>{p.keyword || translate("未设关键词", "No keyword")}</code>{p.productMode === "variant" && <VariantSummaryList variants={p.variantSummaries} translate={translate} />}</div>
                       </div>
 	                    </TableCell>
 	                    <TableCell><div className="space-y-1.5"><Badge className={TYPE_BADGES[p.type]} variant="secondary">{getProductTypeLabel(p.type)}</Badge><p className="text-sm text-muted-foreground">{p.productMode === "variant" ? translate("多规格", "Variant") : translate("单规格", "Simple")}</p></div></TableCell>
-	                    <TableCell>{p.type === "gift" ? translate("免费", "Free") : `RM ${p.sellingPrice || "0"}`}</TableCell>
+                    <TableCell>{p.type === "gift" ? translate("免费", "Free") : isSpecialPriceCurrentlyActive(p) ? <div className="space-y-0.5"><p className="font-semibold text-orange-600">RM {p.specialPrice}</p><p className="text-sm text-muted-foreground line-through">RM {p.sellingPrice || "0"}</p></div> : `RM ${p.sellingPrice || "0"}`}</TableCell>
                     <TableCell><Badge className={STATUS_BADGES[p.status]} variant="secondary">{translate(RAW_STATUS_LABELS[p.status]?.zh, RAW_STATUS_LABELS[p.status]?.en) || p.status}</Badge></TableCell>
                     <TableCell>{(p.type === "physical" || p.type === "gift") ? <div className="space-y-1.5"><p>{p.type === "gift" ? translate("赠品库存", "Gift Stock") : translate("库存", "Stock")}: <span className="font-semibold">{p.stockQuantity ?? 0}</span></p><div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">{(["ordered", "paid", "completed"] as const).map((type, index) => { const count = type === "ordered" ? p.orderedCount : type === "paid" ? p.paidCount : p.completedCount; const color = type === "ordered" ? "text-blue-600" : type === "paid" ? "text-amber-700" : "text-green-600"; const label = type === "ordered" ? translate("已下单", "Ordered") : type === "paid" ? translate("已汇款", "Paid") : translate("已完成", "Completed"); return <span key={type} className="inline-flex items-center gap-1">{index > 0 && <span className="text-muted-foreground">|</span>}<button type="button" className={`font-medium ${color} underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`} onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type })}>{label} {count ?? 0}</button></span>; })}</div></div> : translate("—", "—")}</TableCell>
-                    <TableCell><div className="flex flex-wrap gap-1.5">{p.type === "physical" && p.allowPresale && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("预售", "Presale")}</Badge>}{p.isFeatured && <Badge className="border border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-100">{translate("推荐", "Featured")}</Badge>}{p.isSpecial && <Badge className="border border-orange-200 bg-orange-100 text-orange-800 hover:bg-orange-100">{translate("特价", "Special")}</Badge>}{p.type === "gift" && <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{translate("赠品", "Gift")}</Badge>}{p.type === "virtual" && <Badge className="border border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{translate("虚拟商品", "Virtual")}</Badge>}{p.salesMode === "import_preorder" && <Badge className="border border-sky-200 bg-sky-100 text-sky-800 hover:bg-sky-100">{translate("中国进口", "China Import")}</Badge>}{p.salesMode !== "import_preorder" && p.allowImportOrder && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("可入 XTC", "Eligible for XTC")}</Badge>}{!(p.type === "physical" && p.allowPresale) && !p.isFeatured && !p.isSpecial && p.type !== "gift" && p.type !== "virtual" && p.salesMode !== "import_preorder" && !p.allowImportOrder && <span className="text-muted-foreground">{translate("—", "—")}</span>}</div></TableCell>
+                    <TableCell><div className="flex flex-wrap gap-1.5">{shouldShowMallSyncBadge(p) && <Badge className="border border-teal-200 bg-teal-100 text-teal-800 hover:bg-teal-100">{translate("商城同步", "Mall Sync")}</Badge>}{p.type === "physical" && p.allowPresale && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("预售", "Presale")}</Badge>}{p.isFeatured && <Badge className="border border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-100">{translate("推荐", "Featured")}</Badge>}{p.isSpecial && <Badge className="border border-orange-200 bg-orange-100 text-orange-800 hover:bg-orange-100">{translate("特价", "Special")}</Badge>}{p.type === "gift" && <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{translate("赠品", "Gift")}</Badge>}{p.type === "virtual" && <Badge className="border border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{translate("虚拟商品", "Virtual")}</Badge>}{p.salesMode === "import_preorder" && <Badge className="border border-sky-200 bg-sky-100 text-sky-800 hover:bg-sky-100">{translate("中国进口", "China Import")}</Badge>}{p.salesMode !== "import_preorder" && p.allowImportOrder && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("可入 XTC", "Eligible for XTC")}</Badge>}{!shouldShowMallSyncBadge(p) && !(p.type === "physical" && p.allowPresale) && !p.isFeatured && !p.isSpecial && p.type !== "gift" && p.type !== "virtual" && p.salesMode !== "import_preorder" && !p.allowImportOrder && <span className="text-muted-foreground">{translate("—", "—")}</span>}</div></TableCell>
                     <TableCell className="sticky right-0 z-10 bg-card text-center shadow-[-5px_0_10px_-8px_rgba(0,0,0,0.45)]"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-10 w-10" aria-label={translate(`操作「{name}」`, `Actions for "{name}"`, { name: p.name })}><MoreHorizontal className="h-5 w-5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuLabel>{translate("商品操作", "Product Actions")}</DropdownMenuLabel><DropdownMenuItem onClick={() => openEdit(p)}><Eye className="mr-2 h-4 w-4" />{translate("查看详情", "View details")}</DropdownMenuItem><DropdownMenuItem onClick={() => openEdit(p)}><Edit2 className="mr-2 h-4 w-4" />{translate("编辑商品", "Edit product")}</DropdownMenuItem>{p.type === "physical" && <DropdownMenuItem onClick={() => setLocation("/purchase-orders")}><PackagePlus className="mr-2 h-4 w-4" />{translate("调整库存", "Adjust stock")}</DropdownMenuItem>}{p.type === "physical" && <DropdownMenuItem onClick={() => setStockLogTarget({ productId: p.id, productName: p.name })}><History className="mr-2 h-4 w-4" />{translate("查看库存日志", "View stock log")}</DropdownMenuItem>}<DropdownMenuItem onClick={() => duplicateMutation.mutate({ id: p.id })}><Copy className="mr-2 h-4 w-4" />{translate("复制商品", "Duplicate")}</DropdownMenuItem>{p.type === "membership" && <DropdownMenuItem onClick={() => { setCurrentProductId(p.id); setShowMemberLinkDialog(true); }}><LinkIcon className="mr-2 h-4 w-4" />{translate("会员链接", "Member link")}</DropdownMenuItem>}<DropdownMenuSeparator /><DropdownMenuItem onClick={() => updateMutation.mutate({ id: p.id, status: p.status === "active" ? "inactive" : "active" })}><Power className="mr-2 h-4 w-4" />{p.status === "active" ? translate("下架", "Unpublish") : translate("上架", "Publish")}</DropdownMenuItem><DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => { if (confirm(translate(`确定删除「{name}」吗？`, `Are you sure you want to delete "{name}"?`, { name: p.name }))) deleteMutation.mutate({ id: p.id }); }}><Trash2 className="mr-2 h-4 w-4" />{translate("删除", "Delete")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
                 ))}
@@ -719,7 +784,8 @@ export default function ProductsV2() {
                 <div className="min-w-0 flex-1 space-y-1.5">
                   <p className="line-clamp-2 text-base font-semibold leading-snug" title={p.name}>{p.name}</p>
                   <code className="block truncate rounded bg-muted px-1.5 py-0.5 text-sm text-muted-foreground" title={p.keyword || undefined}>{p.keyword || translate("未设关键词", "No keyword")}</code>
-                  <div className="flex flex-wrap items-center gap-2"><Badge className={STATUS_BADGES[p.status]} variant="secondary">{translate(RAW_STATUS_LABELS[p.status]?.zh, RAW_STATUS_LABELS[p.status]?.en) || p.status}</Badge><span className="font-semibold">{p.type === "gift" ? translate("免费", "Free") : `RM ${p.sellingPrice || "0"}`}</span></div>
+                  {p.productMode === "variant" && <VariantSummaryList variants={p.variantSummaries} translate={translate} />}
+                  <div className="flex flex-wrap items-center gap-2"><Badge className={STATUS_BADGES[p.status]} variant="secondary">{translate(RAW_STATUS_LABELS[p.status]?.zh, RAW_STATUS_LABELS[p.status]?.en) || p.status}</Badge>{p.type === "gift" ? <span className="font-semibold">{translate("免费", "Free")}</span> : isSpecialPriceCurrentlyActive(p) ? <span className="flex items-center gap-1.5"><span className="font-semibold text-orange-600">RM {p.specialPrice}</span><span className="text-sm text-muted-foreground line-through">RM {p.sellingPrice || "0"}</span></span> : <span className="font-semibold">RM {p.sellingPrice || "0"}</span>}</div>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild><Button variant="outline" size="icon" className="h-10 w-10 shrink-0" aria-label={translate(`操作「{name}」`, `Actions for "{name}"`, { name: p.name })}><MoreHorizontal className="h-5 w-5" /></Button></DropdownMenuTrigger>
@@ -727,7 +793,7 @@ export default function ProductsV2() {
                 </DropdownMenu>
               </div>
               {(p.type === "physical" || p.type === "gift") && <div className="rounded-lg bg-muted/45 p-3"><div className="flex items-baseline justify-between"><span className="text-sm text-muted-foreground">{p.type === "gift" ? translate("赠品库存", "Gift Stock") : translate("库存", "Stock")}</span><span className="text-lg font-semibold">{p.stockQuantity ?? 0}</span></div><div className="mt-2 grid grid-cols-3 gap-2 border-t pt-2 text-center text-sm"><button type="button" className="text-blue-600" onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type: "ordered" })}><span className="block text-muted-foreground">{translate("已下单", "Ordered")}</span><span className="font-semibold">{p.orderedCount ?? 0}</span></button><button type="button" className="border-x text-amber-700" onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type: "paid" })}><span className="block text-muted-foreground">{translate("已汇款", "Paid")}</span><span className="font-semibold">{p.paidCount ?? 0}</span></button><button type="button" className="text-green-600" onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type: "completed" })}><span className="block text-muted-foreground">{translate("已完成", "Completed")}</span><span className="font-semibold">{p.completedCount ?? 0}</span></button></div></div>}
-              <div className="flex flex-wrap gap-1.5">{p.type === "physical" && p.allowPresale && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("预售", "Presale")}</Badge>}{p.isFeatured && <Badge className="border border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-100">{translate("推荐", "Featured")}</Badge>}{p.isSpecial && <Badge className="border border-orange-200 bg-orange-100 text-orange-800 hover:bg-orange-100">{translate("特价", "Special")}</Badge>}{p.type === "gift" && <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{translate("赠品", "Gift")}</Badge>}{p.type === "virtual" && <Badge className="border border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{translate("虚拟商品", "Virtual")}</Badge>}{p.salesMode === "import_preorder" && <Badge className="border border-sky-200 bg-sky-100 text-sky-800 hover:bg-sky-100">{translate("中国进口", "China Import")}</Badge>}{p.salesMode !== "import_preorder" && p.allowImportOrder && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("可入 XTC", "Eligible for XTC")}</Badge>}{!(p.type === "physical" && p.allowPresale) && !p.isFeatured && !p.isSpecial && p.type !== "gift" && p.type !== "virtual" && p.salesMode !== "import_preorder" && !p.allowImportOrder && <span className="text-sm text-muted-foreground">{translate("未开启销售设置", "No sales settings enabled")}</span>}</div>
+              <div className="flex flex-wrap gap-1.5">{shouldShowMallSyncBadge(p) && <Badge className="border border-teal-200 bg-teal-100 text-teal-800 hover:bg-teal-100">{translate("商城同步", "Mall Sync")}</Badge>}{p.type === "physical" && p.allowPresale && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("预售", "Presale")}</Badge>}{p.isFeatured && <Badge className="border border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-100">{translate("推荐", "Featured")}</Badge>}{p.isSpecial && <Badge className="border border-orange-200 bg-orange-100 text-orange-800 hover:bg-orange-100">{translate("特价", "Special")}</Badge>}{p.type === "gift" && <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{translate("赠品", "Gift")}</Badge>}{p.type === "virtual" && <Badge className="border border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{translate("虚拟商品", "Virtual")}</Badge>}{p.salesMode === "import_preorder" && <Badge className="border border-sky-200 bg-sky-100 text-sky-800 hover:bg-sky-100">{translate("中国进口", "China Import")}</Badge>}{p.salesMode !== "import_preorder" && p.allowImportOrder && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("可入 XTC", "Eligible for XTC")}</Badge>}{!shouldShowMallSyncBadge(p) && !(p.type === "physical" && p.allowPresale) && !p.isFeatured && !p.isSpecial && p.type !== "gift" && p.type !== "virtual" && p.salesMode !== "import_preorder" && !p.allowImportOrder && <span className="text-sm text-muted-foreground">{translate("未开启销售设置", "No sales settings enabled")}</span>}</div>
               <details className="group rounded-lg border px-3 py-2.5"><summary className="cursor-pointer text-sm font-medium text-primary">{translate("查看详情", "View details")}</summary><dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t pt-3 text-sm"><div><dt className="text-muted-foreground">{translate("类型／模式", "Type / Mode")}</dt><dd className="mt-0.5">{getProductTypeLabel(p.type)}／{p.productMode === "variant" ? translate("多规格", "Variant") : translate("单规格", "Simple")}</dd></div><div><dt className="text-muted-foreground">{translate("分类", "Category")}</dt><dd className="mt-0.5 break-words">{categories?.find(c => c.id === p.categoryId)?.[lang === "zh" ? "nameZh" : "nameEn"] || translate("—", "—")}</dd></div></dl></details>
             </CardContent>
           </Card>
@@ -1002,23 +1068,9 @@ export default function ProductsV2() {
                       </div>
                     </div>
 
-                    {/* V2: Special, Presale, Standalone Shipping */}
+                    {/* V2: Standalone Shipping */}
                     {isPhysical && (
-                      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-                        <div className="flex min-h-24 items-center justify-between rounded-xl border p-4">
-                          <div>
-                            <Label>{translate("特价商品", "Special Price")}</Label>
-                            <p className="text-xs text-muted-foreground">{translate("商城显示特价标记", "Show special price tag in mall")}</p>
-                          </div>
-                          <Switch checked={form.isSpecial} onCheckedChange={(v) => setForm({ ...form, isSpecial: v })} />
-                        </div>
-                        <div className="flex min-h-24 items-center justify-between rounded-xl border p-4">
-                          <div>
-                            <Label>{translate("允许预售", "Allow Presale")}</Label>
-                            <p className="text-xs text-muted-foreground">{translate("库存不足时可预售", "Allow pre-order when out of stock")}</p>
-                          </div>
-                          <Switch checked={form.allowPresale} onCheckedChange={(v) => setForm({ ...form, allowPresale: v })} />
-                        </div>
+                      <div className="grid grid-cols-1 gap-5">
                         <div className="flex min-h-24 items-center justify-between rounded-xl border p-4">
                           <div>
                             <Label>{translate("单颗邮寄", "Standalone Shipping")}</Label>
@@ -1053,7 +1105,7 @@ export default function ProductsV2() {
                       <div className="space-y-3 rounded-lg border p-4 bg-muted/20">
                         <div>
                           <Label>{translate("销售模式", "Sales Mode")}</Label>
-                          <Select value={form.salesMode} onValueChange={(v) => setForm({ ...form, salesMode: v })}>
+                          <Select value={form.salesMode} onValueChange={(v) => setForm({ ...form, salesMode: v, allowPresale: isPresaleSalesMode(v) })}>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="normal">{translate("普通现货", "Normal Stock")}</SelectItem>
@@ -1097,13 +1149,6 @@ export default function ProductsV2() {
                             )}
                           </div>
                         )}
-                      </div>
-                    )}
-                    {isPhysical && form.isSpecial && (
-                      <div>
-                        <Label>{translate("特价金额 (RM)", "Special Price (RM)")}</Label>
-                        <Input type="number" placeholder="0.00" value={form.specialPrice}
-                          onChange={(e) => setForm({ ...form, specialPrice: e.target.value })} />
                       </div>
                     )}
                   </div>
@@ -1398,6 +1443,38 @@ export default function ProductsV2() {
                       </div>
                     </div>
 
+                    {canConfigureSpecialPrice(form.type) && (
+                      <div className="space-y-4 rounded-lg border border-orange-200 bg-orange-50/40 p-4 dark:border-orange-900/60 dark:bg-orange-950/20">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <Label>{translate("特价商品", "Special Price")}</Label>
+                            <p className="mt-1 text-xs text-muted-foreground">{translate("启用后商城显示特价标记，并以特价金额结算", "Shows a special-price tag in the mall and uses the special price at checkout")}</p>
+                          </div>
+                          <Switch checked={form.isSpecial} onCheckedChange={(v) => setForm({ ...form, isSpecial: v })} />
+                        </div>
+                        {form.isSpecial && (
+                          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                            <div>
+                              <Label>{translate("特价金额 (RM)", "Special Price (RM)")} *</Label>
+                              <Input type="number" min="0" step="0.01" placeholder="0.00" value={form.specialPrice}
+                                onChange={(e) => setForm({ ...form, specialPrice: e.target.value })} />
+                            </div>
+                            <div>
+                              <Label>{translate("特价开始日期", "Special Price Start Date")}</Label>
+                              <Input type="date" value={form.specialPriceStartDate}
+                                onChange={(e) => setForm({ ...form, specialPriceStartDate: e.target.value })} />
+                            </div>
+                            <div>
+                              <Label>{translate("特价结束日期", "Special Price End Date")}</Label>
+                              <Input type="date" value={form.specialPriceEndDate}
+                                onChange={(e) => setForm({ ...form, specialPriceEndDate: e.target.value })} />
+                              <p className="mt-1 text-xs text-muted-foreground">{translate("未设置日期即立即生效并持续至手动关闭；售罄时停止下单，但不会自动关闭特价。", "Without dates, the special price starts immediately and continues until manually turned off. Sold-out products cannot be ordered, but the special setting is retained.")}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div>
                       <Label>{translate("当前成本 (RM)", "Current Cost (RM)")}</Label>
                       <Input type="number" placeholder="0.00" value={form.currentCost}
@@ -1467,23 +1544,6 @@ export default function ProductsV2() {
                         <p className="text-xs text-muted-foreground mt-1">{translate("0=无限制", "0=No limit")}</p>
                       </div>
                     </div>
-
-                    {/* V4: Special Price Date Range */}
-                    {form.isSpecial && form.specialPrice && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label>{translate("特价开始日期", "Special Price Start Date")}</Label>
-                          <Input type="date" value={form.specialPriceStartDate}
-                            onChange={(e) => setForm({ ...form, specialPriceStartDate: e.target.value })} />
-                        </div>
-                        <div>
-                          <Label>{translate("特价结束日期", "Special Price End Date")}</Label>
-                          <Input type="date" value={form.specialPriceEndDate}
-                            onChange={(e) => setForm({ ...form, specialPriceEndDate: e.target.value })} />
-                          <p className="text-xs text-muted-foreground mt-1">{translate("结束后自动恢复原价", "Auto-revert after end date")}</p>
-                        </div>
-                      </div>
-                    )}
 
                     {/* V4: Price Preview (价格预览) */}
                     {!isGift && form.sellingPrice && (
@@ -1661,14 +1721,14 @@ export default function ProductsV2() {
                       <>
                         <div className="flex items-center justify-between">
                           <h3 className="font-medium">{translate("规格列表", "Variant List")}</h3>
-                          <Button size="sm" onClick={openAddVariant} disabled={!editingId}>
+                          <Button size="sm" onClick={openAddVariant}>
                             <Plus className="h-4 w-4 mr-1" />
                             {translate("添加规格", "Add Variant")}
                           </Button>
                         </div>
                         {!editingId && (
-                          <p className="text-xs text-orange-600 bg-orange-50 dark:bg-orange-950/20 p-2 rounded">
-                            {translate("请先保存商品后再添加规格", "Please save the product before adding variants")}
+                          <p className="text-xs text-blue-700 bg-blue-50 dark:bg-blue-950/20 p-2 rounded">
+                            {translate("可先新增、编辑或删除草稿规格；创建商品时会与商品资料一并保存。", "You can add, edit, or remove draft variants now. They will be saved together when the product is created.")}
                           </p>
                         )}
                         <p className="text-xs text-muted-foreground">{translate("规格关键词 = 商品关键词 + 规格关键词（自动组合）", "Variant Keyword = Product Keyword + Variant Keyword (auto-combined)")}</p>
@@ -1682,7 +1742,7 @@ export default function ProductsV2() {
                                   <span className="font-medium text-sm">{lang === "zh" ? v.nameZh || v.name : v.nameEn || v.name}</span>
                                   <div className="flex items-center gap-2 mt-1">
                                     <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{v.keyword}</code>
-                                    <span className="text-xs text-muted-foreground">SKU: {v.sku}</span>
+                                    <span className="text-xs text-muted-foreground">{translate("库存：{quantity}", "Stock: {quantity}", { quantity: getVariantStockQuantity(v.stockQuantity) })}</span>
                                   </div>
                                 </div>
                                 <span className="text-sm">RM {v.sellingPrice || "—"}</span>
@@ -1691,7 +1751,11 @@ export default function ProductsV2() {
                                   <Edit2 className="h-4 w-4" />
                                 </Button>
                                 <Button variant="ghost" size="icon" className="h-8 w-8"
-                                  onClick={() => { if (confirm(translate("确定删除规格「{name}」？", "Are you sure you want to delete variant \"{name}\"", { name: lang === "zh" ? v.nameZh || v.name : v.nameEn || v.name }))) deleteVariantMutation.mutate({ id: v.id }); }}>
+                                  onClick={() => {
+                                    if (!confirm(translate("确定删除规格「{name}」？", "Are you sure you want to delete variant \"{name}\"", { name: lang === "zh" ? v.nameZh || v.name : v.nameEn || v.name }))) return;
+                                    if (editingId) deleteVariantMutation.mutate({ id: v.id });
+                                    else setVariants((current) => current.filter((variant) => variant.draftId !== v.draftId));
+                                  }}>
                                   <Trash2 className="h-4 w-4 text-destructive" />
                                 </Button>
                               </div>
