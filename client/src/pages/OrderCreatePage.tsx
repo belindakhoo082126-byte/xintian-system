@@ -77,6 +77,7 @@ interface ManualOrderItem {
   sku?: string;
   keyword?: string;
   sellingPrice?: string;
+  unitWeight?: string;
   availableStock?: number;
   allowOversold?: boolean;
   allowPresale?: boolean;
@@ -341,7 +342,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const totalWeight = useMemo(() => {
     return manualItems
       .filter(i => i.productType === "physical" || i.productType === "gift")
-      .reduce((sum, i) => sum + 0.5 * i.quantity, 0);
+      .reduce((sum, i) => sum + (Number(i.unitWeight || 0.5) * i.quantity), 0);
   }, [manualItems]);
 
   const { data: shippingResult } = trpc.orders.calculateShipping.useQuery(
@@ -452,6 +453,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         productId: product.id,
         productName: product.name,
         productType: product.type || "physical",
+        unitWeight: String((product as any).weightKg || "0.50"),
         availableStock: Number((product as any).stockQuantity ?? 0),
         allowOversold: !!(product as any).allowOversold,
         allowPresale: !!((product as any).allowPresale ?? (product as any).allowOversold),
@@ -969,6 +971,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                           quantity: 1,
                           unitPrice,
                           subtotal: unitPrice,
+                          unitWeight: String(p.weightKg || "0.50"),
                           priceType: orderNature,
                           unitCost: p.costPrice || p.supplierCost || "0",
                           image: p.coverImageUrl || p.imageUrl || p.image,

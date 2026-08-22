@@ -23,6 +23,9 @@ import {
 import { toast } from "sonner";
 import { useI18n } from "@/contexts/I18nContext";
 import { ImageZoomDialog } from "@/components/ImageZoomDialog";
+import { getLiveRoomCategoryLabel, shouldQueryLiveRoomProducts } from "@shared/liveRoomCategorySync";
+import { liveStudioLayout } from "@shared/liveStudioLayout";
+import { toLiveStockDeduction } from "@shared/liveStockDeductionRules";
 
 const productStatusLabels: Record<string, string> = {
   active: "正常",
@@ -144,7 +147,7 @@ export default function LiveRoomDetail(props: any) {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [stockDialogOpen, setStockDialogOpen] = useState(false);
   const [stockProductId, setStockProductId] = useState<number | null>(null);
-  const [stockForm, setStockForm] = useState({ quantityChange: 0, reason: "other" });
+  const [stockForm, setStockForm] = useState<{ quantityChange: number; reason: "damaged" | "scrap" | "unhealthy" | "other" }>({ quantityChange: 1, reason: "other" });
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [commentSearch, setCommentSearch] = useState("");
   const [commentFilter, setCommentFilter] = useState("all");
@@ -163,6 +166,7 @@ export default function LiveRoomDetail(props: any) {
   const [priceEditId, setPriceEditId] = useState<number | null>(null);
   const [priceEditValue, setPriceEditValue] = useState("");
   const [roomNotes, setRoomNotes] = useState("");
+  const [memoCollapsed, setMemoCollapsed] = useState(true);
   const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
   // V2.0: Send comment state
   const [commentInput, setCommentInput] = useState("");
@@ -230,9 +234,9 @@ export default function LiveRoomDetail(props: any) {
   // Product search for batch add
   const productSearchResults = trpc.liveRooms.searchProducts.useQuery(
     { liveRoomId: roomId, query: productSearchQuery, categoryId: categoryFilter !== "all" ? Number(categoryFilter) : undefined },
-    { enabled: productSearchQuery.length > 0 }
+    { enabled: shouldQueryLiveRoomProducts(productSearchQuery, categoryFilter) }
   );
-  const categoriesQuery = trpc.productCategoriesLegacy.list.useQuery({ activeOnly: true });
+  const categoriesQuery = trpc.categories.list.useQuery({ activeOnly: true });
 
   // Mutations
   const batchAddMutation = trpc.liveRooms.batchAddProducts.useMutation({
@@ -272,7 +276,7 @@ export default function LiveRoomDetail(props: any) {
       toast.success(`${t("live.stockAdjusted")} ${data.startStock}`);
       queryClient.liveRooms.getProducts.invalidate({ liveRoomId: roomId });
       setStockDialogOpen(false);
-      setStockForm({ quantityChange: 0, reason: "other" });
+      setStockForm({ quantityChange: 1, reason: "other" });
     },
     onError: (e: any) => toast.error(t("live.adjustFailed") + ": " + e.message),
   });
@@ -445,7 +449,7 @@ export default function LiveRoomDetail(props: any) {
 
   function openStockDialog(productId: number) {
     setStockProductId(productId);
-    setStockForm({ quantityChange: 0, reason: "other" });
+    setStockForm({ quantityChange: 1, reason: "other" });
     setStockDialogOpen(true);
   }
 
@@ -518,9 +522,9 @@ export default function LiveRoomDetail(props: any) {
   const isEnded = room.status === "ended" || room.status === "closed";
 
   return (
-    <div className="flex flex-col h-[calc(100vh-2rem)] gap-2">
+    <div className={liveStudioLayout.container}>
       {/* Header */}
-      <div className="flex items-center justify-between flex-shrink-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={onBack} className="gap-2">
             <ArrowLeft className="h-4 w-4" />
@@ -632,48 +636,59 @@ export default function LiveRoomDetail(props: any) {
           )}
 
           {/* Stats Bar - inline compact */}
-          <div className="flex items-center gap-4 text-xs flex-shrink-0 px-1">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs flex-shrink-0 px-1">
             <span className="flex items-center gap-1" title="商品数为本场已加入的独立商品；商品数量为本场成功捉单的总件数。"><Package className="h-3.5 w-3.5 text-blue-500" /><span className="text-muted-foreground">{t("live.products")}</span> <span className="font-bold">{stats.productCount || 0}</span></span>
             <span className="flex items-center gap-1"><ShoppingCart className="h-3.5 w-3.5 text-green-500" /><span className="text-muted-foreground">{t("live.orders")}</span> <span className="font-bold">{stats.orderCount || 0}</span></span>
             <span className="flex items-center gap-1" title="仅统计本场已成功捉单的商品件数，已取消订单会从商品管理的阶段统计中扣除。"><Boxes className="h-3.5 w-3.5 text-orange-500" /><span className="text-muted-foreground">{t("live.items")}</span> <span className="font-bold">{stats.totalItems || 0}</span></span>
             <span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5 text-emerald-500" /><span className="text-muted-foreground">{t("live.revenue")}</span> <span className="font-bold">RM{(Number(stats.totalRevenue) || 0).toFixed(2)}</span></span>
           </div>
 
-          <Card className="flex-shrink-0 border-amber-200 bg-amber-50/40">
-            <CardContent className="space-y-2 py-2.5">
-              <div className="flex items-center gap-2">
-                <StickyNote className="h-4 w-4 shrink-0 text-amber-700" />
-                <span className="text-xs font-semibold text-amber-900">{tt("直播备忘录", "Live memo")}</span>
-                <span className="text-[11px] text-muted-foreground">{tt("仅后台可见", "Visible to staff only")}</span>
-              </div>
-              <Textarea
-                value={roomNotes}
-                onChange={(event) => setRoomNotes(event.target.value)}
-                placeholder={tt("记录本场规则、补货提醒或交接事项；保存后会立即在此处显示。", "Record rules, restock reminders, or handover notes for this live; saved notes appear here immediately.")}
-                aria-label={tt("直播备忘录", "Live memo")}
-                className="min-h-16 resize-y bg-background text-xs"
-              />
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[11px] text-muted-foreground">
-                  {(room.notes || "").trim()
-                    ? tt("已载入最近保存的备忘录", "Most recently saved memo loaded")
-                    : tt("尚未保存备忘录", "No memo has been saved")}
-                </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 shrink-0 px-3 text-xs"
-                  disabled={saveRoomNotesMutation.isPending || roomNotes.trim() === (room.notes || "").trim()}
-                  onClick={() => saveRoomNotesMutation.mutate({ liveRoomId: roomId, content: roomNotes })}
-                >
-                  {saveRoomNotesMutation.isPending ? tt("保存中…", "Saving…") : tt("保存备忘", "Save memo")}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <Collapsible open={!memoCollapsed} onOpenChange={(open) => setMemoCollapsed(!open)}>
+            <Card className="flex-shrink-0 border-amber-200 bg-amber-50/40">
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer py-2.5 hover:bg-amber-100/40 transition-colors">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <StickyNote className="h-4 w-4 shrink-0 text-amber-700" />
+                      <span className="text-xs font-semibold text-amber-900">{tt("直播备忘录", "Live memo")}</span>
+                      <span className="truncate text-[11px] text-muted-foreground">{(room.notes || "").trim() || tt("点击展开记录规则、补货提醒或交接事项", "Click to record rules, restock reminders, or handover notes")}</span>
+                    </div>
+                    {memoCollapsed ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronUp className="h-4 w-4 shrink-0" />}
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-2 pt-0 pb-2.5">
+                  <Textarea
+                    value={roomNotes}
+                    onChange={(event) => setRoomNotes(event.target.value)}
+                    placeholder={tt("记录本场规则、补货提醒或交接事项；保存后会立即在此处显示。", "Record rules, restock reminders, or handover notes for this live; saved notes appear here immediately.")}
+                    aria-label={tt("直播备忘录", "Live memo")}
+                    className="min-h-16 resize-y bg-background text-xs"
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] text-muted-foreground">
+                      {(room.notes || "").trim()
+                        ? tt("已载入最近保存的备忘录", "Most recently saved memo loaded")
+                        : tt("尚未保存备忘录", "No memo has been saved")}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 shrink-0 px-3 text-xs"
+                      disabled={saveRoomNotesMutation.isPending || roomNotes.trim() === (room.notes || "").trim()}
+                      onClick={() => saveRoomNotesMutation.mutate({ liveRoomId: roomId, content: roomNotes })}
+                    >
+                      {saveRoomNotesMutation.isPending ? tt("保存中…", "Saving…") : tt("保存备忘", "Save memo")}
+                    </Button>
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
 
           {/* V2.0: AI Reply & Continue Monitor Toggles - compact */}
-          <div className="flex items-center gap-4 text-xs flex-shrink-0">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs flex-shrink-0">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-purple-500" />
               <span className="text-muted-foreground">{t("live.aiAutoReply")}</span>
@@ -696,9 +711,9 @@ export default function LiveRoomDetail(props: any) {
           </div>
 
           {/* Two-Column Layout: Products 45% | Comments 55% - flex-1 to fill remaining space */}
-          <div className="grid grid-cols-1 gap-3 flex-1 min-h-0" style={{ gridTemplateColumns: 'minmax(0, 50fr) minmax(0, 50fr)' }}>
+          <div className={liveStudioLayout.workspace}>
             {/* Region 2: Products Area (55%) */}
-            <Card className="flex flex-col min-h-0">
+            <Card className={liveStudioLayout.workspaceCard}>
               <CardHeader className="pb-2 py-2 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
@@ -758,7 +773,7 @@ export default function LiveRoomDetail(props: any) {
             </Card>
 
             {/* Region 3: Comments Area (45%) */}
-            <Card className="flex flex-col min-h-0">
+            <Card className={liveStudioLayout.workspaceCard}>
               <CardHeader className="pb-2 py-2 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
@@ -866,7 +881,7 @@ export default function LiveRoomDetail(props: any) {
           </div>
 
           {/* Region 4: Orders Area (Full Width Bottom) - fixed height */}
-          <Card className="flex flex-col flex-shrink-0" style={{ height: "160px" }}>
+          <Card className={liveStudioLayout.ordersCard}>
             <CardHeader className="pb-2 py-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -971,7 +986,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
                 <SelectContent>
                   <SelectItem value="all">{t("live.allCategories")}</SelectItem>
                   {(categoriesQuery.data || []).map((c: any) => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                    <SelectItem key={c.id} value={String(c.id)}>{getLiveRoomCategoryLabel(c)}</SelectItem>
                   )) as any}
                 </SelectContent>
               </Select>
@@ -1005,7 +1020,7 @@ onClick={() => setOrderViewMode("byCustomer")}>
             </div>
 
             {/* Search results */}
-            {productSearchQuery.length > 0 && (
+            {shouldQueryLiveRoomProducts(productSearchQuery, categoryFilter) && (
               <div className="border rounded-lg max-h-[300px] overflow-y-auto">
                 {(productSearchResults.data || []).length === 0 ? (
                   <div className="p-4 text-center text-sm text-muted-foreground">{t("live.notFoundProduct")}</div>
@@ -1128,38 +1143,39 @@ onClick={() => setOrderViewMode("byCustomer")}>
           </DialogHeader>
           <div className="space-y-3 py-3">
             <div>
-              <Label>{t("live.stockChangeReason")}</Label>
+              <Label>扣减数量</Label>
               <Input
                 type="number"
+                min="1"
+                step="1"
                 value={stockForm.quantityChange}
-                onChange={e => setStockForm({ ...stockForm, quantityChange: Number(e.target.value) })}
+                onChange={e => setStockForm({ ...stockForm, quantityChange: Math.max(1, Math.trunc(Number(e.target.value) || 1)) })}
               />
             </div>
             <div>
               <Label>{t("live.reason")}</Label>
-              <Select value={stockForm.reason} onValueChange={v => setStockForm({ ...stockForm, reason: v })}>
+              <Select value={stockForm.reason} onValueChange={v => setStockForm({ ...stockForm, reason: v as typeof stockForm.reason })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="other">{t("live.other")}</SelectItem>
                   <SelectItem value="damaged">{t("live.damaged")}</SelectItem>
                   <SelectItem value="scrap">{t("live.scrap")}</SelectItem>
-                  <SelectItem value="restock">{t("live.restock")}</SelectItem>
-                  <SelectItem value="correction">{t("live.stockCorrection")}</SelectItem>
+                  <SelectItem value="unhealthy">不健康／不可售</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-xs text-muted-foreground">调整会同步至商品管理库存，并自动写入对应商品的库存调整记录。</p>
+            <p className="text-xs text-muted-foreground">直播房只能扣减库存；增加库存请到进货管理以供应商或“自己繁殖”来源确认收货。扣减会同步至商品管理、库存日志与损耗成本。</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStockDialogOpen(false)}>{t("live.removeProduct")}</Button>
             <Button
               onClick={() => {
-                if (stockProductId && stockForm.quantityChange !== 0) {
-                  adjustStockMutation.mutate({ id: stockProductId, quantityChange: stockForm.quantityChange, reason: stockForm.reason });
+                if (stockProductId) {
+                  adjustStockMutation.mutate({ id: stockProductId, quantityChange: toLiveStockDeduction(stockForm.quantityChange), reason: stockForm.reason });
                 }
               }}
-              disabled={adjustStockMutation.isPending || stockForm.quantityChange === 0}>
-              确认调整
+              disabled={adjustStockMutation.isPending || stockForm.quantityChange <= 0}>
+              确认扣减
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1342,9 +1358,16 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
   const { t, translate: tt } = useI18n();
   const variations = group.variations || [];
   const hasMultiple = variations.length > 1;
+  const groupLiveControlId = group.liveControlId || variations.find((v: any) => v.liveRoomProductId)?.liveRoomProductId || null;
   const totalAvailable = variations.reduce((sum: number, v: any) => sum + (v.availableStock || 0), 0);
   const totalReserved = variations.reduce((sum: number, v: any) => sum + (v.reservedCount || 0), 0);
   const onHand = group.productStockQuantity ?? totalAvailable + totalReserved;
+  const variantPrices = variations.map((v: any) => Number(v.price || 0));
+  const minimumVariantPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : 0;
+  const maximumVariantPrice = variantPrices.length > 0 ? Math.max(...variantPrices) : 0;
+  const displayPrice = hasMultiple
+    ? (minimumVariantPrice === maximumVariantPrice ? `RM${minimumVariantPrice.toFixed(2)}` : `RM${minimumVariantPrice.toFixed(2)}–${maximumVariantPrice.toFixed(2)}`)
+    : `RM${Number(variations[0]?.price || 0).toFixed(2)}`;
 
   // Stock color: green >10, yellow 1-10, red =0
   const stockColor = totalAvailable > 10 ? "text-green-600" : totalAvailable > 0 ? "text-yellow-600" : "text-red-600";
@@ -1397,10 +1420,14 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
               <>
                 <div className="flex items-center gap-1">
                   <p className="font-bold truncate text-base flex-1">{group.productName}</p>
-                  <span className="font-bold text-lg whitespace-nowrap">RM{Number(variations[0]?.price || 0).toFixed(2)}</span>
+                  <span className="font-bold text-lg whitespace-nowrap">{displayPrice}</span>
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
-                  <code className="text-xs bg-primary/10 text-primary px-1 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
+                  {hasMultiple ? (
+                    <span className="text-xs text-muted-foreground">{tt("请按下方规格关键词喊单", "Use the variant keywords below")}</span>
+                  ) : (
+                    <code className="text-xs bg-primary/10 text-primary px-1 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
+                  )}
                   {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length} {t("live.spec")}</Badge>}
                   {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">{t("live.preorder")}</Badge>}
                 </div>
@@ -1415,13 +1442,19 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
                 <div>
                   <p className="font-bold truncate text-lg">{group.productName}</p>
                   <div className="flex items-center gap-1.5 mt-1">
-                    <code className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
+                    {hasMultiple ? (
+                      <span className="text-xs text-muted-foreground">{tt("请按下方规格关键词喊单", "Use the variant keywords below")}</span>
+                    ) : (
+                      <code className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">{group.productKeyword || variations[0]?.keyword || "-"}</code>
+                    )}
                     {hasMultiple && <Badge variant="outline" className="text-xs px-1">{variations.length} {t("live.spec")}</Badge>}
                     {group.productIsPreOrder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">{t("live.preorder")}</Badge>}
                   </div>
                 </div>
                 <div className="flex items-baseline gap-2 mt-1">
-                  {group.productSellingPrice != null && Number(variations[0]?.price || 0) !== Number(group.productSellingPrice) ? (
+                  {hasMultiple ? (
+                    <span className="text-xl font-bold">{displayPrice}</span>
+                  ) : group.productSellingPrice != null && Number(variations[0]?.price || 0) !== Number(group.productSellingPrice) ? (
                     <span className="text-xl font-bold text-orange-600">RM{Number(variations[0]?.price || 0).toFixed(2)}
                       <span className="line-through text-xs text-muted-foreground/60 ml-1">RM{Number(group.productSellingPrice).toFixed(2)}</span>
                     </span>
@@ -1442,50 +1475,56 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
           {/* Right: Action buttons - horizontal in compact, vertical in large */}
           {isCompact ? (
             <div className="flex items-center gap-1 flex-shrink-0">
-              <Button variant="outline" size="sm" className="h-10 w-10 p-0 justify-center" title={t("live.changePriceTitle")}
+              {!hasMultiple && <Button variant="outline" size="sm" className="h-10 w-10 p-0 justify-center" title={t("live.changePriceTitle")}
                 onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
                 <DollarSign className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="sm" className="h-10 w-10 p-0 justify-center" title={t("live.adjustStockTitle")}
+              </Button>}
+              {!hasMultiple && <Button variant="outline" size="sm" className="h-10 w-10 p-0 justify-center" title={t("live.adjustStockTitle")}
                 onClick={() => onAdjustStock(variations[0]?.id)}>
                 <Package className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="sm" className="h-10 w-10 p-0 justify-center" title={t("live.copyKeyword")}
-                onClick={() => onCopyKeyword(variations[0]?.id)}>
+              </Button>}
+              <Button variant="outline" size="sm" className="h-10 w-10 p-0 justify-center" title={hasMultiple ? tt("复制全部规格喊单清单", "Copy all variant order list") : t("live.copyKeyword")}
+                disabled={!groupLiveControlId}
+                onClick={() => groupLiveControlId && onCopyKeyword(groupLiveControlId)}>
                 <Copy className="h-4 w-4" />
               </Button>
               <Button variant="outline" size="sm" className="h-10 w-10 p-0 justify-center text-destructive" title={t("live.removeProduct")}
-                onClick={() => onDelete(variations[0]?.id)}>
+                disabled={!groupLiveControlId}
+                onClick={() => groupLiveControlId && onDelete(groupLiveControlId)}>
                 <Trash2 className="h-4 w-4" />
               </Button>
               <Switch
-                checked={variations[0]?.allowPreorder || false}
-                onCheckedChange={(val) => onTogglePreorder(variations[0]?.id, val)}
+                checked={variations.some((v: any) => v.allowPreorder)}
+                disabled={!groupLiveControlId}
+                onCheckedChange={(val) => groupLiveControlId && onTogglePreorder(groupLiveControlId, val)}
                 className="scale-75"
               />
             </div>
           ) : (
             <div className="flex flex-col gap-1 flex-shrink-0">
-              <Button variant="outline" size="sm" className="h-11 w-12 p-0 justify-center" title={t("live.changePriceTitle")}
+              {!hasMultiple && <Button variant="outline" size="sm" className="h-11 w-12 p-0 justify-center" title={t("live.changePriceTitle")}
                 onClick={() => onPriceEdit(variations[0]?.id, Number(variations[0]?.price || 0))}>
                 <DollarSign className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="sm" className="h-11 w-12 p-0 justify-center" title={t("live.adjustStockTitle")}
+              </Button>}
+              {!hasMultiple && <Button variant="outline" size="sm" className="h-11 w-12 p-0 justify-center" title={t("live.adjustStockTitle")}
                 onClick={() => onAdjustStock(variations[0]?.id)}>
                 <Package className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="sm" className="h-10 w-12 p-0 justify-center" title={t("live.copyKeyword")}
-                onClick={() => onCopyKeyword(variations[0]?.id)}>
+              </Button>}
+              <Button variant="outline" size="sm" className="h-10 w-12 p-0 justify-center" title={hasMultiple ? tt("复制全部规格喊单清单", "Copy all variant order list") : t("live.copyKeyword")}
+                disabled={!groupLiveControlId}
+                onClick={() => groupLiveControlId && onCopyKeyword(groupLiveControlId)}>
                 <Copy className="h-4 w-4" />
               </Button>
               <Button variant="outline" size="sm" className="h-10 w-12 p-0 justify-center text-destructive" title={t("live.removeProduct")}
-                onClick={() => onDelete(variations[0]?.id)}>
+                disabled={!groupLiveControlId}
+                onClick={() => groupLiveControlId && onDelete(groupLiveControlId)}>
                 <Trash2 className="h-4 w-4" />
               </Button>
               <div className="flex items-center justify-center mt-0.5">
                 <Switch
-                  checked={variations[0]?.allowPreorder || false}
-                  onCheckedChange={(val) => onTogglePreorder(variations[0]?.id, val)}
+                  checked={variations.some((v: any) => v.allowPreorder)}
+                  disabled={!groupLiveControlId}
+                  onCheckedChange={(val) => groupLiveControlId && onTogglePreorder(groupLiveControlId, val)}
                   className="scale-75"
                 />
               </div>
@@ -1496,8 +1535,13 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
         {/* Multi-variation: show each variation with image + keyword + price */}
         {hasMultiple && (
           <div className="mt-2 space-y-1.5">
+            <div className="rounded-md bg-primary/5 px-2 py-1 text-xs font-medium text-primary">
+              {tt("每个规格请使用自己的关键词、价格与库存；复制按钮会列出全部规格。", "Each variant uses its own keyword, price, and stock; Copy lists all variants.")}
+            </div>
             <Separator className="mb-1.5" />
             {variations.map((v: any) => {
+              const vOnHand = Number(v.startStock ?? (Number(v.availableStock || 0) + Number(v.reservedCount || 0)));
+              const vCalled = Number(v.reservedCount || 0);
               const vAvail = v.availableStock || 0;
               const vColor = vAvail > 10 ? "text-green-600" : vAvail > 0 ? "text-yellow-600" : "text-red-600";
               return (
@@ -1519,29 +1563,43 @@ function ProductGroupCard({ group, isLive, cardMode, onStatusChange, onTogglePre
                   </button>
                   <div className="flex-1 min-w-0">
                     <span className="text-xs font-medium truncate">{v.displayName}</span>
-                    <div className="flex items-center gap-1.5 text-xs">
-                      <code className="text-xs bg-muted px-1 rounded">{v.keyword}</code>
-                      <span className="font-medium">RM{Number(v.price || 0).toFixed(2)}</span>
-                      <span className={vColor}>{t("live.available")}{vAvail}</span>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                      <code className="bg-muted px-1 rounded">{tt("关键词", "Keyword")}：{v.keyword}</code>
+                      <span className="font-medium">{tt("售价", "Price")}：RM{Number(v.price || 0).toFixed(2)}</span>
+                      <span>{t("live.inStock")}：{vOnHand}</span>
+                      <span className="text-orange-600">{t("live.called")}：{vCalled}</span>
+                      <span className={vColor}>{t("live.available")}：{vAvail}</span>
                       {v.allowPreorder && <Badge className="bg-blue-100 text-blue-700 text-xs px-1">{t("live.preorder")}</Badge>}
                     </div>
                   </div>
                   <div className="flex items-center gap-0.5 flex-shrink-0">
-                    {isLive && v.status === "active" && (
+                    {v.liveRoomProductId && (
+                      <>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title={t("live.changePriceTitle")}
+                          onClick={() => onPriceEdit(v.liveRoomProductId, Number(v.price || 0))}>
+                          <DollarSign className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title={t("live.adjustStockTitle")}
+                          onClick={() => onAdjustStock(v.liveRoomProductId)}>
+                          <Package className="h-3 w-3" />
+                        </Button>
+                      </>
+                    )}
+                    {isLive && v.liveRoomProductId && v.status === "active" && (
                       <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title={t("live.pause")}
-                        onClick={() => onStatusChange(v.id, "paused")}>
+                        onClick={() => onStatusChange(v.liveRoomProductId, "paused")}>
                         <Pause className="h-3 w-3" />
                       </Button>
                     )}
-                    {isLive && v.status === "paused" && (
+                    {isLive && v.liveRoomProductId && v.status === "paused" && (
                       <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title={t("live.resume")}
-                        onClick={() => onStatusChange(v.id, "active")}>
+                        onClick={() => onStatusChange(v.liveRoomProductId, "active")}>
                         <Play className="h-3 w-3" />
                       </Button>
                     )}
-                    {isLive && v.status !== "sold_out" && (
+                    {isLive && v.liveRoomProductId && v.status !== "sold_out" && (
                       <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title={t("live.soldOut")}
-                        onClick={() => onStatusChange(v.id, "sold_out")}>
+                        onClick={() => onStatusChange(v.liveRoomProductId, "sold_out")}>
                         <XCircle className="h-3 w-3" />
                       </Button>
                     )}

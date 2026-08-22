@@ -93,7 +93,15 @@ export default function PackingDetail() {
   }>>([{ courier: "Line Clear", shippingType: "manual", trackingNumber: "", weight: "1", serviceId: "" }]);
   const [actualWeightInput, setActualWeightInput] = useState("");
   const [uploadingAwbIndex, setUploadingAwbIndex] = useState<number | null>(null);
+  const [supplementalDialogOpen, setSupplementalDialogOpen] = useState(false);
+  const [supplementalReceiptUrl, setSupplementalReceiptUrl] = useState("");
+  const [supplementalPaymentMethod, setSupplementalPaymentMethod] = useState("银行转账");
+  const [supplementalNotes, setSupplementalNotes] = useState("");
+  const [uploadingSupplementalReceipt, setUploadingSupplementalReceipt] = useState(false);
   const { data: specialActions } = trpc.shippingV2.specialOrderActions.useQuery({ orderId }, { enabled: !!detail });
+  const shippingRefund = ((detail as any)?.refunds || []).find((refund: any) => (
+    refund.refundSource === "packing" && refund.refundReasonCode === "overcharged_shipping"
+  ));
 
   // V2.1.30: Auto-set courier based on order shipping method when detail loads
   useEffect(() => {
@@ -120,13 +128,66 @@ export default function PackingDetail() {
     onError: (err: any) => toast.error(translate("更新失败: ", "Update failed: ") + err.message),
   });
   const specialOrderMutation = trpc.shippingV2.processSpecialOrder.useMutation({
-    onSuccess: () => {
-      toast.success(translate("特别订单已处理", "Special order processed"));
+    onSuccess: (data: any) => {
+      toast.success(data?.requiresRefundManagement
+        ? translate(`已建立退款管理任务 ${data.refund?.refundNumber || ""}，请在退款管理完成。`, `Refund task ${data.refund?.refundNumber || ""} created. Complete it in Refund Management.`)
+        : translate("特别订单已处理", "Special order processed"));
       utils.packing.detail.invalidate({ orderId });
       utils.shippingV2.specialOrderActions.invalidate({ orderId });
+      utils.refunds.list.invalidate();
     },
     onError: (err: any) => toast.error(translate("处理失败: ", "Processing failed: ") + err.message),
   });
+  const supplementalProofMutation = trpc.shippingV2.submitSupplementalShippingProof.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(translate(`已提交补运费凭证 RM${Number(data.amount || 0).toFixed(2)}，请到订单管理审核付款。`, `Shipping proof RM${Number(data.amount || 0).toFixed(2)} submitted. Review it in Order Management.`));
+      setSupplementalDialogOpen(false);
+      setSupplementalReceiptUrl("");
+      setSupplementalNotes("");
+      utils.packing.detail.invalidate({ orderId });
+      utils.shippingV2.specialOrderActions.invalidate({ orderId });
+    },
+    onError: (err: any) => toast.error(translate("提交补运费凭证失败: ", "Failed to submit shipping proof: ") + err.message),
+  });
+  const cashShippingRefundMutation = trpc.shippingV2.completeCashShippingRefund.useMutation({
+    onSuccess: async () => {
+      toast.success(translate("现金运费退款已记录并完成，订单已完成（已发货）", "Cash shipping refund recorded; order completed after shipment"));
+      await utils.packing.detail.invalidate({ orderId });
+      await utils.orders.invalidate();
+      await utils.refunds.list.invalidate();
+      await utils.dashboard.invalidate();
+    },
+    onError: (err: any) => toast.error(translate("现金退款记录失败: ", "Failed to record cash refund: ") + err.message),
+  });
+
+  async function uploadSupplementalReceipt(file: File) {
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(translate("文件不能超过 10MB", "File must not exceed 10MB"));
+      return;
+    }
+    setUploadingSupplementalReceipt(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: dataUrl, filename: file.name, contentType: file.type }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.url) throw new Error(payload.error || "Upload failed");
+      setSupplementalReceiptUrl(payload.url);
+      toast.success(translate("补运费凭证已上传", "Supplemental shipping receipt uploaded"));
+    } catch (error: any) {
+      toast.error(error?.message || translate("上传失败", "Upload failed"));
+    } finally {
+      setUploadingSupplementalReceipt(false);
+    }
+  }
 
   const parcelKingServicesQuery = trpc.parcelking.getServices.useQuery(undefined, {
     enabled: !!detail,
@@ -333,6 +394,10 @@ export default function PackingDetail() {
       return;
     }
     const actualWeight = Number((detail as any)?.actualWeight || 0);
+    const existingPackageWeight = ((detail as any)?.packages || []).reduce(
+      (sum: number, pkg: any) => sum + Math.max(0, Number(pkg.weight || 0)),
+      0,
+    );
     if (hasAutoParcelDailyPackage) {
       if (packages.some((pkg) => pkg.shippingType !== "auto")) {
         toast.error(translate("同一次自动发货的包裹请统一选择自动模式；手动包裹请另行确认发货", "Use automatic mode for every package in one automatic shipment; confirm manual packages separately"));
@@ -383,16 +448,26 @@ export default function PackingDetail() {
                 toast.error(translate("手动发货必须填写追踪号并上传 AWB", "Manual shipping requires a tracking number and an AWB upload"));
         return;
       }
-      fullShipMutation.mutate({
-        orderId,
-        packages: packages.map((p) => ({
-          courier: p.courier,
-          shippingType: p.shippingType as "auto" | "manual",
-          trackingNumber: p.trackingNumber || undefined,
-          shippingLabelUrl: p.shippingLabelUrl || undefined,
-          weight: p.weight || String(actualWeight || "") || undefined,
-        })),
-      });
+      const packageWeightTotal = packages.reduce((sum, pkg) => sum + Number(pkg.weight || 0), 0);
+      if (!Number.isFinite(packageWeightTotal) || packageWeightTotal <= 0) {
+        toast.error(translate("请为每个包裹填写大于 0 的实际重量", "Enter a valid weight greater than 0 for every package"));
+        return;
+      }
+      try {
+        await fullShipMutation.mutateAsync({
+          orderId,
+          packages: packages.map((p) => ({
+            courier: p.courier,
+            shippingType: p.shippingType as "auto" | "manual",
+            trackingNumber: p.trackingNumber || undefined,
+            shippingLabelUrl: p.shippingLabelUrl || undefined,
+            weight: p.weight,
+          })),
+        });
+        await updateWeightMutation.mutateAsync({ orderId, actualWeight: packageWeightTotal });
+      } catch {
+        // 各Mutation已展示可执行的错误信息。
+      }
     } else {
       if (selectedItems.length === 0) {
                 toast.error(translate("请选择本次发出的商品", "Please select items for this shipment"));
@@ -411,22 +486,34 @@ export default function PackingDetail() {
                 toast.error(translate("手动发货必须填写追踪号并上传 AWB", "Manual shipping requires a tracking number and an AWB upload"));
         return;
       }
+      const newPackageWeight = Number(pkg.weight || 0);
+      if (!Number.isFinite(newPackageWeight) || newPackageWeight <= 0) {
+        toast.error(translate("请填写大于 0 的实际包裹重量", "Enter a valid actual package weight greater than 0"));
+        return;
+      }
       // V2.1.26补充4: Pass per-item ship quantities (Issue 7)
       const itemQuantities = selectedItems
         .filter((itemId) => shipQuantities[itemId] !== undefined)
         .map((itemId) => ({ itemId: String(itemId), quantity: shipQuantities[itemId] }));
-      partialShipMutation.mutate({
-        orderId,
-        itemIds: selectedItems,
-        packageData: {
-          courier: pkg.courier,
-          shippingType: pkg.shippingType as "auto" | "manual",
-          trackingNumber: pkg.trackingNumber || undefined,
-          shippingLabelUrl: pkg.shippingLabelUrl || undefined,
-          weight: pkg.weight || String(actualWeight || "") || undefined,
-        },
-        itemQuantities: itemQuantities.length > 0 ? itemQuantities : undefined,
-      });
+      try {
+        const result = await partialShipMutation.mutateAsync({
+          orderId,
+          itemIds: selectedItems,
+          packageData: {
+            courier: pkg.courier,
+            shippingType: pkg.shippingType as "auto" | "manual",
+            trackingNumber: pkg.trackingNumber || undefined,
+            shippingLabelUrl: pkg.shippingLabelUrl || undefined,
+            weight: pkg.weight,
+          },
+          itemQuantities: itemQuantities.length > 0 ? itemQuantities : undefined,
+        });
+        if (result.allShipped) {
+          await updateWeightMutation.mutateAsync({ orderId, actualWeight: existingPackageWeight + newPackageWeight });
+        }
+      } catch {
+        // 各Mutation已展示可执行的错误信息。
+      }
     }
   };
 
@@ -500,6 +587,24 @@ export default function PackingDetail() {
   const specialLabel = d.shippingMethod === "lalamove" ? "LALAMOVE" :
     d.shippingMethod === "east_malaysia_shopee" ? translate("东马 SHOPEE", "East Malaysia SHOPEE") :
     d.shippingMethod === "east_malaysia_poslaju" ? translate("东马 POSLAJU", "East Malaysia POSLAJU") : "";
+  const estimatedWeightKg = Number(d.estimatedWeight ?? d.totalWeight ?? 0);
+  const actualWeightKg = d.actualWeight === null || d.actualWeight === undefined ? null : Number(d.actualWeight);
+  const customerPaidShipping = Number(d.customerPaidShipping ?? d.shippingFee ?? 0);
+  const actualWeightShippingFee = d.actualShippingFee === null || d.actualShippingFee === undefined
+    ? null
+    : Number(d.actualShippingFee);
+  const shippingDifference = d.shippingDifference === null || d.shippingDifference === undefined
+    ? null
+    : Number(d.shippingDifference);
+  const approvedSupplementalShipping = ((d.payments || []) as any[])
+    .filter((payment) => payment.reviewStatus === "approved" && String(payment.purpose || "").startsWith("supplemental_shipping:"))
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const completedRefundAmount = ((d.refunds || []) as any[])
+    .filter((refund) => refund.status === "processed" || refund.status === "awaiting_return")
+    .reduce((sum, refund) => sum + Number(refund.amount || refund.requestedAmount || 0), 0);
+  const checkoutOrderTotal = Number(d.totalAmount || 0);
+  const checkoutReceived = Number(d.paidAmount || 0);
+  const netReceivedAmount = checkoutReceived + approvedSupplementalShipping - completedRefundAmount;
   const canShip = d.physicalStatus === "packing" || d.physicalStatus === "partial_shipped";
   const activeShippingMode = d.physicalStatus === "partial_shipped" ? "partial" : shippingMode;
   const fulfilmentByItem = new Map(
@@ -576,6 +681,61 @@ export default function PackingDetail() {
           <div className="flex items-center gap-2 text-sm"><User className="h-4 w-4 text-muted-foreground" />{d.customerName}</div>
           <div className="flex items-center gap-2 text-sm"><Phone className="h-4 w-4 text-muted-foreground" />{d.customerPhone}</div>
           <div className="flex items-start gap-2 text-sm"><MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />{d.shippingAddress}</div>
+        </CardContent>
+      </Card>
+
+      <Card className="print-hide border-slate-200 bg-slate-50/60">
+        <CardHeader className="pb-3"><CardTitle className="text-base">{translate("订单财务结算摘要", "Order Financial Settlement")}</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div className="flex justify-between"><span>{translate("结账订单总额", "Checkout Order Total")}</span><span className="font-medium">RM {checkoutOrderTotal.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span>{translate("结账已收", "Checkout Receipts")}</span><span>RM {checkoutReceived.toFixed(2)}</span></div>
+          {d.specialOrderType === "pending_shipping" && d.specialOrderStatus === "pending" && <div className="flex justify-between text-amber-800"><span>{translate("待汇款差价", "Pending Remittance Difference")}</span><span>RM {Number(d.shippingDifference || 0).toFixed(2)}</span></div>}
+          {approvedSupplementalShipping > 0 && <div className="flex justify-between text-emerald-700"><span>{translate("补差价已收", "Supplemental Shipping Received")}</span><span>+RM {approvedSupplementalShipping.toFixed(2)}</span></div>}
+          {completedRefundAmount > 0 && <div className="flex justify-between text-rose-700"><span>{translate("已完成退款", "Completed Refunds")}</span><span>-RM {completedRefundAmount.toFixed(2)}</span></div>}
+          <Separator />
+          <div className="flex justify-between font-semibold"><span>{translate("订单净实收", "Order Net Cash Received")}</span><span>RM {netReceivedAmount.toFixed(2)}</span></div>
+          <p className="text-xs text-muted-foreground">{translate("结账订单总额保持原值；补差价与退款作为独立财务结算项目同步显示。", "Checkout order total remains unchanged; shipping differences and refunds are shown as separate financial settlements.")}</p>
+        </CardContent>
+      </Card>
+
+      <Card className="print-hide border-sky-200 bg-sky-50/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base text-sky-950">
+            <Package className="h-4 w-4 text-sky-700" />
+            {translate("重量与运费对照", "Weight & Shipping Summary")}
+          </CardTitle>
+          <p className="text-xs text-sky-800">
+            {translate("预计重量按订单商品／规格重量×数量计算；实际重量按已建立包裹合计。", "Estimated weight uses item weight × quantity; actual weight uses all saved packages.")}
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg border border-sky-100 bg-background p-3">
+              <div className="text-xs text-muted-foreground">{translate("预计重量", "Estimated weight")}</div>
+              <div className="mt-1 text-lg font-bold">{estimatedWeightKg.toFixed(2)} kg</div>
+            </div>
+            <div className="rounded-lg border border-sky-100 bg-background p-3">
+              <div className="text-xs text-muted-foreground">{translate("实际重量", "Actual weight")}</div>
+              <div className="mt-1 text-lg font-bold">{actualWeightKg === null ? translate("尚未包货", "Not packed yet") : `${actualWeightKg.toFixed(2)} kg`}</div>
+            </div>
+            <div className="rounded-lg border border-sky-100 bg-background p-3">
+              <div className="text-xs text-muted-foreground">{translate("客户结账已付运费", "Shipping paid at checkout")}</div>
+              <div className="mt-1 text-lg font-bold">RM {customerPaidShipping.toFixed(2)}</div>
+            </div>
+            <div className="rounded-lg border border-sky-100 bg-background p-3">
+              <div className="text-xs text-muted-foreground">{translate("按实际重量应收运费", "Shipping due by actual weight")}</div>
+              <div className="mt-1 text-lg font-bold">{actualWeightShippingFee === null ? "—" : `RM ${actualWeightShippingFee.toFixed(2)}`}</div>
+            </div>
+          </div>
+          {shippingDifference !== null && Math.abs(shippingDifference) > 0.001 && (
+            <div className={`mt-3 rounded-lg border p-3 text-sm ${shippingDifference > 0 && detail?.specialOrderType === "pending_shipping" && detail?.specialOrderStatus === "resolved" ? "border-emerald-300 bg-emerald-50 text-emerald-950" : shippingDifference > 0 ? "border-amber-300 bg-amber-50 text-amber-950" : "border-emerald-300 bg-emerald-50 text-emerald-950"}`}>
+              {shippingDifference > 0
+                ? detail?.specialOrderType === "pending_shipping" && detail?.specialOrderStatus === "resolved"
+                  ? translate(`补运费已审核确认：RM ${shippingDifference.toFixed(2)}`, `Supplemental shipping approved: RM ${shippingDifference.toFixed(2)}`)
+                  : translate(`需补收运费：RM ${shippingDifference.toFixed(2)}`, `Additional shipping to collect: RM ${shippingDifference.toFixed(2)}`)
+                : translate(`应退运费：RM ${Math.abs(shippingDifference).toFixed(2)}`, `Shipping to refund: RM ${Math.abs(shippingDifference).toFixed(2)}`)}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -767,18 +927,24 @@ export default function PackingDetail() {
                       {exc.status !== "resolved" && !exc.linkedRefund && (
                         <>
                           {/* V2.1.26补充6: Mark as resolved button (Issue 8) */}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-green-300 text-green-600 hover:bg-green-50"
-                            onClick={() => {
-                              if (exc.waitingForRestock && !confirm(translate("确认补货已经到货并分配给此订单？此操作会关闭该商品级等待补货异常。", "Confirm that restock has arrived and been allocated to this order? This closes the item-level waiting-restock exception."))) return;
-                              markResolvedMutation.mutate({ exceptionId: exc.id });
-                            }}
-                            disabled={markResolvedMutation.isPending}
-                          >
-                            {exc.waitingForRestock ? translate("补货已到，分配并关闭", "Allocate Restock & Close") : translate("已处理", "Resolved")}
-                          </Button>
+                          {exc.waitingForRestock ? (
+                            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                              {translate(
+                                `请在进货管理的进货单确认收货。系统会按商品及规格自动分配到这张订单；当前已到货 ${Number(exc.restockAllocatedQuantity || 0)}/${Number(exc.quantity || 0)}，未到齐前不能手动关闭。`,
+                                `Confirm the purchase receipt in Purchase Management. The system allocates the matching product and variant automatically; ${Number(exc.restockAllocatedQuantity || 0)}/${Number(exc.quantity || 0)} received so far, and this exception cannot be closed manually until complete.`,
+                              )}
+                            </p>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-green-300 text-green-600 hover:bg-green-50"
+                              onClick={() => markResolvedMutation.mutate({ exceptionId: exc.id })}
+                              disabled={markResolvedMutation.isPending}
+                            >
+                              {translate("已处理", "Resolved")}
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
@@ -1148,8 +1314,8 @@ export default function PackingDetail() {
         </Card>
       )}
 
-      {/* Actual Weight & Shipping Difference - only for packing status */}
-      {canShip && (
+      {/* Actual Weight & Shipping Difference：待补运费／待退款即使已发货也必须可继续交接处理。 */}
+      {(canShip || !!detail?.actualWeight || (detail?.specialOrderStatus === "pending" && (detail?.specialOrderType === "pending_shipping" || detail?.specialOrderType === "pending_refund"))) && (
         <Card className="print-hide border-blue-200">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -1250,7 +1416,7 @@ export default function PackingDetail() {
                 </div>
 
                 {/* Special order handling */}
-                {detail.isSpecialOrder && detail.specialOrderStatus === "pending" && (
+                {(detail.specialOrderType === "pending_shipping" || detail.specialOrderType === "pending_refund") && detail.specialOrderStatus === "pending" && (
                   <div className="border rounded-lg p-3 bg-yellow-50 dark:bg-yellow-950/20 space-y-3">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 text-yellow-500" />
@@ -1286,36 +1452,30 @@ export default function PackingDetail() {
                           <Button
                             size="sm"
                             variant="default"
-                            onClick={() => {
-                              specialOrderMutation.mutate({
-                                orderId,
-                                actionType: "confirm_received",
-                                amount: Math.abs(Number(detail.shippingDifference || 0)),
-                                remark: translate("已收到补运费", "Additional shipping fee received"),
-                              });
-                            }}
-                            disabled={specialOrderMutation.isPending}
+                            onClick={() => setSupplementalDialogOpen(true)}
+                            disabled={supplementalProofMutation.isPending}
                           >
-                            {translate("确认收到", "Confirm Received")}
+                            {translate("上传补运费凭证", "Upload Shipping Proof")}
                           </Button>
                         </>
                       )}
                       {detail.specialOrderType === "pending_refund" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            specialOrderMutation.mutate({
-                              orderId,
-                              actionType: "refund",
-                              amount: Math.abs(Number(detail.shippingDifference || 0)),
-                              remark: translate("退款已完成", "Refund completed"),
-                            });
-                          }}
-                          disabled={specialOrderMutation.isPending}
-                        >
-                          {translate("退款", "Refund")}
-                        </Button>
+                        shippingRefund ? (
+                          <Button size="sm" variant="default" asChild>
+                            <Link href={`/admin/refunds?order=${encodeURIComponent(detail.orderNumber || String(orderId))}`}>
+                              {translate(`前往退款管理 ${shippingRefund.refundNumber || ""}`, `Go to Refund Management ${shippingRefund.refundNumber || ""}`)}
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => specialOrderMutation.mutate({ orderId, actionType: "refund", amount: Math.abs(Number(detail.shippingDifference || 0)) })}
+                            disabled={specialOrderMutation.isPending}
+                          >
+                            {translate("建立退款管理任务", "Create Refund Task")}
+                          </Button>
+                        )
                       )}
                       {detail.specialOrderType === "pending_refund" && (
                         <Button
@@ -1327,7 +1487,6 @@ export default function PackingDetail() {
                               orderId,
                               actionType: "convert_to_credit",
                               amount: Math.abs(Number(detail.shippingDifference || 0)),
-                              remark: translate("运费差额转为客户 Credit", "Convert shipping difference to customer Credit"),
                             });
                           }}
                           disabled={specialOrderMutation.isPending}
@@ -1352,6 +1511,70 @@ export default function PackingDetail() {
                       </Button>
                     </div>
 
+                    {detail.specialOrderType === "pending_shipping" && (
+                      <div className="rounded-md border border-amber-200 bg-white/80 p-3 text-sm text-amber-950 dark:bg-slate-950/30 dark:text-amber-100">
+                        <p className="font-medium">{translate("补差价收款交接", "Shipping Difference Collection Handover")}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{translate("客户补款后，在此上传付款凭证。凭证会进入订单管理的付款记录，审核通过后才解除待补差价、进入实际收款，并把订单收口为“已完成（已发货）”。", "After the customer pays, upload the receipt here. It enters Order Management for review; approval clears the pending difference, records cash, and closes the shipped order.")}</p>
+                      </div>
+                    )}
+
+                    {detail.specialOrderType === "pending_refund" && shippingRefund && (
+                      <div className="rounded-md border border-rose-200 bg-white/80 p-3 text-sm text-rose-950 dark:bg-slate-950/30 dark:text-rose-100">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="font-medium">{translate("退款管理交接", "Refund Management Handover")}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {shippingRefund.refundNumber || `RF-${shippingRefund.id}`} · {translate("申请退款", "Requested")} RM {Number(shippingRefund.requestedAmount || 0).toFixed(2)} · {shippingRefund.status === "pending" ? translate("待处理", "Pending") : shippingRefund.status}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {shippingRefund.status === "pending" && (
+                              <Button size="sm" variant="secondary" className="bg-emerald-600 text-white hover:bg-emerald-700" disabled={cashShippingRefundMutation.isPending} onClick={() => {
+                                if (window.confirm(translate("确认已当场把现金运费退款交给客户？系统会记录退款管理并完成订单收口。", "Confirm the cash shipping refund was handed to the customer? This records the refund and closes the order."))) {
+                                  cashShippingRefundMutation.mutate({ orderId });
+                                }
+                              }}>{cashShippingRefundMutation.isPending ? translate("记录中", "Recording") : translate("现金退款并完成", "Record Cash Refund")}</Button>
+                            )}
+                            <Button size="sm" variant="outline" asChild>
+                              <Link href={`/admin/refunds?order=${encodeURIComponent(detail.orderNumber || String(orderId))}`}>{translate("TnG／转账：退款管理处理", "TnG / Transfer: Refund Management")}</Link>
+                            </Button>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground">{translate("退款完成前不会计入实际退款、Dashboard净实收或利润退款损失。", "The refund affects cash flow and profit only after Refund Management completion.")}</p>
+                      </div>
+                    )}
+
+                    <Dialog open={supplementalDialogOpen} onOpenChange={setSupplementalDialogOpen}>
+                      <DialogContent className="sm:max-w-lg">
+                        <DialogHeader><DialogTitle>{translate("上传客户补运费凭证", "Upload Customer Supplemental Shipping Receipt")}</DialogTitle></DialogHeader>
+                        <div className="space-y-4 py-2">
+                          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                            {translate("本次待补运费", "Additional shipping to collect")}: <strong>RM {Math.abs(Number(detail.shippingDifference || 0)).toFixed(2)}</strong>
+                            <p className="mt-1 text-xs">{translate("上传后状态为“待审核”，不会立即记入已收款。", "After upload the status is Pending Review; it is not recorded as cash yet.")}</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>{translate("付款方式", "Payment Method")}</Label>
+                            <Input value={supplementalPaymentMethod} onChange={(e) => setSupplementalPaymentMethod(e.target.value)} placeholder={translate("例如：TNG、银行转账", "e.g. TNG, bank transfer")} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>{translate("客户付款凭证", "Customer Payment Receipt")}</Label>
+                            <Input type="file" accept="image/*,.pdf" disabled={uploadingSupplementalReceipt} onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadSupplementalReceipt(file); }} />
+                            {supplementalReceiptUrl && <a className="text-sm text-primary underline" href={supplementalReceiptUrl} target="_blank" rel="noreferrer">{translate("查看已上传凭证", "View uploaded receipt")}</a>}
+                          </div>
+                          <div className="space-y-2">
+                            <Label>{translate("备注（可选）", "Notes (optional)")}</Label>
+                            <Textarea value={supplementalNotes} onChange={(e) => setSupplementalNotes(e.target.value)} />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" onClick={() => setSupplementalDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+                          <Button disabled={!supplementalReceiptUrl || uploadingSupplementalReceipt || supplementalProofMutation.isPending} onClick={() => supplementalProofMutation.mutate({ orderId, receiptUrl: supplementalReceiptUrl, paymentMethod: supplementalPaymentMethod, notes: supplementalNotes || undefined })}>
+                            {supplementalProofMutation.isPending ? translate("提交中", "Submitting") : translate("提交待审核", "Submit for Review")}
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+
                     {/* Special order actions history */}
                     {specialActions && (specialActions as any[]).length > 0 && (
                       <div className="space-y-1 mt-2">
@@ -1375,10 +1598,26 @@ export default function PackingDetail() {
                 )}
 
                 {/* Resolved special order */}
-                {detail.isSpecialOrder && detail.specialOrderStatus === "resolved" && (
+                {detail.specialOrderStatus === "resolved" && (detail.specialOrderType === "pending_shipping" || detail.specialOrderType === "pending_refund") && (
                   <div className="flex items-center gap-2 text-sm text-green-600">
                     <CheckCircle2 className="h-4 w-4" />
-                    {translate("特别订单已处理", "Special order resolved")}
+                    {detail.specialOrderType === "pending_shipping"
+                      ? translate("补差价已审核确认；订单已完成（已发货）。", "Shipping difference payment approved; order completed after shipment.")
+                      : translate("运费退款已处理；订单已完成（已发货）。", "Shipping refund processed; order completed after shipment.")}
+                  </div>
+                )}
+
+                {shippingRefund && (
+                  <div className={`rounded-md border p-3 text-sm ${shippingRefund.status === "pending" ? "border-rose-200 bg-rose-50/60" : "border-emerald-200 bg-emerald-50/60"}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-medium">{translate("运费退款记录", "Shipping Refund Record")}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{shippingRefund.refundNumber || `RF-${shippingRefund.id}`} · {shippingRefund.status === "pending" ? translate("待退款管理处理", "Pending Refund Management") : shippingRefund.status === "processed" ? translate("已完成退款", "Refund Completed") : shippingRefund.status} · RM {Number(shippingRefund.status === "pending" ? shippingRefund.requestedAmount : shippingRefund.amount).toFixed(2)}</p>
+                      </div>
+                      <Button size="sm" variant="outline" asChild>
+                        <Link href={`/admin/refunds?order=${encodeURIComponent(detail.orderNumber || String(orderId))}`}>{translate("查看退款管理", "View Refund Management")}</Link>
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>

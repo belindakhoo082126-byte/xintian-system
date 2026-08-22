@@ -18,8 +18,8 @@ const methodology: Record<ReportKind, Record<"zh" | "en", { title: string; descr
     en: { title: "Methodology | Business overview", description: "Uses non-cancelled orders created in the selected period. Order and paid amounts follow order-created date; refunds follow refund date; costs use FIFO lots and inventory records." },
   },
   salesPayment: {
-    zh: { title: "统计口径｜销售与收款", description: "统计所选期间建立的非会员订单：商品销售额为商品小计，已收款为订单当前累计 paidAmount，未收款为订单总额减已付金额；并非按实际付款发生日。" },
-    en: { title: "Methodology | Sales & payments", description: "Uses non-member orders created in the selected period. Sales are item subtotals, paid is current cumulative paidAmount, and outstanding is order total less paid amount—not payment-date cash receipts." },
+    zh: { title: "统计口径｜订单业绩与现金流", description: "订单业绩、订单月当前已收与待收款按下单月份统计；本月实际已收与净实收按已审核付款及已完成退款的实际发生日期统计。两套数字用途不同，不应直接相减比较。" },
+    en: { title: "Methodology | Orders & cash flow", description: "Order performance, current collection and outstanding follow order-created date. Actual and net cash receipts follow approved payment and completed-refund dates. The two bases serve different purposes and are not directly comparable." },
   },
   productSales: {
     zh: { title: "统计口径｜商品销售", description: "统计所选期间建立且未取消的实体商品订单项；销量为数量合计，销售额为订单项小计。包含尚未付款但未取消的订单。" },
@@ -34,8 +34,8 @@ const methodology: Record<ReportKind, Record<"zh" | "en", { title: string; descr
     en: { title: "Methodology | Purchases & inventory", description: "Purchases follow purchaseDate. Inventory is a current active-lot snapshot, valued as remaining quantity × unit cost; this is not a sales or cash-receipts report." },
   },
   profitAnalysis: {
-    zh: { title: "统计口径｜利润分析", description: "销售按订单建立日；实际毛利 = 商品销售额 − FIFO 商品成本 + 运费收入 − 实际运费成本 − 报废损失 − 退款，退款按退款业务日期。" },
-    en: { title: "Methodology | Profit analysis", description: "Sales follow order-created date. Gross profit = item sales − FIFO item cost + shipping income − actual shipping cost − wastage − refunds; refunds follow refund business date." },
+    zh: { title: "统计口径｜利润分析", description: "销售与FIFO成本仅按已确认收款订单的确认日期统计；实际毛利 = 商品销售额 − FIFO 商品成本 + 客户已收运费 − 实际运费成本 − 报废及库存扣减损耗 − 退款。" },
+    en: { title: "Methodology | Profit analysis", description: "Sales and FIFO cost follow fully paid order confirmation date. Gross profit = product sales − FIFO cost + collected customer shipping − actual shipping cost − wastage and inventory deduction losses − refunds." },
   },
   legacyMonthlyProfit: {
     zh: { title: "统计口径｜月度利润（旧版）", description: "按所选月份建立且实体订单或会员订单状态为已完成的订单计算；收入为商品、会员和订单运费合计，商品成本暂按当前商品成本估算。此页不扣退款、实际运费与损耗，不应与经营报告的实际利润直接比较。" },

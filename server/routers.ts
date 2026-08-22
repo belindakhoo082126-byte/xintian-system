@@ -5,6 +5,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, adminProcedure, protectedProcedure, shippingProcedure, router } from "./_core/trpc";
 import { hasRepeatedVariantKeyword } from "../shared/variantDrafts";
 import { getCompanyLogoUrl } from "../shared/brandAssets";
+import { normalizeNotificationLogChannel } from "../shared/notificationLogChannel";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -106,7 +107,7 @@ async function recordManualShipmentNotification(
       orderId,
       customerId: order.customerId,
       type: "shipping_notification",
-      channel: notice.platform,
+      channel: normalizeNotificationLogChannel(notice.platform),
       message: shippingMessage,
       status: noticeStatus,
       errorMessage: notice.error || null,
@@ -1376,8 +1377,7 @@ export const appRouter = router({
     receive: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
-        await db.receivePurchaseOrder(input.id);
-        return { success: true };
+        return await db.receivePurchaseOrder(input.id);
       }),
 
     lastProductCost: adminProcedure
@@ -1479,6 +1479,16 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const dateRange = db.getDateRange(input.preset, input.customStart, input.customEnd);
         return await db.getSalesPaymentReport(dateRange);
+      }),
+    salesPaymentFinancialSummary: adminProcedure
+      .input(z.object({
+        preset: z.string(),
+        customStart: z.string().optional(),
+        customEnd: z.string().optional(),
+      }))
+      .query(async ({ input }) => {
+        const dateRange = db.getDateRange(input.preset, input.customStart, input.customEnd);
+        return await db.getSalesPaymentFinancialSummary(dateRange);
       }),
     // Auditable cash ledger: approved receipts and completed refunds by transaction date.
     paymentRecords: adminProcedure
@@ -1617,7 +1627,7 @@ export const appRouter = router({
             orderId: result.orderId,
             customerId: detail?.order?.customerId || null,
             type: "refund_complete",
-            channel: notice.platform,
+            channel: normalizeNotificationLogChannel(notice.platform),
             message,
             status: notice.status,
             errorMessage: notice.error || null,
@@ -3865,7 +3875,7 @@ export const appRouter = router({
       orderId: z.number().optional(),
       customerId: z.number().optional(),
       type: z.string(),
-      channel: z.enum(["messenger", "whatsapp", "email"]).default("messenger"),
+      channel: z.enum(["messenger", "whatsapp", "email", "system"]).default("messenger"),
       message: z.string().optional(),
     })).mutation(async ({ input }) => {
       return await db.createNotificationLog(input);
@@ -4522,7 +4532,7 @@ export const appRouter = router({
           orderId: input.orderId,
           customerId: order.customerId,
           type: "shipping_notification",
-          channel: notice.platform,
+          channel: normalizeNotificationLogChannel(notice.platform),
           message: shippingMessage,
           status: noticeStatus,
           errorMessage: notice.error || null,
@@ -5174,6 +5184,19 @@ export const appRouter = router({
   // ===========================================================================
   // V1.2: Inventory Adjustments (库存手动扣减)
   // ===========================================================================
+  inventoryLog: router({
+    list: adminProcedure.input(z.object({
+      movementType: z.string().optional(),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+    }).optional()).query(async ({ input }) => {
+      return await db.getInventoryMovementLogs({
+        movementType: input?.movementType,
+        dateFrom: input?.dateFrom ? new Date(input.dateFrom) : undefined,
+        dateTo: input?.dateTo ? new Date(input.dateTo) : undefined,
+      });
+    }),
+  }),
   inventoryAdjustment: router({
     // List adjustments
     list: adminProcedure.input(z.object({
@@ -5395,11 +5418,12 @@ export const appRouter = router({
           state,
         );
       } else {
-        // Normal processing for West Malaysia / Shopee / others
+        // 西马实际重量以结账时同一套免邮资格金额重算，避免特价或种植介质改变结果。
+        const freeShippingEligibleSubtotal = await db.getOrderFreeShippingEligibleSubtotal(input.orderId);
         result = db.processActualWeight(
           input.actualWeight,
           customerPaidShipping,
-          itemsSubtotal,
+          freeShippingEligibleSubtotal,
           false,
           null,
           0
@@ -5419,8 +5443,9 @@ export const appRouter = router({
       );
       
       // If special order needed, create notification + send Messenger notification
+      let shippingRefund: { id: number; refundNumber: string; status?: string; existing?: boolean } | undefined;
       if (result.needsSpecialOrder) {
-        await db.createSpecialOrderAction(
+        const specialAction = await db.createSpecialOrderAction(
           input.orderId,
           "notify_shortage",
           Math.abs(result.difference),
@@ -5429,6 +5454,13 @@ export const appRouter = router({
             ? `Need to collect RM${Math.abs(result.difference).toFixed(2)} additional shipping fee`
             : `Need to refund RM${Math.abs(result.difference).toFixed(2)} shipping fee`
         );
+        if (result.specialOrderType === "pending_refund") {
+          shippingRefund = await db.ensurePendingShippingDifferenceRefund({
+            orderId: input.orderId,
+            requestedBy: ctx.user?.name || "system",
+            sourceSpecialActionId: specialAction?.actionId || undefined,
+          });
+        }
         
         // V2.0.84: Auto-send Messenger notification to customer about shipping difference
         if ((order as any).messengerId) {
@@ -5457,6 +5489,7 @@ export const appRouter = router({
         difference: result.difference,
         needsSpecialOrder: result.needsSpecialOrder,
         specialOrderType: result.specialOrderType,
+        shippingRefund,
         apiShippingFee: (result as any).apiShippingFee,
         handlingFee: (result as any).handlingFee,
       };
@@ -5486,34 +5519,28 @@ export const appRouter = router({
       amount: z.number().optional(),
       remark: z.string().optional(),
     })).mutation(async ({ ctx, input }) => {
-      await db.createSpecialOrderAction(
+      // 运费退款（含转Credit）必须先有退款管理记录；不能由包货工作台直接结案。
+      if (input.actionType === "refund" || input.actionType === "convert_to_credit") {
+        const refund = await db.ensurePendingShippingDifferenceRefund({
+          orderId: input.orderId,
+          requestedBy: ctx.user?.name || "staff",
+          refundMethod: input.actionType === "convert_to_credit" ? "credit" : "bank_transfer",
+        });
+        return { success: true, refund, requiresRefundManagement: true };
+      }
+      if (input.actionType === "confirm_received") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "请先上传客户补运费凭证；补运费须经付款审核确认后才会入账。" });
+      }
+      const action = await db.createSpecialOrderAction(
         input.orderId,
         input.actionType,
         input.amount || 0,
         ctx.user?.name || "staff",
         input.remark
       );
-      
-      // V2.0.80: If convert_to_credit, add credit to customer and resolve
-      if (input.actionType === "convert_to_credit" && input.amount && input.amount > 0) {
-        const order = await db.getOrderById(input.orderId);
-        if (order) {
-          const customerId = (order as any).customerId;
-          if (customerId) {
-            const orderNumber = (order as any).orderNumber || "";
-            await db.adjustCustomerCredit(
-              customerId,
-              input.amount,
-              `东马 PosLaju 运费差额退款（订单 ${orderNumber}）`,
-              ctx.user?.id || 0,
-              ctx.user?.name || "Admin",
-            );
-          }
-        }
-      }
-      
-      // If company_bear or confirm_received, resolve the special order
-      if (input.actionType === "company_bear" || input.actionType === "confirm_received" || input.actionType === "refund" || input.actionType === "convert_to_credit") {
+
+      // 公司承担可直接解除该财务待办；补运费必须走凭证审核流程。
+      if (input.actionType === "company_bear") {
         const dbConn = await db.getDb();
         if (dbConn) {
           const { orders } = await import("../drizzle/schema");
@@ -5524,6 +5551,25 @@ export const appRouter = router({
       }
       
       return { success: true };
+    }),
+    submitSupplementalShippingProof: shippingProcedure.input(z.object({
+      orderId: z.number(),
+      receiptUrl: z.string().min(1),
+      paymentMethod: z.string().optional(),
+      notes: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      return db.submitSupplementalShippingPaymentProof({
+        ...input,
+        operatorName: ctx.user?.name || "staff",
+      });
+    }),
+    completeCashShippingRefund: shippingProcedure.input(z.object({
+      orderId: z.number().int().positive(),
+    })).mutation(async ({ ctx, input }) => {
+      return db.completePackingShippingCashRefund({
+        orderId: input.orderId,
+        processedBy: ctx.user?.name || "staff",
+      });
     }),
     
     // Get sub-orders for a parent order
@@ -5674,8 +5720,8 @@ export const appRouter = router({
     adjustProductStock: adminProcedure
       .input(z.object({
         id: z.number(),
-        quantityChange: z.number(),
-        reason: z.string().optional(),
+        quantityChange: z.number().int().negative(),
+        reason: z.enum(["damaged", "scrap", "unhealthy", "other"]),
       }))
       .mutation(async ({ input }) => {
         return await db.adjustLiveRoomProductStock(input.id, input);

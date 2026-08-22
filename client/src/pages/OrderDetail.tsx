@@ -646,7 +646,7 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                    order.specialOrderType === "logistics_error" ? translate("物流异常", "Logistics Error") :
                    order.specialOrderType === "incomplete_info" ? translate("资料异常", "Incomplete Info") :
                    order.specialOrderType === "notification_failed" ? translate("通知失败", "Notification Failed") :
-                   order.specialOrderType === "stock_exception" ? translate("库存异常", "Stock Exception") :
+                   order.specialOrderType === "stock_exception" ? translate("等待补货", "Waiting Restock") :
                    order.specialOrderType === "overdue" ? translate("超时未处理", "Overdue >24h") :
                    order.specialOrderType === "partial_payment" ? translate("部分汇款", "Partial Payment") :
                    order.specialOrderType === "over_payment" ? translate("多汇款", "Over Payment") :
@@ -956,7 +956,7 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
                   <SelectItem value="logistics_error">{translate("物流异常", "Logistics Error")}</SelectItem>
                   <SelectItem value="incomplete_info">{translate("资料异常", "Incomplete Info")}</SelectItem>
                   <SelectItem value="notification_failed">{translate("通知失败", "Notification Failed")}</SelectItem>
-                  <SelectItem value="stock_exception">{translate("库存异常", "Stock Exception")}</SelectItem>
+                  <SelectItem value="stock_exception">{translate("等待补货", "Waiting Restock")}</SelectItem>
                   <SelectItem value="partial_payment">{translate("部分汇款", "Partial Payment")}</SelectItem>
                   <SelectItem value="over_payment">{translate("多汇款", "Over Payment")}</SelectItem>
                   <SelectItem value="amount_changed">{translate("金额异常", "Amount Changed")}</SelectItem>

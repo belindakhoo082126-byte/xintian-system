@@ -2,7 +2,8 @@ export type InventoryMovementType =
   | "purchase_receipt"
   | "bundle_component_deduct"
   | "bundle_component_return"
-  | "manual_adjustment";
+  | "manual_adjustment"
+  | "live_stock_adjustment";
 
 export type InventoryMovementDraft = {
   productId: number;

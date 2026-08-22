@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { AlertTriangle, CheckCircle2, ClipboardList, Copy, FileUp, Loader2, PackageCheck, Plus, Search, Undo2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -80,6 +80,8 @@ export default function RefundManagement() {
   const zh = lang === "zh";
   const text = (zhText: string, enText: string) => zh ? zhText : enText;
   const utils = trpc.useUtils();
+  const searchParams = useSearch();
+  const linkedOrder = new URLSearchParams(searchParams).get("order") || "";
   const [status, setStatus] = useState<RefundStatus>("all");
   const [keyword, setKeyword] = useState("");
   const [fromDate, setFromDate] = useState("");
@@ -103,6 +105,10 @@ export default function RefundManagement() {
   const [completeAmount, setCompleteAmount] = useState("");
   const [completeReceiptUrl, setCompleteReceiptUrl] = useState("");
   const [correctingItemId, setCorrectingItemId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (linkedOrder) setKeyword(linkedOrder);
+  }, [linkedOrder]);
 
   const statusInput = status === "all" ? undefined : { status: status as Exclude<RefundStatus, "all"> };
   const { data: refundRows = [], isLoading } = trpc.refunds.list.useQuery(statusInput);

@@ -88,6 +88,10 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const [paymentForm, setPaymentForm] = useState({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const receiptFileRef = useRef<HTMLInputElement>(null);
+  const [supplementalDialogOpen, setSupplementalDialogOpen] = useState(false);
+  const [supplementalForm, setSupplementalForm] = useState({ paymentMethod: "", receiptUrl: "", notes: "" });
+  const [uploadingSupplementalReceipt, setUploadingSupplementalReceipt] = useState(false);
+  const supplementalReceiptFileRef = useRef<HTMLInputElement>(null);
   // V2.1.26补充5: Payment review/edit/reject state
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -375,6 +379,19 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
     },
     onError: (e: any) => toast.error(translate("审核失败: {message}", "Review failed: {message}", { message: e.message })),
   });
+  const supplementalProofMutation = trpc.shippingV2.submitSupplementalShippingProof.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(translate(`已提交补运费凭证 RM${Number(data.amount || 0).toFixed(2)}，等待订单付款审核。`, `Supplemental shipping proof RM${Number(data.amount || 0).toFixed(2)} submitted for payment review.`));
+      setSupplementalDialogOpen(false);
+      setSupplementalForm({ paymentMethod: "", receiptUrl: "", notes: "" });
+      utils.orders.getDetail.invalidate({ id: orderId });
+      utils.orders.list.invalidate();
+      utils.packing.detail.invalidate({ orderId });
+      utils.shippingV2.specialOrderActions.invalidate({ orderId });
+      utils.dashboard.invalidate();
+    },
+    onError: (e: any) => toast.error(translate("提交补运费凭证失败: {message}", "Failed to submit shipping proof: {message}", { message: e.message })),
+  });
   // V2.1.26补充5: Edit payment mutation
   const editPaymentMutation = trpc.orders.editPayment.useMutation({
     onSuccess: () => {
@@ -416,6 +433,50 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
     } finally {
       setUploadingReceipt(false);
     }
+  }
+  async function handleUploadSupplementalReceipt(file: File) {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(translate("文件大小不能超过 10MB", "File size cannot exceed 10MB"));
+      return;
+    }
+    setUploadingSupplementalReceipt(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: base64, filename: file.name, contentType: file.type }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Upload failed");
+      }
+      const data = await res.json();
+      setSupplementalForm((current) => ({ ...current, receiptUrl: data.url }));
+      toast.success(translate("补运费单据已上传", "Supplemental shipping receipt uploaded"));
+    } catch (e: any) {
+      toast.error(translate("上传失败: {message}", "Upload failed: {message}", { message: e.message }));
+    } finally {
+      setUploadingSupplementalReceipt(false);
+    }
+  }
+  function handleSubmitSupplementalProof() {
+    if (!supplementalForm.receiptUrl) {
+      toast.error(translate("请先上传客户补运费单据", "Please upload the customer's supplemental shipping receipt first"));
+      return;
+    }
+    supplementalProofMutation.mutate({
+      orderId,
+      receiptUrl: supplementalForm.receiptUrl,
+      paymentMethod: supplementalForm.paymentMethod || undefined,
+      notes: supplementalForm.notes || undefined,
+    });
   }
   function handleAddPayment() {
     if (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0) {
@@ -488,6 +549,10 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const shippingCfg = SHIPPING_LABELS[o.shippingMethod] || { zh: o.shippingMethod, en: o.shippingMethod };
   const orderTypeLabel = o.orderCategory === "import" ? translate("中国代购订单", "Import Order") : translate("本地订单", "Local Order");
   const processedRefunds = ((o.refunds || []) as any[]).filter((refund) => refund.status === "processed" || refund.status === "awaiting_return");
+  const isPendingRemittanceDifference = o.specialOrderType === "pending_shipping" && o.specialOrderStatus === "pending";
+  const supplementalPendingPayment = ((o.payments || []) as any[]).find((payment) =>
+    payment.reviewStatus === "pending" && String(payment.purpose || "").startsWith("supplemental_shipping:")
+  );
 
   // Calculate amounts
   const physicalSubtotal = parseFloat(o.physicalSubtotal || "0");
@@ -500,6 +565,11 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const totalAmount = parseFloat(o.totalAmount || "0");
   const paidAmount = parseFloat(o.paidAmount || "0");
   const balance = totalAmount - paidAmount;
+  const approvedSupplementalShipping = ((o.payments || []) as any[])
+    .filter((payment) => payment.reviewStatus === "approved" && String(payment.purpose || "").startsWith("supplemental_shipping:"))
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const completedRefundAmount = processedRefunds.reduce((sum, refund) => sum + Number(refund.amount || refund.requestedAmount || 0), 0);
+  const netReceivedAmount = paidAmount + approvedSupplementalShipping - completedRefundAmount;
   const discountAmount = parseFloat(o.discountAmount || "0");
   const detailItems = (o.items || []) as any[];
   const canSplitOrder = !isImportOrder && o.orderType === "physical" && ["pending", "receipt_uploaded", "partial_payment", "hold_order"].includes(o.physicalStatus || "")
@@ -539,7 +609,9 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           <Badge variant={statusCfg.variant}>{translate(statusCfg.zh, statusCfg.en)}</Badge>
           {processedRefunds.length > 0 && (
             <Badge className="bg-rose-100 text-rose-700 hover:bg-rose-100 border border-rose-200">
-              {translate("部分退款", "Partially Refunded")} · {processedRefunds.map((refund) => refund.refundNumber).filter(Boolean).join("、")}
+              {processedRefunds.every((refund) => refund.refundSource === "packing" && refund.refundReasonCode === "overcharged_shipping")
+                ? translate("已处理运费退款", "Shipping Refund Completed")
+                : translate("已处理退款", "Refund Completed")} · {processedRefunds.map((refund) => refund.refundNumber).filter(Boolean).join("、")}
             </Badge>
           )}
           <Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
@@ -771,20 +843,59 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
             <div className="flex justify-between text-blue-600"><span>{translate("使用Credit", "Credit Used")}</span><span>-RM {creditUsed.toFixed(2)}</span></div>
           )}
           <Separator />
-          <div className="flex justify-between font-bold text-base"><span>{translate("总金额", "Total Amount")}</span><span>RM {totalAmount.toFixed(2)}</span></div>
-          <div className="flex justify-between"><span>{translate("已付", "Paid Amount")}</span><span>RM {paidAmount.toFixed(2)}</span></div>
+          <div className="flex justify-between font-bold text-base"><span>{translate("结账订单总额", "Checkout Order Total")}</span><span>RM {totalAmount.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span>{translate("结账已收", "Checkout Receipts")}</span><span>RM {paidAmount.toFixed(2)}</span></div>
           <Separator />
           {balance > 0 ? (
-            <div className="flex justify-between text-orange-600 font-medium"><span>{translate("尚欠款", "Outstanding")}</span><span>RM {balance.toFixed(2)}</span></div>
+            <div className="flex justify-between text-orange-600 font-medium"><span>{translate("结账订单尚欠", "Checkout Balance Due")}</span><span>RM {balance.toFixed(2)}</span></div>
           ) : balance < 0 ? (
-            <div className="flex justify-between text-green-600 font-medium"><span>{translate("客户多付", "Customer Overpaid")}</span><span>RM {Math.abs(balance).toFixed(2)}</span></div>
+            <div className="flex justify-between text-green-600 font-medium"><span>{translate("结账订单多付", "Checkout Overpaid")}</span><span>RM {Math.abs(balance).toFixed(2)}</span></div>
           ) : (
-            <div className="flex justify-between text-green-600 font-medium"><span>{translate("已付清", "Fully Paid")}</span><span>RM 0.00</span></div>
+            <div className="flex justify-between text-green-600 font-medium"><span>{translate("结账订单已付清", "Checkout Order Paid")}</span><span>RM 0.00</span></div>
+          )}
+          {(approvedSupplementalShipping > 0 || completedRefundAmount > 0 || isPendingRemittanceDifference) && (
+            <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50/60 p-3 space-y-2">
+              <p className="font-medium text-sky-950">{translate("运费差额与退款结算（不改写结账订单总额）", "Shipping Difference & Refund Settlement (does not change checkout total)")}</p>
+              {isPendingRemittanceDifference && <div className="flex justify-between text-amber-800"><span>{translate("待汇款差价", "Pending Remittance Difference")}</span><span>RM {Number(o.shippingDifference || 0).toFixed(2)}</span></div>}
+              {approvedSupplementalShipping > 0 && <div className="flex justify-between text-emerald-700"><span>{translate("补差价已收", "Supplemental Shipping Received")}</span><span>+RM {approvedSupplementalShipping.toFixed(2)}</span></div>}
+              {completedRefundAmount > 0 && <div className="flex justify-between text-rose-700"><span>{translate("已完成退款", "Completed Refunds")}</span><span>-RM {completedRefundAmount.toFixed(2)}</span></div>}
+              <Separator />
+              <div className="flex justify-between font-semibold text-sky-950"><span>{translate("订单净实收", "Order Net Cash Received")}</span><span>RM {netReceivedAmount.toFixed(2)}</span></div>
+            </div>
           )}
         </CardContent>
       </Card>
 
       {/* Section 6: Payment Records */}
+      {isPendingRemittanceDifference && (
+        <Card className="border-orange-200 bg-orange-50/40 dark:border-orange-900/60 dark:bg-orange-950/10" data-pending-remittance-difference>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2 text-orange-900 dark:text-orange-100">
+              <DollarSign className="h-4 w-4" />
+              {translate("待汇款差价交接", "Pending Remittance Difference Handover")}
+              <Badge className="ml-auto bg-orange-100 text-orange-800 hover:bg-orange-100">{translate("已发货", "Shipped")}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="font-semibold text-orange-900 dark:text-orange-100">
+              {translate(`客户仍需补汇实际运费差额 RM${Number(o.shippingDifference || 0).toFixed(2)}`, `Customer still needs to remit shipping difference RM${Number(o.shippingDifference || 0).toFixed(2)}`)}
+            </p>
+            <p className="text-muted-foreground">
+              {translate("货物已发出。客户汇款后，可直接在此上传付款单据；提交后会显示在本订单的付款记录中等待财务审核，无需返回包货工作台。", "The shipment has been sent. Upload the customer's proof here after payment; it will appear in this order's payment records for finance review without returning to Packing.")}
+            </p>
+            {supplementalPendingPayment ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+                <p className="font-medium">{translate("客户单据已提交，等待付款审核", "Customer proof submitted; awaiting payment review")}</p>
+                <p className="mt-1 text-xs">{translate(`金额 RM${Number(supplementalPendingPayment.amount || 0).toFixed(2)}；可在下方“付款记录”查看、审核或更新单据。`, `Amount RM${Number(supplementalPendingPayment.amount || 0).toFixed(2)}; review or update it in Payment Records below.`)}</p>
+              </div>
+            ) : (
+              <Button className="bg-orange-600 hover:bg-orange-700" onClick={() => setSupplementalDialogOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" />{translate("上传补运费凭证", "Upload Shipping Difference Receipt")}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -999,6 +1110,40 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
       </div>
 
       {/* Add Payment Dialog */}
+      <Dialog open={supplementalDialogOpen} onOpenChange={setSupplementalDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{translate("上传补运费凭证", "Upload Shipping Difference Receipt")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">
+              {translate(`本订单已发货，客户待汇款差价为 RM${Number(o.shippingDifference || 0).toFixed(2)}。提交后不会立即入账，须由付款记录审核通过。`, `This order has shipped. The outstanding difference is RM${Number(o.shippingDifference || 0).toFixed(2)}. Submission does not post cash until Payment Records approval.`)}
+            </div>
+            <div>
+              <Label>{translate("付款方式", "Payment Method")}</Label>
+              <Input value={supplementalForm.paymentMethod} onChange={(e) => setSupplementalForm((current) => ({ ...current, paymentMethod: e.target.value }))} placeholder={translate("例如：TnG、Online Transfer、DuitNow", "e.g. TnG, Online Transfer, DuitNow")} />
+            </div>
+            <div>
+              <Label>{translate("客户付款单据", "Customer Payment Receipt")}</Label>
+              <input ref={supplementalReceiptFileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleUploadSupplementalReceipt(file); e.target.value = ""; }} />
+              <Button variant="outline" size="sm" onClick={() => supplementalReceiptFileRef.current?.click()} disabled={uploadingSupplementalReceipt} className="mt-2 w-full">
+                {uploadingSupplementalReceipt ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" />{translate("上传中...", "Uploading...")}</> : <><Upload className="mr-1 h-3 w-3" />{translate("选择并上传单据", "Choose and Upload Receipt")}</>}
+              </Button>
+              {supplementalForm.receiptUrl && <p className="mt-1 text-xs text-green-600">{translate("✓ 单据已上传", "✓ Receipt uploaded")}</p>}
+            </div>
+            <div>
+              <Label>{translate("备注", "Notes")}</Label>
+              <Textarea value={supplementalForm.notes} onChange={(e) => setSupplementalForm((current) => ({ ...current, notes: e.target.value }))} rows={2} placeholder={translate("例如：客户于今日汇款，等待财务审核", "e.g. Customer paid today; pending finance review")} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSupplementalDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={handleSubmitSupplementalProof} disabled={!supplementalForm.receiptUrl || supplementalProofMutation.isPending} className="bg-orange-600 hover:bg-orange-700">
+              {supplementalProofMutation.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}{translate("提交待审核", "Submit for Review")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>

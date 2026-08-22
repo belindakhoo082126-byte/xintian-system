@@ -14,3 +14,15 @@ export function getInventoryOrderStage(status: string | null | undefined): Inven
   if (["shipped", "completed"].includes(status || "")) return "completed";
   return null;
 }
+
+/**
+ * Returns the quantity that can be sold immediately. Formal physical orders have
+ * already reduced stockQuantity; reservedQuantity covers only stock that remains
+ * physically on hand but is temporarily protected (for example, gift or draft
+ * order reservations). This keeps “等待补货” allocations unavailable for resale.
+ */
+export function getSellableInventoryQuantity(stockQuantity: unknown, reservedQuantity: unknown = 0): number {
+  const stock = Math.floor(Number(stockQuantity) || 0);
+  const reserved = Math.max(0, Math.floor(Number(reservedQuantity) || 0));
+  return Math.max(0, stock - reserved);
+}

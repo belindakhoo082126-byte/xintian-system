@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TrendingUp, DollarSign, Package, Truck, AlertTriangle, RefreshCw } from "lucide-react";
 import { ReportMethodologyCard } from "@/components/ReportMethodologyCard";
+import { buildInclusiveReportDateRange, toLocalDateInput } from "@shared/reportDateRange";
 
 export default function ProfitAnalysisReport() {
   const { translate, lang } = useI18n();
@@ -16,14 +17,16 @@ export default function ProfitAnalysisReport() {
   const today = new Date();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  const [dateFrom, setDateFrom] = useState(monthStart.toISOString().slice(0, 10));
-  const [dateTo, setDateTo] = useState(today.toISOString().slice(0, 10));
+  const [dateFrom, setDateFrom] = useState(toLocalDateInput(monthStart));
+  const [dateTo, setDateTo] = useState(toLocalDateInput(today));
   const [preset, setPreset] = useState("thisMonth");
 
-  const { data, isLoading, refetch, isFetching } = trpc.profitAnalysis.report.useQuery({
-    dateFrom,
-    dateTo,
-  });
+  const queryRange = useMemo(
+    () => buildInclusiveReportDateRange(dateFrom, dateTo),
+    [dateFrom, dateTo],
+  );
+
+  const { data, isLoading, refetch, isFetching } = trpc.profitAnalysis.report.useQuery(queryRange);
 
   const applyPreset = (p: string) => {
     setPreset(p);
@@ -45,8 +48,8 @@ export default function ProfitAnalysisReport() {
       default:
         return;
     }
-    setDateFrom(from.toISOString().slice(0, 10));
-    setDateTo(to.toISOString().slice(0, 10));
+    setDateFrom(toLocalDateInput(from));
+    setDateTo(toLocalDateInput(to));
   };
 
   const fmt = (n: number) => `RM ${Number(n).toFixed(2)}`;

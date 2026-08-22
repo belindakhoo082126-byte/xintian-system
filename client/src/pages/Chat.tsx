@@ -729,7 +729,7 @@ export default function Chat() {
                              order.specialOrderType === "logistics_error" ? "物流异常" :
                              order.specialOrderType === "incomplete_info" ? "客户资料不完整" :
                              order.specialOrderType === "notification_failed" ? "自动通知失败" :
-                             order.specialOrderType === "stock_exception" ? "库存异常" :
+                             order.specialOrderType === "stock_exception" ? "等待补货" :
                              order.specialOrderType === "overdue" ? "超过24小时未处理" : order.specialOrderType}
                           </Badge>
                         )}

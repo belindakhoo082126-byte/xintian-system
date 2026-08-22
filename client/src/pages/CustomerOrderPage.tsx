@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink, Leaf, AlertCircle, RefreshCw, MapPinCheck, Upload, Copy, QrCode, University, Banknote, ShoppingBag, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { WEST_MALAYSIA_V22_SHIPPING } from "@shared/shippingV22";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   // Local order statuses (mapped from server Chinese labels)
@@ -121,6 +122,13 @@ export default function CustomerOrderPage(props: any) {
   const o = order as any;
   const statusInfo = o ? STATUS_CONFIG[o.customerStatus] || STATUS_CONFIG["Pending Payment"] : null;
   const hasAddress = !!(o?.shippingAddress);
+  const estimatedWeight = Number(o?.estimatedWeight || o?.totalWeight || 0);
+  const isWestMalaysia = o?.shippingMethod === "west_malaysia";
+  const extraWeightKg = isWestMalaysia ? Math.max(0, Math.ceil(estimatedWeight - WEST_MALAYSIA_V22_SHIPPING.includedWeightKg)) : 0;
+  const extraWeightFee = extraWeightKg * WEST_MALAYSIA_V22_SHIPPING.additionalKgFee;
+  const shippingFee = Number(o?.shippingFee || 0);
+  const baseShippingFee = isWestMalaysia ? Math.max(0, shippingFee - extraWeightFee) : shippingFee;
+  const isFreeShipping = isWestMalaysia && estimatedWeight > 0 && baseShippingFee === 0;
   // V2.1.14: Allow mall add-on and address editing for open order statuses (Chinese labels from server)
   const openOrderStatuses = ["未汇款", "保留订单", "部分汇款", "挂单", "Pending Payment", "Hold Order", "Partial Payment"];
   const canEditAddress = openOrderStatuses.includes(o?.customerStatus);
@@ -315,7 +323,7 @@ export default function CustomerOrderPage(props: any) {
                 <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                   <span className="font-medium text-emerald-900">✓ 收货地址已完成</span>
                   <span className="text-emerald-700">配送方式：{SHIPPING_METHODS.find(m => m.value === o.shippingMethod)?.label || o.shippingMethod}</span>
-                  <span className="text-emerald-700">运费：RM {o.shippingFee || "0.00"}</span>
+                  <span className="text-emerald-700">客户应付运费：RM {o.shippingFee || "0.00"}</span>
                 </div>
                 {canEditAddress && (
                   <Button variant="ghost" size="sm" className="text-emerald-700 hover:text-emerald-900" onClick={() => {
@@ -438,6 +446,14 @@ export default function CustomerOrderPage(props: any) {
                   <span>运费 {hasAddress ? "" : "(待计算)"}</span>
                   <span>{hasAddress ? `RM ${o.shippingFee || "0.00"}` : "— 填写地址后计算"}</span>
                 </div>
+                {isWestMalaysia && estimatedWeight > 0 && (
+                  <div className="rounded-md bg-emerald-50 border border-emerald-100 px-3 py-2 mt-2 space-y-1 text-emerald-900">
+                    <div className="flex justify-between"><span>估计重量</span><span>{estimatedWeight.toFixed(2)} kg</span></div>
+                    <div className="flex justify-between"><span>{isFreeShipping ? "首10kg免运" : "首10kg基础运费"}</span><span>RM {baseShippingFee.toFixed(2)}</span></div>
+                    {extraWeightKg > 0 && <div className="flex justify-between"><span>续重运费（{extraWeightKg}kg × RM {WEST_MALAYSIA_V22_SHIPPING.additionalKgFee}）</span><span>RM {extraWeightFee.toFixed(2)}</span></div>}
+                    <div className="flex justify-between font-medium border-t border-emerald-200 pt-1"><span>客户应付运费</span><span>RM {shippingFee.toFixed(2)}</span></div>
+                  </div>
+                )}
 
                 {/* 额外收费 */}
                 {parseFloat(o.extraCharge || "0") > 0 && (

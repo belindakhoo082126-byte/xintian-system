@@ -1,5 +1,13 @@
 import { eq, ne, and, or, desc, asc, sql, gte, lte, lt, isNull, like, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { formatLiveRoomVariantCopyText } from "../shared/liveRoomVariantCopy";
+import { composeLiveVariantKeyword } from "../shared/liveRoomVariantKeyword";
+import {
+  calculateFinancialCashFlow,
+  isBalanceAffectingPayment,
+  makeSupplementalShippingPaymentPurpose,
+} from "../shared/financialCashFlow";
+import { getSellableInventoryQuantity } from "../shared/inventoryStageRules";
 import {
   InsertUser, users,
   products, productVariations, productCategories,
@@ -69,7 +77,8 @@ import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
 import { evaluateMarketingCampaign } from './marketingEngine';
 import { SPECIAL_ORDER_FOLLOW_UP_TYPES, isSpecialOrderFollowUpType } from '../shared/specialOrderDisplay';
-import { WEST_MALAYSIA_V22_SHIPPING } from '../shared/shippingV22';
+import { calculateWestMalaysiaShippingBreakdown, WEST_MALAYSIA_V22_SHIPPING } from '../shared/shippingV22';
+import { getRefundCompletionDates } from '../shared/refundCompletionDates';
 import { calculateMerchandiseNotificationBreakdown, calculateOrderPriceBreakdown } from "../shared/orderPricing";
 import { isStockManagedProductType } from "../shared/inventoryStageRules";
 import { isAllowedPhysicalOrderStatusTransition } from "../shared/orderStatusTransitions";
@@ -79,11 +88,14 @@ import { groupVariantSummariesByProduct } from "../shared/variantSummaries";
 import { getPurchaseOrderReceiptDecision } from "../shared/purchaseOrderReceiptRules";
 import { resolveShippableQuantity } from "../shared/shipmentQuantityRules";
 import { deriveOrderStatusAfterPayment } from "../shared/orderPaymentStatusRules";
+import { shouldAutoCompleteShippedOrder, shouldCompleteShippedOrderAfterFinancialFollowUp } from "../shared/orderFinancialClosure";
+import { buildRestockAllocationKey, getRestockAllocationProgress, normalizeRestockVariantId } from "../shared/restockAllocationRules";
 import { runShipmentTransaction } from "../shared/shipmentTransaction";
 import { calculateVirtualDeliveryProfit } from "../shared/virtualDeliveryProfit";
 import { classifyVirtualDeliveryOrder, needsStockReservation, shouldCreateManualDeliveryTask } from "../shared/virtualDeliveryOrderRules";
 import { buildInventoryMovementRecord } from "../shared/inventoryMovementLedger";
 import { calculateOrderItemWeight, resolveOrderItemUnitWeight } from "../shared/orderItemWeight";
+import { calculateActualGrossProfit } from "../shared/profitInventoryLoss";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -820,6 +832,7 @@ export async function getOrders(filters?: {
     extraChargeDescription: (orders as any).extraChargeDescription,
     creditUsed: orders.creditUsed,
     totalWeight: orders.totalWeight,
+    shippingDifference: orders.shippingDifference,
     scheduledShippingDate: (orders as any).scheduledShippingDate,
     liveRoomId: (orders as any).liveRoomId,
     createdAt: orders.createdAt,
@@ -915,9 +928,36 @@ export async function getOrders(filters?: {
     query = query.where(and(...conditions)) as any;
   }
   const result = await query.orderBy(desc(orders.createdAt));
-  if (!todayCrossChannelMergeLogs) return result;
+  const orderIds = result.map((order: any) => Number(order.id)).filter(Boolean);
+  const shippingRefundRows = orderIds.length
+    ? await db.select({
+      orderId: orderRefunds.orderId,
+      id: orderRefunds.id,
+      refundNumber: orderRefunds.refundNumber,
+      status: orderRefunds.status,
+      requestedAmount: orderRefunds.requestedAmount,
+      amount: orderRefunds.amount,
+      refundSource: orderRefunds.refundSource,
+      refundReasonCode: orderRefunds.refundReasonCode,
+      sourceSpecialActionId: orderRefunds.sourceSpecialActionId,
+      createdAt: orderRefunds.createdAt,
+    }).from(orderRefunds).where(and(
+      inArray(orderRefunds.orderId, orderIds),
+      eq(orderRefunds.refundSource, "packing"),
+      eq(orderRefunds.refundReasonCode, "overcharged_shipping"),
+    )).orderBy(desc(orderRefunds.createdAt))
+    : [];
+  const latestShippingRefundByOrder = new Map<number, any>();
+  for (const refund of shippingRefundRows) {
+    if (!latestShippingRefundByOrder.has(refund.orderId)) latestShippingRefundByOrder.set(refund.orderId, refund);
+  }
+  const resultWithShippingRefund = result.map((order: any) => ({
+    ...order,
+    shippingRefund: latestShippingRefundByOrder.get(Number(order.id)) || null,
+  }));
+  if (!todayCrossChannelMergeLogs) return resultWithShippingRefund;
 
-  return result.map((order: any) => ({
+  return resultWithShippingRefund.map((order: any) => ({
     ...order,
     crossChannelMergeDetails: todayCrossChannelMergeLogs!
       .filter((log) => log.orderId === order.id)
@@ -985,6 +1025,9 @@ export async function getOrderById(id: number) {
     amount: orderRefunds.amount,
     requestedAmount: orderRefunds.requestedAmount,
     refundMethod: orderRefunds.refundMethod,
+    refundSource: orderRefunds.refundSource,
+    refundReasonCode: orderRefunds.refundReasonCode,
+    sourceSpecialActionId: orderRefunds.sourceSpecialActionId,
     processedAt: orderRefunds.processedAt,
   }).from(orderRefunds).where(eq(orderRefunds.orderId, id)).orderBy(desc(orderRefunds.createdAt));
   const detailItems = await db.select({
@@ -1409,6 +1452,7 @@ export async function appendItemsToUnpaidLocalOrder(params: {
     shippingFee: shippingFee.toFixed(2),
     customerPaidShipping: shippingFee.toFixed(2),
     totalWeight: totalWeight.toFixed(2),
+    estimatedWeight: totalWeight.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
   }).where(eq(orders.id, params.targetOrderId));
   await logOrderOperation(
@@ -1744,6 +1788,7 @@ export async function createOrderWithSplit(data: {
     shippingFee: shippingFee.toFixed(2),
     customerPaidShipping: shippingFee.toFixed(2),
     totalWeight: totalWeight.toFixed(2),
+    estimatedWeight: totalWeight.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
     physicalStatus: "pending",
     importStatus: data.orderCategory === "import" ? "pending" : null,
@@ -2283,6 +2328,7 @@ export async function addOrderPayment(data: {
   paymentDate?: Date;
   operatorName?: string;
   notes?: string;
+  purpose?: string;
   paymentSource?: 'customer_upload' | 'admin_manual';
 }) {
   const db = await getDb();
@@ -2296,6 +2342,7 @@ export async function addOrderPayment(data: {
     amount: data.amount,
     paymentMethod: data.paymentMethod || null,
     receiptUrl: data.receiptUrl || null,
+    purpose: data.purpose || null,
     paymentDate: data.paymentDate || new Date(),
     operatorName: data.operatorName || null,
     notes: data.notes || null,
@@ -2311,6 +2358,133 @@ export async function addOrderPayment(data: {
   }
   // V2.1.15: Use unified recalculateOrderBalance
   await recalculateOrderBalance(data.orderId);
+}
+
+/**
+ * 将“确认收到补运费”写入已审核付款流水。该笔钱属于实际现金流和运费收入，
+ * 但不属于原订单商品应收余额，因此使用专属 purpose 并以特别订单动作 ID 幂等。
+ */
+export async function recordConfirmedSupplementalShippingPayment(data: {
+  orderId: number;
+  specialActionId: number;
+  amount: number;
+  operatorName: string;
+  remark?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const amount = Number(data.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("补运费金额必须大于 0");
+  }
+
+  const purpose = makeSupplementalShippingPaymentPurpose(data.specialActionId);
+  const existing = await db.select({ id: orderPayments.id })
+    .from(orderPayments)
+    .where(and(
+      eq(orderPayments.orderId, data.orderId),
+      eq(orderPayments.purpose, purpose),
+    ))
+    .limit(1);
+  if (existing.length > 0) {
+    return { success: true, paymentId: existing[0].id, duplicate: true };
+  }
+
+  const result = await db.insert(orderPayments).values({
+    orderId: data.orderId,
+    amount: amount.toFixed(2),
+    paymentMethod: "补运费确认",
+    purpose,
+    operatorName: data.operatorName,
+    notes: data.remark || `特别订单动作 #${data.specialActionId}：确认收到补运费`,
+    paymentSource: "admin_manual",
+    reviewStatus: "approved",
+    paymentDate: new Date(),
+  });
+  await logOrderOperation(
+    data.orderId,
+    "payment",
+    `确认收到补运费 RM${amount.toFixed(2)}，已进入实际收款流水`,
+    null,
+    data.operatorName,
+  );
+  await recalculateOrderBalance(data.orderId);
+  return { success: true, paymentId: Number((result as any)[0]?.insertId || 0), duplicate: false };
+}
+
+/**
+ * 客户补运费凭证先进入待审核付款流水。它使用与正式补运费一致的专属 purpose，
+ * 因而不会增加原订单商品的 paidAmount 或伪造多汇款；审核通过才进入现金流并解除待办。
+ */
+export async function submitSupplementalShippingPaymentProof(data: {
+  orderId: number;
+  receiptUrl: string;
+  paymentMethod?: string;
+  operatorName: string;
+  notes?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (!data.receiptUrl) throw new Error("请先上传客户补运费凭证");
+  const [order] = await db.select({
+    specialOrderType: orders.specialOrderType,
+    specialOrderStatus: orders.specialOrderStatus,
+    shippingDifference: orders.shippingDifference,
+  }).from(orders).where(eq(orders.id, data.orderId)).limit(1);
+  if (!order || order.specialOrderType !== 'pending_shipping' || order.specialOrderStatus !== 'pending' || Number(order.shippingDifference || 0) <= 0.01) {
+    throw new Error("此订单目前没有待收的补运费");
+  }
+  const amount = Number(order.shippingDifference || 0);
+  let [action] = await db.select({ id: specialOrderActions.id }).from(specialOrderActions)
+    .where(and(eq(specialOrderActions.orderId, data.orderId), eq(specialOrderActions.actionType, 'notify_shortage')))
+    .orderBy(desc(specialOrderActions.createdAt)).limit(1);
+  if (!action) {
+    const created = await createSpecialOrderAction(
+      data.orderId,
+      'notify_shortage',
+      amount,
+      data.operatorName,
+      '系统自动建立：客户提交补运费凭证时补齐待补运费来源审计',
+    );
+    if (!created?.actionId) throw new Error("无法建立补运费来源审计");
+    action = { id: created.actionId };
+  }
+  const purpose = makeSupplementalShippingPaymentPurpose(action.id);
+  const [existing] = await db.select().from(orderPayments)
+    .where(and(eq(orderPayments.orderId, data.orderId), eq(orderPayments.purpose, purpose)))
+    .limit(1);
+  if (existing?.reviewStatus === 'approved') throw new Error("该补运费已审核确认");
+  if (existing) {
+    await db.update(orderPayments).set({
+      receiptUrl: data.receiptUrl,
+      paymentMethod: data.paymentMethod || existing.paymentMethod || '客户补运费',
+      notes: data.notes || existing.notes || null,
+      paymentDate: new Date(),
+      paymentSource: 'customer_upload',
+      reviewStatus: 'pending',
+      reviewedBy: null,
+      reviewedAt: null,
+      rejectReason: null,
+      operatorName: data.operatorName,
+    }).where(eq(orderPayments.id, existing.id));
+    await logOrderOperation(data.orderId, 'payment', `更新补运费凭证 RM${amount.toFixed(2)}，等待审核`, null, data.operatorName);
+    return { paymentId: existing.id, amount, updated: true };
+  }
+  const inserted = await db.insert(orderPayments).values({
+    orderId: data.orderId,
+    amount: amount.toFixed(2),
+    paymentMethod: data.paymentMethod || '客户补运费',
+    receiptUrl: data.receiptUrl,
+    purpose,
+    paymentDate: new Date(),
+    operatorName: data.operatorName,
+    notes: data.notes || `补运费凭证待审核；特别订单动作 #${action.id}`,
+    paymentSource: 'customer_upload',
+    reviewStatus: 'pending',
+  });
+  const paymentId = Number((inserted as any)[0]?.insertId || 0);
+  await logOrderOperation(data.orderId, 'payment', `客户提交补运费凭证 RM${amount.toFixed(2)}，等待审核`, null, data.operatorName);
+  return { paymentId, amount, updated: false };
 }
 
 // ============================================================================
@@ -2346,10 +2520,35 @@ export async function reviewPayment(data: {
 
   const orderId = payment[0].orderId;
   const amount = payment[0].amount;
+  const supplementalActionId = String(payment[0].purpose || '').startsWith('supplemental_shipping:')
+    ? Number(String(payment[0].purpose).slice('supplemental_shipping:'.length))
+    : 0;
 
   // Log activity
   if (data.action === 'approve') {
     await logOrderOperation(orderId, 'payment', `付款审核通过 RM${amount}`, null, data.reviewerName);
+    if (supplementalActionId > 0) {
+      const [orderForClosure] = await db.select({ physicalStatus: orders.physicalStatus })
+        .from(orders).where(eq(orders.id, orderId)).limit(1);
+      await db.insert(specialOrderActions).values({
+        orderId,
+        actionType: 'confirm_received',
+        amount: String(amount),
+        performedBy: data.reviewerName,
+        remark: `审核通过客户补运费凭证；来源特别订单动作 #${supplementalActionId}`,
+      });
+      await db.update(orders).set({
+        isSpecialOrder: false,
+        specialOrderStatus: 'resolved',
+        specialOrderUpdatedAt: new Date(),
+        ...(shouldCompleteShippedOrderAfterFinancialFollowUp({
+          physicalStatus: orderForClosure?.physicalStatus,
+          specialOrderType: 'pending_shipping',
+        }) ? { physicalStatus: 'completed' as any, completedAt: new Date() } : {}),
+      }).where(and(eq(orders.id, orderId), eq(orders.specialOrderType, 'pending_shipping' as any)));
+      await syncSpecialStatusToTable(orderId, 'pending_shipping', 'resolved', null, '0', 'system');
+      await logOrderOperation(orderId, 'payment', `补差价凭证审核通过 RM${Number(amount).toFixed(2)}，待汇款差价已解除并进入实际收款；订单已完成（已发货）`, null, data.reviewerName);
+    }
   } else {
     await logOrderOperation(orderId, 'payment', `付款审核失败 RM${amount}${data.rejectReason ? '，原因：' + data.rejectReason : ''}`, null, data.reviewerName);
   }
@@ -2375,7 +2574,9 @@ export async function recalculateOrderBalance(orderId: number) {
 
   // Get all approved payments
   const allPayments = await db.select().from(orderPayments).where(eq(orderPayments.orderId, orderId));
-  const approvedPayments = allPayments.filter((p: any) => p.reviewStatus === 'approved');
+  const approvedPayments = allPayments.filter((p: any) =>
+    p.reviewStatus === 'approved' && isBalanceAffectingPayment(p.purpose),
+  );
   const totalPaid = approvedPayments.reduce((sum, p) => sum + parseFloat(String(p.amount)), 0);
 
   // 实际款项已退的记录影响正式实收；待退货确认只延后实物库存处理，
@@ -2418,18 +2619,16 @@ export async function recalculateOrderBalance(orderId: number) {
       const pendingOverpayment = grossOverpaid - resolvedOverpayment;
       if (pendingOverpayment > 0.01) {
         isSpecialOrder = true;
-        specialOrderType = 'over_payment';
+        specialOrderType = 'pending_refund';
         specialOrderSource = 'system';
         specialOrderStatus = 'pending';
-        // V2.1.19: Sync to order_special_statuses table
-        await syncSpecialStatusToTable(orderId, 'over_payment', 'pending', `多汇款 RM${pendingOverpayment.toFixed(2)}`, pendingOverpayment.toFixed(2), 'system');
-      } else if (isSpecialOrder && specialOrderType === 'over_payment' && pendingOverpayment <= 0.01) {
-        // Overpayment fully processed → resolve special order
+        await syncSpecialStatusToTable(orderId, 'pending_refund', 'pending', `多汇款待退款 RM${pendingOverpayment.toFixed(2)}`, pendingOverpayment.toFixed(2), 'system');
+      } else if (isSpecialOrder && (specialOrderType === 'over_payment' || specialOrderType === 'pending_refund') && pendingOverpayment <= 0.01) {
+        // Overpayment refund fully processed → resolve special order
         isSpecialOrder = false;
         specialOrderType = null;
         specialOrderStatus = 'resolved';
-        // V2.1.19: Resolve in order_special_statuses table
-        await syncSpecialStatusToTable(orderId, 'over_payment', 'resolved', null, '0', 'system');
+        await syncSpecialStatusToTable(orderId, 'pending_refund', 'resolved', null, '0', 'system');
       } else if (isSpecialOrder && specialOrderType === 'partial_payment') {
         // Was partial payment special, now fully paid → resolve
         isSpecialOrder = false;
@@ -2491,6 +2690,10 @@ export async function recalculateOrderBalance(orderId: number) {
     updateSet.completedAt = new Date();
   }
   await db.update(orders).set(updateSet).where(eq(orders.id, orderId));
+
+  if (grossOverpaid - resolvedOverpayment > 0.01) {
+    await ensureOverpaymentRefundRequest({ orderId, amount: grossOverpaid - resolvedOverpayment });
+  }
 
   // Set fullPaymentConfirmedAt if fully paid
   if (totalPaid >= totalAmount && totalAmount > 0) {
@@ -2629,11 +2832,18 @@ export async function processOverpayment(data: {
 
   await db.insert(orderRefunds).values({
     orderId: data.orderId,
+    refundNumber: `RF-${order[0].orderNumber || data.orderId}-${Date.now().toString().slice(-6)}`,
+    status: 'processed',
+    requestedAmount: data.amount,
     amount: data.amount,
     refundMethod,
     receiptUrl: null,
+    refundReason: '多汇款',
+    refundReasonCode: 'overpayment',
+    refundSource: 'payment',
     notes: data.notes || `多汇款处理：${refundMethod} RM${data.amount}`,
     operatorName: data.operatorName,
+    processedBy: data.operatorName,
     refundDate: new Date(),
   });
 
@@ -2749,10 +2959,12 @@ export async function getRefundOrderDetail(orderId: number) {
 
 export async function createRefundRequest(data: {
   orderId: number; requestedAmount: number; refundMethod: string; refundReason?: string; issueDescription?: string;
-  refundReasonCode?: string; refundSource?: 'manual' | 'packing'; customerRefundDetails?: string; customerRefundQrUrl?: string;
+  refundReasonCode?: string; refundSource?: 'manual' | 'packing' | 'payment'; customerRefundDetails?: string; customerRefundQrUrl?: string;
   attachmentUrls?: string; internalNotes?: string; requestedBy: string; items: RefundItemInput[];
   // 仅包货异常可在发货前建立正式“未处理”退款；后台手动退款仍限制已发货／已完成订单。
   sourceExceptionId?: number;
+  // 包货实际重量／运费差额的来源动作；唯一关联让重试不会重复建立退款任务。
+  sourceSpecialActionId?: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
@@ -2762,9 +2974,15 @@ export async function createRefundRequest(data: {
       .where(eq(orderRefunds.sourceExceptionId, data.sourceExceptionId)).limit(1);
     if (existing[0]) return { id: existing[0].id, refundNumber: existing[0].refundNumber || `RF-${existing[0].id}`, existing: true };
   }
+  if (data.sourceSpecialActionId) {
+    const existing = await db.select().from(orderRefunds)
+      .where(eq(orderRefunds.sourceSpecialActionId, data.sourceSpecialActionId)).limit(1);
+    if (existing[0]) return { id: existing[0].id, refundNumber: existing[0].refundNumber || `RF-${existing[0].id}`, existing: true };
+  }
   const detail = await getRefundOrderDetail(data.orderId);
   if (!detail?.order) throw new Error('订单不存在');
-  if (!data.sourceExceptionId && !['shipped', 'completed'].includes(detail.order.physicalStatus || '')) throw new Error('仅已发货或已完成订单可建立退款');
+  const isAutomaticOverpaymentRefund = data.refundReasonCode === 'overpayment';
+  if (!data.sourceExceptionId && !isAutomaticOverpaymentRefund && !['shipped', 'completed'].includes(detail.order.physicalStatus || '')) throw new Error('仅已发货或已完成订单可建立退款');
   for (const item of data.items) {
     if (item.refundQuantity <= 0) throw new Error('退款商品数量必须大于 0');
     const original = item.orderItemId ? detail.items.find((row: any) => row.id === item.orderItemId) : null;
@@ -2777,6 +2995,7 @@ export async function createRefundRequest(data: {
     const inserted = await tx.insert(orderRefunds).values({
       orderId: data.orderId, refundNumber, status: 'pending', requestedAmount: data.requestedAmount.toFixed(2), amount: '0', refundMethod: data.refundMethod,
       sourceExceptionId: data.sourceExceptionId || null,
+      sourceSpecialActionId: data.sourceSpecialActionId || null,
       refundReason: data.refundReason || null, refundReasonCode: data.refundReasonCode || null, refundSource: data.refundSource || 'manual',
       issueDescription: data.issueDescription || null, customerRefundDetails: data.customerRefundDetails || null, customerRefundQrUrl: data.customerRefundQrUrl || null,
       attachmentUrls: data.attachmentUrls || null, internalNotes: data.internalNotes || null, requestedBy: data.requestedBy,
@@ -2796,6 +3015,156 @@ export async function createRefundRequest(data: {
   await logOrderOperation(data.orderId, 'refund_request', `建立退款申请 ${refundNumber}，申请金额 RM${data.requestedAmount.toFixed(2)}`, null, data.requestedBy);
   broadcastChanges(['orders', 'dashboard']);
   return { id: refundId, refundNumber };
+}
+
+/**
+ * 包货实际重量发现“运费多收”时，建立正式退款管理任务。该任务不涉及商品
+ * 退库，完成前也不影响现金流或利润；来源特别订单动作保证幂等与可追溯。
+ */
+export async function ensureShippingDifferenceRefundRequest(data: {
+  orderId: number;
+  sourceSpecialActionId: number;
+  amount: number;
+  requestedBy: string;
+  actualShippingFee: number;
+  customerPaidShipping: number;
+  refundMethod?: 'bank_transfer' | 'credit' | 'cash';
+}) {
+  return createRefundRequest({
+    orderId: data.orderId,
+    sourceSpecialActionId: data.sourceSpecialActionId,
+    requestedAmount: data.amount,
+    refundMethod: data.refundMethod || 'bank_transfer',
+    refundReason: '运费多收（包货实际重量差额）',
+    refundReasonCode: 'overcharged_shipping',
+    refundSource: 'packing',
+    issueDescription: `包货实际运费 RM${data.actualShippingFee.toFixed(2)}，客户已付运费 RM${data.customerPaidShipping.toFixed(2)}，应退款 RM${data.amount.toFixed(2)}。等待客户提供退款资料后由退款管理完成。`,
+    internalNotes: '由包货工作台实际重量差额自动建立；不涉及商品库存。',
+    requestedBy: data.requestedBy,
+    items: [],
+  });
+}
+
+/**
+ * 正常订单付款多汇款时，自动建立退款管理任务。多汇款不是特别订单队列，
+ * 而是有明确退款原因的待处理退款；查询或重算重复执行不会重复建单。
+ */
+async function ensureOverpaymentRefundRequest(data: { orderId: number; amount: number }) {
+  const db = await getDb();
+  if (!db || data.amount <= 0.01) return null;
+  const [existing] = await db.select({ id: orderRefunds.id, refundNumber: orderRefunds.refundNumber, status: orderRefunds.status })
+    .from(orderRefunds)
+    .where(and(
+      eq(orderRefunds.orderId, data.orderId),
+      eq(orderRefunds.refundReasonCode, 'overpayment'),
+      eq(orderRefunds.status, 'pending'),
+    ))
+    .orderBy(desc(orderRefunds.createdAt))
+    .limit(1);
+  if (existing) return { id: existing.id, refundNumber: existing.refundNumber || `RF-${existing.id}`, existing: true };
+  return createRefundRequest({
+    orderId: data.orderId,
+    requestedAmount: data.amount,
+    refundMethod: 'bank_transfer',
+    refundReason: '多汇款',
+    refundReasonCode: 'overpayment',
+    refundSource: 'payment',
+    issueDescription: `客户付款超过订单应收金额 RM${data.amount.toFixed(2)}；请在退款管理确认退款方式、收款资料及完成凭证。`,
+    internalNotes: '由订单付款余额自动建立；不涉及商品库存。',
+    requestedBy: '系统自动',
+    items: [],
+  });
+}
+
+/**
+ * 将包货实际重量已标记为待退款的订单同步至退款管理。此函数只由明确业务动作
+ * 调用，查询页面不会产生写入；历史订单也可安全补建一笔可追溯的退款任务。
+ */
+export async function ensurePendingShippingDifferenceRefund(data: {
+  orderId: number;
+  requestedBy: string;
+  refundMethod?: 'bank_transfer' | 'credit' | 'cash';
+  sourceSpecialActionId?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const [order] = await db.select({
+    id: orders.id,
+    specialOrderType: orders.specialOrderType,
+    specialOrderStatus: orders.specialOrderStatus,
+    shippingDifference: orders.shippingDifference,
+    actualShippingFee: orders.actualShippingFee,
+    customerPaidShipping: orders.customerPaidShipping,
+  }).from(orders).where(eq(orders.id, data.orderId)).limit(1);
+  if (!order) throw new Error('订单不存在');
+  const refundAmount = Math.abs(Number(order.shippingDifference || 0));
+  if (order.specialOrderType !== 'pending_refund' || order.specialOrderStatus !== 'pending' || Number(order.shippingDifference || 0) >= -0.01 || refundAmount <= 0.01) {
+    throw new Error('此订单目前没有待处理的运费退款');
+  }
+  const existing = await db.select({ id: orderRefunds.id, refundNumber: orderRefunds.refundNumber, status: orderRefunds.status })
+    .from(orderRefunds)
+    .where(and(
+      eq(orderRefunds.orderId, data.orderId),
+      eq(orderRefunds.refundSource, 'packing'),
+      eq(orderRefunds.refundReasonCode, 'overcharged_shipping'),
+    )).orderBy(desc(orderRefunds.createdAt)).limit(1);
+  if (existing[0]) return { id: existing[0].id, refundNumber: existing[0].refundNumber || `RF-${existing[0].id}`, status: existing[0].status, existing: true };
+
+  let sourceSpecialActionId = data.sourceSpecialActionId;
+  if (!sourceSpecialActionId) {
+    const [action] = await db.select({ id: specialOrderActions.id })
+      .from(specialOrderActions)
+      .where(and(
+        eq(specialOrderActions.orderId, data.orderId),
+        eq(specialOrderActions.actionType, 'notify_shortage'),
+      )).orderBy(desc(specialOrderActions.createdAt)).limit(1);
+    sourceSpecialActionId = action?.id;
+  }
+  if (!sourceSpecialActionId) {
+    const action = await createSpecialOrderAction(
+      data.orderId,
+      'notify_shortage',
+      refundAmount,
+      data.requestedBy,
+      `待退款 RM${refundAmount.toFixed(2)}；由包货实际重量差额建立退款管理任务`,
+    );
+    sourceSpecialActionId = action?.actionId;
+  }
+  if (!sourceSpecialActionId) throw new Error('无法建立运费退款来源记录');
+  return ensureShippingDifferenceRefundRequest({
+    orderId: data.orderId,
+    sourceSpecialActionId,
+    amount: refundAmount,
+    requestedBy: data.requestedBy,
+    actualShippingFee: Number(order.actualShippingFee || 0),
+    customerPaidShipping: Number(order.customerPaidShipping || 0),
+    refundMethod: data.refundMethod,
+  });
+}
+
+/** 包货现场现金退运费：先建立退款管理记录，再即时完成以保留完整审计。 */
+export async function completePackingShippingCashRefund(data: { orderId: number; processedBy: string }) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const refund = await ensurePendingShippingDifferenceRefund({
+    orderId: data.orderId,
+    requestedBy: data.processedBy,
+    refundMethod: 'cash',
+  });
+  const [refundRecord] = await db.select({
+    id: orderRefunds.id,
+    status: orderRefunds.status,
+    requestedAmount: orderRefunds.requestedAmount,
+  }).from(orderRefunds).where(eq(orderRefunds.id, refund.id)).limit(1);
+  if (!refundRecord) throw new Error('运费退款记录不存在');
+  if (refundRecord.status === 'processed') return { success: true, refundId: refundRecord.id, alreadyProcessed: true };
+  await db.update(orderRefunds).set({ refundMethod: 'cash' }).where(eq(orderRefunds.id, refundRecord.id));
+  const completed = await completeRefundRequest({
+    refundId: refundRecord.id,
+    actualAmount: Number(refundRecord.requestedAmount || 0),
+    processedBy: data.processedBy,
+  });
+  return { ...completed, alreadyProcessed: false };
 }
 
 /**
@@ -2882,6 +3251,8 @@ export async function completeRefundRequest(data: { refundId: number; actualAmou
   if (refundProofRequired(refund[0].refundMethod) && !data.receiptUrl) throw new Error('TNG、DuitNow、银行转账与 QR 退款必须上传退款凭证');
   const items = await db.select().from(orderRefundItems).where(eq(orderRefundItems.refundId, data.refundId));
   const awaitingReturn = items.some(item => item.inventoryTreatment === 'pending_return');
+  const completedAt = new Date();
+  const completionDates = getRefundCompletionDates(awaitingReturn, completedAt);
   await db.transaction(async (tx: any) => {
     let creditLedgerId: number | null = null;
     if (/credit/i.test(refund[0].refundMethod)) {
@@ -2919,7 +3290,13 @@ export async function completeRefundRequest(data: { refundId: number; actualAmou
         await tx.update(orderRefundItems).set({ inventoryActionStatus: 'written_off', inventoryAdjustmentId: Number((adjustment as any)[0]?.insertId) || null, inventoryHandledBy: data.processedBy, inventoryHandledAt: new Date() }).where(eq(orderRefundItems.id, item.id));
       }
     }
-    await tx.update(orderRefunds).set({ status: awaitingReturn ? 'awaiting_return' : 'processed', amount: data.actualAmount.toFixed(2), receiptUrl: data.receiptUrl || null, processedBy: data.processedBy, processedAt: new Date(), inventoryFinalizedAt: awaitingReturn ? null : new Date(), creditLedgerId }).where(eq(orderRefunds.id, data.refundId));
+    await tx.update(orderRefunds).set({ status: awaitingReturn ? 'awaiting_return' : 'processed', amount: data.actualAmount.toFixed(2), receiptUrl: data.receiptUrl || null, processedBy: data.processedBy, ...completionDates, creditLedgerId }).where(eq(orderRefunds.id, data.refundId));
+    if (refund[0].refundReasonCode === 'overpayment') {
+      const [orderForOverpayment] = await tx.select({ resolvedOverpaymentAmount: orders.resolvedOverpaymentAmount })
+        .from(orders).where(eq(orders.id, refund[0].orderId)).limit(1);
+      const resolvedAmount = Number(orderForOverpayment?.resolvedOverpaymentAmount || 0) + data.actualAmount;
+      await tx.update(orders).set({ resolvedOverpaymentAmount: resolvedAmount.toFixed(2) }).where(eq(orders.id, refund[0].orderId));
+    }
     if (refund[0].sourceExceptionId) {
       await tx.update(orderExceptions).set({
         status: awaitingReturn ? 'open' : 'resolved',
@@ -2927,7 +3304,37 @@ export async function completeRefundRequest(data: { refundId: number; actualAmou
         resolvedAt: awaitingReturn ? null : new Date(),
       }).where(eq(orderExceptions.id, refund[0].sourceExceptionId));
     }
+    // 运费差额与多汇款退款必须由退款管理完成后才解除订单、包货和Dashboard的待退款状态。
+    if (refund[0].sourceSpecialActionId || refund[0].refundReasonCode === 'overpayment') {
+      const [orderForClosure] = await tx.select({ physicalStatus: orders.physicalStatus })
+        .from(orders).where(eq(orders.id, refund[0].orderId)).limit(1);
+      if (refund[0].sourceSpecialActionId) {
+        await tx.insert(specialOrderActions).values({
+          orderId: refund[0].orderId,
+          actionType: 'refund',
+          amount: data.actualAmount.toFixed(2),
+          performedBy: data.processedBy,
+          remark: `退款管理完成 ${refund[0].refundNumber || data.refundId}`,
+        });
+      }
+      await tx.update(orders).set({
+        isSpecialOrder: false,
+        specialOrderStatus: 'resolved',
+        specialOrderUpdatedAt: new Date(),
+        ...(shouldCompleteShippedOrderAfterFinancialFollowUp({
+          physicalStatus: orderForClosure?.physicalStatus,
+          specialOrderType: 'pending_refund',
+          hasPendingReturn: awaitingReturn,
+        }) ? { physicalStatus: 'completed' as any, completedAt: new Date() } : {}),
+      }).where(and(
+        eq(orders.id, refund[0].orderId),
+        eq(orders.specialOrderType, 'pending_refund' as any),
+      ));
+    }
   });
+  if ((refund[0].sourceSpecialActionId || refund[0].refundReasonCode === 'overpayment') && !awaitingReturn) {
+    await syncSpecialStatusToTable(refund[0].orderId, 'pending_refund', 'resolved', null, '0', 'system');
+  }
   await recalculateOrderBalance(refund[0].orderId);
   await logOrderOperation(refund[0].orderId, 'refund_processed', `完成退款 ${refund[0].refundNumber || data.refundId}，实际退款 RM${data.actualAmount.toFixed(2)}${awaitingReturn ? '；待确认退货' : ''}`, null, data.processedBy);
   broadcastChanges(['orders', 'dashboard', 'inventory']);
@@ -3964,8 +4371,12 @@ export async function createPurchaseOrder(data: {
 export async function receivePurchaseOrder(poId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return await (db as any).transaction(async (tx: any) => {
-    const [purchaseOrder] = await tx.select({ status: purchaseOrders.status, poNumber: purchaseOrders.poNumber })
+  const received = await (db as any).transaction(async (tx: any) => {
+    const [purchaseOrder] = await tx.select({
+      status: purchaseOrders.status,
+      poNumber: purchaseOrders.poNumber,
+      supplierId: purchaseOrders.supplierId,
+    })
       .from(purchaseOrders).where(eq(purchaseOrders.id, poId)).limit(1);
     if (!purchaseOrder) throw new Error("进货单不存在");
 
@@ -3983,6 +4394,7 @@ export async function receivePurchaseOrder(poId: number) {
     if (affectedRows < 1) throw new Error("进货单状态已变化，请刷新后重试");
 
     const items = await tx.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, poId));
+    const receivedRestockByItem = new Map<string, { productId: number; variantId: number | null; quantity: number }>();
     for (const item of items) {
       // Gifts and physical goods share the same received-stock path. A gift's
       // reservedQuantity is intentionally unchanged because receipt adds on-hand stock.
@@ -4003,6 +4415,22 @@ export async function receivePurchaseOrder(poId: number) {
           stockQuantity: sql`${variants.stockQuantity} + ${item.quantity}`,
         }).where(eq(variants.id, item.variantId));
       }
+
+      // 进货收货既是实物库存增加，也是FIFO成本批次的唯一正规来源。
+      // 以进货单项目作为稳定批次编号；收货状态的原子迁移保证不会重复创建。
+      const lotNo = `PO${poId}-${item.id}`;
+      const unitCost = Number(item.unitCost || 0);
+      const [lotResult] = await tx.execute(sql`
+        INSERT INTO inventory_lots
+          (lotNo, purchaseOrderId, supplierId, productId, variantId, originalQuantity, remainingQuantity, unitCost, purchaseDate, status)
+        VALUES (${lotNo}, ${poId}, ${purchaseOrder.supplierId}, ${item.productId}, ${item.variantId || null}, ${item.quantity}, ${item.quantity}, ${unitCost.toFixed(2)}, ${new Date()}, 'active')
+      `);
+      const lotId = Number((lotResult as any)?.insertId || 0);
+      await tx.execute(sql`
+        INSERT INTO inventory_ledger
+          (productId, variantId, lotId, transactionType, referenceType, referenceId, quantityChange, balanceAfter, unitCost, createdBy)
+        VALUES (${item.productId}, ${item.variantId || null}, ${lotId}, 'purchase', 'purchase_order', ${poId}, ${item.quantity}, ${stockAfter}, ${unitCost.toFixed(2)}, '系统')
+      `);
       await tx.insert(inventoryMovementLogs).values(buildInventoryMovementRecord({
         productId: item.productId,
         variantId: item.variantId ?? null,
@@ -4015,9 +4443,31 @@ export async function receivePurchaseOrder(poId: number) {
         reason: `进货单 ${purchaseOrder.poNumber} 确认收货`,
         operator: "系统",
       }));
+
+      const variantId = normalizeRestockVariantId(item.variantId);
+      const restockKey = buildRestockAllocationKey(item.productId, variantId);
+      const previous = receivedRestockByItem.get(restockKey);
+      receivedRestockByItem.set(restockKey, {
+        productId: item.productId,
+        variantId,
+        quantity: (previous?.quantity ?? 0) + Number(item.quantity || 0),
+      });
     }
-    return { poId, alreadyReceived: false };
+    return { poId, alreadyReceived: false, receivedRestockItems: Array.from(receivedRestockByItem.values()) };
   });
+
+  if (received.alreadyReceived) return received;
+  const restockAllocations: Array<{ productId: number; variantId: number | null; allocatedExceptionIds: number[]; allocatedQuantity: number }> = [];
+  for (const item of received.receivedRestockItems) {
+    const allocation = await autoAllocateWaitingRestockForProduct(item.productId, item.quantity, "系统", item.variantId);
+    restockAllocations.push({
+      productId: item.productId,
+      variantId: item.variantId,
+      allocatedExceptionIds: allocation.allocatedExceptionIds,
+      allocatedQuantity: allocation.allocatedQuantity,
+    });
+  }
+  return { poId, alreadyReceived: false, restockAllocations };
 }
 
 /**
@@ -4133,14 +4583,14 @@ export async function quickRestockProduct(data: {
 
   const lotResult = await db.execute(sql`
     INSERT INTO inventory_lots
-      (lot_no, purchase_order_id, supplier_id, product_id, variant_id, original_quantity, remaining_quantity, unit_cost, purchase_date, status)
+      (lotNo, purchaseOrderId, supplierId, productId, variantId, originalQuantity, remainingQuantity, unitCost, purchaseDate, status)
     VALUES (${lotNo}, ${poId}, ${data.supplierId}, ${data.productId}, NULL, ${quantity}, ${quantity}, ${unitCost.toFixed(2)}, ${now}, 'active')
   `);
   const lotId = ((lotResult as any)[0]?.insertId ?? (lotResult as any).insertId) as number;
 
   await db.execute(sql`
     INSERT INTO inventory_ledger
-      (product_id, variant_id, lot_id, transaction_type, reference_type, reference_id, quantity_change, balance_after, unit_cost, created_by)
+      (productId, variantId, lotId, transactionType, referenceType, referenceId, quantityChange, balanceAfter, unitCost, createdBy)
     VALUES (${data.productId}, NULL, ${lotId}, 'purchase', 'quick_restock', ${poId}, ${quantity}, ${balanceAfter}, ${unitCost.toFixed(2)}, ${data.adjustedBy || 'admin'})
   `);
 
@@ -4188,12 +4638,12 @@ async function allocateFifoCostForSale(data: {
     .where(eq(products.id, data.productId)).limit(1);
   let runningBalance = Number(product?.stockQuantity ?? 0) + data.quantity;
   const [lotRows] = await db.execute(sql`
-    SELECT id, remaining_quantity AS remainingQuantity, unit_cost AS unitCost
+    SELECT id, remainingQuantity, unitCost
     FROM inventory_lots
-    WHERE product_id = ${data.productId}
+    WHERE productId = ${data.productId}
       AND status = 'active'
-      AND remaining_quantity > 0
-    ORDER BY purchase_date ASC, id ASC
+      AND remainingQuantity > 0
+    ORDER BY purchaseDate ASC, id ASC
   `);
   const lots = lotRows as unknown as Array<{ id: number; remainingQuantity: number | string; unitCost: number | string }>;
   let remaining = data.quantity;
@@ -4207,14 +4657,14 @@ async function allocateFifoCostForSale(data: {
 
     await db.execute(sql`
       UPDATE inventory_lots
-      SET remaining_quantity = remaining_quantity - ${quantityFromLot},
-          status = CASE WHEN remaining_quantity - ${quantityFromLot} <= 0 THEN 'depleted' ELSE 'active' END
-      WHERE id = ${lot.id} AND remaining_quantity >= ${quantityFromLot}
+      SET remainingQuantity = remainingQuantity - ${quantityFromLot},
+          status = CASE WHEN remainingQuantity - ${quantityFromLot} <= 0 THEN 'depleted' ELSE 'active' END
+      WHERE id = ${lot.id} AND remainingQuantity >= ${quantityFromLot}
     `);
     runningBalance -= quantityFromLot;
     await db.execute(sql`
       INSERT INTO inventory_ledger
-        (product_id, variant_id, lot_id, transaction_type, reference_type, reference_id, quantity_change, balance_after, unit_cost, created_by)
+        (productId, variantId, lotId, transactionType, referenceType, referenceId, quantityChange, balanceAfter, unitCost, createdBy)
       VALUES (${data.productId}, NULL, ${lot.id}, 'sale', 'order_sale', ${data.orderId}, ${-quantityFromLot}, ${runningBalance}, ${Number(lot.unitCost).toFixed(2)}, ${data.createdBy || 'system'})
     `);
     remaining -= quantityFromLot;
@@ -4698,7 +5148,7 @@ export async function getProductsEnhanced(params: {
     // 正式订单已在下单时写入 stockQuantity；尚未转正式订单的 AI 草稿
     // 记录在 reservedQuantity，因此前端可售数只需额外扣除这一类临时预留。
     // 不得再从这里扣 pendingMap，否则会对正式订单发生二次扣减。
-    availableQuantity: Math.max(0, Number(p.stockQuantity || 0) - Number(p.reservedQuantity || 0)),
+    availableQuantity: getSellableInventoryQuantity(p.stockQuantity, p.reservedQuantity),
   }));
 
   return { items: itemsWithStageQuantities, total };
@@ -5899,12 +6349,12 @@ export async function getBusinessOverview(dateRange: DateRange) {
       AND COALESCE(orderType, '') <> 'membership'
   `);
 
-  // 4. FIFO cost (from inventory_ledger where transaction_type = 'sale')
+  // 4. FIFO cost (from inventory_ledger where transactionType = 'sale')
   const [fifoRows] = await db.execute(sql`
-    SELECT COALESCE(SUM(ABS(quantity_change) * unit_cost), 0) as total_fifo_cost
+    SELECT COALESCE(SUM(ABS(quantityChange) * unitCost), 0) as total_fifo_cost
     FROM inventory_ledger
-    WHERE transaction_type = 'sale'
-      AND created_at >= ${startTimestamp} AND created_at <= ${endTimestamp}
+    WHERE transactionType = 'sale'
+      AND createdAt >= ${startTimestamp} AND createdAt <= ${endTimestamp}
   `);
 
   const revenueData = revenueRows as unknown as any[];
@@ -6024,11 +6474,11 @@ export async function getTopProductsByProfit(dateRange: DateRange, limit = 10) {
     SELECT 
             il.product_id,
       p.name as product_name,
-      SUM(ABS(il.quantity_change) * il.unit_cost) as fifo_cost,
+      SUM(ABS(il.quantityChange) * il.unitCost) as fifo_cost,
       MAX(COALESCE(oi_sum.total_sales, 0)) as total_sales,
-      MAX(COALESCE(oi_sum.total_sales, 0)) - SUM(ABS(il.quantity_change) * il.unit_cost) as gross_profit
+      MAX(COALESCE(oi_sum.total_sales, 0)) - SUM(ABS(il.quantityChange) * il.unitCost) as gross_profit
     FROM inventory_ledger il
-    LEFT JOIN products p ON il.product_id = p.id
+    LEFT JOIN products p ON il.productId = p.id
     LEFT JOIN (
       SELECT oi.productId, SUM(oi.subtotal) as total_sales
       FROM order_items oi
@@ -6038,8 +6488,8 @@ export async function getTopProductsByProfit(dateRange: DateRange, limit = 10) {
         AND COALESCE(oi.productType, 'physical') = 'physical'
       GROUP BY oi.productId
     ) oi_sum ON il.product_id = oi_sum.productId
-    WHERE il.transaction_type = 'sale'
-      AND il.created_at >= ${toReportTimestamp(start)} AND il.created_at <= ${toReportTimestamp(end)}
+    WHERE il.transactionType = 'sale'
+      AND il.createdAt >= ${toReportTimestamp(start)} AND il.createdAt <= ${toReportTimestamp(end)}
     GROUP BY il.product_id, p.name
     ORDER BY gross_profit DESC
     LIMIT ${limit}
@@ -6134,6 +6584,105 @@ export async function getSalesPaymentReport(dateRange: DateRange) {
   }));
 }
 
+/**
+ * Keep order performance (order-created date) and cash flow (payment/refund
+ * transaction date) separate. Their totals are intentionally not conflated.
+ */
+export async function getSalesPaymentFinancialSummary(dateRange: DateRange) {
+  const db = await getDb();
+  if (!db) return null;
+  const startAt = toReportTimestamp(dateRange.start);
+  const endAt = toReportTimestamp(dateRange.end);
+
+  const [orderRows] = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(o.totalAmount), 0) AS order_performance,
+      COALESCE(SUM(o.physicalSubtotal), 0) AS product_performance,
+      COALESCE(SUM(o.customerPaidShipping), 0) AS customer_shipping_billed,
+      COALESCE(SUM(o.paidAmount), 0) AS current_collected_for_orders,
+      COALESCE(SUM(GREATEST(o.totalAmount - o.paidAmount, 0)), 0) AS outstanding_amount,
+      COUNT(*) AS order_count
+    FROM orders o
+    WHERE o.createdAt >= ${startAt} AND o.createdAt <= ${endAt}
+      AND COALESCE(o.physicalStatus, '') <> 'cancelled'
+      AND COALESCE(o.orderType, '') <> 'membership'
+  `);
+  const [cashRows] = await db.execute(sql`
+    SELECT COALESCE(SUM(op.amount), 0) AS confirmed_cash_received
+    FROM order_payments op
+    INNER JOIN orders o ON o.id = op.orderId
+    WHERE op.reviewStatus = 'approved'
+      AND COALESCE(op.paymentDate, op.createdAt) >= ${startAt}
+      AND COALESCE(op.paymentDate, op.createdAt) <= ${endAt}
+      AND COALESCE(o.orderType, '') <> 'membership'
+  `);
+  const [refundRows] = await db.execute(sql`
+    SELECT COALESCE(SUM(r.amount), 0) AS completed_refunds
+    FROM order_refunds r
+    INNER JOIN orders o ON o.id = r.orderId
+    WHERE r.status IN ('processed', 'awaiting_return')
+      AND COALESCE(r.refundDate, r.createdAt) >= ${startAt}
+      AND COALESCE(r.refundDate, r.createdAt) <= ${endAt}
+      AND COALESCE(o.orderType, '') <> 'membership'
+  `);
+  const [shippingRows] = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(CASE WHEN o.fullPaymentConfirmedAt >= ${startAt} AND o.fullPaymentConfirmedAt <= ${endAt}
+        THEN o.customerPaidShipping ELSE 0 END), 0) AS initial_shipping_confirmed,
+      COALESCE(SUM(CASE WHEN o.shippedAt >= ${startAt} AND o.shippedAt <= ${endAt}
+        THEN o.actualShippingFee ELSE 0 END), 0) AS actual_shipping_cost
+    FROM orders o
+    WHERE COALESCE(o.physicalStatus, '') <> 'cancelled'
+      AND COALESCE(o.orderType, '') <> 'membership'
+  `);
+  const [specialShippingRows] = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(CASE WHEN soa.actionType = 'confirm_received' THEN soa.amount ELSE 0 END), 0) AS supplemental_shipping_received,
+      COALESCE(SUM(CASE WHEN soa.actionType = 'company_bear' THEN soa.amount ELSE 0 END), 0) AS company_bear_shipping
+    FROM special_order_actions soa
+    INNER JOIN orders o ON o.id = soa.orderId
+    WHERE soa.createdAt >= ${startAt} AND soa.createdAt <= ${endAt}
+      AND COALESCE(o.physicalStatus, '') <> 'cancelled'
+      AND COALESCE(o.orderType, '') <> 'membership'
+  `);
+
+  const order = (orderRows as unknown as any[])[0] ?? {};
+  const cash = (cashRows as unknown as any[])[0] ?? {};
+  const refund = (refundRows as unknown as any[])[0] ?? {};
+  const shipping = (shippingRows as unknown as any[])[0] ?? {};
+  const specialShipping = (specialShippingRows as unknown as any[])[0] ?? {};
+  const confirmedCashReceived = Number(cash.confirmed_cash_received) || 0;
+  const completedRefunds = Number(refund.completed_refunds) || 0;
+  const initialShippingConfirmed = Number(shipping.initial_shipping_confirmed) || 0;
+  const supplementalShippingReceived = Number(specialShipping.supplemental_shipping_received) || 0;
+  const actualShippingCost = Number(shipping.actual_shipping_cost) || 0;
+  const cashFlow = calculateFinancialCashFlow({
+    confirmedCashReceived,
+    completedRefunds,
+    initialShippingConfirmed,
+    supplementalShippingReceived,
+    actualShippingCost,
+  });
+
+  return {
+    orderPerformance: Number(order.order_performance) || 0,
+    productPerformance: Number(order.product_performance) || 0,
+    customerShippingBilled: Number(order.customer_shipping_billed) || 0,
+    currentCollectedForOrders: Number(order.current_collected_for_orders) || 0,
+    outstandingAmount: Number(order.outstanding_amount) || 0,
+    orderCount: Number(order.order_count) || 0,
+    confirmedCashReceived,
+    completedRefunds,
+    netCashReceived: cashFlow.netCashReceived,
+    initialShippingConfirmed,
+    supplementalShippingReceived,
+    customerShippingReceived: cashFlow.customerShippingReceived,
+    companyBearShipping: Number(specialShipping.company_bear_shipping) || 0,
+    actualShippingCost,
+    shippingNet: cashFlow.shippingNet,
+  };
+}
+
 // Product Sales Report
 export async function getProductSalesReport(dateRange: DateRange) {
   const db = await getDb();
@@ -6153,12 +6702,12 @@ export async function getProductSalesReport(dateRange: DateRange) {
     FROM order_items oi
     INNER JOIN orders o ON oi.orderId = o.id
     LEFT JOIN (
-      SELECT product_id, SUM(ABS(quantity_change) * unit_cost) as fifo_cost
+      SELECT productId, SUM(ABS(quantityChange) * unitCost) as fifo_cost
       FROM inventory_ledger
-      WHERE transaction_type = 'sale'
-        AND created_at >= ${toReportTimestamp(start)} AND created_at <= ${toReportTimestamp(end)}
-      GROUP BY product_id
-    ) il_sum ON oi.productId = il_sum.product_id
+      WHERE transactionType = 'sale'
+        AND createdAt >= ${toReportTimestamp(start)} AND createdAt <= ${toReportTimestamp(end)}
+      GROUP BY productId
+    ) il_sum ON oi.productId = il_sum.productId
     WHERE o.createdAt >= ${toReportTimestamp(start)} AND o.createdAt <= ${toReportTimestamp(end)}
       AND COALESCE(o.physicalStatus, '') <> 'cancelled'
       AND COALESCE(oi.productType, 'physical') = 'physical'
@@ -6245,11 +6794,11 @@ export async function getPurchaseInventoryReport(dateRange: DateRange) {
   // Inventory summary
   const [inventoryRows] = await db.execute(sql`
     SELECT 
-      COUNT(DISTINCT product_id) as product_count,
-      COALESCE(SUM(remaining_quantity), 0) as total_stock,
-      COALESCE(SUM(remaining_quantity * unit_cost), 0) as stock_value,
-      SUM(CASE WHEN remaining_quantity = 0 THEN 1 ELSE 0 END) as exhausted_lots,
-      SUM(CASE WHEN remaining_quantity > 0 THEN 1 ELSE 0 END) as active_lots
+      COUNT(DISTINCT productId) as product_count,
+      COALESCE(SUM(remainingQuantity), 0) as total_stock,
+      COALESCE(SUM(remainingQuantity * unitCost), 0) as stock_value,
+      SUM(CASE WHEN remainingQuantity = 0 THEN 1 ELSE 0 END) as exhausted_lots,
+      SUM(CASE WHEN remainingQuantity > 0 THEN 1 ELSE 0 END) as active_lots
     FROM inventory_lots
     WHERE status = 'active'
   `);
@@ -6259,12 +6808,12 @@ export async function getPurchaseInventoryReport(dateRange: DateRange) {
     SELECT 
       il.product_id,
       p.name as product_name,
-      SUM(il.remaining_quantity) as total_remaining,
-      SUM(il.remaining_quantity * il.unit_cost) as stock_value
+      SUM(il.remainingQuantity) as total_remaining,
+      SUM(il.remainingQuantity * il.unitCost) as stock_value
     FROM inventory_lots il
-    LEFT JOIN products p ON il.product_id = p.id
-    WHERE il.status = 'active' AND il.remaining_quantity > 0
-    GROUP BY il.product_id
+    LEFT JOIN products p ON il.productId = p.id
+    WHERE il.status = 'active' AND il.remainingQuantity > 0
+    GROUP BY il.productId
     HAVING total_remaining < 5
     ORDER BY total_remaining ASC
     LIMIT 20
@@ -8070,23 +8619,29 @@ export async function getCustomerCreditLedger(customerId: number, limit = 50) {
 // ============================================================================
 
 export function calculateWestMalaysiaShipping(totalWeight: number, orderTotal: number = 0): { shippingFee: number; freeShipping: boolean; extraWeightCharge: number } {
-  // V2.2 West Malaysia shipping rules per requirement document:
-  // Order total >= RM150: first 10kg free, extra RM3/kg
-  // Order total < RM150: first 10kg RM15, extra RM3/kg
-  const { freeShippingThreshold, includedWeightKg, baseFeeBelowThreshold, additionalKgFee } = WEST_MALAYSIA_V22_SHIPPING;
-  
-  if (totalWeight <= 0) return { shippingFee: 0, freeShipping: orderTotal >= freeShippingThreshold, extraWeightCharge: 0 };
-  
-  const isFreeShipping = orderTotal >= freeShippingThreshold;
-  const baseFee = isFreeShipping ? 0 : baseFeeBelowThreshold;
-  
-  if (totalWeight <= includedWeightKg) {
-    return { shippingFee: baseFee, freeShipping: isFreeShipping, extraWeightCharge: 0 };
-  }
-  
-  const extraWeight = Math.ceil(totalWeight - includedWeightKg);
-  const extraCharge = extraWeight * additionalKgFee;
-  return { shippingFee: baseFee + extraCharge, freeShipping: isFreeShipping, extraWeightCharge: extraCharge };
+  const breakdown = calculateWestMalaysiaShippingBreakdown(totalWeight, orderTotal);
+  return {
+    shippingFee: breakdown.shippingFee,
+    freeShipping: breakdown.freeShipping,
+    extraWeightCharge: breakdown.extraWeightCharge,
+  };
+}
+
+/** 读取订单在结账时适用的免邮门槛金额，供实际重量重算复用相同口径。 */
+export async function getOrderFreeShippingEligibleSubtotal(orderId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [order] = await db.select({
+    promotionDiscount: orders.promotionDiscount,
+    discountAmount: orders.discountAmount,
+  }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) throw new Error("Order not found");
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const breakdown = await calculateOrderPriceBreakdownByProductCategory(db, items, {
+    promotionDiscount: order.promotionDiscount,
+    discountAmount: order.discountAmount,
+  });
+  return breakdown.freeShippingEligibleSubtotal;
 }
 
 /**
@@ -8665,11 +9220,35 @@ export async function getPackingDetail(orderId: number) {
   
   // Get existing packages
   const existingPackages = await db.select().from(packages).where(eq(packages.orderId, orderId)).orderBy(asc(packages.packageNumber));
+  const refunds = await db.select({
+    id: orderRefunds.id,
+    refundNumber: orderRefunds.refundNumber,
+    status: orderRefunds.status,
+    requestedAmount: orderRefunds.requestedAmount,
+    amount: orderRefunds.amount,
+    refundMethod: orderRefunds.refundMethod,
+    refundSource: orderRefunds.refundSource,
+    refundReasonCode: orderRefunds.refundReasonCode,
+    sourceSpecialActionId: orderRefunds.sourceSpecialActionId,
+    createdAt: orderRefunds.createdAt,
+    processedAt: orderRefunds.processedAt,
+  }).from(orderRefunds).where(eq(orderRefunds.orderId, orderId)).orderBy(desc(orderRefunds.createdAt));
+  const payments = await db.select({
+    id: orderPayments.id,
+    amount: orderPayments.amount,
+    purpose: orderPayments.purpose,
+    reviewStatus: orderPayments.reviewStatus,
+    paymentMethod: orderPayments.paymentMethod,
+    paymentDate: orderPayments.paymentDate,
+    reviewedAt: orderPayments.reviewedAt,
+  }).from(orderPayments).where(eq(orderPayments.orderId, orderId)).orderBy(desc(orderPayments.createdAt));
   
   return {
     ...order[0],
     items: enrichedItems,
     packages: existingPackages,
+    refunds,
+    payments,
   };
 }
 
@@ -9352,7 +9931,7 @@ export async function matchKeywordsToProducts(keywords: Array<{ keyword: string;
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const matched: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string; coverImageUrl: string | null }> = [];
+  const matched: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string; coverImageUrl: string | null; variantId?: number; variationName?: string }> = [];
   const unmatched: Array<{ keyword: string; quantity: number }> = [];
   
   for (const { keyword, quantity } of keywords) {
@@ -9379,13 +9958,29 @@ export async function matchKeywordsToProducts(keywords: Array<{ keyword: string;
       });
     } else {
       // Try variant keyword
-      const variant = await db.select({
+      let variant = await db.select({
         id: variants.id,
         productId: variants.productId,
         variationName: variants.name,
         sellingPrice: variants.sellingPrice,
         keyword: variants.keyword,
       }).from(variants).where(eq(variants.keyword, keyword)).limit(1);
+      if (variant.length === 0) {
+        const variantCandidates = await db.select({
+          id: variants.id,
+          productId: variants.productId,
+          variationName: variants.name,
+          sellingPrice: variants.sellingPrice,
+          keyword: variants.keyword,
+          productKeyword: products.keyword,
+        }).from(variants)
+          .innerJoin(products, eq(variants.productId, products.id))
+          .where(eq(variants.status, "active"));
+        const composedMatch = variantCandidates.find((candidate: any) =>
+          composeLiveVariantKeyword(candidate.productKeyword, candidate.keyword).toUpperCase() === keyword.toUpperCase(),
+        );
+        if (composedMatch) variant = [composedMatch];
+      }
       
       if (variant.length > 0) {
         const parentProduct = await db.select({
@@ -9405,6 +10000,8 @@ export async function matchKeywordsToProducts(keywords: Array<{ keyword: string;
             productSku: parentProduct[0].sku || "",
             unitPrice: variant[0].sellingPrice || "0",
             coverImageUrl: parentProduct[0].coverImageUrl || null,
+            variantId: variant[0].id,
+            variationName: variant[0].variationName,
           });
         } else {
           unmatched.push({ keyword, quantity });
@@ -10496,16 +11093,23 @@ export async function autoCompleteShippedOrders() {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  // Find shipped orders older than 7 days that haven't been completed yet
+  // Find shipped orders older than 7 days that have no unresolved financial follow-up.
+  // A physical shipment awaiting a remittance difference or refund must stay open.
   const candidates = await db.select().from(orders)
     .where(and(
       eq(orders.physicalStatus, 'shipped'),
       sql`${orders.shippedAt} IS NOT NULL`,
       sql`${orders.shippedAt} <= ${sevenDaysAgo}`,
       sql`${orders.autoCompleteAt} IS NULL`,
+      sql`COALESCE(${orders.specialOrderStatus}, '') NOT IN ('pending', 'processing')`,
     ));
   let completed = 0;
   for (const order of candidates) {
+    if (!shouldAutoCompleteShippedOrder({
+      physicalStatus: order.physicalStatus,
+      specialOrderType: order.specialOrderType,
+      specialOrderStatus: order.specialOrderStatus,
+    })) continue;
     await db.update(orders)
       .set({ physicalStatus: 'completed', completedAt: new Date(), autoCompleteAt: new Date() })
       .where(eq(orders.id, order.id));
@@ -10712,6 +11316,23 @@ export async function createOrderException(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const isWaitingRestock = data.customerAction === 'wait_restock';
+  const requestedQuantity = Number(data.quantity || 0);
+  let waitingRestockOrderItem: typeof orderItems.$inferSelect | undefined;
+  if (isWaitingRestock) {
+    if (!data.orderItemId || !Number.isInteger(requestedQuantity) || requestedQuantity <= 0) {
+      throw new Error('等待补货必须选择商品并填写正整数数量');
+    }
+    const rows = await db.select().from(orderItems).where(and(
+      eq(orderItems.id, data.orderItemId),
+      eq(orderItems.orderId, data.orderId),
+    )).limit(1);
+    waitingRestockOrderItem = rows[0];
+    if (!waitingRestockOrderItem) throw new Error('等待补货商品不属于此订单');
+    if (requestedQuantity > Number(waitingRestockOrderItem.quantity || 0)) {
+      throw new Error('等待补货数量不可超过原订单商品数量');
+    }
+  }
   const [inserted] = await db.insert(orderExceptions).values({
     orderId: data.orderId,
     orderItemId: data.orderItemId ?? null,
@@ -10720,9 +11341,11 @@ export async function createOrderException(data: {
     createdBy: data.createdBy ?? null,
     // V2.1.26补充4: New fields
     quantity: data.quantity ?? 0,
+    resolutionType: isWaitingRestock ? 'wait_restock' : 'pending',
     customerAction: data.customerAction ?? 'pending',
     itemLevel: Boolean(data.orderItemId),
-    waitingForRestock: false,
+    waitingForRestock: isWaitingRestock,
+    restockAllocatedQuantity: 0,
   });
   const newId = (inserted as any).insertId;
   let created: typeof orderExceptions.$inferSelect | undefined;
@@ -10738,12 +11361,13 @@ export async function createOrderException(data: {
     created = rows[0];
   }
   if (created && data.orderItemId && Number(data.quantity || 0) > 0) {
-    const item = await db.select().from(orderItems).where(eq(orderItems.id, data.orderItemId)).limit(1);
+    const item = waitingRestockOrderItem ? [waitingRestockOrderItem] : await db.select().from(orderItems).where(eq(orderItems.id, data.orderItemId)).limit(1);
     if (item[0]) {
       await db.insert(orderExceptionItems).values({
         exceptionId: created.id,
         orderItemId: item[0].id,
         productId: item[0].productId,
+        variantId: item[0].variationId ?? null,
         productName: item[0].productName,
         quantity: Number(data.quantity),
         unitCost: String(item[0].unitCost || 0),
@@ -10755,6 +11379,19 @@ export async function createOrderException(data: {
   // 开放包货异常（包括等待补货、替换与待退款）须由管理员明确处理，
   // 因此一律启用订单级取消保护，避免付款期限任务误取消原有库存占用。
   await db.update(orders).set({ cancelProtection: true }).where(eq(orders.id, data.orderId));
+  if (created && isWaitingRestock) {
+    // 正式订单在建单时已扣减／锁定相应可售库存；等待补货仅建立履约待办，
+    // 不再做第二次库存扣减。后续只允许由正式进货单收货进行分配与关闭。
+    await createOrderSpecialStatus({
+      orderId: data.orderId,
+      type: 'stock_exception',
+      reason: `等待补货 - 异常#${created.id}`,
+      source: 'manual',
+      createdBy: data.createdBy,
+    });
+    await logOrderOperation(data.orderId, 'packing_exception', `包货异常 #${created.id} 标记等待补货（数量 ${requestedQuantity}）`, null, data.createdBy || '系统');
+    broadcastChanges(['orders', 'dashboard']);
+  }
   return created;
 }
 
@@ -10830,6 +11467,7 @@ export async function resolveOrderException(
     await db.update(orderExceptions).set({
       itemLevel: true,
       quantity,
+      restockAllocatedQuantity: 0,
       resolutionType: 'wait_restock',
       customerAction: 'wait_restock',
       waitingForRestock: true,
@@ -10849,6 +11487,9 @@ export async function resolveOrderException(
     await logOrderOperation(exception.orderId, 'packing_exception', `包货异常 #${exceptionId} 标记等待补货（数量 ${quantity}）`, null, resolvedBy);
     broadcastChanges(['orders', 'dashboard']);
     return (await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1))[0];
+  }
+  if (options?.customerAction === 'wait_restock') {
+    throw new Error('等待补货必须使用专用履约流程，不可在其他异常处理路径重复扣减库存');
   }
   if (resolutionType === 'refund') {
     const refund = await createPackingExceptionRefund({
@@ -11048,35 +11689,6 @@ export async function resolveOrderException(
       }
     }
 
-    // Issue 8: For wait_restock - create special status for dashboard sync
-    if (customerAction === 'wait_restock') {
-      // V2.1.30补充2: Create inventory adjustment for wait_restock (record stock reduction)
-      if (excQuantity > 0 && exception[0].orderItemId) {
-        const orderItem = await db.select().from(orderItems).where(eq(orderItems.id, exception[0].orderItemId)).limit(1);
-        if (orderItem.length > 0) {
-          const productCost = await db.select({ cost: products.cost }).from(products)
-            .where(eq(products.id, orderItem[0].productId)).limit(1);
-          const unitCost = productCost[0] ? Number(productCost[0].cost || 0) : 0;
-          await createInventoryAdjustment({
-            productId: orderItem[0].productId,
-            adjustmentType: 'other',
-            quantityChange: -excQuantity,
-            unitCost,
-            totalCost: unitCost * excQuantity,
-            orderExceptionId: exceptionId,
-            adjustedBy: resolvedBy,
-            reason: `异常处理等待补货 - ${orderItem[0].productName}`,
-          });
-        }
-      }
-      await createOrderSpecialStatus({
-        orderId,
-        type: 'stock_exception',
-        reason: `等待补货 - 异常#${exceptionId}`,
-        source: 'manual',
-        createdBy: resolvedBy,
-      });
-    }
   }
 
   broadcastChanges(["orders", "dashboard"]);
@@ -11085,7 +11697,7 @@ export async function resolveOrderException(
 }
 
 /** 补货实际入库后，将指定等待补货数量明确分配给原订单并关闭对应异常。 */
-export async function allocateRestockedOrderException(exceptionId: number, allocatedBy: string) {
+export async function allocateRestockedOrderException(exceptionId: number, allocatedBy: string, incomingQuantity?: number) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
   const rows = await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1);
@@ -11098,7 +11710,17 @@ export async function allocateRestockedOrderException(exceptionId: number, alloc
     throw new Error('等待补货异常缺少商品或数量');
   }
 
-  await db.update(orderExceptions).set({
+  if (!Number.isInteger(incomingQuantity) || Number(incomingQuantity) <= 0) {
+    throw new Error('等待补货只能由进货确认收货自动分配，不能手动关闭');
+  }
+  const receivedQuantity = Number(incomingQuantity);
+  const progress = getRestockAllocationProgress(
+    Number(exception.quantity || 0),
+    Number(exception.restockAllocatedQuantity || 0),
+    receivedQuantity,
+  );
+  await db.update(orderExceptions).set(progress.isComplete ? {
+    restockAllocatedQuantity: progress.totalAllocated,
     waitingForRestock: false,
     status: 'resolved',
     resolutionType: 'wait_restock',
@@ -11107,7 +11729,21 @@ export async function allocateRestockedOrderException(exceptionId: number, alloc
     resolvedAt: new Date(),
     closedBy: allocatedBy,
     closedAt: new Date(),
+  } : {
+    restockAllocatedQuantity: progress.totalAllocated,
   }).where(eq(orderExceptions.id, exceptionId));
+
+  if (!progress.isComplete) {
+    await logOrderOperation(
+      exception.orderId,
+      'packing_exception',
+      `包货异常 #${exceptionId} 部分补货到货 ${progress.newlyAllocated}，累计 ${progress.totalAllocated}/${exception.quantity}，仍待补 ${progress.remainingRequired}`,
+      null,
+      allocatedBy,
+    );
+    broadcastChanges(['orders', 'dashboard']);
+    return (await db.select().from(orderExceptions).where(eq(orderExceptions.id, exceptionId)).limit(1))[0];
+  }
   const statuses = await db.select().from(orderSpecialStatuses).where(and(
     eq(orderSpecialStatuses.orderId, exception.orderId),
     eq(orderSpecialStatuses.type, 'stock_exception'),
@@ -11135,6 +11771,7 @@ export async function autoAllocateWaitingRestockForProduct(
   productId: number,
   incomingQuantity: number,
   allocatedBy: string,
+  variantId: number | null = null,
 ) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
@@ -11144,24 +11781,33 @@ export async function autoAllocateWaitingRestockForProduct(
     return { allocatedExceptionIds, allocatedQuantity: 0, remainingQuantity };
   }
 
+  const normalizedVariantId = normalizeRestockVariantId(variantId);
+  const variantClause = normalizedVariantId === null
+    ? sql`AND oei.variantId IS NULL`
+    : sql`AND oei.variantId = ${normalizedVariantId}`;
   const [rows] = await db.execute(sql`
-    SELECT oe.id AS id, oe.quantity AS quantity
+    SELECT oe.id AS id, oe.quantity AS quantity, oe.restockAllocatedQuantity AS restockAllocatedQuantity
     FROM order_exceptions oe
     INNER JOIN order_exception_items oei ON oei.exceptionId = oe.id
     WHERE oe.waitingForRestock = 1
       AND oe.status = 'open'
       AND oei.productId = ${productId}
+      ${variantClause}
       AND oe.quantity > 0
     GROUP BY oe.id, oe.quantity, oe.createdAt
     ORDER BY oe.createdAt ASC, oe.id ASC
   `);
-  const candidates = rows as unknown as Array<{ id: number; quantity: number | string }>;
+  const candidates = rows as unknown as Array<{ id: number; quantity: number | string; restockAllocatedQuantity: number | string }>;
   for (const candidate of candidates) {
     const requiredQuantity = Math.max(0, Math.floor(Number(candidate.quantity) || 0));
-    if (!requiredQuantity || requiredQuantity > remainingQuantity) continue;
-    await allocateRestockedOrderException(Number(candidate.id), allocatedBy);
-    allocatedExceptionIds.push(Number(candidate.id));
-    remainingQuantity -= requiredQuantity;
+    const alreadyAllocated = Math.max(0, Math.floor(Number(candidate.restockAllocatedQuantity) || 0));
+    const outstandingQuantity = Math.max(0, requiredQuantity - alreadyAllocated);
+    if (!outstandingQuantity) continue;
+    const allocationQuantity = Math.min(remainingQuantity, outstandingQuantity);
+    if (!allocationQuantity) break;
+    const updated = await allocateRestockedOrderException(Number(candidate.id), allocatedBy, allocationQuantity);
+    if (updated.status === 'resolved') allocatedExceptionIds.push(Number(candidate.id));
+    remainingQuantity -= allocationQuantity;
   }
 
   return {
@@ -11236,6 +11882,7 @@ export async function createOrderExceptionItem(data: {
   exceptionId: number;
   orderItemId: number;
   productId: number;
+  variantId?: number | null;
   productName: string;
   quantity: number;
   unitCost?: number;
@@ -11248,6 +11895,7 @@ export async function createOrderExceptionItem(data: {
     exceptionId: data.exceptionId,
     orderItemId: data.orderItemId,
     productId: data.productId,
+    variantId: normalizeRestockVariantId(data.variantId),
     productName: data.productName,
     quantity: data.quantity,
     unitCost: (data.unitCost ?? 0).toString(),
@@ -11348,6 +11996,7 @@ export async function getInventoryAdjustments(filters?: { productId?: number; ad
 export async function getInventoryMovementLogs(filters?: {
   productId?: number;
   variantId?: number;
+  movementType?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }) {
@@ -11356,6 +12005,7 @@ export async function getInventoryMovementLogs(filters?: {
   const conditions: any[] = [];
   if (filters?.productId) conditions.push(eq(inventoryMovementLogs.productId, filters.productId));
   if (filters?.variantId) conditions.push(eq(inventoryMovementLogs.variantId, filters.variantId));
+  if (filters?.movementType) conditions.push(eq(inventoryMovementLogs.movementType, filters.movementType as any));
   if (filters?.dateFrom) conditions.push(gte(inventoryMovementLogs.createdAt, filters.dateFrom));
   if (filters?.dateTo) conditions.push(lte(inventoryMovementLogs.createdAt, filters.dateTo));
   const movements = conditions.length > 0
@@ -11555,30 +12205,48 @@ export async function getProfitAnalysisReport(dateRange: { start: Date; end: Dat
   const startAt = toReportTimestamp(dateRange.start);
   const endAt = toReportTimestamp(dateRange.end);
 
-  // Sales revenue
+  // Profit is recognised only after full payment confirmation, not at order creation.
   const [revenueRows] = await db.execute(sql`
     SELECT
       COALESCE(SUM(o.physicalSubtotal), 0) as sales_revenue,
-      COALESCE(SUM(o.shippingFee), 0) as shipping_income
+      COALESCE(SUM(o.customerPaidShipping), 0) as shipping_income
     FROM orders o
-    WHERE o.createdAt >= ${startAt} AND o.createdAt <= ${endAt}
+    WHERE o.fullPaymentConfirmedAt >= ${startAt} AND o.fullPaymentConfirmedAt <= ${endAt}
+      AND COALESCE(o.physicalStatus, '') <> 'cancelled'
+      AND COALESCE(o.orderType, '') <> 'membership'
+  `);
+
+  // 补运费在实际确认收到的日期进入运费收入；原订单商品收入仍严格按全额确认收款日期确认。
+  const [supplementalShippingRows] = await db.execute(sql`
+    SELECT COALESCE(SUM(soa.amount), 0) AS supplemental_shipping_income
+    FROM special_order_actions soa
+    INNER JOIN orders o ON o.id = soa.orderId
+    WHERE soa.actionType = 'confirm_received'
+      AND soa.createdAt >= ${startAt} AND soa.createdAt <= ${endAt}
       AND COALESCE(o.physicalStatus, '') <> 'cancelled'
       AND COALESCE(o.orderType, '') <> 'membership'
   `);
 
   // FIFO cost
   const [fifoRows] = await db.execute(sql`
-    SELECT COALESCE(SUM(ABS(quantity_change) * unit_cost), 0) as product_cost
-    FROM inventory_ledger
-    WHERE transaction_type = 'sale'
-      AND created_at >= ${startAt} AND created_at <= ${endAt}
+    SELECT COALESCE(SUM(ABS(quantityChange) * unitCost), 0) as product_cost
+    FROM inventory_ledger il
+    INNER JOIN orders o ON o.id = il.referenceId
+    WHERE il.transactionType = 'sale'
+      AND il.referenceType = 'order_sale'
+      AND o.fullPaymentConfirmedAt >= ${startAt} AND o.fullPaymentConfirmedAt <= ${endAt}
+      AND COALESCE(o.physicalStatus, '') <> 'cancelled'
   `);
 
-  // Shipping cost (from shipments)
+  // Shipping cost comes from every shipped physical package. A single order may
+  // have multiple cartons, so package rows—not an order-level snapshot—are the
+  // authoritative source for cost recognition in the shipping date period.
   const [shippingCostRows] = await db.execute(sql`
     SELECT COALESCE(SUM(shippingCost), 0) as shipping_cost
-    FROM shipments
-    WHERE createdAt >= ${startAt} AND createdAt <= ${endAt}
+    FROM packages
+    WHERE status = 'shipped'
+      AND COALESCE(shippedAt, createdAt) >= ${startAt}
+      AND COALESCE(shippedAt, createdAt) <= ${endAt}
   `);
 
   // Scrap cost (from order_exceptions)
@@ -11589,27 +12257,42 @@ export async function getProfitAnalysisReport(dateRange: { start: Date; end: Dat
       AND createdAt >= ${startAt} AND createdAt <= ${endAt}
   `);
 
-  // Refund loss (from customer_refunds)
+  // Refund loss (from the current order-refund ledger, by completed refund date)
   const [refundRows] = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) as refund_loss
-    FROM customer_refunds
-    WHERE refundDate >= ${startAt} AND refundDate <= ${endAt}
+    FROM order_refunds
+    WHERE status IN ('processed', 'awaiting_return')
+      AND COALESCE(refundDate, createdAt) >= ${startAt}
+      AND COALESCE(refundDate, createdAt) <= ${endAt}
+  `);
+
+  // Supplier-cost-backed stock deductions are genuine losses. Order-exception
+  // adjustments are already included in scrap_cost above, so exclude them here.
+  const [inventoryLossRows] = await db.execute(sql`
+    SELECT COALESCE(SUM(totalCost), 0) as inventory_adjustment_loss
+    FROM inventory_adjustments
+    WHERE createdAt >= ${startAt} AND createdAt <= ${endAt}
+      AND quantityChange < 0
+      AND orderExceptionId IS NULL
   `);
 
   const rev = (revenueRows as unknown as any[])[0] ?? {};
+  const supplementalShipping = (supplementalShippingRows as unknown as any[])[0] ?? {};
   const fifo = (fifoRows as unknown as any[])[0] ?? {};
   const ship = (shippingCostRows as unknown as any[])[0] ?? {};
   const scrap = (scrapRows as unknown as any[])[0] ?? {};
   const refund = (refundRows as unknown as any[])[0] ?? {};
+  const inventoryLoss = (inventoryLossRows as unknown as any[])[0] ?? {};
 
   const salesRevenue = Number(rev.sales_revenue) || 0;
-  const shippingIncome = Number(rev.shipping_income) || 0;
+  const shippingIncome = (Number(rev.shipping_income) || 0) + (Number(supplementalShipping.supplemental_shipping_income) || 0);
   const productCost = Number(fifo.product_cost) || 0;
   const shippingCost = Number(ship.shipping_cost) || 0;
   const shippingDiff = shippingIncome - shippingCost;
   const scrapLoss = Number(scrap.scrap_cost) || 0;
   const refundLoss = Number(refund.refund_loss) || 0;
-  const actualGrossProfit = salesRevenue - productCost + shippingDiff - scrapLoss - refundLoss;
+  const inventoryAdjustmentLoss = Number(inventoryLoss.inventory_adjustment_loss) || 0;
+  const actualGrossProfit = calculateActualGrossProfit({ salesRevenue, productCost, shippingDiff, scrapLoss, refundLoss, inventoryAdjustmentLoss });
   const grossMargin = salesRevenue > 0 ? (actualGrossProfit / salesRevenue) * 100 : 0;
 
   return {
@@ -11620,6 +12303,7 @@ export async function getProfitAnalysisReport(dateRange: { start: Date; end: Dat
     shippingDiff,
     scrapLoss,
     refundLoss,
+    inventoryAdjustmentLoss,
     actualGrossProfit,
     grossMargin: Math.round(grossMargin * 100) / 100,
   };
@@ -11866,7 +12550,7 @@ export async function processEastMalaysiaPosLajuWeight(
 export function processActualWeight(
   actualWeightKg: number,
   customerPaidShipping: number,
-  itemsSubtotal: number,
+  freeShippingEligibleSubtotal: number,
   isStandalone: boolean,
   standaloneMethod: "fixed_fee" | "free_shipping" | null,
   standaloneFixedFee: number
@@ -11891,9 +12575,8 @@ export function processActualWeight(
     };
   }
 
-  // Normal product: recalculate based on actual weight
-  const { shippingFee } = calculateNormalShippingFee(itemsSubtotal, actualWeightKg);
-  actualShippingFee = shippingFee;
+  // 西马实际重量必须与结账使用同一首10kg、续重向上取整与免邮资格规则。
+  actualShippingFee = calculateWestMalaysiaShipping(actualWeightKg, freeShippingEligibleSubtotal).shippingFee;
 
   const difference = actualShippingFee - customerPaidShipping;
   // V2.1.26: Remove actualWeightKg > 10 condition - any difference should trigger special order
@@ -11920,14 +12603,14 @@ export async function createSpecialOrderAction(
 ) {
   const db = await getDb();
   if (!db) return undefined;
-  await db.insert(specialOrderActions).values({
+  const result = await db.insert(specialOrderActions).values({
     orderId,
     actionType,
     amount: amount.toString(),
     performedBy,
     remark,
   });
-  return { success: true };
+  return { success: true, actionId: Number((result as any)[0]?.insertId || 0) };
 }
 
 export async function getSpecialOrderActions(orderId: number) {
@@ -13101,7 +13784,7 @@ export async function getSpecialOrderFollowUpStats() {
     WHERE oss.status = 'pending'
       AND oss.type != 'notification_failed'
       AND oss.type IN (${specialFollowUpTypeSql})
-      AND o.physicalStatus NOT IN ('shipped', 'completed', 'cancelled')
+      AND o.physicalStatus != 'cancelled'
     GROUP BY oss.type
   `);
   const typeCounts: Record<string, number> = {};
@@ -13240,7 +13923,7 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
     let specialTypeColor = '';
     switch (item.specialOrderType) {
       case 'pending_shipping':
-        specialTypeLabel = '待补运费';
+        specialTypeLabel = '待汇款差价';
         specialTypeColor = 'orange';
         break;
       case 'pending_refund':
@@ -13260,7 +13943,7 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
         specialTypeColor = 'blue';
         break;
       case 'stock_exception':
-        specialTypeLabel = '库存异常';
+        specialTypeLabel = '等待补货';
         specialTypeColor = 'amber';
         break;
       case 'overdue':
@@ -13893,6 +14576,17 @@ export async function getLiveRoomProducts(liveRoomId: number) {
     .orderBy(asc(liveRoomProducts.sortOrder));
   // Fetch product-level info from products table for grouping
   const productIds = Array.from(new Set(rows.map((r: any) => r.productId)));
+  const catalogVariantRows = productIds.length > 0
+    ? await db.select().from(variants)
+      .where(and(inArray(variants.productId, productIds), eq(variants.status, "active")))
+      .orderBy(asc(variants.sortOrder), asc(variants.id))
+    : [];
+  const catalogVariantsByProduct = new Map<number, any[]>();
+  for (const variant of catalogVariantRows as any[]) {
+    const current = catalogVariantsByProduct.get(variant.productId) || [];
+    current.push(variant);
+    catalogVariantsByProduct.set(variant.productId, current);
+  }
   const productInfos: Record<number, any> = {};
   for (const pid of productIds) {
     const pRows = await db.select({
@@ -13925,34 +14619,103 @@ export async function getLiveRoomProducts(liveRoomId: number) {
       productInfos[pid] = p;
     }
   }
+  // Earlier rooms stored one live row for an entire multi-variant product.
+  // Upgrade untouched rows on read so every current specification gets its own
+  // live price, stock and operation target without losing any live history.
+  let synchronizedLegacyVariants = false;
+  let nextLegacySortOrder = Math.max(-1, ...rows.map((row: any) => Number(row.sortOrder || 0))) + 1;
+  for (const pid of productIds) {
+    const product = productInfos[pid];
+    const catalogVariants = catalogVariantsByProduct.get(pid) || [];
+    const productLiveRows = rows.filter((row: any) => row.productId === pid);
+    if (!product || catalogVariants.length === 0 || productLiveRows.length === 0) continue;
+
+    const existingVariantIds = new Set(productLiveRows.filter((row: any) => row.variationId != null).map((row: any) => row.variationId));
+    const missingVariants = catalogVariants.filter((variant: any) => !existingVariantIds.has(variant.id));
+    if (missingVariants.length === 0) continue;
+
+    const legacyRows = productLiveRows.filter((row: any) => row.variationId == null);
+    const untouched = productLiveRows.every((row: any) => Number(row.orderedCount || 0) === 0 && Number(row.reservedCount || 0) === 0);
+    const inheritedLivePrice = legacyRows[0]?.price;
+    for (const variant of missingVariants as any[]) {
+      await db.insert(liveRoomProducts).values({
+        liveRoomId,
+        productId: pid,
+        variationId: variant.id,
+        keyword: composeLiveVariantKeyword(product.keyword, variant.keyword),
+        displayName: `${product.name} · ${variant.name}`,
+        price: String(inheritedLivePrice ?? variant.sellingPrice ?? product.sellingPrice ?? 0),
+        startStock: Number(variant.stockQuantity || 0),
+        reservedCount: 0,
+        availableStock: Number(variant.stockQuantity || 0),
+        orderedCount: 0,
+        allowPreorder: Boolean(product.allowPresale),
+        preorderCount: 0,
+        status: "active",
+        sortOrder: nextLegacySortOrder++,
+        imageUrl: product.coverImageUrl || null,
+        specImage: variant.imageUrl || null,
+      });
+      synchronizedLegacyVariants = true;
+    }
+    if (untouched && legacyRows.length > 0) {
+      await db.delete(liveRoomProducts).where(inArray(liveRoomProducts.id, legacyRows.map((row: any) => row.id)));
+      synchronizedLegacyVariants = true;
+    }
+  }
+  if (synchronizedLegacyVariants) {
+    broadcastChange("liveRooms");
+    return getLiveRoomProducts(liveRoomId);
+  }
   // Single source of truth: only render records whose referenced product still exists.
   // Product identity, image, keyword, price, stock, status and AI metadata always come
   // directly from products; live_room_products keeps only live-specific controls.
   const grouped: Record<number, any> = {};
-  for (const row of rows) {
-    const pid = row.productId;
+  for (const pid of productIds) {
     const product = productInfos[pid];
     if (!product) continue;
-    if (!grouped[pid]) {
-      grouped[pid] = {
-        productId: pid,
-        productName: product.name,
-        coverImageUrl: product.coverImageUrl,
-        productMode: product.productMode,
-        productSku: product.sku,
-        productKeyword: product.keyword,
-        productSellingPrice: product.sellingPrice,
-        productStockQuantity: product.stockQuantity,
-        productStatus: product.status,
-        productIsPreOrder: product.isPreOrder,
-        productAllowPresale: product.allowPresale,
-        productCategoryId: product.categoryId,
-        productAiTags: product.aiTags,
-        productAiSellingPoints: product.aiSellingPoints,
-        variations: [] as any[],
-      };
-    }
-    grouped[pid].variations.push(row);
+    const productLiveRows = rows.filter((row: any) => row.productId === pid);
+    const catalogVariants = catalogVariantsByProduct.get(pid) || [];
+    const liveByVariantId = new Map(productLiveRows.filter((row: any) => row.variationId != null).map((row: any) => [row.variationId, row]));
+    const fallbackLiveRow = productLiveRows.find((row: any) => row.variationId == null) || productLiveRows[0];
+    const displayVariations = catalogVariants.length > 0
+      ? catalogVariants.map((variant: any) => {
+          const liveRow = liveByVariantId.get(variant.id) || fallbackLiveRow;
+          return {
+            ...(liveRow || {}),
+            id: liveRow?.id || `catalog-variant-${variant.id}`,
+            liveRoomProductId: liveRow?.variationId === variant.id ? liveRow.id : null,
+            variationId: variant.id,
+            displayName: variant.name,
+            keyword: composeLiveVariantKeyword(product.keyword, variant.keyword),
+            price: liveRow?.price ?? variant.sellingPrice ?? product.sellingPrice ?? "0",
+            startStock: liveRow?.variationId === variant.id ? liveRow.startStock : Number(variant.stockQuantity || 0),
+            reservedCount: liveRow?.variationId === variant.id ? liveRow.reservedCount : 0,
+            availableStock: liveRow?.variationId === variant.id ? liveRow.availableStock : Number(variant.stockQuantity || 0),
+            imageUrl: product.coverImageUrl,
+            specImage: variant.imageUrl || null,
+            isSyncedVariant: true,
+          };
+        })
+      : productLiveRows;
+    grouped[pid] = {
+      productId: pid,
+      productName: product.name,
+      coverImageUrl: product.coverImageUrl,
+      productMode: product.productMode,
+      productSku: product.sku,
+      productKeyword: product.keyword,
+      productSellingPrice: product.sellingPrice,
+      productStockQuantity: product.stockQuantity,
+      productStatus: product.status,
+      productIsPreOrder: product.isPreOrder,
+      productAllowPresale: product.allowPresale,
+      productCategoryId: product.categoryId,
+      productAiTags: product.aiTags,
+      productAiSellingPoints: product.aiSellingPoints,
+      liveControlId: fallbackLiveRow?.id || null,
+      variations: displayVariations,
+    };
   }
   return Object.values(grouped);
 }
@@ -14024,7 +14787,13 @@ export async function updateLiveRoomProduct(id: number, data: {
 export async function deleteLiveRoomProduct(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(liveRoomProducts).where(eq(liveRoomProducts.id, id));
+  const target = await db.select({ liveRoomId: liveRoomProducts.liveRoomId, productId: liveRoomProducts.productId })
+    .from(liveRoomProducts).where(eq(liveRoomProducts.id, id)).limit(1);
+  if (!target[0]) throw new Error("Live room product not found");
+  await db.delete(liveRoomProducts).where(and(
+    eq(liveRoomProducts.liveRoomId, target[0].liveRoomId),
+    eq(liveRoomProducts.productId, target[0].productId),
+  ));
   broadcastChange("liveRooms");
   return { success: true };
 }
@@ -14036,6 +14805,9 @@ export async function adjustLiveRoomProductStock(id: number, data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  if (!Number.isInteger(data.quantityChange) || data.quantityChange >= 0) {
+    throw new Error("直播房只允许扣减库存；入库请使用进货管理确认收货");
+  }
   const product = await db.select().from(liveRoomProducts)
     .where(eq(liveRoomProducts.id, id)).limit(1);
   if (product.length === 0) throw new Error("Live room product not found");
@@ -14043,19 +14815,21 @@ export async function adjustLiveRoomProductStock(id: number, data: {
   // Existing successful orders must remain reserved, but manual downward
   // adjustments must never expose a negative sellable quantity in the live UI.
   const newAvailableStock = Math.max(0, newStartStock - product[0].reservedCount);
-  await db.update(liveRoomProducts).set({ startStock: newStartStock, availableStock: newAvailableStock })
-    .where(eq(liveRoomProducts.id, id));
+  let stockBefore = 0;
+  let stockAfter = 0;
   // Sync main product stock (increase/decrease accordingly)
   if (product[0].variationId) {
     // For products with variations, update variation stock
-    await db.update(productVariations)
-      .set({ stockQuantity: sql`GREATEST(0, stockQuantity + ${data.quantityChange})` })
-      .where(eq(productVariations.id, product[0].variationId));
+    const [variantBefore] = await db.select({ stockQuantity: variants.stockQuantity })
+      .from(variants).where(eq(variants.id, product[0].variationId)).limit(1);
+    stockBefore = Number(variantBefore?.stockQuantity ?? 0);
+    stockAfter = Math.max(0, stockBefore + data.quantityChange);
   } else {
     // For products without variations, update product stock
-    await db.update(products)
-      .set({ stockQuantity: sql`GREATEST(0, stockQuantity + ${data.quantityChange})` })
-      .where(eq(products.id, product[0].productId));
+    const [productBefore] = await db.select({ stockQuantity: products.stockQuantity })
+      .from(products).where(eq(products.id, product[0].productId)).limit(1);
+    stockBefore = Number(productBefore?.stockQuantity ?? 0);
+    stockAfter = Math.max(0, stockBefore + data.quantityChange);
   }
   // Every live-stock change must be auditable in the main product inventory log.
   // The live UI uses reasons that differ from the strict inventory enum, so map
@@ -14064,19 +14838,67 @@ export async function adjustLiveRoomProductStock(id: number, data: {
   const adjustmentType = ({
     damaged: "human_damage",
     scrap: "lost",
+    unhealthy: "unhealthy",
     restock: "other",
     correction: "other",
     other: "other",
   } as Record<string, "quality_issue" | "plant_death" | "pest_disease" | "human_damage" | "unhealthy" | "lost" | "other">)[liveReason] || "other";
+  const appliedQuantityChange = stockAfter - stockBefore;
+  if (appliedQuantityChange === 0) {
+    throw new Error("直播库存调整未造成实际库存变动");
+  }
+  const auditReason = `直播库存调整｜直播房 #${product[0].liveRoomId}｜原因：${liveReason}`;
+  await db.update(liveRoomProducts).set({ startStock: newStartStock, availableStock: newAvailableStock })
+    .where(eq(liveRoomProducts.id, id));
+  if (product[0].variationId) {
+    await db.update(variants)
+      .set({ stockQuantity: sql`GREATEST(0, stockQuantity + ${data.quantityChange})` })
+      .where(eq(variants.id, product[0].variationId));
+    // A variant product keeps one product-level stock summary for product
+    // management and live-room totals. Recalculate it from all variants rather
+    // than applying a blind delta, so old inconsistencies are repaired too.
+    await db.execute(sql`
+      UPDATE products
+      SET stockQuantity = (
+        SELECT COALESCE(SUM(stockQuantity), 0)
+        FROM variants
+        WHERE productId = ${product[0].productId}
+      )
+      WHERE id = ${product[0].productId}
+    `);
+  } else {
+    await db.update(products)
+      .set({ stockQuantity: sql`GREATEST(0, stockQuantity + ${data.quantityChange})` })
+      .where(eq(products.id, product[0].productId));
+  }
+  const [costSource] = product[0].variationId
+    ? await db.select({ currentCost: variants.currentCost, estimatedCost: variants.estimatedCost })
+      .from(variants).where(eq(variants.id, product[0].variationId)).limit(1)
+    : await db.select({ currentCost: products.currentCost, estimatedCost: products.cost })
+      .from(products).where(eq(products.id, product[0].productId)).limit(1);
+  const unitCost = Number(costSource?.currentCost ?? costSource?.estimatedCost ?? 0);
   await db.insert(inventoryAdjustments).values({
     productId: product[0].productId,
     adjustmentType,
-    quantityChange: data.quantityChange,
-    unitCost: "0",
-    reason: `直播库存调整｜直播商品 #${id}｜原因：${liveReason}`,
+    quantityChange: appliedQuantityChange,
+    unitCost: unitCost.toFixed(2),
+    totalCost: (Math.abs(appliedQuantityChange) * unitCost).toFixed(2),
+    reason: auditReason,
     remark: "由直播管理库存调整同步写入",
     adjustedBy: "live_management",
   });
+  await db.insert(inventoryMovementLogs).values(buildInventoryMovementRecord({
+    productId: product[0].productId,
+    variantId: product[0].variationId ?? null,
+    movementType: "live_stock_adjustment",
+    quantityChange: appliedQuantityChange,
+    stockBefore,
+    stockAfter,
+    referenceType: "live_room",
+    referenceId: product[0].liveRoomId,
+    reason: auditReason,
+    operator: "live_management",
+  }));
   broadcastChanges(["liveRooms", "inventory"]);
   return { success: true, startStock: newStartStock, availableStock: newAvailableStock };
 }
@@ -14099,7 +14921,7 @@ export async function getLiveRoomStats(liveRoomId: number) {
   if (!db) return { productCount: 0, orderCount: 0, totalItems: 0, totalRevenue: "0.00" };
   const products = await db.select().from(liveRoomProducts)
     .where(eq(liveRoomProducts.liveRoomId, liveRoomId));
-  const productCount = products.length;
+  const productCount = new Set(products.map((product: any) => product.productId)).size;
   const totalOrdered = products.reduce((sum: number, p: any) => sum + Number(p.orderedCount || 0), 0);
   const totalRevenue = products.reduce((sum: number, p: any) =>
     sum + Number(p.orderedCount || 0) * Number(p.price || 0), 0);
@@ -14123,7 +14945,7 @@ export async function getLiveRoomStatsBatch(liveRoomIds: number[]) {
   for (const roomId of liveRoomIds) {
     const products = await db.select().from(liveRoomProducts)
       .where(eq(liveRoomProducts.liveRoomId, roomId));
-    const productCount = products.length;
+    const productCount = new Set(products.map((product: any) => product.productId)).size;
     const totalOrdered = products.reduce((sum: number, p: any) => sum + Number(p.orderedCount || 0), 0);
     const totalRevenue = products.reduce((sum: number, p: any) =>
       sum + Number(p.orderedCount || 0) * Number(p.price || 0), 0);
@@ -14148,30 +14970,40 @@ export async function generateKeywordCopyText(liveRoomProductId: number, liveCom
   // Fetch canonical product data from products table
   const pRows = await db.select().from(products).where(eq(products.id, p.productId)).limit(1);
   const productData = pRows.length > 0 ? pRows[0] as any : null;
-  const keyword = productData?.keyword || p.keyword || p.displayName;
   const name = productData?.name || p.displayName;
-  // Check if product has variants (same productId, different variationId)
   const siblings = await db.select().from(liveRoomProducts)
     .where(eq(liveRoomProducts.liveRoomId, p.liveRoomId));
   const sameProduct = siblings.filter((s: any) => s.productId === p.productId);
   const footer = liveCommentFooter || "👇 留言关键词即可自动下单";
-  if (sameProduct.length <= 1) {
-    // No variants — single product format
-    return `🌸 ${name}\n💰 RM${Number(p.price).toFixed(0)}\n📝 关键词：\n${keyword}+1\n\n${footer}`;
-  }
-  // Has variants — check if same price or different prices
-  const allSamePrice = sameProduct.every((s: any) => Number(s.price) === Number(p.price));
-  const lines = sameProduct.map((s: any) => {
-    const colorMatch = s.displayName.match(/[🔴❤️🩷💛💚💙🟣⚪️⚫️🟤]+\s*(\S+)/);
-    const colorName = colorMatch ? colorMatch[1] : s.displayName;
-    if (allSamePrice) {
-      return `${colorName}｜RM${Number(s.price).toFixed(0)}｜${s.keyword}+1`;
-    }
-    return `${colorName}｜RM${Number(s.price).toFixed(0)}｜${s.keyword}+1`;
-  });
-  // Use the base product name (without variant suffix)
-  const baseName = name.replace(/[🔴❤️🩷💛💚💙🟣⚪️⚫️🟤]+\s*\S+/, "").trim() || name;
-  return `🌸 ${baseName}\n\n${lines.join("\n")}\n\n${footer}`;
+  const catalogVariants = await db.select().from(variants)
+    .where(and(eq(variants.productId, p.productId), eq(variants.status, "active")))
+    .orderBy(asc(variants.sortOrder), asc(variants.id));
+  const liveByVariantId = new Map(sameProduct.filter((item: any) => item.variationId != null).map((item: any) => [item.variationId, item]));
+
+  const copyItems = catalogVariants.length > 0
+    ? catalogVariants.map((variant: any) => {
+        const liveRow = liveByVariantId.get(variant.id);
+        const onHand = liveRow?.startStock ?? Number(variant.stockQuantity || 0);
+        const called = liveRow?.reservedCount ?? 0;
+        return {
+          name: variant.name,
+          keyword: composeLiveVariantKeyword(productData?.keyword, variant.keyword),
+          price: Number(liveRow?.price ?? variant.sellingPrice ?? productData?.sellingPrice ?? 0),
+          onHand,
+          called,
+          available: liveRow?.availableStock ?? Math.max(0, onHand - called),
+        };
+      })
+    : [{
+        name: p.displayName,
+        keyword: productData?.keyword || p.keyword || p.displayName,
+        price: Number(p.price || 0),
+        onHand: Number(p.startStock || 0),
+        called: Number(p.reservedCount || 0),
+        available: Number(p.availableStock || 0),
+      }];
+
+  return formatLiveRoomVariantCopyText(name, copyItems, footer);
 }
 
 // Get live room orders (orders created from this live room's captures)
@@ -14544,24 +15376,66 @@ export async function batchAddProductsToLiveRoom(liveRoomId: number, items: Arra
   const existing = await db.select().from(liveRoomProducts)
     .where(eq(liveRoomProducts.liveRoomId, liveRoomId));
   const nextSort = existing.length;
-  const existingProductIds = new Set(existing.map((r: any) => r.productId));
   const inserted: number[] = [];
   for (let i = 0; i < items.length; i++) {
     const data = items[i];
-    // Skip if already added
-    if (existingProductIds.has(data.productId)) continue;
     // Fetch product data from products table
     const pRows = await db.select().from(products).where(eq(products.id, data.productId)).limit(1);
     if (pRows.length === 0) continue;
     const p = pRows[0] as any;
-    const price = data.livePrice != null ? String(data.livePrice) : String(p.sellingPrice || 0);
+    const productVariants = await db.select().from(variants)
+      .where(and(eq(variants.productId, data.productId), eq(variants.status, "active")))
+      .orderBy(asc(variants.sortOrder), asc(variants.id));
+    const targetVariants = data.variationId
+      ? productVariants.filter((variant: any) => variant.id === data.variationId)
+      : productVariants;
+    const existingForProduct = existing.filter((row: any) => row.productId === data.productId);
+
+    if (targetVariants.length > 0) {
+      const existingVariantIds = new Set(existingForProduct.filter((row: any) => row.variationId != null).map((row: any) => row.variationId));
+      for (const variant of targetVariants as any[]) {
+        if (existingVariantIds.has(variant.id)) continue;
+        const price = data.livePrice != null ? String(data.livePrice) : String(variant.sellingPrice ?? p.sellingPrice ?? 0);
+        const result = await db.insert(liveRoomProducts).values({
+          liveRoomId,
+          productId: data.productId,
+          variationId: variant.id,
+          keyword: composeLiveVariantKeyword(p.keyword, variant.keyword),
+          displayName: `${p.name} · ${variant.name}`,
+          price,
+          startStock: Number(variant.stockQuantity || 0),
+          reservedCount: 0,
+          availableStock: Number(variant.stockQuantity || 0),
+          orderedCount: 0,
+          allowPreorder: Boolean(p.allowPresale),
+          preorderCount: 0,
+          status: "active",
+          sortOrder: nextSort + inserted.length,
+          imageUrl: p.coverImageUrl || null,
+          specImage: variant.imageUrl || null,
+        });
+        inserted.push(result[0].insertId);
+      }
+      // Earlier rooms stored one product-level row. If it has no live activity,
+      // replace it with the new per-spec records so it cannot duplicate stock or
+      // interfere with the current live keyword list.
+      const removableLegacyRows = existingForProduct.filter((row: any) =>
+        row.variationId == null && Number(row.orderedCount || 0) === 0 && Number(row.reservedCount || 0) === 0,
+      );
+      if (removableLegacyRows.length > 0) {
+        await db.delete(liveRoomProducts).where(inArray(liveRoomProducts.id, removableLegacyRows.map((row: any) => row.id)));
+      }
+      continue;
+    }
+
+    if (existingForProduct.length > 0) continue;
     const result = await db.insert(liveRoomProducts).values({
       liveRoomId,
       productId: data.productId,
-      variationId: data.variationId || null,
+      variationId: null,
       keyword: p.keyword || p.name,
       displayName: p.name,
-      price,
+      price: data.livePrice != null ? String(data.livePrice) : String(p.sellingPrice || 0),
       startStock: Number(p.stockQuantity || 0),
       reservedCount: 0,
       availableStock: Number(p.stockQuantity || 0),
@@ -14569,7 +15443,7 @@ export async function batchAddProductsToLiveRoom(liveRoomId: number, items: Arra
       allowPreorder: Boolean(p.allowPresale),
       preorderCount: 0,
       status: "active",
-      sortOrder: nextSort + i,
+      sortOrder: nextSort + inserted.length,
       imageUrl: p.coverImageUrl || null,
       specImage: null,
     });
@@ -17302,6 +18176,9 @@ export async function getOrderBySecureToken(orderNumber: string, token: string) 
     totalAmount: orders.totalAmount,
     paidAmount: orders.paidAmount,
     shippingFee: orders.shippingFee,
+    customerPaidShipping: orders.customerPaidShipping,
+    estimatedWeight: orders.estimatedWeight,
+    totalWeight: orders.totalWeight,
     discountAmount: orders.discountAmount,
     discountReason: orders.discountReason,
     extraCharge: orders.extraCharge,
@@ -17418,6 +18295,7 @@ export async function updateOrderShippingAddress(orderNumber: string, token: str
     creditUsed: orders.creditUsed,
     extraCharge: orders.extraCharge,
     discountAmount: orders.discountAmount,
+    promotionDiscount: orders.promotionDiscount,
   }).from(orders).where(eq(orders.orderNumber, orderNumber)).limit(1);
 
   if (order.length === 0) return null;
@@ -17425,23 +18303,19 @@ export async function updateOrderShippingAddress(orderNumber: string, token: str
 
   const orderId = order[0].id;
 
-  // Get order items to calculate weight
+  // 使用订单项已保存的单位重量快照，避免地址更新时退回到每件0.5kg的旧估算。
   const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
-  const totalWeight = items.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
-
-  // V2.1: Free shipping threshold excludes special-price items
-  const specialSubtotal = items.filter((i: any) => i.priceType === 'special').reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
-  const normalSubtotal = items.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
-  const thresholdSubtotal = normalSubtotal - specialSubtotal;
+  const totalWeight = calculateOrderItemWeight(items.filter((item) => item.productType === "physical" || item.productType === "gift"));
+  const priceBreakdown = await calculateOrderPriceBreakdownByProductCategory(db, items, {
+    promotionDiscount: order[0].promotionDiscount,
+    discountAmount: order[0].discountAmount,
+  });
+  const freeShippingEligibleSubtotal = priceBreakdown.freeShippingEligibleSubtotal;
 
   // Calculate shipping fee
   let shippingFee = 0;
   if (shippingMethod === 'west_malaysia') {
-    if (thresholdSubtotal >= 150) {
-      shippingFee = totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3;
-    } else {
-      shippingFee = 15 + (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3);
-    }
+    shippingFee = calculateWestMalaysiaShipping(totalWeight, freeShippingEligibleSubtotal).shippingFee;
   } else if (shippingMethod === 'east_malaysia' || shippingMethod === 'east_malaysia_shopee') {
     // V2.0.84: 东马 Shopee 运费固定 RM0
     shippingFee = 0;
@@ -17449,7 +18323,7 @@ export async function updateOrderShippingAddress(orderNumber: string, token: str
     shippingFee = 0;
   } else if (shippingMethod === 'lalamove') {
     // V2.0.84: Lalamove — 满 RM150 公司承担，未满收 RM15
-    shippingFee = thresholdSubtotal >= 150 ? 0 : 15;
+    shippingFee = freeShippingEligibleSubtotal >= 150 ? 0 : 15;
   }
 
   // Recalculate total
@@ -17463,6 +18337,9 @@ export async function updateOrderShippingAddress(orderNumber: string, token: str
     shippingAddress: address,
     shippingMethod: shippingMethod as any,
     shippingFee: shippingFee.toFixed(2),
+    customerPaidShipping: shippingFee.toFixed(2),
+    totalWeight: totalWeight.toFixed(2),
+    estimatedWeight: totalWeight.toFixed(2),
     totalAmount: newTotal.toFixed(2),
   }).where(eq(orders.id, orderId));
 

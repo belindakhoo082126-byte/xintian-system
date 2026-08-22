@@ -1421,8 +1421,8 @@ export const notificationLogs = mysqlTable("notification_logs", {
   customerId: int("customerId"),
   // Notification type: payment_confirmed, hold_order, shipped, etc.
   type: varchar("type", { length: 50 }).notNull(),
-  // Channel: messenger, whatsapp, email
-  channel: mysqlEnum("channel", ["messenger", "whatsapp", "email"]).default("messenger").notNull(),
+  // Channel: messenger, whatsapp, email, or system when no contact route exists
+  channel: mysqlEnum("channel", ["messenger", "whatsapp", "email", "system"]).default("messenger").notNull(),
   // Message content
   message: text("message"),
   // Status: sent, failed, pending
@@ -1783,6 +1783,9 @@ export const orderExceptions = mysqlTable("order_exceptions", {
   description: text("description"),
   // V2.1.26补充4: Quantity of affected items (Issue 6a/6c/6e)
   quantity: int("quantity").default(0),
+  // Confirmed through formal purchase receipts. Waiting-restock exceptions remain
+  // open until this cumulative allocation reaches the required quantity.
+  restockAllocatedQuantity: int("restockAllocatedQuantity").default(0).notNull(),
   // V2.1.26补充4: Customer action for out_of_stock/other (Issue 6b/6f)
   customerAction: mysqlEnum("customerAction", [
     "replace_product", // 更换商品
@@ -1828,6 +1831,9 @@ export const orderExceptionItems = mysqlTable("order_exception_items", {
   exceptionId: int("exceptionId").notNull(),
   orderItemId: int("orderItemId").notNull(),
   productId: int("productId").notNull(),
+  // Preserve the order-line variant so replenishment never assigns another
+  // specification of the same product to a waiting customer.
+  variantId: int("variantId"),
   productName: varchar("productName", { length: 255 }).notNull(),
   quantity: int("quantity").notNull(),
   // Cost per unit at time of scrap
@@ -1927,6 +1933,54 @@ export const inventoryMovementLogs = mysqlTable("inventory_movement_logs", {
 ]);
 export type InventoryMovementLog = typeof inventoryMovementLogs.$inferSelect;
 export type InsertInventoryMovementLog = typeof inventoryMovementLogs.$inferInsert;
+
+// ============================================================================
+// FIFO Inventory Lots & Cost Ledger（FIFO库存批次与成本账本）
+// ============================================================================
+// 收货只会建立一个可用成本批次；销售从最早可用批次扣减并写入账本。
+// 它与 inventory_movement_logs 并存：前者服务成本／利润，后者服务库存审计。
+export const inventoryLots = mysqlTable("inventory_lots", {
+  id: int("id").autoincrement().primaryKey(),
+  lotNo: varchar("lotNo", { length: 100 }).notNull().unique(),
+  purchaseOrderId: int("purchaseOrderId"),
+  supplierId: int("supplierId"),
+  productId: int("productId").notNull(),
+  variantId: int("variantId"),
+  originalQuantity: int("originalQuantity").notNull(),
+  remainingQuantity: int("remainingQuantity").notNull(),
+  unitCost: decimal("unitCost", { precision: 10, scale: 2 }).notNull(),
+  purchaseDate: timestamp("purchaseDate").defaultNow().notNull(),
+  status: mysqlEnum("status", ["active", "depleted", "void"]).default("active").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_inventory_lots_product_fifo").on(table.productId, table.status, table.purchaseDate),
+  index("idx_inventory_lots_variant_fifo").on(table.variantId, table.status, table.purchaseDate),
+  index("idx_inventory_lots_purchase_order").on(table.purchaseOrderId),
+]);
+export type InventoryLot = typeof inventoryLots.$inferSelect;
+export type InsertInventoryLot = typeof inventoryLots.$inferInsert;
+
+export const inventoryLedger = mysqlTable("inventory_ledger", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  variantId: int("variantId"),
+  lotId: int("lotId"),
+  transactionType: varchar("transactionType", { length: 50 }).notNull(),
+  referenceType: varchar("referenceType", { length: 50 }),
+  referenceId: int("referenceId"),
+  quantityChange: int("quantityChange").notNull(),
+  balanceAfter: int("balanceAfter").notNull(),
+  unitCost: decimal("unitCost", { precision: 10, scale: 2 }).notNull(),
+  createdBy: varchar("createdBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_inventory_ledger_reference").on(table.referenceType, table.referenceId),
+  index("idx_inventory_ledger_product_time").on(table.productId, table.createdAt),
+  index("idx_inventory_ledger_lot").on(table.lotId),
+]);
+export type InventoryLedgerEntry = typeof inventoryLedger.$inferSelect;
+export type InsertInventoryLedgerEntry = typeof inventoryLedger.$inferInsert;
 
 // ============================================================================
 // V1.2: Sub Orders (子订单 - 自动拆单)
@@ -2689,6 +2743,8 @@ export const orderRefunds = mysqlTable("order_refunds", {
   orderId: int("orderId").notNull(),
   // 包货异常建立的退款来源；唯一约束防止异常编辑、重试时重复建退款。
   sourceExceptionId: int("sourceExceptionId").unique(),
+  // 包货实际重量／运费差额建立的退款来源；一项差额动作只能建立一笔退款管理记录。
+  sourceSpecialActionId: int("sourceSpecialActionId").unique(),
   // 独立退款编号；旧记录允许为空，新的退款管理记录必须生成编号。
   refundNumber: varchar("refundNumber", { length: 50 }).unique(),
   // 未处理不影响库存及正式利润；待退货确认表示款项已完成但实物处理未完成。

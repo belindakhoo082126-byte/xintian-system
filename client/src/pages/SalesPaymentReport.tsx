@@ -55,6 +55,7 @@ export default function SalesPaymentReport() {
 
   const enabled = preset !== "custom" || (customStart !== "" && customEnd !== "");
   const { data: orders, isLoading } = trpc.reports.salesPayment.useQuery(queryParams, { enabled });
+  const { data: financialSummary } = trpc.reports.salesPaymentFinancialSummary.useQuery(queryParams, { enabled });
 
   const summary = useMemo(() => {
     if (!orders || orders.length === 0) return { total: 0, paid: 0, unpaid: 0, orders: 0 };
@@ -68,6 +69,21 @@ export default function SalesPaymentReport() {
       { total: 0, paid: 0, unpaid: 0, orders: 0 },
     );
   }, [orders]);
+  const finance = financialSummary ?? {
+    orderPerformance: summary.total,
+    currentCollectedForOrders: summary.paid,
+    outstandingAmount: summary.unpaid,
+    confirmedCashReceived: 0,
+    completedRefunds: 0,
+    netCashReceived: 0,
+    customerShippingBilled: 0,
+    customerShippingReceived: 0,
+    supplementalShippingReceived: 0,
+    companyBearShipping: 0,
+    actualShippingCost: 0,
+    shippingNet: 0,
+    orderCount: summary.orders,
+  };
 
   return (
     <div className="space-y-6">
@@ -109,7 +125,7 @@ export default function SalesPaymentReport() {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
@@ -117,8 +133,8 @@ export default function SalesPaymentReport() {
                 <DollarSign className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">{translate("商品销售额", "Product Sales")}</p>
-                <p className="text-lg font-bold text-blue-600">{formatRM(summary.total)}</p>
+                <p className="text-xs text-muted-foreground">{translate("本月订单业绩", "Order Performance")}</p>
+                <p className="text-lg font-bold text-blue-600">{formatRM(finance.orderPerformance)}</p>
               </div>
             </div>
           </CardContent>
@@ -130,8 +146,8 @@ export default function SalesPaymentReport() {
                 <TrendingUp className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">{translate("已收款", "Amount Received")}</p>
-                <p className="text-lg font-bold text-green-600">{formatRM(summary.paid)}</p>
+                <p className="text-xs text-muted-foreground">{translate("订单月当前已收", "Current Collected")}</p>
+                <p className="text-lg font-bold text-green-600">{formatRM(finance.currentCollectedForOrders)}</p>
               </div>
             </div>
           </CardContent>
@@ -143,8 +159,8 @@ export default function SalesPaymentReport() {
                 <TrendingDown className="h-5 w-5 text-orange-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">{translate("未收款", "Amount Due")}</p>
-                <p className="text-lg font-bold text-orange-600">{formatRM(summary.unpaid)}</p>
+                <p className="text-xs text-muted-foreground">{translate("订单月待收款", "Outstanding")}</p>
+                <p className="text-lg font-bold text-orange-600">{formatRM(finance.outstandingAmount)}</p>
               </div>
             </div>
           </CardContent>
@@ -156,13 +172,41 @@ export default function SalesPaymentReport() {
                 <DollarSign className="h-5 w-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">{translate("订单数", "Number of Orders")}</p>
-                <p className="text-lg font-bold text-purple-600">{summary.orders}</p>
+                <p className="text-xs text-muted-foreground">{translate("本月实际已收", "Cash Received")}</p>
+                <p className="text-lg font-bold text-emerald-600">{formatRM(finance.confirmedCashReceived)}</p>
               </div>
             </div>
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/20"><TrendingDown className="h-5 w-5 text-rose-600" /></div>
+              <div><p className="text-xs text-muted-foreground">{translate("本月退款", "Cash Refunds")}</p><p className="text-lg font-bold text-rose-600">{formatRM(finance.completedRefunds)}</p></div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-teal-50 dark:bg-teal-950/20"><DollarSign className="h-5 w-5 text-teal-600" /></div>
+              <div><p className="text-xs text-muted-foreground">{translate("本月净实收", "Net Cash Received")}</p><p className="text-lg font-bold text-teal-600">{formatRM(finance.netCashReceived)}</p></div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">{translate("运费收支（按实际发生日期）", "Shipping Cash & Cost")}</CardTitle></CardHeader>
+        <CardContent className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 text-sm">
+          <div><p className="text-muted-foreground">{translate("订单应收运费", "Shipping Billed")}</p><p className="font-semibold">{formatRM(finance.customerShippingBilled)}</p></div>
+          <div><p className="text-muted-foreground">{translate("客户已收运费", "Shipping Received")}</p><p className="font-semibold text-green-600">{formatRM(finance.customerShippingReceived)}</p></div>
+          <div><p className="text-muted-foreground">{translate("已收补运费", "Supplement Received")}</p><p className="font-semibold text-green-600">{formatRM(finance.supplementalShippingReceived)}</p></div>
+          <div><p className="text-muted-foreground">{translate("公司承担", "Company Bear")}</p><p className="font-semibold text-orange-600">{formatRM(finance.companyBearShipping)}</p></div>
+          <div><p className="text-muted-foreground">{translate("实际物流费用", "Actual Logistics Cost")}</p><p className="font-semibold text-red-600">{formatRM(finance.actualShippingCost)}</p></div>
+          <div><p className="text-muted-foreground">{translate("运费净额", "Shipping Net")}</p><p className={`font-semibold ${finance.shippingNet >= 0 ? "text-green-600" : "text-red-600"}`}>{formatRM(finance.shippingNet)}</p></div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

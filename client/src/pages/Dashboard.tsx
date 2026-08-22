@@ -40,14 +40,13 @@ const ORDER_STATUS_LABELS: Record<string, { zh: string; en: string; color: strin
 };
 
 export const SPECIAL_STATUS_LABELS: Record<string, { zh: string; en: string }> = {
-  pending_shipping: { zh: "待补运费", en: "Pending Shipping Fee" },
+  pending_shipping: { zh: "待汇款差价", en: "Pending Remittance Difference" },
   pending_refund: { zh: "待退款", en: "Pending Refund" },
   company_bear: { zh: "公司承担", en: "Company Covered" },
   logistics_error: { zh: "物流异常", en: "Logistics Error" },
   incomplete_info: { zh: "资料异常", en: "Incomplete Information" },
-  stock_exception: { zh: "库存异常", en: "Stock Exception" },
+  stock_exception: { zh: "等待补货", en: "Waiting Restock" },
   partial_payment: { zh: "部分汇款", en: "Partial Payment" },
-  over_payment: { zh: "多汇款", en: "Over Payment" },
   amount_changed: { zh: "金额异常", en: "Amount Changed" },
   other: { zh: "其他", en: "Other" },
 };
@@ -81,11 +80,8 @@ export default function Dashboard() {
   const { data: followUpStats } = trpc.orders.followUpStats.useQuery();
   const { data: followUpList } = trpc.orders.followUpList.useQuery({ limit: 50 });
   const followUpDisplay = getFollowUpDisplayState(followUpStats, followUpList);
-  // 退款管理已经在“工作状态”提供独立待处理入口，Dashboard 的特别状态区块
-  // 不再重复展示待退款；订单查询中的 pending_refund 特别原因与退款记录仍完整保留。
-  const specialFollowUpItems = ((followUpList as any[] | undefined) || []).filter(
-    (item) => item.specialType !== "pending_refund",
-  );
+  // 待退款与其他待跟进状态均保留在摘要中；待退款点击后统一进入退款管理。
+  const specialFollowUpItems = (followUpList as any[] | undefined) || [];
   const specialFollowUpItemCount = specialFollowUpItems.length;
   const { data: ordersWithRemarks } = trpc.orderRemarks.ordersWithRemarks.useQuery();
   const { data: handoverStats } = trpc.aiHandover.getStats.useQuery();
@@ -379,7 +375,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <Link href="/orders?special=1&type=pending_shipping">
               <div className="rounded-lg border border-orange-100 bg-background/70 p-3 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors cursor-pointer">
-                <p className="text-xs text-muted-foreground">{lang === "zh" ? "待补运费" : "Pending Shipping"}</p>
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "待汇款差价" : "Pending Remittance Difference"}</p>
                 <p className="mt-1 text-2xl font-bold text-orange-600">{followUpDisplay.pendingShippingCount}</p>
               </div>
             </Link>
@@ -401,12 +397,6 @@ export default function Dashboard() {
                 <p className="mt-1 text-2xl font-bold text-orange-600">{followUpDisplay.partialPaymentCount}</p>
               </div>
             </Link>
-            <Link href="/orders?special=1&type=over_payment">
-              <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer">
-                <p className="text-xs text-muted-foreground">{lang === "zh" ? "多汇款" : "Over Payment"}</p>
-                <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.overPaymentCount}</p>
-              </div>
-            </Link>
             <Link href="/orders?special=1&type=amount_changed">
               <div className="rounded-lg border border-red-100 bg-background/70 p-3 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "金额异常" : "Amount Changed"}</p>
@@ -415,7 +405,7 @@ export default function Dashboard() {
             </Link>
             <Link href="/orders?special=1&type=stock_exception">
               <div className="rounded-lg border border-amber-100 bg-background/70 p-3 dark:border-amber-900/50 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors cursor-pointer">
-                <p className="text-xs text-muted-foreground">{lang === "zh" ? "库存异常" : "Stock Exception"}</p>
+                <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待补货" : "Waiting Restock"}</p>
                 <p className="mt-1 text-2xl font-bold text-amber-600">{followUpDisplay.stockExceptionCount}</p>
               </div>
             </Link>
@@ -429,7 +419,7 @@ export default function Dashboard() {
 
           <p className="rounded-md border border-orange-100 bg-background/60 px-3 py-2 text-xs leading-relaxed text-muted-foreground dark:border-orange-900/50">
             {lang === "zh"
-              ? "“其他”仅用于已被人工明确标记为其他、且不属于待补运费、退款、物流、资料、库存、汇款或金额异常等已定义分类的订单。待退款请在上方“工作状态”的退款管理卡处理，避免重复计算。"
+              ? "“待汇款差价”只用于已发货后客户仍欠实际运费差额的订单；点击卡片可筛选订单、客户、金额与等待时间。待退款请在上方“工作状态”的退款管理卡处理，避免重复计算。"
               : '“Other” only includes orders explicitly marked as other and not covered by a defined shipping, refund, logistics, customer-info, stock, payment, or amount exception. Handle pending refunds from the Refund Management work-status card to avoid duplicate counting.'}
           </p>
 
@@ -439,8 +429,8 @@ export default function Dashboard() {
               <p>{lang === "zh" ? "商品的可售库存低于所设阈值，提醒安排补货；库存记录本身仍一致。" : "Sellable stock is below its configured threshold and needs replenishment; the inventory record itself remains consistent."}</p>
             </div>
             <div className="rounded-md border border-indigo-200 bg-indigo-50/70 px-3 py-2 text-xs leading-relaxed text-indigo-950 dark:border-indigo-900/60 dark:bg-indigo-950/20 dark:text-indigo-100">
-              <p className="font-semibold">{lang === "zh" ? "库存异常" : "Stock exception"}</p>
-              <p>{lang === "zh" ? "库存资料出现需要人工核对的不一致，例如负库存或异常流水；请打开相关订单或库存审计记录处理。" : "Inventory data needs manual review because of an inconsistency, such as negative stock or an irregular ledger entry. Open the related order or inventory audit record to resolve it."}</p>
+              <p className="font-semibold">{lang === "zh" ? "库存核对提示" : "Inventory review notice"}</p>
+              <p>{lang === "zh" ? "若出现负库存或库存流水不一致，请打开相关订单或库存审计记录核对；这不是等待补货订单状态。" : "If negative stock or an inconsistent inventory ledger appears, review the related order or inventory audit record. This is not a waiting-restock order status."}</p>
             </div>
           </div>
 
@@ -450,11 +440,16 @@ export default function Dashboard() {
             ) : (
               <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
                 {specialFollowUpItems.map((item: any) => (
-                  <Link key={item.orderId} href={`/orders/${item.orderId}`}>
+                  <Link key={`${item.orderId}-${item.specialType}`} href={item.specialType === "pending_refund" ? `/admin/refunds?order=${encodeURIComponent(item.orderNumber || String(item.orderId))}` : `/orders/${item.orderId}`}>
                     <div className={`flex items-center justify-between gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50 ${item.isOverdue ? "border-red-300 bg-red-50 dark:bg-red-950/20" : "border-transparent"}`}>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{item.orderNumber}</p>
                         <p className="truncate text-xs text-muted-foreground">{item.customerName}{item.lastRemark ? ` · ${item.lastRemark}` : ""}</p>
+                        {item.specialType === "pending_shipping" && (
+                          <p className="mt-1 text-xs font-medium text-orange-700">
+                            {lang === "zh" ? `待汇款差价 RM${Number(item.amount || 0).toFixed(2)}` : `Outstanding difference RM${Number(item.amount || 0).toFixed(2)}`}
+                          </p>
+                        )}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <Badge className={item.specialTypeColor === "orange" ? "bg-orange-100 text-orange-700" : item.specialTypeColor === "red" ? "bg-red-100 text-red-700" : item.specialTypeColor === "yellow" ? "bg-yellow-100 text-yellow-700" : item.specialTypeColor === "blue" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-700"} variant="secondary">

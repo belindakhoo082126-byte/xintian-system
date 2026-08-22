@@ -1,5 +1,6 @@
 import { useI18n } from "@/contexts/I18nContext";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
+import { WEST_MALAYSIA_V22_SHIPPING } from "@shared/shippingV22";
 
 const SHIPPING_LABELS: Record<string, { zh: string; en: string }> = {
   west_malaysia: { zh: "西马", en: "West Malaysia" },
@@ -109,6 +110,12 @@ export function OrderDocument({
   const paidAmount = parseFloat(o.paidAmount || "0");
   const balance = totalAmount - paidAmount;
   const discountAmount = parseFloat(o.discountAmount || "0");
+  const estimatedWeight = parseFloat(o.estimatedWeight || o.totalWeight || "0");
+  const isWestMalaysia = o.shippingMethod === "west_malaysia";
+  const extraWeightKg = isWestMalaysia ? Math.max(0, Math.ceil(estimatedWeight - WEST_MALAYSIA_V22_SHIPPING.includedWeightKg)) : 0;
+  const extraWeightFee = extraWeightKg * WEST_MALAYSIA_V22_SHIPPING.additionalKgFee;
+  const baseShippingFee = isWestMalaysia ? Math.max(0, shippingFee - extraWeightFee) : shippingFee;
+  const isFreeShipping = isWestMalaysia && estimatedWeight > 0 && baseShippingFee === 0;
 
   const fmtDate = (d: string | Date) => {
     if (!d) return "-";
@@ -243,6 +250,13 @@ export function OrderDocument({
         <div style={{ marginTop: "4px" }}>
           <span style={labelStyle}>{translate("完整地址", "Full Address")}:</span> {o.shippingAddress || "-"}
         </div>
+        {isWestMalaysia && estimatedWeight > 0 && (
+          <div style={{ ...gridRow, marginTop: "4px" }}>
+            <div><span style={labelStyle}>{translate("估计重量", "Estimated Weight")}:</span> {estimatedWeight.toFixed(2)} kg</div>
+            <div><span style={labelStyle}>{translate("首10kg资格", "First 10kg Eligibility")}:</span> {isFreeShipping ? translate("免运", "Free Shipping") : translate("基础运费", "Base Shipping")}</div>
+            <div><span style={labelStyle}>{translate("续重", "Extra Weight")}:</span> {extraWeightKg > 0 ? `${extraWeightKg} kg × RM ${WEST_MALAYSIA_V22_SHIPPING.additionalKgFee}` : translate("无", "None")}</div>
+          </div>
+        )}
         {(o.courierCompany || o.trackingNumber) && (
           <div style={{ ...gridRow, marginTop: "4px" }}>
             <div><span style={labelStyle}>{translate("快递公司", "Courier")}:</span> {o.courierCompany || "-"}</div>
@@ -333,10 +347,29 @@ export function OrderDocument({
               <span>+RM {extraCharge.toFixed(2)}</span>
             </div>
           )}
-          <div style={amtRow}>
-            <span>{translate("运费", "Shipping")}</span>
-            <span>RM {shippingFee.toFixed(2)}</span>
-          </div>
+          {isWestMalaysia && estimatedWeight > 0 ? (
+            <>
+              <div style={amtRow}>
+                <span>{isFreeShipping ? translate("首10kg免运", "First 10kg Free Shipping") : translate("首10kg基础运费", "First 10kg Base Shipping")}</span>
+                <span>RM {baseShippingFee.toFixed(2)}</span>
+              </div>
+              {extraWeightKg > 0 && (
+                <div style={amtRow}>
+                  <span>{translate("续重运费", "Extra Weight Shipping")} ({extraWeightKg} kg × RM {WEST_MALAYSIA_V22_SHIPPING.additionalKgFee.toFixed(2)})</span>
+                  <span>RM {extraWeightFee.toFixed(2)}</span>
+                </div>
+              )}
+              <div style={amtRow}>
+                <span>{translate("客户应付运费", "Customer Shipping Due")}</span>
+                <span>RM {shippingFee.toFixed(2)}</span>
+              </div>
+            </>
+          ) : (
+            <div style={amtRow}>
+              <span>{translate("运费", "Shipping")}</span>
+              <span>RM {shippingFee.toFixed(2)}</span>
+            </div>
+          )}
           {creditUsed > 0 && (
             <div style={{ ...amtRow, color: C.blue }}>
               <span>{translate("自动扣除Credit", "Auto Credit Used")}</span>

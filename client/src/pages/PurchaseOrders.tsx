@@ -164,10 +164,16 @@ export default function PurchaseOrders() {
   });
 
   const receiveMutation = trpc.purchaseOrders.receive.useMutation({
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       utils.purchaseOrders.invalidate();
       utils.products.invalidate();
-      toast.success(translate("进货单已标记为已收货", "Purchase order marked as received"));
+      const allocatedQuantity = (result?.restockAllocations || []).reduce((total: number, allocation: any) => total + Number(allocation.allocatedQuantity || 0), 0);
+      toast.success(allocatedQuantity > 0
+        ? translate(
+          `进货单已确认收货；系统已优先分配 ${allocatedQuantity} 件给等待补货订单，其余数量才可销售。`,
+          `Purchase order received. ${allocatedQuantity} item(s) were assigned to waiting-restock orders before the remainder became sellable.`,
+        )
+        : translate("进货单已标记为已收货", "Purchase order marked as received"));
     },
     onError: (e) => toast.error(translate(`操作失败: {message}`, `Operation failed: {message}`, { message: e.message })),
   });
@@ -365,7 +371,7 @@ export default function PurchaseOrders() {
                               variant="ghost"
                               size="sm"
                               onClick={() => {
-                                if (confirm(translate("确认已收货？库存将自动增加。", "Confirm receipt? Inventory will be automatically increased."))) {
+                                if (confirm(translate("确认已收货？系统会先按商品及规格自动分配给等待补货订单，剩余数量才成为可销售库存。", "Confirm receipt? Matching waiting-restock orders will be assigned first; only the remainder becomes sellable inventory."))) {
                                   receiveMutation.mutate({ id: po.id });
                                 }
                               }}

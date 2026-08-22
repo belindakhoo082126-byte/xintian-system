@@ -27,6 +27,20 @@ describe("统一库存流水审计规则", () => {
     })).toMatchObject({ quantityChange: -10, stockBefore: 30, stockAfter: 20 });
   });
 
+  it("直播库存调整保留规格、前后数量与直播房关联", () => {
+    expect(buildInventoryMovementRecord({
+      productId: 9,
+      variantId: 41,
+      movementType: "live_stock_adjustment",
+      quantityChange: -2,
+      stockBefore: 10,
+      stockAfter: 8,
+      referenceType: "live_room",
+      referenceId: 3,
+      reason: "直播库存调整｜原因：破损",
+    })).toMatchObject({ variantId: 41, stockAfter: 8, referenceType: "live_room" });
+  });
+
   it("拒绝无法由前后库存复算的流水", () => {
     expect(() => buildInventoryMovementRecord({
       productId: 7,

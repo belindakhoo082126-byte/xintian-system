@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, AlertCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, RotateCcw, Bell, Upload, Loader2, Pencil, GitMerge } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useSearch, useLocation } from "wouter";
+import { Link, useSearch, useLocation } from "wouter";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
 import { getSpecialOrderHandlingLabel, getSpecialOrderReasonLabel, SPECIAL_ORDER_FILTER_OPTIONS } from "@shared/specialOrderDisplay";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
@@ -1149,6 +1149,18 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                                 <Badge variant="outline" className={`ml-1 text-xs ${handling.className}`}>
                                   {translate(handling.zh, handling.en)}
                                 </Badge>
+                                {((o as any).specialOrderType === "pending_shipping" || (o as any).specialOrderType === "pending_refund") && (
+                                  <Badge variant="outline" className="ml-1 border-amber-200 bg-amber-50 text-xs text-amber-800">
+                                    RM {Math.abs(Number((o as any).shippingDifference || 0)).toFixed(2)}
+                                  </Badge>
+                                )}
+                                {(o as any).shippingRefund && (
+                                  <Link href={`/admin/refunds?order=${encodeURIComponent(o.orderNumber || String(o.id))}`} className="ml-1 inline-flex">
+                                    <Badge variant="outline" className="border-rose-200 bg-rose-50 text-xs text-rose-700 hover:bg-rose-100">
+                                      {(o as any).shippingRefund.refundNumber || `RF-${(o as any).shippingRefund.id}`} · {translate((o as any).shippingRefund.status === "pending" ? "待退款" : "退款已处理", (o as any).shippingRefund.status === "pending" ? "Pending Refund" : "Refund Processed")}
+                                    </Badge>
+                                  </Link>
+                                )}
                               </>
                             );
                           })()}
@@ -1560,6 +1572,24 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
 
                 {/* V2.1.19: Special status panel */}
                 <SpecialStatusPanel orderId={orderDetail.id} orderStatus={orderDetail.physicalStatus || ""} />
+
+                {((orderDetail as any).specialOrderType === "pending_shipping" || (orderDetail as any).specialOrderType === "pending_refund" || ((orderDetail as any).refunds || []).some((refund: any) => refund.refundSource === "packing" && refund.refundReasonCode === "overcharged_shipping")) && (() => {
+                  const shippingRefund = ((orderDetail as any).refunds || []).find((refund: any) => refund.refundSource === "packing" && refund.refundReasonCode === "overcharged_shipping");
+                  const isPendingRefund = (orderDetail as any).specialOrderType === "pending_refund";
+                  const isPendingShipping = (orderDetail as any).specialOrderType === "pending_shipping";
+                  const difference = Math.abs(Number((orderDetail as any).shippingDifference || 0));
+                  return (
+                    <div className={`rounded-lg border p-4 ${isPendingRefund ? "border-rose-200 bg-rose-50/60" : "border-amber-200 bg-amber-50/60"}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2"><Badge variant="outline" className={isPendingRefund ? "border-rose-200 bg-rose-100 text-rose-800" : "border-amber-200 bg-amber-100 text-amber-800"}>{isPendingRefund ? translate("待退款", "Pending Refund") : translate("待补运费", "Pending Additional Shipping")}</Badge><span className="font-semibold">RM {difference.toFixed(2)}</span></div>
+                          <p className="mt-1 text-sm text-muted-foreground">{isPendingRefund ? (shippingRefund ? `${shippingRefund.refundNumber || `RF-${shippingRefund.id}`} · ${translate(shippingRefund.status === "pending" ? "退款管理待处理" : "已处理运费退款", shippingRefund.status === "pending" ? "Pending in Refund Management" : "Shipping Refund Processed")}` : translate("退款管理任务尚未建立", "Refund task has not been created")) : translate("客户补款后，请到包货详情上传凭证；付款记录会在本订单待审核，审核通过后才解除待补运费。", "After payment, upload the receipt in Packing Detail. It appears here for review; approval clears the pending shipping fee.")}</p>
+                        </div>
+                        {isPendingRefund && shippingRefund && <Button size="sm" asChild><Link href={`/admin/refunds?order=${encodeURIComponent(orderDetail.orderNumber || String(orderDetail.id))}`}>{translate("前往退款管理", "Open Refund Management")}</Link></Button>}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="flex items-center justify-between">
                   <h3 className="font-medium">{translate("付款记录", "Payment Records")}</h3>
@@ -2663,7 +2693,7 @@ function SpecialStatusPanel({ orderId, orderStatus }: { orderId: number; orderSt
     logistics_error: { cn: "物流异常", en: "Logistics Error", color: "bg-orange-100 text-orange-700" },
     incomplete_info: { cn: "资料不完整", en: "Incomplete Info", color: "bg-yellow-100 text-yellow-700" },
     notification_failed: { cn: "通知失败", en: "Notification Failed", color: "bg-pink-100 text-pink-700" },
-    stock_exception: { cn: "库存异常", en: "Stock Exception", color: "bg-indigo-100 text-indigo-700" },
+    stock_exception: { cn: "等待补货", en: "Waiting Restock", color: "bg-indigo-100 text-indigo-700" },
     overdue: { cn: "超时未处理", en: "Overdue", color: "bg-red-100 text-red-700" },
     amount_changed: { cn: "金额修改", en: "Amount Changed", color: "bg-cyan-100 text-cyan-700" },
     amount_anomaly: { cn: "金额异常", en: "Amount Anomaly", color: "bg-rose-100 text-rose-700" },

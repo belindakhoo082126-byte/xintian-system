@@ -16,6 +16,7 @@ import { getMallShareLinks, MALL_FAVORITES_STORAGE_KEY, readMallFavoriteIds, tog
 import { ProductImagePreview } from "@/components/ProductImagePreview";
 import { getSalesUnitLabel } from "@shared/salesUnitDisplay";
 import { getMallDetailDisplayImage, getMallDetailGalleryImages } from "@shared/mallDetailGallery";
+import { isSpecialPriceCurrentlyActive } from "@shared/specialPriceSchedule";
 
 function getMallNoticeText(
   announcement: string,
@@ -106,7 +107,9 @@ export default function MallProductDetail() {
   const variants = product.variants || [];
   const selectedVariant = variants.find((v: any) => v.id === selectedVariantId);
   const mainImageUrl = getMallDetailDisplayImage(product?.coverImageUrl, selectedGalleryImageUrl, selectedVariant?.imageUrl);
-  const unitPrice = selectedVariant?.sellingPrice || product!.sellingPrice || "0";
+  const variantSellingPrice = selectedVariant?.sellingPrice || product!.sellingPrice || "0";
+  const hasActiveSpecialPrice = isSpecialPriceCurrentlyActive(product);
+  const unitPrice = hasActiveSpecialPrice ? (product.specialPrice || variantSellingPrice) : variantSellingPrice;
   const subtotal = (parseFloat(unitPrice) * quantity).toFixed(2);
   const selectedVariantStock = selectedVariant as (typeof selectedVariant & { availableStock?: number; allowOversold?: boolean; allowPresale?: boolean }) | undefined;
   const productStock = product as typeof product & { availableStock?: number; allowOversold?: boolean; allowPresale?: boolean };
@@ -296,10 +299,10 @@ export default function MallProductDetail() {
             </div>
 
             <div className="flex items-center gap-3">
-              {product.isSpecial && product.specialPrice && parseFloat(product.specialPrice) > 0 ? (
+              {hasActiveSpecialPrice ? (
                 <>
                   <span className="text-3xl font-bold text-orange-600">RM {product.specialPrice}</span>
-                  <span className="text-lg text-muted-foreground line-through">RM {unitPrice}</span>
+                  <span className="text-lg text-muted-foreground line-through">RM {variantSellingPrice}</span>
                 </>
               ) : (
                 <span className="text-3xl font-bold" style={{ color: theme.primary }}>RM {unitPrice}</span>
@@ -325,13 +328,14 @@ export default function MallProductDetail() {
                       <SelectItem key={v.id} value={v.id.toString()}>
                         <div className="flex items-center gap-2">
                           {v.imageUrl && <img src={v.imageUrl} alt="" className="h-6 w-6 rounded object-cover" />}
-                          {v.name} - RM {v.sellingPrice}
+                          {v.name} · {t(`卖价 RM ${v.sellingPrice}`, `Price RM ${v.sellingPrice}`)}{hasActiveSpecialPrice ? ` · ${t(`特价 RM ${product.specialPrice}`, `Special RM ${product.specialPrice}`)}` : ""}
                         </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedVariant?.imageUrl && <p className="mt-2 text-xs text-muted-foreground">{t("已切换为该规格图片", "Showing the selected variant image")}</p>}
+                {selectedVariant && <p className="mt-2 text-xs text-muted-foreground">{hasActiveSpecialPrice ? t(`已选 ${selectedVariant.name}：卖价 RM ${variantSellingPrice}，当前特价 RM ${product.specialPrice}`, `Selected ${selectedVariant.name}: price RM ${variantSellingPrice}, current special RM ${product.specialPrice}`) : t(`已选 ${selectedVariant.name}：卖价 RM ${variantSellingPrice}`, `Selected ${selectedVariant.name}: price RM ${variantSellingPrice}`)}</p>}
+                {selectedVariant?.imageUrl && <p className="mt-1 text-xs text-muted-foreground">{t("已切换为该规格图片", "Showing the selected variant image")}</p>}
               </div>
             )}
 

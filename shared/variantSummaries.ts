@@ -5,6 +5,7 @@ export type VariantSummary = {
   keyword: string;
   stockQuantity: number | null;
   status: string;
+  sellingPrice: string | null;
 };
 
 export function groupVariantSummariesByProduct<T extends VariantSummary>(summaries: T[]) {
@@ -13,4 +14,3 @@ export function groupVariantSummariesByProduct<T extends VariantSummary>(summari
     return grouped;
   }, {});
 }
-
