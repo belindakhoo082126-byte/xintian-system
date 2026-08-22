@@ -67,6 +67,7 @@ import OrderEditPage from "@/pages/OrderEditPage";
 import MarketingCenter from "@/pages/MarketingCenter";
 import RefundManagement from "@/pages/RefundManagement";
 import PublicPolicy from "@/pages/PublicPolicy";
+import VirtualDelivery from "@/pages/VirtualDelivery";
 
 /** Public routes — no auth required, no dashboard layout */
 function PublicRoutes() {
@@ -106,6 +107,7 @@ function DashboardRoutes() {
       <Route path={"/orders/create/local"} component={() => <OrderCreatePage orderCategory="local" />} />
       <Route path={"/orders/create/import"} component={() => <OrderCreatePage orderCategory="import" />} />
       <Route path={"/membership"} component={Membership} />
+      <Route path={"/virtual-delivery"} component={VirtualDelivery} />
       <Route path={"/customers"} component={Customers} />
       <Route path={"/chat"} component={Chat} />
       <Route path={"/ai-handover"} component={AiHandover} />

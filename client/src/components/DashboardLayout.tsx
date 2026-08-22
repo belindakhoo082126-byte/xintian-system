@@ -34,7 +34,7 @@ import {
   FolderTree, ChevronRight, DollarSign, ShoppingBag, Boxes, Settings,
   Ship, Warehouse, CreditCard, Store, PackageCheck, Search, AlertTriangle, AlertCircle,
   ClipboardList, Video, Plane, ChevronDown, Bot, Home, FileText, Receipt, Brain, FileEdit,
-  Megaphone, Undo2, BellRing, Languages,
+  Megaphone, Undo2, BellRing, Languages, Send,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -153,7 +153,15 @@ const menuStructure: MenuEntry[] = [
     ],
   },
 
-  // 6. 客户管理
+  // 6. 虚拟交付
+  {
+    icon: Send,
+    label: { zh: "虚拟交付", en: "Virtual Delivery" },
+    path: "/virtual-delivery",
+    accent: MENU_ACCENTS.customers,
+  },
+
+  // 7. 客户管理
   { icon: Users, label: "nav.customers", path: "/customers", accent: MENU_ACCENTS.customers },
 
   // 7. AI 客服

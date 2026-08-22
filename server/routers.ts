@@ -534,6 +534,22 @@ export const appRouter = router({
         return await db.getProducts(input || {});
       }),
 
+    stockMovements: adminProcedure
+      .input(z.object({
+        productId: z.number(),
+        variantId: z.number().optional(),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await db.getInventoryMovementLogs({
+          productId: input.productId,
+          variantId: input.variantId,
+          dateFrom: input.dateFrom ? new Date(input.dateFrom) : undefined,
+          dateTo: input.dateTo ? new Date(input.dateTo) : undefined,
+        });
+      }),
+
     getById: adminProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
@@ -804,6 +820,7 @@ export const appRouter = router({
           sellingPrice: z.string().optional(),
           compareAtPrice: z.string().optional(),
           memberPrice: z.string().optional(),
+          weight: z.string().optional(),
           status: z.enum(['active', 'inactive', 'hidden']).optional(),
           sortOrder: z.number().optional(),
           imageUrl: z.string().optional(),
@@ -4127,6 +4144,7 @@ export const appRouter = router({
         productSku: z.string().optional(),
         variationId: z.number().optional(),
         variationName: z.string().optional(),
+        productType: z.enum(["physical", "membership", "gift"]).optional(),
         facebookKeyword: z.string().optional(),
         quantity: z.number().min(1),
         unitPrice: z.string(),
@@ -7827,6 +7845,78 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.removeCampaignContentId(input.id);
+        return { success: true };
+      }),
+  }),
+  // ===========================================================================
+  // 虚拟交付：会员、课程、资料包（Meta 自动私聊后续接入）
+  // ===========================================================================
+  virtualDelivery: router({
+    listProducts: adminProcedure.query(async () => {
+      return await db.listVirtualDeliveryProducts();
+    }),
+    createProduct: adminProcedure
+      .input(z.object({
+        name: z.string().trim().min(1, "请输入虚拟商品名称"),
+        deliveryType: z.enum(["membership", "course", "resource"]),
+        description: z.string().optional(),
+        defaultDeliveryMessage: z.string().optional(),
+        coverImageUrl: z.string().url("商品图片必须是完整网址").optional().or(z.literal("")),
+        allowMixedCheckout: z.boolean().default(true),
+        syncToMall: z.boolean().default(false),
+        packages: z.array(z.object({
+          name: z.string().trim(),
+          sellingPrice: z.string().regex(/^\d+(\.\d{1,2})?$/, "请输入有效售价"),
+          contentCost: z.string().regex(/^\d+(\.\d{1,2})?$/, "请输入有效内容成本"),
+          deliveryLink: z.string().url("交付链接必须是完整网址").optional().or(z.literal("")),
+          deliveryMessage: z.string().optional(),
+          imageUrl: z.string().url("配套图片必须是完整网址").optional().or(z.literal("")),
+        })).min(1, "请至少建立一个交付配套"),
+      }))
+      .mutation(async ({ input }) => {
+        return await db.createVirtualDeliveryProduct(input);
+      }),
+    updateProduct: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().trim().min(1, "请输入虚拟商品名称").optional(),
+        description: z.string().optional(),
+        defaultDeliveryMessage: z.string().optional(),
+        coverImageUrl: z.string().url().optional().or(z.literal("")),
+        allowMixedCheckout: z.boolean().optional(),
+        syncToMall: z.boolean().optional(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateVirtualDeliveryProduct(id, data);
+        return { success: true };
+      }),
+    updatePackage: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().trim().min(1).optional(),
+        sellingPrice: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+        contentCost: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+        deliveryLink: z.string().url().optional().or(z.literal("")),
+        deliveryMessage: z.string().optional(),
+        imageUrl: z.string().url().optional().or(z.literal("")),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateVirtualDeliveryPackage(id, data);
+        return { success: true };
+      }),
+    listTasks: adminProcedure
+      .input(z.object({ status: z.enum(["pending_manual", "sent", "failed", "cancelled"]).optional() }).optional())
+      .query(async ({ input }) => {
+        return await db.listVirtualDeliveryTasks(input?.status);
+      }),
+    markTaskSent: adminProcedure
+      .input(z.object({ id: z.number(), notes: z.string().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await db.markVirtualDeliveryTaskSent(input.id, ctx.user.id, input.notes);
         return { success: true };
       }),
   }),

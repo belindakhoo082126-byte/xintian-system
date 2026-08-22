@@ -26,6 +26,7 @@ import { canConfigureSpecialPrice } from "@shared/specialPriceFormPlacement";
 import { shouldShowMallSyncBadge } from "@shared/mallSyncBadge";
 import { getSalesModeFromPresale, isPresaleSalesMode } from "@shared/presaleSalesMode";
 import { isSpecialPriceCurrentlyActive } from "@shared/specialPriceSchedule";
+import { formatVariantPriceRange } from "@shared/variantPriceRange";
 import {
   LargeOperationDialogBody,
   LargeOperationDialogContent,
@@ -161,6 +162,7 @@ type VariantForm = {
   sellingPrice: string;
   compareAtPrice: string;
   memberPrice: string;
+  weight: string;
     status: "active" | "inactive" | "hidden";
   sortOrder: number;
   imageUrl: string;
@@ -168,7 +170,7 @@ type VariantForm = {
 };
 type DraftVariant = VariantForm & { draftId: string; sku?: string };
 const EMPTY_VARIANT: VariantForm = {
-  name: "", keyword: "", sellingPrice: "", compareAtPrice: "", memberPrice: "",
+  name: "", keyword: "", sellingPrice: "", compareAtPrice: "", memberPrice: "", weight: "",
   status: "active", sortOrder: 0, imageUrl: "", stockQuantity: 0,
 };
 
@@ -181,6 +183,7 @@ function VariantSummaryList({ variants, translate }: { variants: any[]; translat
         <div key={variant.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className="font-medium">{variant.name}</span>
           <span>{translate("库存：{quantity}", "Stock: {quantity}", { quantity: getVariantStockQuantity(variant.stockQuantity) })}</span>
+          {variant.weight ? <span>{translate("重量：{weight} kg", "Weight: {weight} kg", { weight: variant.weight })}</span> : null}
           <code className="rounded bg-white px-1 text-[11px] text-muted-foreground">{translate("关键词：{keyword}", "Keyword: {keyword}", { keyword: variant.keyword })}</code>
         </div>
       ))}
@@ -193,6 +196,15 @@ export default function ProductsV2() {
   const getProductTypeLabel = (type: string) => {
     const entry = RAW_PRODUCT_TYPES.find((item) => item.value === type);
     return translate(entry?.zh ?? type, entry?.en ?? type);
+  };
+  const getStockReferenceLabel = (referenceType?: string | null) => {
+    const labels: Record<string, { zh: string; en: string }> = {
+      purchase_order: { zh: "进货单", en: "Purchase order" },
+      product_bundle: { zh: "组合包", en: "Product bundle" },
+      inventory_adjustment: { zh: "库存调整", en: "Inventory adjustment" },
+    };
+    const label = referenceType ? labels[referenceType] : undefined;
+    return translate(label?.zh ?? referenceType ?? "—", label?.en ?? referenceType ?? "—");
   };
   const getPhysicalStatusLabel = (status: string) => {
     const labels: Record<string, { zh: string; en: string }> = {
@@ -268,7 +280,7 @@ export default function ProductsV2() {
     },
     { enabled: !!orderDetailsTarget },
   );
-  const stockLogQuery = trpc.inventoryAdjustment.list.useQuery(
+  const stockLogQuery = trpc.products.stockMovements.useQuery(
     { productId: stockLogTarget?.productId ?? 0 },
     { enabled: !!stockLogTarget },
   );
@@ -530,12 +542,13 @@ export default function ProductsV2() {
       aiSellingPoints: form.aiSellingPoints || undefined,
       syncToMall: form.syncToMall,
       initialVariants: !editingId && form.productMode === "variant"
-        ? variants.map(({ name, keyword, sellingPrice, compareAtPrice, memberPrice, status, sortOrder, imageUrl }: DraftVariant) => ({
+        ? variants.map(({ name, keyword, sellingPrice, compareAtPrice, memberPrice, weight, status, sortOrder, imageUrl }: DraftVariant) => ({
           name,
           keyword: normalizeVariantKeyword(keyword),
           sellingPrice: sellingPrice || undefined,
           compareAtPrice: compareAtPrice || undefined,
           memberPrice: memberPrice || undefined,
+          weight: weight || undefined,
           status,
           sortOrder,
           imageUrl: imageUrl || undefined,
@@ -566,6 +579,7 @@ export default function ProductsV2() {
       sellingPrice: v.sellingPrice || "",
       compareAtPrice: v.compareAtPrice || "",
       memberPrice: v.memberPrice || "",
+      weight: v.weight ? String(v.weight) : "",
 
       status: v.status || "active",
       sortOrder: v.sortOrder || 0,
@@ -758,7 +772,7 @@ export default function ProductsV2() {
                       </div>
 	                    </TableCell>
 	                    <TableCell><div className="space-y-1.5"><Badge className={TYPE_BADGES[p.type]} variant="secondary">{getProductTypeLabel(p.type)}</Badge><p className="text-sm text-muted-foreground">{p.productMode === "variant" ? translate("多规格", "Variant") : translate("单规格", "Simple")}</p></div></TableCell>
-                    <TableCell>{p.type === "gift" ? translate("免费", "Free") : isSpecialPriceCurrentlyActive(p) ? <div className="space-y-0.5"><p className="font-semibold text-orange-600">RM {p.specialPrice}</p><p className="text-sm text-muted-foreground line-through">RM {p.sellingPrice || "0"}</p></div> : `RM ${p.sellingPrice || "0"}`}</TableCell>
+                    <TableCell>{p.type === "gift" ? translate("免费", "Free") : p.productMode === "variant" ? <span className="font-semibold">{formatVariantPriceRange(p.variantSummaries, p.sellingPrice)}</span> : isSpecialPriceCurrentlyActive(p) ? <div className="space-y-0.5"><p className="font-semibold text-orange-600">RM {p.specialPrice}</p><p className="text-sm text-muted-foreground line-through">RM {p.sellingPrice || "0"}</p></div> : `RM ${p.sellingPrice || "0"}`}</TableCell>
                     <TableCell><Badge className={STATUS_BADGES[p.status]} variant="secondary">{translate(RAW_STATUS_LABELS[p.status]?.zh, RAW_STATUS_LABELS[p.status]?.en) || p.status}</Badge></TableCell>
                     <TableCell>{(p.type === "physical" || p.type === "gift") ? <div className="space-y-1.5"><p>{p.type === "gift" ? translate("赠品库存", "Gift Stock") : translate("库存", "Stock")}: <span className="font-semibold">{p.stockQuantity ?? 0}</span></p><div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">{(["ordered", "paid", "completed"] as const).map((type, index) => { const count = type === "ordered" ? p.orderedCount : type === "paid" ? p.paidCount : p.completedCount; const color = type === "ordered" ? "text-blue-600" : type === "paid" ? "text-amber-700" : "text-green-600"; const label = type === "ordered" ? translate("已下单", "Ordered") : type === "paid" ? translate("已汇款", "Paid") : translate("已完成", "Completed"); return <span key={type} className="inline-flex items-center gap-1">{index > 0 && <span className="text-muted-foreground">|</span>}<button type="button" className={`font-medium ${color} underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`} onClick={() => setOrderDetailsTarget({ productId: p.id, productName: p.name, type })}>{label} {count ?? 0}</button></span>; })}</div></div> : translate("—", "—")}</TableCell>
                     <TableCell><div className="flex flex-wrap gap-1.5">{shouldShowMallSyncBadge(p) && <Badge className="border border-teal-200 bg-teal-100 text-teal-800 hover:bg-teal-100">{translate("商城同步", "Mall Sync")}</Badge>}{p.type === "physical" && p.allowPresale && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("预售", "Presale")}</Badge>}{p.isFeatured && <Badge className="border border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-100">{translate("推荐", "Featured")}</Badge>}{p.isSpecial && <Badge className="border border-orange-200 bg-orange-100 text-orange-800 hover:bg-orange-100">{translate("特价", "Special")}</Badge>}{p.type === "gift" && <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{translate("赠品", "Gift")}</Badge>}{p.type === "virtual" && <Badge className="border border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{translate("虚拟商品", "Virtual")}</Badge>}{p.salesMode === "import_preorder" && <Badge className="border border-sky-200 bg-sky-100 text-sky-800 hover:bg-sky-100">{translate("中国进口", "China Import")}</Badge>}{p.salesMode !== "import_preorder" && p.allowImportOrder && <Badge className="border border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-100">{translate("可入 XTC", "Eligible for XTC")}</Badge>}{!shouldShowMallSyncBadge(p) && !(p.type === "physical" && p.allowPresale) && !p.isFeatured && !p.isSpecial && p.type !== "gift" && p.type !== "virtual" && p.salesMode !== "import_preorder" && !p.allowImportOrder && <span className="text-muted-foreground">{translate("—", "—")}</span>}</div></TableCell>
@@ -785,7 +799,7 @@ export default function ProductsV2() {
                   <p className="line-clamp-2 text-base font-semibold leading-snug" title={p.name}>{p.name}</p>
                   <code className="block truncate rounded bg-muted px-1.5 py-0.5 text-sm text-muted-foreground" title={p.keyword || undefined}>{p.keyword || translate("未设关键词", "No keyword")}</code>
                   {p.productMode === "variant" && <VariantSummaryList variants={p.variantSummaries} translate={translate} />}
-                  <div className="flex flex-wrap items-center gap-2"><Badge className={STATUS_BADGES[p.status]} variant="secondary">{translate(RAW_STATUS_LABELS[p.status]?.zh, RAW_STATUS_LABELS[p.status]?.en) || p.status}</Badge>{p.type === "gift" ? <span className="font-semibold">{translate("免费", "Free")}</span> : isSpecialPriceCurrentlyActive(p) ? <span className="flex items-center gap-1.5"><span className="font-semibold text-orange-600">RM {p.specialPrice}</span><span className="text-sm text-muted-foreground line-through">RM {p.sellingPrice || "0"}</span></span> : <span className="font-semibold">RM {p.sellingPrice || "0"}</span>}</div>
+                  <div className="flex flex-wrap items-center gap-2"><Badge className={STATUS_BADGES[p.status]} variant="secondary">{translate(RAW_STATUS_LABELS[p.status]?.zh, RAW_STATUS_LABELS[p.status]?.en) || p.status}</Badge>{p.type === "gift" ? <span className="font-semibold">{translate("免费", "Free")}</span> : p.productMode === "variant" ? <span className="font-semibold">{formatVariantPriceRange(p.variantSummaries, p.sellingPrice)}</span> : isSpecialPriceCurrentlyActive(p) ? <span className="flex items-center gap-1.5"><span className="font-semibold text-orange-600">RM {p.specialPrice}</span><span className="text-sm text-muted-foreground line-through">RM {p.sellingPrice || "0"}</span></span> : <span className="font-semibold">RM {p.sellingPrice || "0"}</span>}</div>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild><Button variant="outline" size="icon" className="h-10 w-10 shrink-0" aria-label={translate(`操作「{name}」`, `Actions for "{name}"`, { name: p.name })}><MoreHorizontal className="h-5 w-5" /></Button></DropdownMenuTrigger>
@@ -851,35 +865,41 @@ export default function ProductsV2() {
       </Dialog>
 
       <Dialog open={!!stockLogTarget} onOpenChange={(open) => { if (!open) setStockLogTarget(null); }}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:!max-w-6xl xl:!max-w-7xl">
           <DialogHeader>
             <DialogTitle>{stockLogTarget?.productName} · {translate("库存操作日志", "Stock Operation Log")}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            {translate("此处为只读审计记录。库存数量只能通过进货批次、订单、退款或获授权的库存异常流程变动。", "This is a read-only audit record. Stock can only change through purchase batches, orders, refunds, or authorized stock-exception workflows.")}
+            {translate("此处为只读审计记录，显示进货收货、组合包组件变动和管理员调整的库存前后数量与关联单据。", "This read-only ledger shows purchase receipts, bundle component movements, and authorized stock adjustments with balances and references.")}
           </p>
           {stockLogQuery.isLoading ? (
             <div className="py-10 text-center text-sm text-muted-foreground">{translate("加载库存日志中...", "Loading stock log...")}</div>
           ) : stockLogQuery.isError ? (
             <div className="py-10 text-center text-sm text-destructive">{translate("无法读取库存日志，请稍后重试。", "Unable to load stock log. Please try again.")}</div>
           ) : (stockLogQuery.data?.length ?? 0) === 0 ? (
-            <div className="py-10 text-center text-sm text-muted-foreground">{translate("暂时没有可显示的库存异常或售后调整记录。", "There are no stock-exception or after-sales adjustment records yet.")}</div>
+            <div className="py-10 text-center text-sm text-muted-foreground">{translate("暂时没有可显示的库存流水记录。", "There are no inventory movement records yet.")}</div>
           ) : (
-            <div className="max-h-[55vh] overflow-y-auto rounded-md border">
-              <Table>
+            <div className="max-h-[60vh] overflow-auto rounded-md border">
+              <Table className="min-w-[1120px] table-fixed">
                 <TableHeader><TableRow>
-                  <TableHead>{translate("时间", "Time")}</TableHead>
-                  <TableHead>{translate("变动", "Change")}</TableHead>
-                  <TableHead>{translate("原因", "Reason")}</TableHead>
-                  <TableHead>{translate("操作人", "Operator")}</TableHead>
+                  <TableHead className="w-[172px]">{translate("时间", "Time")}</TableHead>
+                  <TableHead className="w-[180px]">{translate("商品／规格", "Product / Variant")}</TableHead>
+                  <TableHead className="w-[120px]">{translate("变动前 → 后", "Before → After")}</TableHead>
+                  <TableHead className="w-[88px]">{translate("变动", "Change")}</TableHead>
+                  <TableHead className="w-[260px]">{translate("原因", "Reason")}</TableHead>
+                  <TableHead className="w-[170px]">{translate("关联单据", "Reference")}</TableHead>
+                  <TableHead className="w-[130px]">{translate("操作人", "Operator")}</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {(stockLogQuery.data ?? []).map((entry: any) => (
                     <TableRow key={entry.id}>
                       <TableCell className="whitespace-nowrap text-xs">{entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "—"}</TableCell>
+                      <TableCell className="whitespace-normal break-words">{entry.productName || "—"}{entry.variantName ? <span className="block text-xs text-muted-foreground">{entry.variantName}</span> : null}</TableCell>
+                      <TableCell className="whitespace-nowrap">{entry.stockBefore} → {entry.stockAfter}</TableCell>
                       <TableCell className={Number(entry.quantityChange) >= 0 ? "font-medium text-emerald-700" : "font-medium text-destructive"}>{Number(entry.quantityChange) >= 0 ? "+" : ""}{entry.quantityChange}</TableCell>
-                      <TableCell className="max-w-[280px] whitespace-normal break-words">{entry.reason || entry.remark || entry.adjustmentType || "—"}</TableCell>
-                      <TableCell>{entry.adjustedBy || "—"}</TableCell>
+                      <TableCell className="whitespace-normal break-words">{entry.reason || "—"}</TableCell>
+                      <TableCell className="whitespace-nowrap">{entry.referenceType && entry.referenceId ? `${getStockReferenceLabel(entry.referenceType)} #${entry.referenceId}` : "—"}</TableCell>
+                      <TableCell>{entry.operator || "—"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -956,7 +976,7 @@ export default function ProductsV2() {
                         <Select value={form.type} onValueChange={(v: any) => setForm({ ...form, type: v })}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {RAW_PRODUCT_TYPES.map(t => (
+                            {RAW_PRODUCT_TYPES.filter((type) => type.value === "physical" || type.value === "gift").map(t => (
                               <SelectItem key={t.value} value={t.value}>{translate(t.zh, t.en)}</SelectItem>
                             ))}
                           </SelectContent>
@@ -1980,6 +2000,12 @@ export default function ProductsV2() {
                 <Input type="number" placeholder={translate("继承商品", "Inherit Product")} value={variantForm.memberPrice}
                   onChange={(e) => setVariantForm({ ...variantForm, memberPrice: e.target.value })} />
               </div>
+            </div>
+            <div>
+              <Label>{translate("规格实际重量（kg）", "Variant Actual Weight (kg)")}</Label>
+              <Input type="number" min="0" step="0.01" placeholder={translate("如：7L、28L 分别填写各自实际 kg", "Enter actual kg for this variant")} value={variantForm.weight}
+                onChange={(e) => setVariantForm({ ...variantForm, weight: e.target.value })} />
+              <p className="mt-1 text-xs text-muted-foreground">{translate("此重量用于订单总重量与运费计算；2kg 填 2，500g 填 0.5。", "Used for order weight and shipping; enter 2 for 2kg or 0.5 for 500g.")}</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

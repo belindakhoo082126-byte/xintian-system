@@ -9,6 +9,7 @@ import {
   suppliers, purchaseOrders, purchaseOrderItems,
   // Phase 1 imports
   categories, units, variants, memberLinks, productImages, productVideos, productAttributes,
+  virtualDeliveryProducts, virtualDeliveryPackages, virtualDeliveryTasks,
   // System Settings & Shipping imports
   systemSettings, shippingRules, shippingProviders, shipments,
   // Payment & Order imports
@@ -20,7 +21,7 @@ import {
   // V1.1 imports
   orderItemRepots, orderRemarks,
   // V1.2 imports
-  orderExceptions, orderExceptionItems, orderExceptionReplacements, inventoryAdjustments,
+  orderExceptions, orderExceptionItems, orderExceptionReplacements, inventoryAdjustments, inventoryMovementLogs,
   orderSubOrders, specialOrderActions,
   // V2.0 imports
   liveRooms, importBatches, importBatchItems, cnChangeLogs, cnExpiryRunLogs, importBatchChangeLogs,
@@ -79,8 +80,34 @@ import { getPurchaseOrderReceiptDecision } from "../shared/purchaseOrderReceiptR
 import { resolveShippableQuantity } from "../shared/shipmentQuantityRules";
 import { deriveOrderStatusAfterPayment } from "../shared/orderPaymentStatusRules";
 import { runShipmentTransaction } from "../shared/shipmentTransaction";
+import { calculateVirtualDeliveryProfit } from "../shared/virtualDeliveryProfit";
+import { classifyVirtualDeliveryOrder, needsStockReservation, shouldCreateManualDeliveryTask } from "../shared/virtualDeliveryOrderRules";
+import { buildInventoryMovementRecord } from "../shared/inventoryMovementLedger";
+import { calculateOrderItemWeight, resolveOrderItemUnitWeight } from "../shared/orderItemWeight";
 
 let _db: ReturnType<typeof drizzle> | null = null;
+
+async function calculateOrderPriceBreakdownByProductCategory(
+  db: any,
+  items: Array<{ productId?: number | null; categoryNameZh?: string | null; [key: string]: any }>,
+  options: { promotionDiscount?: number | string | null; discountAmount?: number | string | null } = {},
+) {
+  const productIds = Array.from(new Set<number>(items.map((item) => Number(item.productId)).filter((id) => Number.isInteger(id) && id > 0)));
+  if (productIds.length === 0) return calculateOrderPriceBreakdown(items, options);
+  const productCategoryRows = await db.select({
+    productId: products.id,
+    categoryNameZh: categories.nameZh,
+  }).from(products).leftJoin(categories, eq(products.categoryId, categories.id))
+    .where(inArray(products.id, productIds));
+  const categoryNameByProductId = new Map<number, string | null>(productCategoryRows.map((row: any) => [
+    Number(row.productId),
+    row.categoryNameZh == null ? null : String(row.categoryNameZh),
+  ]));
+  return calculateOrderPriceBreakdown(items.map((item) => ({
+    ...item,
+    categoryNameZh: categoryNameByProductId.get(Number(item.productId)) ?? item.categoryNameZh ?? null,
+  })), options);
+}
 
 export async function executeRaw(query: any) {
   const db = await getDb();
@@ -1192,7 +1219,60 @@ type LocalOrderMergeItem = {
   priceType?: "retail" | "wholesale" | "agent" | "special" | "manual";
   unitCost?: string | null;
   originalUnitPrice?: string | null;
+  virtualPackageId?: number | null;
+  virtualDeliveryLinkSnapshot?: string | null;
+  virtualDeliveryMessageSnapshot?: string | null;
+  virtualContentCostSnapshot?: string | null;
+  unitWeight?: string | null;
 };
+
+async function getVirtualDeliverySnapshotsForVariants(variationIds: Array<number | null | undefined>) {
+  const database = await getDb();
+  const ids = variationIds.filter((id): id is number => typeof id === "number");
+  if (!database || ids.length === 0) return new Map<number, {
+    packageId: number;
+    deliveryLink: string | null;
+    deliveryMessage: string | null;
+    contentCost: string;
+  }>();
+  const rows = await database.select({
+    deliveryPackage: virtualDeliveryPackages,
+    virtual: virtualDeliveryProducts,
+  }).from(virtualDeliveryPackages)
+    .innerJoin(virtualDeliveryProducts, eq(virtualDeliveryPackages.virtualProductId, virtualDeliveryProducts.id))
+    .where(inArray(virtualDeliveryPackages.variantId, ids));
+  return new Map(rows.map((row) => [row.deliveryPackage.variantId, {
+    packageId: row.deliveryPackage.id,
+    deliveryLink: row.deliveryPackage.deliveryLink,
+    deliveryMessage: row.deliveryPackage.deliveryMessage || row.virtual.defaultDeliveryMessage || null,
+    contentCost: row.deliveryPackage.contentCost?.toString() || "0.00",
+  }]));
+}
+
+async function applyTrustedOrderItemWeights(database: any, items: Array<{
+  productId: number;
+  productType?: string | null;
+  variationId?: number | null;
+  unitWeight?: string | null;
+}>) {
+  const productIds = Array.from(new Set(items.map((item) => item.productId).filter(Boolean)));
+  const variantIds = Array.from(new Set(items.flatMap((item) => item.variationId ? [item.variationId] : [])));
+  const productRows = productIds.length > 0
+    ? await database.select({ id: products.id, weightKg: products.weightKg }).from(products).where(inArray(products.id, productIds))
+    : [];
+  const variantRows = variantIds.length > 0
+    ? await database.select({ id: variants.id, productId: variants.productId, weight: variants.weight }).from(variants).where(inArray(variants.id, variantIds))
+    : [];
+  const productWeightById = new Map<number, string | number | null>(productRows.map((row: any) => [Number(row.id), row.weightKg as string | number | null]));
+  const variantWeightById = new Map<number, string | number | null>(variantRows.map((row: any) => [Number(row.id), row.weight as string | number | null]));
+  for (const item of items) {
+    item.unitWeight = resolveOrderItemUnitWeight({
+      productType: item.productType,
+      variantWeight: item.variationId ? variantWeightById.get(item.variationId) : null,
+      productWeight: productWeightById.get(item.productId),
+    }).toFixed(2);
+  }
+}
 
 /**
  * Appends channel-specific item snapshots to an already validated unpaid XT
@@ -1258,6 +1338,8 @@ export async function appendItemsToUnpaidLocalOrder(params: {
     throw new Error("目标 XT 订单已有付款凭证或已确认付款，不能自动合并");
   }
 
+  await applyTrustedOrderItemWeights(db, params.items);
+
   const stockItems = params.items
     .filter((item) => isStockManagedProductType(item.productType || "physical"))
     .map((item) => ({ productId: item.productId, quantity: item.quantity, productType: item.productType }));
@@ -1268,6 +1350,7 @@ export async function appendItemsToUnpaidLocalOrder(params: {
   for (const item of params.items) {
     await db.insert(orderItems).values({
       orderId: params.targetOrderId,
+      unitWeight: item.unitWeight || "0.50",
       productId: item.productId,
       productName: item.productName,
       productSku: item.productSku || null,
@@ -1284,6 +1367,10 @@ export async function appendItemsToUnpaidLocalOrder(params: {
       priceType: item.priceType || "retail",
       unitCost: item.unitCost || "0.00",
       originalUnitPrice: item.originalUnitPrice || null,
+      virtualPackageId: item.virtualPackageId || null,
+      virtualDeliveryLinkSnapshot: item.virtualDeliveryLinkSnapshot || null,
+      virtualDeliveryMessageSnapshot: item.virtualDeliveryMessageSnapshot || null,
+      virtualContentCostSnapshot: item.virtualContentCostSnapshot || null,
     });
     if (params.allocateFifoCost && item.productId && (item.productType || "physical") === "physical") {
       await allocateFifoCostForSale({
@@ -1296,13 +1383,12 @@ export async function appendItemsToUnpaidLocalOrder(params: {
   }
 
   const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, params.targetOrderId));
-  const breakdown = calculateOrderPriceBreakdown(allItems, {
+  const breakdown = await calculateOrderPriceBreakdownByProductCategory(db, allItems, {
     promotionDiscount: order.promotionDiscount,
     discountAmount: order.discountAmount,
   });
-  const totalWeight = allItems
-    .filter((item) => item.productType === "physical" || item.productType === "gift")
-    .reduce((sum, item) => sum + (Number(item.unitWeight || 0) || 0.5) * Number(item.quantity || 0), 0);
+  const totalWeight = calculateOrderItemWeight(allItems
+    .filter((item) => item.productType === "physical" || item.productType === "gift"));
   const membershipSubtotal = Number(order.membershipSubtotal || 0);
   const promotionDiscount = Number(order.promotionDiscount || 0);
   const discountAmount = Number(order.discountAmount || 0);
@@ -1493,6 +1579,7 @@ export async function createOrderWithSplit(data: {
     unitCost?: string;
     originalUnitPrice?: string;
     isSpecial?: boolean;
+    unitWeight?: string;
   }>;
   shippingAddress?: string;
   shippingMethod?: string;
@@ -1546,6 +1633,8 @@ export async function createOrderWithSplit(data: {
   }
 
   await applyTrustedSpecialPriceSnapshots(db, data.items);
+  await applyTrustedOrderItemWeights(db, data.items);
+  const virtualDeliverySnapshots = await getVirtualDeliverySnapshotsForVariants(data.items.map((item) => item.variationId));
 
   const mergeTarget = data.orderCategory === "import"
     ? await findMergeableUnpaidImportLiveOrder(data.customerId, data.liveRoomId!)
@@ -1565,21 +1654,28 @@ export async function createOrderWithSplit(data: {
       operationType: data.orderCategory === "import" ? "import_manual_merge" : "cross_channel_merge",
       operationBy: data.orderSource || "后台建单",
       allocateFifoCost: true,
-      items: data.items.map((item) => ({
-        productId: item.productId,
-        productName: item.productName,
-        productType: item.productType,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        subtotal: item.subtotal,
-        variationId: item.variationId || null,
-        variationName: item.variationName || null,
-        itemSource,
-        salesMode: data.orderCategory === "import" ? "import_preorder" : "normal",
-        priceType: (item.priceType as any) || "retail",
-        unitCost: item.unitCost || "0",
-        originalUnitPrice: item.originalUnitPrice || null,
-      })),
+      items: data.items.map((item) => {
+        const virtualSnapshot = item.variationId ? virtualDeliverySnapshots.get(item.variationId) : undefined;
+        return {
+          productId: item.productId,
+          productName: item.productName,
+          productType: item.productType,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          subtotal: item.subtotal,
+          variationId: item.variationId || null,
+          variationName: item.variationName || null,
+          itemSource,
+          salesMode: data.orderCategory === "import" ? "import_preorder" : "normal",
+          priceType: (item.priceType as any) || "retail",
+          unitCost: item.unitCost || "0",
+          originalUnitPrice: item.originalUnitPrice || null,
+          virtualPackageId: virtualSnapshot?.packageId || null,
+          virtualDeliveryLinkSnapshot: virtualSnapshot?.deliveryLink || null,
+          virtualDeliveryMessageSnapshot: virtualSnapshot?.deliveryMessage || null,
+          virtualContentCostSnapshot: virtualSnapshot?.contentCost || null,
+        };
+      }),
     });
     return { ...mergedOrder, creditUsed: "0.00", creditRemaining: (await getCustomerById(data.customerId))?.creditBalance?.toString() || "0.00", merged: true };
   }
@@ -1590,16 +1686,15 @@ export async function createOrderWithSplit(data: {
   const discountAmountNum = parseFloat(data.discountAmount || "0");
   const extraChargeNum = parseFloat(data.extraCharge || "0");
   const creditUsedNum = parseFloat(data.creditUsed || "0");
-  const priceBreakdown = calculateOrderPriceBreakdown(data.items, {
+  const priceBreakdown = await calculateOrderPriceBreakdownByProductCategory(db, data.items, {
     promotionDiscount: promotionDiscountNum,
     discountAmount: discountAmountNum,
   });
   const { physicalSubtotal, membershipSubtotal, freeShippingEligibleSubtotal } = priceBreakdown;
   
+  const totalWeight = calculateOrderItemWeight(data.items
+    .filter((item) => item.productType === "physical" || item.productType === "gift"));
   if (hasPhysical && data.shippingMethod === "west_malaysia") {
-    const totalWeight = data.items
-      .filter(i => i.productType === "physical" || i.productType === "gift")
-      .reduce((sum, i) => sum + 0.5 * i.quantity, 0);
     const shipResult = calculateWestMalaysiaShipping(totalWeight, freeShippingEligibleSubtotal);
     shippingFee = shipResult.shippingFee;
   } else if (hasPhysical && data.shippingMethod === "east_malaysia_poslaju") {
@@ -1648,6 +1743,7 @@ export async function createOrderWithSplit(data: {
     membershipSubtotal: membershipSubtotal.toFixed(2),
     shippingFee: shippingFee.toFixed(2),
     customerPaidShipping: shippingFee.toFixed(2),
+    totalWeight: totalWeight.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
     physicalStatus: "pending",
     importStatus: data.orderCategory === "import" ? "pending" : null,
@@ -1689,8 +1785,10 @@ export async function createOrderWithSplit(data: {
 
     // Insert order items
   for (const item of data.items) {
+    const virtualSnapshot = item.variationId ? virtualDeliverySnapshots.get(item.variationId) : undefined;
     await db.insert(orderItems).values({
       orderId,
+      unitWeight: item.unitWeight || "0.50",
       productId: item.productId,
       productName: item.productName,
       productType: item.productType as any,
@@ -1702,6 +1800,10 @@ export async function createOrderWithSplit(data: {
       priceType: (item.priceType as any) || "retail",
       unitCost: item.unitCost || "0",
       originalUnitPrice: item.originalUnitPrice || null,
+      virtualPackageId: virtualSnapshot?.packageId || null,
+      virtualDeliveryLinkSnapshot: virtualSnapshot?.deliveryLink || null,
+      virtualDeliveryMessageSnapshot: virtualSnapshot?.deliveryMessage || null,
+      virtualContentCostSnapshot: virtualSnapshot?.contentCost || null,
     });
     // Stock was atomically reserved before the order was created.
     if (item.productType === "physical" && item.productId) {
@@ -1792,6 +1894,19 @@ if (data.physicalStatus === "packing") updateData.paymentConfirmedAt = new Date(
   }
 
   await db.update(orders).set(updateData).where(eq(orders.id, id));
+
+  // 虚拟商品与实体商品可同单结账。确认付款后只建立一次可追踪交付任务；
+  // Meta 自动私聊尚未接入，因此任务先进入待人工发送队列。
+  const paidOrderItems = data.physicalStatus === "packing"
+    ? await db.select({ productType: orderItems.productType }).from(orderItems).where(eq(orderItems.orderId, id))
+    : [];
+  if (shouldCreateManualDeliveryTask({
+    previousPhysicalStatus: existingOrder[0].physicalStatus,
+    nextPhysicalStatus: data.physicalStatus,
+    hasVirtualItems: paidOrderItems.some((item) => item.productType === "membership"),
+  })) {
+    await createVirtualDeliveryTasksForPaidOrder(id);
+  }
 
   // Log status change
   const oldOrder = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
@@ -2073,22 +2188,20 @@ export async function updateOrderItems(orderId: number, items: Array<{
 
   // Recalculate totals
   const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
-  const physicalSubtotal = allItems
-    .filter((item: any) => item.productType === "physical" || item.productType === "gift")
-    .reduce((sum, item) => sum + parseFloat(item.subtotal || "0"), 0);
-  const totalWeight = allItems
-    .filter((item: any) => item.productType === "physical" || item.productType === "gift")
-    .reduce((sum, item) => sum + 0.5 * Number(item.quantity || 0), 0);
-  const specialSubtotal = allItems
-    .filter((item: any) => item.priceType === "special")
-    .reduce((sum, item) => sum + parseFloat(item.subtotal || "0"), 0);
+  const priceBreakdown = await calculateOrderPriceBreakdownByProductCategory(db, allItems, {
+    promotionDiscount: target[0].promotionDiscount,
+    discountAmount: target[0].discountAmount,
+  });
+  const physicalSubtotal = priceBreakdown.physicalSubtotal;
+  const totalWeight = calculateOrderItemWeight(allItems
+    .filter((item: any) => item.productType === "physical" || item.productType === "gift"));
 
   const membershipSubtotal = parseFloat(target[0].membershipSubtotal || "0");
   const promotionDiscount = parseFloat(target[0].promotionDiscount || "0");
   const discountAmount = parseFloat(target[0].discountAmount || "0");
   const extraCharge = parseFloat(target[0].extraCharge || "0");
   const creditUsed = parseFloat(target[0].creditUsed || "0");
-  const eligibleSubtotal = physicalSubtotal + membershipSubtotal - specialSubtotal - promotionDiscount - discountAmount;
+  const eligibleSubtotal = priceBreakdown.freeShippingEligibleSubtotal;
 
   let shippingFee = 0;
   if (target[0].shippingMethod === "west_malaysia") {
@@ -3851,9 +3964,8 @@ export async function createPurchaseOrder(data: {
 export async function receivePurchaseOrder(poId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
   return await (db as any).transaction(async (tx: any) => {
-    const [purchaseOrder] = await tx.select({ status: purchaseOrders.status })
+    const [purchaseOrder] = await tx.select({ status: purchaseOrders.status, poNumber: purchaseOrders.poNumber })
       .from(purchaseOrders).where(eq(purchaseOrders.id, poId)).limit(1);
     if (!purchaseOrder) throw new Error("进货单不存在");
 
@@ -3874,14 +3986,35 @@ export async function receivePurchaseOrder(poId: number) {
     for (const item of items) {
       // Gifts and physical goods share the same received-stock path. A gift's
       // reservedQuantity is intentionally unchanged because receipt adds on-hand stock.
+      const [productBefore] = await tx.select({ stockQuantity: products.stockQuantity })
+        .from(products).where(eq(products.id, item.productId)).limit(1);
+      const productStockBefore = Number(productBefore?.stockQuantity ?? 0);
       await tx.update(products).set({
         stockQuantity: sql`${products.stockQuantity} + ${item.quantity}`,
       }).where(eq(products.id, item.productId));
+      let stockBefore = productStockBefore;
+      let stockAfter = productStockBefore + item.quantity;
       if (item.variantId) {
+        const [variantBefore] = await tx.select({ stockQuantity: variants.stockQuantity })
+          .from(variants).where(eq(variants.id, item.variantId)).limit(1);
+        stockBefore = Number(variantBefore?.stockQuantity ?? 0);
+        stockAfter = stockBefore + item.quantity;
         await tx.update(variants).set({
           stockQuantity: sql`${variants.stockQuantity} + ${item.quantity}`,
         }).where(eq(variants.id, item.variantId));
       }
+      await tx.insert(inventoryMovementLogs).values(buildInventoryMovementRecord({
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+        movementType: "purchase_receipt",
+        quantityChange: item.quantity,
+        stockBefore,
+        stockAfter,
+        referenceType: "purchase_order",
+        referenceId: poId,
+        reason: `进货单 ${purchaseOrder.poNumber} 确认收货`,
+        operator: "系统",
+      }));
     }
     return { poId, alreadyReceived: false };
   });
@@ -3981,7 +4114,10 @@ export async function quickRestockProduct(data: {
     unitCost,
     totalCost: totalAmount,
     adjustedBy: data.adjustedBy,
-    reason: "后台建单快捷补货",
+    movementType: "purchase_receipt",
+    referenceType: "purchase_order",
+    referenceId: poId,
+    reason: `进货单 ${poNumber} 快捷补货收货`,
     remark: `${supplier.name}｜${fullRemark}`,
   });
 
@@ -4385,6 +4521,9 @@ export async function getProductsEnhanced(params: {
   }
   if (params.type) {
     conditions.push(eq(products.type, params.type as any));
+  } else {
+    // 日常商品管理只处理实体商品与赠品；会员、课程与资料包由独立虚拟交付菜单管理。
+    conditions.push(inArray(products.type, ["physical", "gift"] as const));
   }
   if (params.isFeatured !== undefined) {
     conditions.push(eq(products.isFeatured, params.isFeatured));
@@ -4442,6 +4581,7 @@ export async function getProductsEnhanced(params: {
     keyword: string;
     stockQuantity: number | null;
     status: string;
+    sellingPrice: string | null;
   }>> = {};
   if (productIds.length > 0) {
     const variantSummaries = await db.select({
@@ -4451,6 +4591,7 @@ export async function getProductsEnhanced(params: {
       keyword: variants.keyword,
       stockQuantity: variants.stockQuantity,
       status: variants.status,
+      sellingPrice: variants.sellingPrice,
     })
       .from(variants)
       .where(inArray(variants.productId, productIds))
@@ -4712,6 +4853,7 @@ export async function createProductEnhanced(data: {
     sellingPrice?: string;
     compareAtPrice?: string;
     memberPrice?: string;
+    weight?: string;
     status?: string;
     sortOrder?: number;
     imageUrl?: string;
@@ -5093,6 +5235,294 @@ export async function updateVariant(id: number, data: Partial<{
     updateData.keyword = data.keyword.toUpperCase().replace(/\s+/g, '');
   }
   await db.update(variants).set(updateData).where(eq(variants.id, id));
+}
+
+// ============================================================================
+// Virtual Delivery (会员／课程／资料包)
+// ============================================================================
+
+export async function listVirtualDeliveryProducts() {
+  const database = await getDb();
+  if (!database) return [];
+  const rows = await database.select({
+    virtual: virtualDeliveryProducts,
+    product: products,
+  }).from(virtualDeliveryProducts)
+    .innerJoin(products, eq(virtualDeliveryProducts.productId, products.id))
+    .orderBy(desc(virtualDeliveryProducts.createdAt));
+
+  const virtualProductIds = rows.map((row) => row.virtual.id);
+  const packagesRows = virtualProductIds.length === 0 ? [] : await database.select({
+    deliveryPackage: virtualDeliveryPackages,
+    variant: variants,
+  }).from(virtualDeliveryPackages)
+    .innerJoin(variants, eq(virtualDeliveryPackages.variantId, variants.id))
+    .where(inArray(virtualDeliveryPackages.virtualProductId, virtualProductIds))
+    .orderBy(asc(virtualDeliveryPackages.sortOrder), asc(virtualDeliveryPackages.id));
+
+  const packagesByProduct = new Map<number, typeof packagesRows>();
+  for (const packageRow of packagesRows) {
+    const list = packagesByProduct.get(packageRow.deliveryPackage.virtualProductId) || [];
+    list.push(packageRow);
+    packagesByProduct.set(packageRow.deliveryPackage.virtualProductId, list);
+  }
+  return rows.map((row) => ({
+    ...row.virtual,
+    product: row.product,
+    packages: packagesByProduct.get(row.virtual.id) || [],
+  }));
+}
+
+export async function createVirtualDeliveryProduct(data: {
+  name: string;
+  deliveryType: "membership" | "course" | "resource";
+  description?: string;
+  defaultDeliveryMessage?: string;
+  coverImageUrl?: string;
+  allowMixedCheckout: boolean;
+  syncToMall: boolean;
+  packages: Array<{
+    name: string;
+    sellingPrice: string;
+    contentCost: string;
+    deliveryLink?: string;
+    deliveryMessage?: string;
+    imageUrl?: string;
+  }>;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const packages = data.packages.map((item) => ({ ...item, name: item.name.trim() || (data.packages.length === 1 ? data.name.trim() : "") }));
+  if (packages.length === 0) throw new Error("请至少建立一个交付配套");
+  const packageNames = packages.map((item) => item.name.trim()).filter(Boolean);
+  if (packageNames.length !== packages.length || new Set(packageNames).size !== packageNames.length) {
+    throw new Error("每个交付配套都必须有不重复的名称");
+  }
+
+  const stamp = Date.now().toString().slice(-8);
+  const productSku = `VD-${stamp}`;
+  const productKeyword = `VD${stamp}`;
+  return await database.transaction(async (tx) => {
+    const productResult = await tx.insert(products).values({
+      name: data.name.trim(),
+      type: "membership",
+      productMode: "variant",
+      keyword: productKeyword,
+      sku: productSku,
+      status: "active",
+      visibility: "public",
+      priceVisibility: "show",
+      shortDescZh: data.description || null,
+      fullDescZh: data.description || null,
+      description: data.description || null,
+      coverImageUrl: data.coverImageUrl || null,
+      sellingPrice: packages[0].sellingPrice,
+      currentCost: "0.00",
+      stockQuantity: 0,
+      weightKg: "0.00",
+      allowStandalonePurchase: true,
+      allowMixedCheckout: data.allowMixedCheckout,
+      syncToMall: data.syncToMall,
+      isFeatured: false,
+      isSpecial: false,
+      allowPresale: false,
+      allowOversold: false,
+    });
+    const productId = Number((productResult as any)[0].insertId);
+    const virtualResult = await tx.insert(virtualDeliveryProducts).values({
+      productId,
+      deliveryType: data.deliveryType,
+      defaultDeliveryMessage: data.defaultDeliveryMessage || null,
+      allowMixedCheckout: data.allowMixedCheckout,
+      isActive: true,
+    });
+    const virtualProductId = Number((virtualResult as any)[0].insertId);
+
+    const createdPackages = [] as Array<{ id: number; variantId: number }>;
+    for (let index = 0; index < packages.length; index += 1) {
+      const item = packages[index];
+      const variantResult = await tx.insert(variants).values({
+        productId,
+        name: item.name.trim(),
+        keyword: `${productKeyword}${index + 1}`,
+        sku: `${productSku}-${String(index + 1).padStart(2, "0")}`,
+        sellingPrice: item.sellingPrice,
+        currentCost: item.contentCost || "0.00",
+        weight: "0.00",
+        status: "active",
+        visibility: "public",
+        imageUrl: item.imageUrl || null,
+        sortOrder: index,
+        stockQuantity: 0,
+      });
+      const variantId = Number((variantResult as any)[0].insertId);
+      const packageResult = await tx.insert(virtualDeliveryPackages).values({
+        virtualProductId,
+        variantId,
+        name: item.name.trim(),
+        deliveryLink: item.deliveryLink || null,
+        deliveryMessage: item.deliveryMessage || data.defaultDeliveryMessage || null,
+        contentCost: item.contentCost || "0.00",
+        isActive: true,
+        sortOrder: index,
+      });
+      createdPackages.push({ id: Number((packageResult as any)[0].insertId), variantId });
+    }
+    broadcastChanges(["all"]);
+    return { productId, virtualProductId, packages: createdPackages };
+  });
+}
+
+export async function updateVirtualDeliveryPackage(id: number, data: {
+  name?: string;
+  sellingPrice?: string;
+  contentCost?: string;
+  deliveryLink?: string | null;
+  deliveryMessage?: string | null;
+  imageUrl?: string | null;
+  isActive?: boolean;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const current = await database.select().from(virtualDeliveryPackages).where(eq(virtualDeliveryPackages.id, id)).limit(1);
+  if (!current[0]) throw new Error("交付配套不存在");
+  const packageUpdate: Record<string, unknown> = {};
+  if (data.name !== undefined) packageUpdate.name = data.name.trim();
+  if (data.contentCost !== undefined) packageUpdate.contentCost = data.contentCost || "0.00";
+  if (data.deliveryLink !== undefined) packageUpdate.deliveryLink = data.deliveryLink || null;
+  if (data.deliveryMessage !== undefined) packageUpdate.deliveryMessage = data.deliveryMessage || null;
+  if (data.isActive !== undefined) packageUpdate.isActive = data.isActive;
+  if (Object.keys(packageUpdate).length > 0) {
+    await database.update(virtualDeliveryPackages).set(packageUpdate as any).where(eq(virtualDeliveryPackages.id, id));
+  }
+  const variantUpdate: Record<string, unknown> = {};
+  if (data.name !== undefined) variantUpdate.name = data.name.trim();
+  if (data.sellingPrice !== undefined) variantUpdate.sellingPrice = data.sellingPrice || null;
+  if (data.contentCost !== undefined) variantUpdate.currentCost = data.contentCost || "0.00";
+  if (data.imageUrl !== undefined) variantUpdate.imageUrl = data.imageUrl || null;
+  if (data.isActive !== undefined) variantUpdate.status = data.isActive ? "active" : "inactive";
+  if (Object.keys(variantUpdate).length > 0) {
+    await database.update(variants).set(variantUpdate as any).where(eq(variants.id, current[0].variantId));
+  }
+  broadcastChanges(["all"]);
+}
+
+export async function updateVirtualDeliveryProduct(id: number, data: {
+  name?: string;
+  description?: string | null;
+  defaultDeliveryMessage?: string | null;
+  coverImageUrl?: string | null;
+  allowMixedCheckout?: boolean;
+  syncToMall?: boolean;
+  isActive?: boolean;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const current = await database.select().from(virtualDeliveryProducts).where(eq(virtualDeliveryProducts.id, id)).limit(1);
+  if (!current[0]) throw new Error("虚拟交付商品不存在");
+
+  const virtualUpdate: Record<string, unknown> = {};
+  if (data.defaultDeliveryMessage !== undefined) virtualUpdate.defaultDeliveryMessage = data.defaultDeliveryMessage || null;
+  if (data.allowMixedCheckout !== undefined) virtualUpdate.allowMixedCheckout = data.allowMixedCheckout;
+  if (data.isActive !== undefined) virtualUpdate.isActive = data.isActive;
+  if (Object.keys(virtualUpdate).length > 0) {
+    await database.update(virtualDeliveryProducts).set(virtualUpdate as any).where(eq(virtualDeliveryProducts.id, id));
+  }
+
+  const productUpdate: Record<string, unknown> = {};
+  if (data.name !== undefined) productUpdate.name = data.name.trim();
+  if (data.description !== undefined) {
+    productUpdate.shortDescZh = data.description || null;
+    productUpdate.fullDescZh = data.description || null;
+    productUpdate.description = data.description || null;
+  }
+  if (data.coverImageUrl !== undefined) productUpdate.coverImageUrl = data.coverImageUrl || null;
+  if (data.allowMixedCheckout !== undefined) productUpdate.allowMixedCheckout = data.allowMixedCheckout;
+  if (data.syncToMall !== undefined) productUpdate.syncToMall = data.syncToMall;
+  if (data.isActive !== undefined) productUpdate.status = data.isActive ? "active" : "inactive";
+  if (Object.keys(productUpdate).length > 0) {
+    await database.update(products).set(productUpdate as any).where(eq(products.id, current[0].productId));
+  }
+  broadcastChanges(["all"]);
+}
+
+export async function listVirtualDeliveryTasks(status?: "pending_manual" | "sent" | "failed" | "cancelled") {
+  const database = await getDb();
+  if (!database) return [];
+  const conditions = status ? eq(virtualDeliveryTasks.status, status) : undefined;
+  return await database.select({
+    task: virtualDeliveryTasks,
+    order: orders,
+    customer: customers,
+  }).from(virtualDeliveryTasks)
+    .innerJoin(orders, eq(virtualDeliveryTasks.orderId, orders.id))
+    .innerJoin(customers, eq(virtualDeliveryTasks.customerId, customers.id))
+    .where(conditions)
+    .orderBy(desc(virtualDeliveryTasks.createdAt));
+}
+
+export async function markVirtualDeliveryTaskSent(id: number, sentByUserId: number, notes?: string) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  await database.update(virtualDeliveryTasks).set({
+    status: "sent",
+    sentAt: new Date(),
+    sentByUserId,
+    manualNotes: notes || null,
+    failureReason: null,
+  }).where(eq(virtualDeliveryTasks.id, id));
+  broadcastChanges(["orders", "dashboard"]);
+}
+
+export async function createVirtualDeliveryTasksForPaidOrder(orderId: number) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const order = await database.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order[0]) return { created: 0 };
+  const items = await database.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const candidateProductIds = items.map((item) => item.productId);
+  if (candidateProductIds.length === 0) return { created: 0 };
+  const virtualProducts = await database.select().from(virtualDeliveryProducts)
+    .where(inArray(virtualDeliveryProducts.productId, candidateProductIds));
+  if (virtualProducts.length === 0) return { created: 0 };
+  const byProduct = new Map(virtualProducts.map((item) => [item.productId, item]));
+  const virtualIds = virtualProducts.map((item) => item.id);
+  const packages = await database.select().from(virtualDeliveryPackages)
+    .where(inArray(virtualDeliveryPackages.virtualProductId, virtualIds));
+  let created = 0;
+  for (const item of items) {
+    const virtualProduct = byProduct.get(item.productId);
+    if (!virtualProduct) continue;
+    const deliveryPackage = packages.find((candidate) => candidate.id === item.virtualPackageId || candidate.variantId === item.variationId);
+    const costPerUnit = item.virtualContentCostSnapshot ?? deliveryPackage?.contentCost ?? "0";
+    const figures = calculateVirtualDeliveryProfit({
+      quantity: item.quantity,
+      subtotal: item.subtotal,
+      itemDiscount: item.discount,
+      marketingDiscount: item.marketingDiscount,
+      contentCostPerUnit: costPerUnit,
+    });
+    await database.insert(virtualDeliveryTasks).values({
+      orderId,
+      orderItemId: item.id,
+      customerId: order[0].customerId,
+      virtualProductId: virtualProduct.id,
+      virtualPackageId: deliveryPackage?.id || item.virtualPackageId || null,
+      deliveryType: virtualProduct.deliveryType,
+      productNameSnapshot: item.productName,
+      packageNameSnapshot: item.variationName || deliveryPackage?.name || null,
+      deliveryLinkSnapshot: item.virtualDeliveryLinkSnapshot || deliveryPackage?.deliveryLink || null,
+      deliveryMessageSnapshot: item.virtualDeliveryMessageSnapshot || deliveryPackage?.deliveryMessage || virtualProduct.defaultDeliveryMessage || null,
+      quantity: item.quantity,
+      revenueNet: figures.revenueNet,
+      contentCostSnapshot: figures.contentCost,
+      profitAmount: figures.profitAmount,
+      status: "pending_manual",
+    }).onDuplicateKeyUpdate({ set: { orderItemId: item.id } });
+    created += 1;
+  }
+  if (created > 0) broadcastChanges(["orders", "dashboard"]);
+  return { created };
 }
 
 export async function deleteVariant(id: number) {
@@ -6337,7 +6767,7 @@ export async function recalculateOrderTotals(orderId: number) {
   const order = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!order[0]) return null;
   
-  const priceBreakdown = calculateOrderPriceBreakdown(items, {
+  const priceBreakdown = await calculateOrderPriceBreakdownByProductCategory(db, items, {
     promotionDiscount: order[0].promotionDiscount,
     discountAmount: totalDiscount,
   });
@@ -6598,6 +7028,7 @@ export async function getMallProducts(filters?: { categoryId?: number; search?: 
     .orderBy(asc(products.mallSortOrder), desc(products.createdAt));
   const productIds = rows.map(({ product }) => product.id);
   const galleryImageMap: Record<number, string[]> = {};
+  const variantPriceRangeMap: Record<number, { min: number; max: number }> = {};
   if (productIds.length > 0) {
     const galleryImages = await db.select({ productId: productImages.productId, url: productImages.url })
       .from(productImages)
@@ -6606,12 +7037,30 @@ export async function getMallProducts(filters?: { categoryId?: number; search?: 
     for (const image of galleryImages) {
       (galleryImageMap[image.productId] ||= []).push(image.url);
     }
+    const mallVariants = await db.select({
+      productId: variants.productId,
+      sellingPrice: variants.sellingPrice,
+    }).from(variants).where(and(
+      inArray(variants.productId, productIds),
+      eq(variants.status, "active"),
+      eq(variants.visibility, "public"),
+    ));
+    for (const variant of mallVariants) {
+      const price = Number(variant.sellingPrice);
+      if (!Number.isFinite(price) || price < 0) continue;
+      const range = variantPriceRangeMap[variant.productId];
+      variantPriceRangeMap[variant.productId] = range
+        ? { min: Math.min(range.min, price), max: Math.max(range.max, price) }
+        : { min: price, max: price };
+    }
   }
   return rows.map(({ product, unitNameZh, unitNameEn }) => ({
     ...product,
     unitNameZh,
     unitNameEn,
     galleryImageUrls: galleryImageMap[product.id] || [],
+    variantPriceMin: variantPriceRangeMap[product.id]?.min ?? null,
+    variantPriceMax: variantPriceRangeMap[product.id]?.max ?? null,
   }));
 }
 
@@ -6622,13 +7071,15 @@ export async function getMallProductById(id: number) {
     product: products,
     unitNameZh: units.nameZh,
     unitNameEn: units.nameEn,
+    categoryNameZh: categories.nameZh,
   })
     .from(products)
     .leftJoin(units, eq(products.unitId, units.id))
+    .leftJoin(categories, eq(products.categoryId, categories.id))
     .where(and(eq(products.id, id), eq(products.syncToMall, true)))
     .limit(1);
   const row = result[0];
-  return row ? { ...row.product, unitNameZh: row.unitNameZh, unitNameEn: row.unitNameEn } : undefined;
+  return row ? { ...row.product, unitNameZh: row.unitNameZh, unitNameEn: row.unitNameEn, categoryNameZh: row.categoryNameZh } : undefined;
 }
 
 export async function getMallProductVariants(productId: number) {
@@ -6693,6 +7144,8 @@ export async function mallCheckout(data: {
     isStandalone?: boolean;
     priceType?: string;
     originalUnitPrice?: string | null;
+    productType?: "physical" | "membership" | "gift";
+    unitWeight?: string;
   }>;
   paymentMethodId?: number;
   paymentMethodName?: string;
@@ -6722,6 +7175,16 @@ export async function mallCheckout(data: {
     item.isSpecial = true;
   }
   await applyTrustedSpecialPriceSnapshots(db, data.items, { useProductSpecialPrice: true });
+  const checkoutProductIds = data.items.map((item) => item.productId).filter(Boolean);
+  const checkoutProducts = checkoutProductIds.length === 0 ? [] : await db.select({ id: products.id, type: products.type })
+    .from(products).where(inArray(products.id, checkoutProductIds));
+  const checkoutTypeByProduct = new Map(checkoutProducts.map((product) => [product.id, product.type]));
+  for (const item of data.items) {
+    // 客户端只提供展示提示；库存及履约必须以数据库中的商品类型为准。
+    item.productType = (checkoutTypeByProduct.get(item.productId) || "physical") as "physical" | "membership" | "gift";
+  }
+  await applyTrustedOrderItemWeights(db, data.items);
+  const mallVirtualSnapshots = await getVirtualDeliverySnapshotsForVariants(data.items.map((item) => item.variationId));
   const regularItems = data.items.filter((item) => !item.bundleId);
 
   // Find or create customer
@@ -6750,10 +7213,10 @@ export async function mallCheckout(data: {
   // Calculate totals
   const subtotal = data.items.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
   // V2.2: Exclude standalone items from normal shipping calculation
-  const normalItems = data.items.filter(i => !i.isStandalone);
+  const normalItems = data.items.filter(i => (i.productType === "physical" || i.productType === "gift") && !i.isStandalone);
   const standaloneItems = data.items.filter(i => i.isStandalone);
   // Weight for shipping: only normal (non-standalone) items
-  const totalWeight = normalItems.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
+  const totalWeight = calculateOrderItemWeight(normalItems);
   // V2.1: Free shipping threshold excludes special-price items
   const specialSubtotal = data.items.filter(i => i.isSpecial).reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
   const normalSubtotal = normalItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
@@ -6815,7 +7278,7 @@ export async function mallCheckout(data: {
     throw new Error("所选订单已有付款或已进入包货／发货流程，不能继续自动合单");
   }
   if (mergeTarget) {
-    await reserveProductStocksForOrder(regularItems);
+    await reserveProductStocksForOrder(regularItems.filter((item) => isStockManagedProductType(item.productType || "physical")));
     const mergedOrder = await appendItemsToUnpaidLocalOrder({
       customerId: customer.id,
       targetOrderId: mergeTarget.id,
@@ -6827,7 +7290,7 @@ export async function mallCheckout(data: {
         productId: item.productId,
         productName: item.productName,
         productSku: item.productSku || null,
-        productType: "physical" as const,
+        productType: item.productType || "physical",
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         subtotal: item.subtotal,
@@ -6839,6 +7302,10 @@ export async function mallCheckout(data: {
         salesMode: resolvedCategory === "import" ? "import_preorder" as const : "normal" as const,
         priceType: item.isSpecial ? "special" as const : "retail" as const,
         originalUnitPrice: item.originalUnitPrice || null,
+        virtualPackageId: item.variationId ? mallVirtualSnapshots.get(item.variationId)?.packageId || null : null,
+        virtualDeliveryLinkSnapshot: item.variationId ? mallVirtualSnapshots.get(item.variationId)?.deliveryLink || null : null,
+        virtualDeliveryMessageSnapshot: item.variationId ? mallVirtualSnapshots.get(item.variationId)?.deliveryMessage || null : null,
+        virtualContentCostSnapshot: item.variationId ? mallVirtualSnapshots.get(item.variationId)?.contentCost || null : null,
       })),
     });
 
@@ -6850,7 +7317,7 @@ export async function mallCheckout(data: {
 
   // Create new order
   // V2.1.04: Use resolveOrderCategory for unified routing
-  await reserveProductStocksForOrder(regularItems);
+  await reserveProductStocksForOrder(regularItems.filter((item) => isStockManagedProductType(item.productType || "physical")));
   const isImport = resolvedCategory === "import";
   const orderPrefix = isImport ? "XTC" : "XT";
   const orderNumber = await generateOrderNumber(orderPrefix);
@@ -6861,15 +7328,16 @@ export async function mallCheckout(data: {
     secureToken,
     checkoutLink,
     customerId: customer.id,
-    orderType: "physical",
+    orderType: data.items.some((item) => item.productType === "membership") && data.items.some((item) => item.productType === "physical" || item.productType === "gift") ? "mixed" : data.items.some((item) => item.productType === "membership") ? "membership" : "physical",
     orderCategory: resolvedCategory,
     importStatus: isImport ? "pending" : null,
-    physicalSubtotal: (subtotal - marketingDiscount).toFixed(2),
-    membershipSubtotal: "0.00",
+    physicalSubtotal: data.items.filter((item) => item.productType === "physical" || item.productType === "gift").reduce((sum, item) => sum + Number(item.subtotal || 0), 0).toFixed(2),
+    membershipSubtotal: data.items.filter((item) => item.productType === "membership").reduce((sum, item) => sum + Number(item.subtotal || 0), 0).toFixed(2),
     shippingFee: shippingFee.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
     totalWeight: totalWeight.toFixed(2),
     physicalStatus: "pending",
+    membershipStatus: data.items.some((item) => item.productType === "membership") ? "pending" : null,
     shippingAddress,
     shippingMethod: data.shippingMethod as any,
     orderSource: "store",
@@ -6892,21 +7360,27 @@ export async function mallCheckout(data: {
   const orderId = (orderResult as any)[0].insertId;
 
   for (const item of data.items) {
+    const virtualSnapshot = item.variationId ? mallVirtualSnapshots.get(item.variationId) : undefined;
     await db.insert(orderItems).values({
-      orderId,
-      productId: item.productId,
-      productName: item.productName,
-      productSku: item.productSku || null,
-      productType: "physical",
-      quantity: item.quantity,
+     orderId,
+      unitWeight: item.unitWeight || "0.50",
+     productId: item.productId,
+     productName: item.productName,
+     productSku: item.productSku || null,
+      productType: item.productType || "physical",
+     quantity: item.quantity,
       unitPrice: item.unitPrice,
       subtotal: item.subtotal,
       variationId: item.variationId || null,
       variationName: item.variationName || null,
-      facebookKeyword: item.facebookKeyword || null,
-      discount: item.discount || "0.00",
-      priceType: item.isSpecial ? "special" : "retail",
-      originalUnitPrice: item.originalUnitPrice || null,
+     facebookKeyword: item.facebookKeyword || null,
+     discount: item.discount || "0.00",
+     priceType: item.isSpecial ? "special" : "retail",
+     originalUnitPrice: item.originalUnitPrice || null,
+      virtualPackageId: virtualSnapshot?.packageId || null,
+      virtualDeliveryLinkSnapshot: virtualSnapshot?.deliveryLink || null,
+      virtualDeliveryMessageSnapshot: virtualSnapshot?.deliveryMessage || null,
+      virtualContentCostSnapshot: virtualSnapshot?.contentCost || null,
     });
   }
 
@@ -7021,6 +7495,7 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
   unitPrice: string;
   subtotal: string;
   isSpecial?: boolean;
+  unitWeight?: string | null;
 }>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -7061,10 +7536,12 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
       }
     }
   }
+  await applyTrustedOrderItemWeights(db, items);
   await reserveProductStocksForOrder(items);
   for (const item of items) {
     await db.insert(orderItems).values({
       orderId,
+      unitWeight: item.unitWeight || "0.50",
       productId: item.productId,
       productName: item.productName,
       productSku: item.productSku || null,
@@ -7090,14 +7567,13 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
   }
 
   const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
-  const priceBreakdown = calculateOrderPriceBreakdown(allItems, {
+  const priceBreakdown = await calculateOrderPriceBreakdownByProductCategory(db, allItems, {
     promotionDiscount: target[0].promotionDiscount,
     discountAmount: target[0].discountAmount,
   });
   const physicalSubtotal = priceBreakdown.physicalSubtotal;
-  const totalWeight = allItems
-    .filter((item: any) => item.productType === "physical" || item.productType === "gift")
-    .reduce((sum, item) => sum + 0.5 * Number(item.quantity || 0), 0);
+  const totalWeight = calculateOrderItemWeight(allItems
+    .filter((item: any) => item.productType === "physical" || item.productType === "gift"));
   const specialSubtotal = priceBreakdown.specialSubtotal;
 
   const membershipSubtotal = parseFloat(target[0].membershipSubtotal || "0");
@@ -7682,9 +8158,20 @@ export async function splitUnpaidPhysicalOrder(input: {
     .map((item) => projectItemQuantity(item, item.quantity - (requestedQuantities.get(item.id) || 0)));
   if (retainedItems.length === 0) throw new Error("请至少保留一项商品在原订单");
 
-  const calculateTotals = (items: typeof allItems) => {
-    const price = calculateOrderPriceBreakdown(items);
-    const totalWeight = items.reduce((sum, item) => sum + Number(item.unitWeight || 0) * item.quantity, 0);
+  const productIds = Array.from(new Set<number>(allItems.map((item) => item.productId).filter((id) => id > 0)));
+  const categoryRows = productIds.length > 0
+    ? await db.select({ productId: products.id, categoryNameZh: categories.nameZh })
+      .from(products).leftJoin(categories, eq(products.categoryId, categories.id))
+      .where(inArray(products.id, productIds))
+    : [];
+  const categoryNameByProductId = new Map(categoryRows.map((row: any) => [row.productId, row.categoryNameZh]));
+  const calculateTotals = (items: Array<typeof allItems[number]>) => {
+    const price = calculateOrderPriceBreakdown(items.map((item) => ({
+      ...item,
+      categoryNameZh: categoryNameByProductId.get(item.productId) ?? null,
+    })));
+    const totalWeight = calculateOrderItemWeight(items
+      .filter((item) => item.productType === "physical" || item.productType === "gift"));
     const shippingFee = source.shippingMethod === "west_malaysia"
       ? calculateWestMalaysiaShipping(totalWeight, price.freeShippingEligibleSubtotal).shippingFee
       : source.shippingMethod === "east_malaysia_poslaju" ? 50
@@ -10857,6 +11344,41 @@ export async function getInventoryAdjustments(filters?: { productId?: number; ad
   });
 }
 
+/** 商品管理使用的统一库存流水；旧手动调整仍保留在原审计表。 */
+export async function getInventoryMovementLogs(filters?: {
+  productId?: number;
+  variantId?: number;
+  dateFrom?: Date;
+  dateTo?: Date;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (filters?.productId) conditions.push(eq(inventoryMovementLogs.productId, filters.productId));
+  if (filters?.variantId) conditions.push(eq(inventoryMovementLogs.variantId, filters.variantId));
+  if (filters?.dateFrom) conditions.push(gte(inventoryMovementLogs.createdAt, filters.dateFrom));
+  if (filters?.dateTo) conditions.push(lte(inventoryMovementLogs.createdAt, filters.dateTo));
+  const movements = conditions.length > 0
+    ? await db.select().from(inventoryMovementLogs).where(and(...conditions)).orderBy(desc(inventoryMovementLogs.createdAt), desc(inventoryMovementLogs.id))
+    : await db.select().from(inventoryMovementLogs).orderBy(desc(inventoryMovementLogs.createdAt), desc(inventoryMovementLogs.id));
+  if (movements.length === 0) return [];
+
+  const productRows = await db.select({ id: products.id, name: products.name })
+    .from(products)
+    .where(inArray(products.id, Array.from(new Set(movements.map((movement) => movement.productId)))));
+  const variantIds = Array.from(new Set(movements.flatMap((movement) => movement.variantId ? [movement.variantId] : [])));
+  const variantRows = variantIds.length > 0
+    ? await db.select({ id: variants.id, name: variants.name }).from(variants).where(inArray(variants.id, variantIds))
+    : [];
+  const productNameById = new Map(productRows.map((product) => [product.id, product.name]));
+  const variantNameById = new Map(variantRows.map((variant) => [variant.id, variant.name]));
+  return movements.map((movement) => ({
+    ...movement,
+    productName: productNameById.get(movement.productId) || `商品 #${movement.productId}`,
+    variantName: movement.variantId ? (variantNameById.get(movement.variantId) || `规格 #${movement.variantId}`) : null,
+  }));
+}
+
 type InventoryAdjustmentInput = {
   productId: number;
   supplierId?: number;
@@ -10870,6 +11392,9 @@ type InventoryAdjustmentInput = {
   adjustedBy?: string;
   reason?: string;
   remark?: string;
+  movementType?: 'purchase_receipt' | 'bundle_component_deduct' | 'bundle_component_return' | 'manual_adjustment';
+  referenceType?: string;
+  referenceId?: number;
 };
 
 async function writeInventoryAdjustment(database: any, data: InventoryAdjustmentInput) {
@@ -10912,6 +11437,21 @@ async function writeInventoryAdjustment(database: any, data: InventoryAdjustment
     remark: data.remark ?? null,
   });
   const id = (result as any).insertId;
+
+  const [stockAfterRow] = await database.select({ stockQuantity: products.stockQuantity })
+    .from(products).where(eq(products.id, data.productId)).limit(1);
+  const stockAfter = Number(stockAfterRow?.stockQuantity ?? 0);
+  await database.insert(inventoryMovementLogs).values(buildInventoryMovementRecord({
+    productId: data.productId,
+    movementType: data.movementType ?? "manual_adjustment",
+    quantityChange,
+    stockBefore: stockAfter - quantityChange,
+    stockAfter,
+    referenceType: data.referenceType ?? "inventory_adjustment",
+    referenceId: data.referenceId ?? Number(id),
+    reason: data.reason ?? "管理员库存调整",
+    operator: data.adjustedBy ?? "system",
+  }));
 
   const rows = await database.select().from(inventoryAdjustments).where(eq(inventoryAdjustments.id, Number(id))).limit(1);
   const [product] = await database.select({ name: products.name }).from(products).where(eq(products.id, data.productId)).limit(1);
@@ -12970,7 +13510,7 @@ export async function createBundleWithStock(data: {
     });
   }
 
-  // 5. Deduct stock from single items
+// 5. Deduct stock from single items
   for (const item of data.items) {
     const product = (await db.select().from(products).where(eq(products.id, item.productId)).limit(1))[0];
     if (product) {
@@ -12991,6 +13531,18 @@ export async function createBundleWithStock(data: {
         affectedProducts: item.productName,
         operator: data.operator || 'system',
         notes: `转入组合包: ${data.name} (×${data.bundleQty}组)`,
+      });
+      await db.insert(inventoryMovementLogs).values({
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+        movementType: 'bundle_component_deduct',
+        quantityChange: -deductQty,
+        stockBefore: currentStock,
+        stockAfter: newStock,
+        referenceType: 'product_bundle',
+        referenceId: bundleId,
+        reason: `建立组合包 ${data.name}（${data.bundleQty}组）扣减组件`,
+        operator: data.operator || 'system',
       });
     }
   }
@@ -13041,7 +13593,7 @@ export async function restockBundle(data: {
   const oldBundleStock = bundle.bundleStock;
   const newBundleStock = oldBundleStock + data.restockQty;
 
-  // Deduct from single items
+// Deduct from single items
   for (const item of items) {
     const product = (await db.select().from(products).where(eq(products.id, item.productId)).limit(1))[0];
     if (product) {
@@ -13061,6 +13613,18 @@ export async function restockBundle(data: {
         affectedProducts: item.productName,
         operator: data.operator || 'system',
         notes: `补充组合包扣减: ${bundle.name} (+${data.restockQty}组)`,
+      });
+      await db.insert(inventoryMovementLogs).values({
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+        movementType: 'bundle_component_deduct',
+        quantityChange: -deductQty,
+        stockBefore: currentStock,
+        stockAfter: newStock,
+        referenceType: 'product_bundle',
+        referenceId: data.bundleId,
+        reason: `补充组合包 ${bundle.name}（${data.restockQty}组）扣减组件`,
+        operator: data.operator || 'system',
       });
     }
   }
@@ -13128,7 +13692,7 @@ export async function disassembleBundle(data: {
           notes: `拆除组合: ${returnQty}个 ${item.productName} 损坏报废`,
         });
       } else {
-        // Normal items return to stock
+// Normal items return to stock
         const newStock = currentStock + returnQty;
         await db.update(products)
           .set({ stockQuantity: newStock } as any)
@@ -13144,6 +13708,18 @@ export async function disassembleBundle(data: {
           reason: data.reason,
           operator: data.operator || 'system',
           notes: `拆除组合退回: ${bundle.name} (-${data.disassembleQty}组)`,
+        });
+        await db.insert(inventoryMovementLogs).values({
+          productId: item.productId,
+          variantId: item.variantId ?? null,
+          movementType: 'bundle_component_return',
+          quantityChange: returnQty,
+          stockBefore: currentStock,
+          stockAfter: newStock,
+          referenceType: 'product_bundle',
+          referenceId: data.bundleId,
+          reason: `拆除组合包 ${bundle.name}（${data.disassembleQty}组）退回组件：${data.reason}`,
+          operator: data.operator || 'system',
         });
       }
     }

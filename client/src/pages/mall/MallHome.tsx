@@ -8,6 +8,16 @@ import { Badge } from "@/components/ui/badge";
 import { Search, ShoppingCart, MessageCircle, MapPin, Package, Boxes, Facebook, Navigation, X, Star, TrendingDown, Sparkles, Megaphone, Heart } from "lucide-react";
 import { MallLangToggle } from "@/components/MallLangToggle";
 import { getMallTheme } from "@/lib/mallTheme";
+import { formatRmPrice } from "@shared/variantPriceRange";
+
+function formatMallProductPrice(product: { sellingPrice?: string | number | null; variantPriceMin?: number | null; variantPriceMax?: number | null }) {
+  const min = Number(product.variantPriceMin);
+  const max = Number(product.variantPriceMax);
+  if (Number.isFinite(min) && Number.isFinite(max) && min >= 0 && max >= min) {
+    return min === max ? `RM ${formatRmPrice(min)}` : `RM ${formatRmPrice(min)}–${formatRmPrice(max)}`;
+  }
+  return `RM ${product.sellingPrice || "0"}`;
+}
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useI18n } from "@/contexts/I18nContext";
@@ -23,7 +33,7 @@ function translateMallNotice(notice: string, translate: (zh: string, en: string)
     return translate("免费换盆服务：购买植物并同单加购花盆，结账时可选择免费换盆。", "Free repotting: buy plants and pots in the same order, then select complimentary repotting at checkout.");
   }
   if (normalized.includes("rm150") || normalized.includes("150免邮")) {
-    return translate("西马消费满 RM150 首 10kg 免邮，续重 RM3/kg；不含特价商品及会员费用。", "Spend RM150 for free delivery on the first 10kg; RM3/kg thereafter. Special-price items and membership fees are excluded.");
+    return translate("西马可计入商品满 RM150 首 10kg 免邮，续重 RM3/kg；特价商品不计入。订单含植物时，种植介质不计入门槛；无植物时可与肥料合计。", "Spend RM150 on eligible items for free delivery on the first 10kg; RM3/kg thereafter. Special-price items are excluded. Planting medium is excluded only when the order includes plants.");
   }
   if (normalized.includes("7天") || normalized.includes("保留")) {
     return translate("本地订单可保留 7 天，逾期系统将自动取消。", "Local orders are reserved for 7 days and will be cancelled automatically after expiry.");
@@ -386,7 +396,7 @@ export default function MallHome() {
                         <span className="text-xs text-muted-foreground line-through">RM {p.sellingPrice}</span>
                       </>
                     ) : (
-                      <span className="text-lg font-bold" style={{ color: theme.primary }}>RM {p.sellingPrice}</span>
+                      <span className="text-lg font-bold" style={{ color: theme.primary }}>{formatMallProductPrice(p)}</span>
                     )}
                     {p.compareAtPrice && parseFloat(p.compareAtPrice) > 0 && !p.isSpecial && (
                       <span className="text-xs text-muted-foreground line-through">RM {p.compareAtPrice}</span>

@@ -1,6 +1,7 @@
 export type OrderPricingItem = {
   productType?: "physical" | "membership" | "gift" | null;
   priceType?: string | null;
+  categoryNameZh?: string | null;
   quantity?: number | string | null;
   subtotal?: number | string | null;
   originalUnitPrice?: number | string | null;
@@ -25,10 +26,26 @@ const asMoney = (value: number | string | null | undefined) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const PLANT_CATEGORY_NAMES = new Set([
+  "花类", "叶类", "果树", "盆栽", "水种植物", "仙人掌多肉", "多肉及仙人掌",
+  "兰花", "香草类及蔬菜", "泰国空气草套装", "茶花", "捕虫/蕨类",
+]);
+
+const normalizeCategoryName = (value?: string | null) => String(value || "").replace(/\s+/g, "").trim();
+
+export function isPlantCategory(categoryNameZh?: string | null) {
+  return PLANT_CATEGORY_NAMES.has(normalizeCategoryName(categoryNameZh));
+}
+
+export function isPlantingMediumCategory(categoryNameZh?: string | null) {
+  return normalizeCategoryName(categoryNameZh) === "种植介质";
+}
+
 /**
  * Calculates the amount eligible for the RM150 shipping threshold.
- * Membership fees and special-price items are deliberately excluded. Global
- * discounts are conservatively applied to eligible physical merchandise only.
+ * Membership fees and special-price items are deliberately excluded. When an
+ * order includes plants, planting-medium items are also excluded; without a
+ * plant, fertilizer and planting medium may combine toward the threshold.
  */
 export function calculateOrderPriceBreakdown(
   items: OrderPricingItem[],
@@ -39,6 +56,7 @@ export function calculateOrderPriceBreakdown(
   let specialSubtotal = 0;
   let originalSpecialSubtotal = 0;
   let eligiblePhysicalSubtotal = 0;
+  const containsPlant = items.some((item) => item.productType === "physical" && isPlantCategory(item.categoryNameZh));
 
   for (const item of items) {
     const subtotal = asMoney(item.subtotal);
@@ -60,6 +78,7 @@ export function calculateOrderPriceBreakdown(
         : subtotal;
       continue;
     }
+    if (containsPlant && isPlantingMediumCategory(item.categoryNameZh)) continue;
     eligiblePhysicalSubtotal += subtotal;
   }
 

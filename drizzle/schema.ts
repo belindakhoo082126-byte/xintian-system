@@ -303,6 +303,84 @@ export type Variant = typeof variants.$inferSelect;
 export type InsertVariant = typeof variants.$inferInsert;
 
 // ============================================================================
+// Virtual Delivery (会员／课程／资料包)
+// ============================================================================
+
+/**
+ * Keeps the sellable catalog row compatible with the existing mall checkout
+ * while moving virtual-product operations out of physical product management.
+ */
+export const virtualDeliveryProducts = mysqlTable("virtual_delivery_products", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  deliveryType: mysqlEnum("deliveryType", ["membership", "course", "resource"]).notNull(),
+  defaultDeliveryMessage: text("defaultDeliveryMessage"),
+  allowMixedCheckout: boolean("allowMixedCheckout").default(true).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  productUnique: uniqueIndex("uq_virtual_delivery_products_product").on(table.productId),
+}));
+
+export type VirtualDeliveryProduct = typeof virtualDeliveryProducts.$inferSelect;
+export type InsertVirtualDeliveryProduct = typeof virtualDeliveryProducts.$inferInsert;
+
+/** Each package is backed by a normal variant so mall pricing and checkout keep one path. */
+export const virtualDeliveryPackages = mysqlTable("virtual_delivery_packages", {
+  id: int("id").autoincrement().primaryKey(),
+  virtualProductId: int("virtualProductId").notNull(),
+  variantId: int("variantId").notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  deliveryLink: varchar("deliveryLink", { length: 500 }),
+  deliveryMessage: text("deliveryMessage"),
+  contentCost: decimal("contentCost", { precision: 10, scale: 2 }).default("0").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  variantUnique: uniqueIndex("uq_virtual_delivery_packages_variant").on(table.variantId),
+  productPackageUnique: uniqueIndex("uq_virtual_delivery_packages_name").on(table.virtualProductId, table.name),
+}));
+
+export type VirtualDeliveryPackage = typeof virtualDeliveryPackages.$inferSelect;
+export type InsertVirtualDeliveryPackage = typeof virtualDeliveryPackages.$inferInsert;
+
+/** Immutable delivery and cost snapshot created once a paid virtual order item is ready to fulfil. */
+export const virtualDeliveryTasks = mysqlTable("virtual_delivery_tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  orderItemId: int("orderItemId").notNull(),
+  customerId: int("customerId").notNull(),
+  virtualProductId: int("virtualProductId").notNull(),
+  virtualPackageId: int("virtualPackageId"),
+  deliveryType: mysqlEnum("deliveryType", ["membership", "course", "resource"]).notNull(),
+  productNameSnapshot: varchar("productNameSnapshot", { length: 255 }).notNull(),
+  packageNameSnapshot: varchar("packageNameSnapshot", { length: 255 }),
+  deliveryLinkSnapshot: varchar("deliveryLinkSnapshot", { length: 500 }),
+  deliveryMessageSnapshot: text("deliveryMessageSnapshot"),
+  quantity: int("quantity").default(1).notNull(),
+  revenueNet: decimal("revenueNet", { precision: 10, scale: 2 }).default("0").notNull(),
+  contentCostSnapshot: decimal("contentCostSnapshot", { precision: 10, scale: 2 }).default("0").notNull(),
+  profitAmount: decimal("profitAmount", { precision: 10, scale: 2 }).default("0").notNull(),
+  status: mysqlEnum("status", ["pending_manual", "sent", "failed", "cancelled"]).default("pending_manual").notNull(),
+  sentAt: timestamp("sentAt"),
+  sentByUserId: int("sentByUserId"),
+  failureReason: text("failureReason"),
+  manualNotes: text("manualNotes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  orderItemUnique: uniqueIndex("uq_virtual_delivery_tasks_order_item").on(table.orderItemId),
+  statusIdx: index("idx_virtual_delivery_tasks_status").on(table.status),
+  orderIdx: index("idx_virtual_delivery_tasks_order").on(table.orderId),
+}));
+
+export type VirtualDeliveryTask = typeof virtualDeliveryTasks.$inferSelect;
+export type InsertVirtualDeliveryTask = typeof virtualDeliveryTasks.$inferInsert;
+
+// ============================================================================
 // Phase 1: Member Links (安全会员购买链接)
 // ============================================================================
 
@@ -687,6 +765,11 @@ export const orderItems = mysqlTable("order_items", {
   // Variant snapshot
   variationId: int("variationId"),
   variationName: varchar("variationName", { length: 255 }),
+  // Virtual delivery package selected at checkout. Existing physical items remain NULL.
+  virtualPackageId: int("virtualPackageId"),
+  virtualDeliveryLinkSnapshot: varchar("virtualDeliveryLinkSnapshot", { length: 500 }),
+  virtualDeliveryMessageSnapshot: text("virtualDeliveryMessageSnapshot"),
+  virtualContentCostSnapshot: decimal("virtualContentCostSnapshot", { precision: 10, scale: 2 }),
   // Facebook keyword that triggered this item
   facebookKeyword: varchar("facebookKeyword", { length: 100 }),
   // Pricing
@@ -1820,6 +1903,30 @@ export const inventoryAdjustments = mysqlTable("inventory_adjustments", {
 });
 export type InventoryAdjustment = typeof inventoryAdjustments.$inferSelect;
 export type InsertInventoryAdjustment = typeof inventoryAdjustments.$inferInsert;
+
+// ============================================================================
+// V4.0: Inventory Movement Ledger（统一库存流水）
+// ============================================================================
+export const inventoryMovementLogs = mysqlTable("inventory_movement_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  variantId: int("variantId"),
+  movementType: varchar("movementType", { length: 50 }).notNull(),
+  quantityChange: int("quantityChange").notNull(),
+  stockBefore: int("stockBefore").notNull(),
+  stockAfter: int("stockAfter").notNull(),
+  referenceType: varchar("referenceType", { length: 50 }),
+  referenceId: int("referenceId"),
+  reason: text("reason"),
+  operator: varchar("operator", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_inventory_movement_product_time").on(table.productId, table.createdAt),
+  index("idx_inventory_movement_variant_time").on(table.variantId, table.createdAt),
+  index("idx_inventory_movement_reference").on(table.referenceType, table.referenceId),
+]);
+export type InventoryMovementLog = typeof inventoryMovementLogs.$inferSelect;
+export type InsertInventoryMovementLog = typeof inventoryMovementLogs.$inferInsert;
 
 // ============================================================================
 // V1.2: Sub Orders (子订单 - 自动拆单)

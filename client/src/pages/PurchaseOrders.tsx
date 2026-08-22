@@ -464,7 +464,7 @@ export default function PurchaseOrders() {
 
       {/* New Purchase Order Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-none max-h-[92vh] overflow-y-auto sm:w-[calc(100vw-3rem)] sm:max-w-6xl">
           <DialogHeader>
             <DialogTitle>{translate("新增进货单", "New Purchase Order")}</DialogTitle>
           </DialogHeader>

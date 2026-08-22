@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { useI18n } from "@/contexts/I18nContext";
+import { calculateOrderPriceBreakdown } from "@shared/orderPricing";
 
 export default function MallCheckout() {
   const { translate } = useI18n();
@@ -135,12 +136,19 @@ export default function MallCheckout() {
   const normalItems = cart.filter(i => !i.isStandalone);
   const standaloneItems = cart.filter(i => i.isStandalone);
   // Weight for shipping calculation: only normal (non-standalone) items
-  const totalWeight = normalItems.reduce((sum, i) => sum + 0.5 * i.quantity, 0);
+  const totalWeight = normalItems.reduce((sum, i) => sum + (Number(i.unitWeight) > 0 ? Number(i.unitWeight) : 0.5) * i.quantity, 0);
   const normalSubtotal = normalItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
   const specialItems = cart.filter(i => i.isSpecial);
   const specialSubtotal = specialItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
-  // Free shipping threshold excludes special-price items (V2.1 rule)
-  const thresholdSubtotal = normalSubtotal - specialSubtotal;
+  const priceBreakdown = calculateOrderPriceBreakdown(normalItems.map((item) => ({
+    productType: item.productType,
+    priceType: item.isSpecial ? "special" : "retail",
+    categoryNameZh: item.categoryNameZh,
+    quantity: item.quantity,
+    subtotal: item.subtotal,
+    originalUnitPrice: item.originalUnitPrice,
+  })));
+  const thresholdSubtotal = priceBreakdown.freeShippingEligibleSubtotal;
   const regularSubtotal = subtotal - specialSubtotal;
   
   let shippingFee = 0;
@@ -229,6 +237,7 @@ export default function MallCheckout() {
         productSku: i.productSku,
         variationId: i.variationId,
         variationName: i.variationName,
+        productType: i.productType,
         quantity: i.quantity,
         unitPrice: i.unitPrice,
         subtotal: i.subtotal,
@@ -462,7 +471,7 @@ export default function MallCheckout() {
               <label className="flex items-start justify-between gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2 sm:items-center">
                 <div className="flex min-w-0 items-start gap-3 sm:items-center">
                   <RadioGroupItem value="west_malaysia" />
-                  <div><p className="font-medium text-sm">西马配送</p><p className="text-xs text-muted-foreground">满RM150首10kg免邮，未满RM15起，续重RM3/kg</p></div>
+                  <div><p className="font-medium text-sm">西马配送</p><p className="text-xs text-muted-foreground">可计入商品满RM150首10kg免邮；订单含植物时种植介质不计入，超10kg续重RM3/kg</p></div>
                 </div>
                 <span className="shrink-0 font-semibold">{shippingFee === 0 ? t("免邮", "Free") : `RM ${shippingFee}`}</span>
               </label>
