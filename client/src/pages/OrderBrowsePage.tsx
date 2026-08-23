@@ -26,6 +26,7 @@ import { createRoot } from "react-dom/client";
 import { OrderDocument } from "@/components/OrderDocument";
 import { prepareOrderDocumentExportHost } from "@/lib/orderDocumentExport";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
+import { ORDER_DOCUMENT_OUTPUT_OPTIONS } from "@shared/orderDocumentOutputRules";
 
 const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
   pending: { zh: "未汇款订单", en: "Unpaid Order", variant: "outline" },
@@ -178,7 +179,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
       // Render OrderDocument into the container using React
       const root = createRoot(container);
       await new Promise<void>((resolve) => {
-        root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} productImageOverrides={productImageOverrides} showProductImage={true} />);
+        root.render(<OrderDocument order={o} remarks={remarks} logoDataUrl={logoDataUrl} productImageOverrides={productImageOverrides} {...ORDER_DOCUMENT_OUTPUT_OPTIONS} />);
         setTimeout(resolve, 500);
       });
       // Wait for any images to load (including product images)
@@ -282,7 +283,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
     prepareOrderDocumentExportHost(container);
     document.body.appendChild(container);
     const root = createRoot(container);
-    root.render(<OrderDocument order={o} remarks={remarks} variant="customer" logoDataUrl={logoDataUrl} productImageOverrides={productImageOverrides} showProductImage={false} />);
+    root.render(<OrderDocument order={o} remarks={remarks} logoDataUrl={logoDataUrl} productImageOverrides={productImageOverrides} {...ORDER_DOCUMENT_OUTPUT_OPTIONS} />);
     setTimeout(() => {
       const targetEl = container.firstChild as HTMLElement;
       if (!targetEl) return;
@@ -1394,10 +1395,9 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
             <OrderDocument
               order={o}
               remarks={remarks}
-              variant="customer"
               logoDataUrl={previewLogoUrl}
               responsive
-              showProductImage={true}
+              {...ORDER_DOCUMENT_OUTPUT_OPTIONS}
             />
           </div>
         </DialogContent>

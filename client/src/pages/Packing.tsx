@@ -14,6 +14,7 @@ import { useI18n } from "@/contexts/I18nContext";
 import { toast } from "sonner";
 import { getSpecialOrderHandlingLabel, getSpecialOrderReasonLabel, SPECIAL_ORDER_FILTER_OPTIONS } from "@shared/specialOrderDisplay";
 import { getPackingSlipRemarkRows, renderPackingSlipRemarkHtml } from "@shared/packingSlipRemarks";
+import { getPackingShippingControl } from "@shared/packingSpecialOrderRules";
 
 // V2.1.13: Status color mapping for scheduled shipping orders (8 statuses)
 const SCHEDULED_STATUS_CONFIG: Record<string, { label: { zh: string; en: string }; color: string; bgColor: string; borderColor: string }> = {
@@ -348,8 +349,12 @@ export default function Packing() {
                 </div>
               )}
               <div className="grid gap-3">
-                {orderList.map((order: any) => (
-                  <Card key={order.id} className="hover:shadow-md transition-shadow">
+                {orderList.map((order: any) => {
+                  const packingShippingControl = order.packingShippingControl || getPackingShippingControl(order);
+                  const isPackingBlocked = packingShippingControl.mode === "block" || packingShippingControl.mode === "requires_release";
+                  const pendingSpecialReason = getSpecialOrderReasonLabel(order.specialOrderType);
+                  return (
+                  <Card key={order.id} className={isPackingBlocked ? "border-amber-300 bg-amber-50/30" : "hover:shadow-md transition-shadow"}>
                     <CardContent className="py-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                         <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -366,6 +371,24 @@ export default function Packing() {
                               <span className="font-semibold text-sm">{order.orderNumber}</span>
                               {order.specialLabel && (
                                 <Badge variant="outline" className={`text-xs border-0 ${getShippingLabelClassName(order.specialLabel)}`}>{order.specialLabel}</Badge>
+                              )}
+                              {isPackingBlocked && (
+                                <>
+                                  <Badge variant="outline" className={`text-xs ${pendingSpecialReason.className}`}>{translate(pendingSpecialReason.zh, pendingSpecialReason.en)}</Badge>
+                                  <Badge variant="outline" className="border-amber-300 bg-amber-100 text-xs text-amber-900">{translate("待处理，暂停包货", "Pending, packing paused")}</Badge>
+                                </>
+                              )}
+                              {packingShippingControl.mode === "partial_only" && (
+                                <>
+                                  <Badge variant="outline" className={`text-xs ${pendingSpecialReason.className}`}>{translate(pendingSpecialReason.zh, pendingSpecialReason.en)}</Badge>
+                                  <Badge variant="outline" className="border-violet-300 bg-violet-50 text-xs text-violet-900">{translate("可先部分发货", "Partial shipment allowed")}</Badge>
+                                </>
+                              )}
+                              {packingShippingControl.reason === "pending_refund" && (
+                                <>
+                                  <Badge variant="outline" className={`text-xs ${pendingSpecialReason.className}`}>{translate(pendingSpecialReason.zh, pendingSpecialReason.en)}</Badge>
+                                  <Badge variant="outline" className="border-rose-300 bg-rose-50 text-xs text-rose-900">{translate("退款不阻止发货", "Refund does not block shipping")}</Badge>
+                                </>
                               )}
                               {isSpecialTab && (() => {
                                 const reason = getSpecialOrderReasonLabel(order.specialOrderType);
@@ -437,13 +460,15 @@ export default function Packing() {
                             <Printer className="h-4 w-4" />
                           </Button>
                           <Link href={`/packing/${order.id}`}>
-                            <Button size="sm" variant="outline">{translate("包货", "Pack")}</Button>
+                            <Button size="sm" variant={isPackingBlocked ? "secondary" : "outline"} className={isPackingBlocked ? "bg-amber-100 text-amber-900 hover:bg-amber-200" : undefined}>
+                              {isPackingBlocked ? translate("处理特别状态", "Resolve Special Status") : translate("包货", "Pack")}
+                            </Button>
                           </Link>
                         </div>
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                )})}
               </div>
             </div>
           )}

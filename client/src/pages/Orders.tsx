@@ -14,15 +14,19 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, AlertCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, RotateCcw, Bell, Upload, Loader2, Pencil, GitMerge } from "lucide-react";
+import { Search, Eye, Truck, Plus, Trash2, X, Package, DollarSign, Clock, FileText, Ban, Calendar, CheckCircle, AlertCircle, Sprout, Send, Link2, MessageCircle, Copy, RotateCw, RotateCcw, Bell, Upload, Loader2, Pencil, GitMerge, Scissors } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Link, useSearch, useLocation } from "wouter";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
 import { getSpecialOrderHandlingLabel, getSpecialOrderReasonLabel, SPECIAL_ORDER_FILTER_OPTIONS } from "@shared/specialOrderDisplay";
+import { getRefundMethodLabel, getSpecialOrderDisplayAmount } from "@shared/specialOrderHistoryRules";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
+import { OrderDocument } from "@/components/OrderDocument";
 import { AdminPageHeader } from "@/components/AdminPageHeader";
 import { canOpenOrderMergeFromPath } from "@/lib/orderMergeAccess";
 import { getSelectableOrderIds, isCancelledOrder, isOrderMergeEligible } from "@/lib/orderMergeSelection";
+import { getOrderSplitIneligibility, isOrderSplitEligible } from "@shared/orderSplitRules";
+import { ORDER_DOCUMENT_OUTPUT_OPTIONS } from "@shared/orderDocumentOutputRules";
 
 const PHYSICAL_STATUS = {
   pending: { label: "未汇款订单", enLabel: "Unpaid Order", variant: "outline" },
@@ -147,6 +151,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
+  const [previewOrderId, setPreviewOrderId] = useState<number | null>(null);
   const [detailTab, setDetailTab] = useState("info");
   const [shipForm, setShipForm] = useState({ courierCompany: "", trackingNumber: "" });
   const [createOpen, setCreateOpen] = useState(false);
@@ -218,6 +223,11 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   const [mergeSourceOrderId, setMergeSourceOrderId] = useState<number | null>(null);
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [mergeCreditDisposition, setMergeCreditDisposition] = useState<"carry_forward" | "return_to_source">("carry_forward");
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
+  const [splitSourceOrderId, setSplitSourceOrderId] = useState<number | null>(null);
+  const [splitQuantities, setSplitQuantities] = useState<Record<number, number>>({});
+  const [splitAllocatedPayment, setSplitAllocatedPayment] = useState("0");
+  const [splitAllocatedCredit, setSplitAllocatedCredit] = useState("0");
 
   const utils = trpc.useUtils();
 
@@ -255,9 +265,21 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     { id: detailOrderId! },
     { enabled: detailOrderId !== null }
   );
+  const { data: previewOrder, isLoading: isLoadingPreviewOrder } = trpc.orders.getDetail.useQuery(
+    { id: previewOrderId! },
+    { enabled: previewOrderId !== null }
+  );
+  const { data: previewOrderRemarks } = trpc.orderRemarks.list.useQuery(
+    { orderId: previewOrderId! },
+    { enabled: previewOrderId !== null }
+  );
   const { data: mergeCandidates = [], isLoading: isLoadingMergeCandidates } = trpc.orders.mergeCandidates.useQuery(
     { sourceOrderId: mergeSourceOrderId! },
     { enabled: mergeDialogOpen && mergeSourceOrderId !== null },
+  );
+  const { data: splitOrderDetail, isLoading: isLoadingSplitOrder } = trpc.orders.getDetail.useQuery(
+    { id: splitSourceOrderId! },
+    { enabled: splitDialogOpen && splitSourceOrderId !== null },
   );
 
   // Customer search
@@ -536,6 +558,19 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     },
     onError: (error: any) => toast.error(translate("合单失败: {message}", "Merge failed: {message}", { message: error.message })),
   });
+  const splitOrderMutation = trpc.orders.split.useMutation({
+    onSuccess: (result) => {
+      toast.success(translate("订单已拆分，新订单：{orderNumber}", "Order split. New order: {orderNumber}", { orderNumber: result.newOrderNumber }));
+      setSplitDialogOpen(false);
+      setSplitSourceOrderId(null);
+      setSplitQuantities({});
+      setSplitAllocatedPayment("0");
+      setSplitAllocatedCredit("0");
+      setSelectedIds(new Set());
+      utils.orders.invalidate();
+    },
+    onError: (error: any) => toast.error(translate("拆单失败: {message}", "Split failed: {message}", { message: error.message })),
+  });
 
   function addManualItem() {
     setManualItems((currentItems) => [
@@ -728,12 +763,55 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
     setMergeDialogOpen(true);
   }
 
+  function openPageSplitDialog() {
+    if (selectedIds.size !== 1) {
+      toast.error(translate("请先在订单列表勾选一张要拆分的订单", "Select one order in the list before splitting"));
+      return;
+    }
+    const sourceOrderId = Array.from(selectedIds)[0];
+    const sourceOrder = (orders || []).find((order: any) => order.id === sourceOrderId);
+    if (!sourceOrder || !isOrderSplitEligible(sourceOrder)) {
+      toast.error(translate(sourceOrder ? getOrderSplitIneligibility(sourceOrder) || "订单不可拆分" : "订单资料已更新，请重新选择", "This order cannot be split"));
+      return;
+    }
+    setSplitSourceOrderId(sourceOrderId);
+    setSplitQuantities({});
+    setSplitAllocatedPayment("0");
+    setSplitAllocatedCredit("0");
+    setSplitDialogOpen(true);
+  }
+
+  function setSplitItemQuantity(itemId: number, maximum: number, nextValue: number) {
+    setSplitQuantities((current) => {
+      const next = { ...current };
+      const quantity = Math.max(0, Math.min(maximum, Number.isFinite(nextValue) ? Math.floor(nextValue) : 0));
+      if (quantity > 0) next[itemId] = quantity;
+      else delete next[itemId];
+      return next;
+    });
+  }
+
+  function submitSplitOrder() {
+    if (splitSourceOrderId === null) return;
+    const items = Object.entries(splitQuantities).filter(([, quantity]) => quantity > 0).map(([orderItemId, quantity]) => ({ orderItemId: Number(orderItemId), quantity }));
+    if (items.length === 0) {
+      toast.error(translate("请至少选择一项商品或数量拆出", "Select at least one item or quantity to split"));
+      return;
+    }
+    splitOrderMutation.mutate({ orderId: splitSourceOrderId, items, newOrderAllocatedPayment: Number(splitAllocatedPayment || 0), newOrderAllocatedCredit: Number(splitAllocatedCredit || 0) });
+  }
+
   const totalPaid = orderDetail?.payments?.filter((p: any) => p.reviewStatus === 'approved').reduce((sum: number, p: any) => sum + parseFloat(String(p.amount)), 0) || 0;
   const totalAmount = orderDetail ? parseFloat(String(orderDetail.totalAmount)) : 0;
   const remainingAmount = totalAmount - totalPaid;
   const mergeSourceOrder = (orders || []).find((order: any) => order.id === mergeSourceOrderId) as any;
   const mergeTargetOrder = mergeTargetId ? mergeCandidates.find((order: any) => order.id === Number(mergeTargetId)) as any : null;
   const mergeSourceCreditUsed = Number(mergeSourceOrder?.creditUsed || 0);
+  const splitSourceOrder = (orders || []).find((order: any) => order.id === splitSourceOrderId) as any;
+  const splitItems = splitOrderDetail?.items || [];
+  const splitSourcePaid = Number(splitOrderDetail?.paidAmount || 0);
+  const splitSourceCredit = Number(splitOrderDetail?.creditUsed || 0);
+  const splitSelectedSubtotal = splitItems.reduce((sum: number, item: any) => sum + ((Number(item.subtotal || 0) / Math.max(1, Number(item.quantity || 1))) * (splitQuantities[item.id] || 0)), 0);
 
   return (
     <div className="space-y-6">
@@ -745,6 +823,11 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             {orderCategory !== "import" && canOpenOrderMergeFromPath(location) && (
               <Button variant="outline" className="w-full sm:w-auto" onClick={openPageMergeDialog} data-page-merge-entry>
                 <GitMerge className="mr-2 h-4 w-4" />{translate("合并订单", "Merge Orders")}
+              </Button>
+            )}
+            {orderCategory === "local" && canOpenOrderMergeFromPath(location) && (
+              <Button variant="outline" className="w-full sm:w-auto" onClick={openPageSplitDialog} data-page-split-entry>
+                <Scissors className="mr-2 h-4 w-4" />{translate("拆分订单", "Split Order")}
               </Button>
             )}
             {orderCategory !== "all" && (
@@ -852,6 +935,54 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             >
               <GitMerge className="mr-2 h-4 w-4" />{translate("确认合并并保留目标订单", "Confirm Merge & Keep Target")}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={splitDialogOpen} onOpenChange={(open) => {
+        setSplitDialogOpen(open);
+        if (!open) {
+          setSplitSourceOrderId(null);
+          setSplitQuantities({});
+          setSplitAllocatedPayment("0");
+          setSplitAllocatedCredit("0");
+        }
+      }}>
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-h-[calc(100vh-4rem)] sm:w-full" data-page-split-dialog>
+          <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 sm:border-0 sm:px-6 sm:pb-0">
+            <DialogTitle>{translate("拆分订单", "Split Order")}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              {translate("只可拆分本地实体订单中尚未进入包货的未付款、待审核、部分汇款或保留订单。选择要拆出的商品或数量；系统会建立新订单、保留原订单其余商品，并重新计算两张订单的重量与运费。库存不会重复扣减。", "Only local physical orders before fulfilment may be split. Select item quantities to move; the system creates a new order, keeps remaining items on the original, recalculates both weights and shipping, and does not deduct stock twice.")}
+            </div>
+            {isLoadingSplitOrder ? <p className="text-sm text-muted-foreground">{translate("正在读取订单商品…", "Loading order items…")}</p> : <>
+              <div className="rounded-md border bg-muted/20 p-3 text-sm">
+                <p className="font-semibold">{splitOrderDetail?.orderNumber || "-"} · {splitSourceOrder?.customerName || splitSourceOrder?.facebookName || translate("未命名客户", "Unnamed customer")}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{translate("勾选后输入拆出数量；原订单必须保留至少一项商品。", "Check an item then enter its quantity to move; at least one item must remain on the original order.")}</p>
+              </div>
+              <div className="space-y-2">
+                {splitItems.map((item: any) => {
+                  const selectedQuantity = splitQuantities[item.id] || 0;
+                  const unitSubtotal = Number(item.subtotal || 0) / Math.max(1, Number(item.quantity || 1));
+                  return <div key={item.id} className="grid grid-cols-[auto_minmax(0,1fr)_96px] items-center gap-3 rounded-md border p-3">
+                    <Checkbox checked={selectedQuantity > 0} onCheckedChange={(checked) => setSplitItemQuantity(item.id, Number(item.quantity), checked ? (selectedQuantity || 1) : 0)} />
+                    <div className="min-w-0"><p className="truncate font-medium">{item.productName}{item.variationName ? ` · ${item.variationName}` : ""}</p><p className="text-xs text-muted-foreground">{translate("原数量 {quantity}｜每件 RM {amount}", "Original qty {quantity} | RM {amount} each", { quantity: item.quantity, amount: unitSubtotal.toFixed(2) })}</p></div>
+                    <Input type="number" min={0} max={item.quantity} step={1} disabled={selectedQuantity <= 0} value={selectedQuantity || ""} onChange={(event) => setSplitItemQuantity(item.id, Number(item.quantity), Number(event.target.value))} />
+                  </div>;
+                })}
+              </div>
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"><p className="font-semibold">{translate("拆分摘要", "Split summary")}</p><p className="mt-1 text-muted-foreground">{translate(`已选商品金额约 RM ${splitSelectedSubtotal.toFixed(2)}；最终两张订单的运费会依各自重量与免邮规则重新计算。`, `Selected item value is RM ${splitSelectedSubtotal.toFixed(2)}; shipping for both orders will be recalculated from their own weight and free-shipping rules.`)}</p></div>
+              {(splitSourcePaid > 0 || splitSourceCredit > 0) && <div className="grid gap-3 rounded-md border border-violet-300 bg-violet-50 p-3 text-sm sm:grid-cols-2">
+                <div><Label>{translate(`分配已收款至新订单（可分配：RM ${splitSourcePaid.toFixed(2)}）`, `Allocate paid amount to new order (available: RM ${splitSourcePaid.toFixed(2)})`)}</Label><Input className="mt-1" type="number" min={0} max={splitSourcePaid} step="0.01" value={splitAllocatedPayment} onChange={(event) => setSplitAllocatedPayment(event.target.value)} /></div>
+                <div><Label>{translate(`分配Credit至新订单（可分配：RM ${splitSourceCredit.toFixed(2)}）`, `Allocate Credit to new order (available: RM ${splitSourceCredit.toFixed(2)})`)}</Label><Input className="mt-1" type="number" min={0} max={splitSourceCredit} step="0.01" value={splitAllocatedCredit} onChange={(event) => setSplitAllocatedCredit(event.target.value)} /></div>
+                <p className="sm:col-span-2 text-xs text-muted-foreground">{translate("付款凭据留在原订单；系统会建立可追溯的拆单转出／转入流水。", "Payment receipt evidence remains on the original order; the system records traceable split-out and split-in ledger entries.")}</p>
+              </div>}
+            </>}
+          </div>
+          <DialogFooter className="shrink-0 border-t bg-background px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:border-0 sm:px-6 sm:pb-6">
+            <Button variant="outline" onClick={() => setSplitDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+            <Button onClick={submitSplitOrder} disabled={isLoadingSplitOrder || Object.keys(splitQuantities).length === 0 || splitOrderMutation.isPending}><Scissors className="mr-2 h-4 w-4" />{translate("确认拆分并建立新订单", "Confirm Split & Create New Order")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1047,7 +1178,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
 
       <Card className="min-w-0 overflow-hidden">
         <CardContent className="overflow-x-auto p-0">
-          <Table className="min-w-[920px]">
+          <Table className="min-w-[780px] xl:min-w-[1020px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[40px]">
@@ -1068,12 +1199,12 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                 </TableHead>
                 <TableHead>{translate("订单号", "Order No.")}</TableHead>
                 <TableHead>{translate("客户", "Customer")}</TableHead>
-                <TableHead>{translate("来源", "Source")}</TableHead>
-                <TableHead>{translate("性质", "Nature")}</TableHead>
+                <TableHead className="hidden xl:table-cell">{translate("来源", "Source")}</TableHead>
+                <TableHead className="hidden xl:table-cell">{translate("性质", "Nature")}</TableHead>
                 <TableHead>{translate("已付", "Paid")}</TableHead>
                 <TableHead>{translate("总金额", "Total")}</TableHead>
                 <TableHead>{translate("状态", "Status")}</TableHead>
-                <TableHead>{translate("通知", "Notification")}</TableHead>
+                <TableHead className="hidden xl:table-cell">{translate("通知", "Notification")}</TableHead>
                 <TableHead className="text-right">{translate("操作", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
@@ -1103,15 +1234,19 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                     />
                   </TableCell>
                   <TableCell className="font-mono text-sm">{o.orderNumber}</TableCell>
-                  <TableCell>{(o as any).customerName || o.facebookName || "-"}</TableCell>
-                  <TableCell>
+                  <TableCell className="max-w-[180px] xl:max-w-none">
+                    <span className="line-clamp-2 break-words" title={(o as any).customerName || o.facebookName || "-"}>
+                      {(o as any).customerName || o.facebookName || "-"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="hidden xl:table-cell">
                     <span className="text-xs text-muted-foreground">
                       {ORDER_SOURCE[(o as any).orderSource as keyof typeof ORDER_SOURCE]
                         ? translate(ORDER_SOURCE[(o as any).orderSource as keyof typeof ORDER_SOURCE].label, ORDER_SOURCE[(o as any).orderSource as keyof typeof ORDER_SOURCE].enLabel)
                         : translate("-", "-")}
                     </span>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden xl:table-cell">
                     {ORDER_NATURE[(o as any).orderNature as keyof typeof ORDER_NATURE]
                       ? <Badge variant="secondary">{translate(ORDER_NATURE[(o as any).orderNature as keyof typeof ORDER_NATURE].label, ORDER_NATURE[(o as any).orderNature as keyof typeof ORDER_NATURE].enLabel)}</Badge>
                       : <Badge variant="secondary">{translate("普通", "Normal")}</Badge>
@@ -1125,37 +1260,61 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                     )}
                   </TableCell>
                   <TableCell className="font-semibold">RM {o.totalAmount}</TableCell>
-                  <TableCell>
+                  <TableCell className="min-w-[260px]">
                     {(() => {
                       const statusMap = o.orderCategory === 'import' ? IMPORT_STATUS : PHYSICAL_STATUS;
                       const statusVal = o.orderCategory === 'import' ? o.importStatus : o.physicalStatus;
                       return (
-                        <>
+                        <div className="flex min-w-0 flex-wrap items-center gap-1">
                           <Badge variant={statusMap[statusVal as keyof typeof statusMap]?.variant || "outline"}>
                             {translate(statusMap[statusVal as keyof typeof statusMap]?.label || statusVal, statusMap[statusVal as keyof typeof statusMap]?.enLabel || statusVal)}
                           </Badge>
-                          {(o as any).isSpecialOrder && (() => {
-                            const reason = getSpecialOrderReasonLabel((o as any).specialOrderType);
-                            const handling = getSpecialOrderHandlingLabel((o as any).isResolved, (o as any).specialOrderStatus);
+                          {(() => {
+                            const hasPendingSpecial = Boolean((o as any).isSpecialOrder);
+                            const historicalSpecial = !hasPendingSpecial && Boolean((o as any).historySpecialType);
+                            const specialType = hasPendingSpecial ? (o as any).specialOrderType : (o as any).historySpecialType;
+                            const specialStatus = hasPendingSpecial ? (o as any).specialOrderStatus : (o as any).historySpecialStatus;
+                            const hasSpecialContext = hasPendingSpecial || historicalSpecial;
+                            if (!hasSpecialContext) return null;
+                            const reason = getSpecialOrderReasonLabel(specialType);
+                            const handling = getSpecialOrderHandlingLabel(historicalSpecial || (o as any).isResolved, specialStatus);
+                            const specialAmount = getSpecialOrderDisplayAmount({
+                              historyAmount: historicalSpecial ? (o as any).historySpecialAmount : null,
+                              pendingRefundRequestedAmount: !historicalSpecial && specialType === "pending_refund"
+                                ? (o as any).pendingRefund?.requestedAmount
+                                : null,
+                              shippingDifference: (o as any).shippingDifference,
+                            });
+                            const resolvedRefundMethod = historicalSpecial && specialType === "pending_refund"
+                              ? getRefundMethodLabel((o as any).historyRefundMethod)
+                              : null;
+                            const resolvedRefundNumber = historicalSpecial && specialType === "pending_refund"
+                              ? (o as any).historyRefundNumber
+                              : null;
                             return (
                               <>
-                                <Badge variant="destructive" className="ml-1 text-xs">
+                                <Badge variant="destructive" className="text-xs">
                                   {translate("特别", "Special")}
                                 </Badge>
-                                <Badge variant="outline" className={`ml-1 inline-flex items-center gap-1 text-xs ${reason.className}`}>
+                                <Badge variant="outline" className={`inline-flex items-center gap-1 text-xs ${reason.className}`}>
                                   <span aria-hidden="true" className="font-bold leading-none">{reason.icon}</span>
                                   {translate(reason.zh, reason.en)}
                                 </Badge>
-                                <Badge variant="outline" className={`ml-1 text-xs ${handling.className}`}>
+                                <Badge variant="outline" className={`text-xs ${handling.className}`}>
                                   {translate(handling.zh, handling.en)}
                                 </Badge>
-                                {((o as any).specialOrderType === "pending_shipping" || (o as any).specialOrderType === "pending_refund") && (
-                                  <Badge variant="outline" className="ml-1 border-amber-200 bg-amber-50 text-xs text-amber-800">
-                                    RM {Math.abs(Number((o as any).shippingDifference || 0)).toFixed(2)}
+                                {(specialType === "pending_shipping" || specialType === "pending_refund") && (
+                                  <Badge variant="outline" className="border-amber-200 bg-amber-50 text-xs text-amber-800">
+                                    RM {specialAmount.toFixed(2)}
                                   </Badge>
                                 )}
-                                {(o as any).shippingRefund && (
-                                  <Link href={`/admin/refunds?order=${encodeURIComponent(o.orderNumber || String(o.id))}`} className="ml-1 inline-flex">
+                                {historicalSpecial && specialType === "pending_refund" && (resolvedRefundNumber || resolvedRefundMethod) && (
+                                  <Badge variant="outline" className="max-w-full border-rose-200 bg-rose-50 text-xs text-rose-700">
+                                    {resolvedRefundNumber || translate("退款已处理", "Refund Processed")}{resolvedRefundMethod ? ` · ${resolvedRefundMethod}` : ""}
+                                  </Badge>
+                                )}
+                                {!historicalSpecial && (o as any).shippingRefund && (
+                                  <Link href={`/admin/refunds?order=${encodeURIComponent(o.orderNumber || String(o.id))}`} className="inline-flex">
                                     <Badge variant="outline" className="border-rose-200 bg-rose-50 text-xs text-rose-700 hover:bg-rose-100">
                                       {(o as any).shippingRefund.refundNumber || `RF-${(o as any).shippingRefund.id}`} · {translate((o as any).shippingRefund.status === "pending" ? "待退款" : "退款已处理", (o as any).shippingRefund.status === "pending" ? "Pending Refund" : "Refund Processed")}
                                     </Badge>
@@ -1164,11 +1323,11 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                               </>
                             );
                           })()}
-                        </>
+                        </div>
                       );
                     })()}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden xl:table-cell">
                     {(o as any).notificationStatus === "sent" ? (
                       <span className="inline-flex items-center gap-1 text-xs text-green-600">
                         <span className="h-2 w-2 rounded-full bg-green-500" />
@@ -1214,6 +1373,9 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="icon" title={translate("预览单据", "Preview Document")} onClick={(e) => { e.stopPropagation(); setPreviewOrderId(o.id); }}>
+                        <FileText className="h-4 w-4" />
+                      </Button>
                       <Button variant="ghost" size="icon" title={translate("查看详情", "View Details")} onClick={(e) => { e.stopPropagation(); openDetail(o.id); }}>
                         <Eye className="h-4 w-4" />
                       </Button>
@@ -2594,6 +2756,24 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
               {translate("创建订单", "Create Order")}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={previewOrderId !== null} onOpenChange={(open) => { if (!open) setPreviewOrderId(null); }}>
+        <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+          <DialogHeader className="shrink-0 border-b bg-white px-5 py-4 pr-12 sm:px-8">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Eye className="h-4 w-4" />
+              {translate("Preview 单据", "Preview Document")}{previewOrder ? ` — ${previewOrder.orderNumber}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {isLoadingPreviewOrder ? (
+            <div className="flex min-h-0 flex-1 items-center justify-center bg-muted/30 text-sm text-muted-foreground">{translate("正在读取订单资料…", "Loading order details…")}</div>
+          ) : previewOrder ? (
+            <div className="min-h-0 flex-1 overflow-auto bg-muted/30 px-3 py-4 sm:px-8 sm:py-6">
+              <OrderDocument order={previewOrder} remarks={previewOrderRemarks} responsive {...ORDER_DOCUMENT_OUTPUT_OPTIONS} />
+            </div>
+          ) : <div className="flex min-h-0 flex-1 items-center justify-center bg-muted/30 text-sm text-muted-foreground">{translate("找不到订单资料", "Order details not found")}</div>}
         </DialogContent>
       </Dialog>
 

@@ -24,6 +24,8 @@ import { useEffect } from "react";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
 import { getPackingSlipRemarkRows } from "@shared/packingSlipRemarks";
 import { getMissingPackingRecipientAddressFields } from "@shared/packingRecipientAddress";
+import { derivePackingFinancialSettlement } from "@shared/packingFinancialSettlementRules";
+import { getPackingShippingControl } from "@shared/packingSpecialOrderRules";
 
 // V2.1.30: Only show Parcel Daily services (Poslaju for east Malaysia, Line Clear for west Malaysia)
 const COURIERS = [
@@ -55,6 +57,7 @@ export default function PackingDetail() {
   const { data: slipData } = trpc.packing.slipData.useQuery({ orderId });
   const { data: existingPackages } = trpc.shipping.packages.useQuery({ orderId });
   const { data: fulfilmentSummary } = trpc.packing.fulfilmentSummary.useQuery({ orderId }, { enabled: !!orderId });
+  const { data: mergeCandidates } = trpc.packing.mergeCandidates.useQuery({ orderId }, { enabled: !!orderId });
   const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
   const { data: repots } = trpc.repots.list.useQuery({ orderId });
 
@@ -98,6 +101,8 @@ export default function PackingDetail() {
   const [supplementalPaymentMethod, setSupplementalPaymentMethod] = useState("银行转账");
   const [supplementalNotes, setSupplementalNotes] = useState("");
   const [uploadingSupplementalReceipt, setUploadingSupplementalReceipt] = useState(false);
+  const [mergeShippingDialogOpen, setMergeShippingDialogOpen] = useState(false);
+  const [mergeCandidateId, setMergeCandidateId] = useState<number | null>(null);
   const { data: specialActions } = trpc.shippingV2.specialOrderActions.useQuery({ orderId }, { enabled: !!detail });
   const shippingRefund = ((detail as any)?.refunds || []).find((refund: any) => (
     refund.refundSource === "packing" && refund.refundReasonCode === "overcharged_shipping"
@@ -137,6 +142,28 @@ export default function PackingDetail() {
       utils.refunds.list.invalidate();
     },
     onError: (err: any) => toast.error(translate("处理失败: ", "Processing failed: ") + err.message),
+  });
+  const pendingShippingReleaseMutation = trpc.shippingV2.setPendingShippingShipmentRelease.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.allowShipping
+        ? translate("已记录允许客户后补差价，现可继续发货", "Recorded: ship first and collect the balance later")
+        : translate("已记录等待客户补款后再发货", "Recorded: wait for the customer balance before shipment"));
+      utils.packing.detail.invalidate({ orderId });
+      utils.packing.list.invalidate();
+      utils.shippingV2.specialOrderActions.invalidate({ orderId });
+    },
+    onError: (err: any) => toast.error(translate("发货决定记录失败: ", "Could not save shipment decision: ") + err.message),
+  });
+  const mergeShipMutation = trpc.shipping.mergeShip.useMutation({
+    onSuccess: () => {
+      toast.success(translate("合并发货成功，参与订单已同步更新", "Merged shipment created and participating orders updated"));
+      setMergeShippingDialogOpen(false);
+      setMergeCandidateId(null);
+      utils.packing.list.invalidate();
+      utils.packing.detail.invalidate({ orderId });
+      utils.shipping.packages.invalidate({ orderId });
+    },
+    onError: (err: any) => toast.error(translate("合并发货失败: ", "Merged shipment failed: ") + err.message),
   });
   const supplementalProofMutation = trpc.shippingV2.submitSupplementalShippingProof.useMutation({
     onSuccess: (data: any) => {
@@ -298,6 +325,35 @@ export default function PackingDetail() {
     onError: (err) => toast.error("处理异常失败: " + err.message),
   });
 
+  const cancelPackingItemMutation = trpc.orderException.cancelPackingItem.useMutation({
+    onSuccess: (data: any) => {
+      const settlement = data?.settlement;
+      const message = settlement?.type === "pending_refund"
+        ? `已取消商品并重算订单；建立待退款 ${data.refund?.refundNumber || ""} RM${Number(settlement.amount || 0).toFixed(2)}，请到退款管理完成。`
+        : settlement?.type === "pending_shipping"
+          ? `已取消商品并重算订单；仍待汇款差价 RM${Number(settlement.amount || 0).toFixed(2)}。`
+          : "已取消商品，库存、估计重量及运费已重新计算。";
+      toast.success(translate(message, message));
+      setExceptionDialogOpen(false);
+      setExceptionDesc("");
+      setExceptionItemId("");
+      setExceptionQuantity(1);
+      setCustomerAction("pending");
+      setRefundMethod("credit");
+      setCustomerRefundDetails("");
+      setCustomerRefundQrUrl("");
+      setRefundAttachmentUrls([]);
+      setRefundInternalNotes("");
+      utils.packing.detail.invalidate({ orderId });
+      utils.packing.fulfilmentSummary.invalidate({ orderId });
+      utils.packing.list.invalidate();
+      utils.orderException.list.invalidate({ orderId });
+      utils.orders.list.invalidate();
+      utils.products.list.invalidate();
+    },
+    onError: (err) => toast.error("取消商品失败: " + err.message),
+  });
+
   const { data: exceptions } = trpc.orderException.list.useQuery({ orderId }, { enabled: !!detail });
 
   async function uploadRefundAttachment(file: File, target: "attachment" | "customer_qr" = "attachment") {
@@ -380,6 +436,10 @@ export default function PackingDetail() {
   });
 
   const handleShip = async (mode: "full" | "partial") => {
+    if (isWaitingRestockPartialOnly && mode === "full") {
+      toast.error(translate("此订单仍有等待补货商品，请只选择其他现货商品进行部分发货", "A restock item remains. Ship only the other available items as a partial shipment."));
+      return;
+    }
     const shippingMethod = (detail as any)?.shippingMethod || "west_malaysia";
     const requiresParcelDaily = shippingMethod === "west_malaysia" || shippingMethod === "east_malaysia_poslaju";
     const hasAutoParcelDailyPackage = requiresParcelDaily && packages.some((pkg) => pkg.shippingType === "auto");
@@ -602,11 +662,24 @@ export default function PackingDetail() {
   const completedRefundAmount = ((d.refunds || []) as any[])
     .filter((refund) => refund.status === "processed" || refund.status === "awaiting_return")
     .reduce((sum, refund) => sum + Number(refund.amount || refund.requestedAmount || 0), 0);
+  const pendingRefundAmount = ((d.refunds || []) as any[])
+    .filter((refund) => !["processed", "awaiting_return", "rejected", "cancelled"].includes(String(refund.status || "").toLowerCase()))
+    .reduce((sum, refund) => sum + Number(refund.requestedAmount || refund.amount || 0), 0);
   const checkoutOrderTotal = Number(d.totalAmount || 0);
   const checkoutReceived = Number(d.paidAmount || 0);
-  const netReceivedAmount = checkoutReceived + approvedSupplementalShipping - completedRefundAmount;
-  const canShip = d.physicalStatus === "packing" || d.physicalStatus === "partial_shipped";
-  const activeShippingMode = d.physicalStatus === "partial_shipped" ? "partial" : shippingMode;
+  const financialSettlement = derivePackingFinancialSettlement({
+    currentOrderDue: checkoutOrderTotal,
+    checkoutReceipts: checkoutReceived,
+    approvedSupplementalShipping,
+    completedRefunds: completedRefundAmount,
+    pendingRefunds: pendingRefundAmount,
+  });
+  const canManagePacking = d.physicalStatus === "packing" || d.physicalStatus === "partial_shipped";
+  const packingShippingControl = (d as any).packingShippingControl || getPackingShippingControl(d);
+  const isPackingBlocked = packingShippingControl.mode === "block" || packingShippingControl.mode === "requires_release";
+  const isWaitingRestockPartialOnly = packingShippingControl.mode === "partial_only";
+  const canShip = canManagePacking && !isPackingBlocked;
+  const activeShippingMode = d.physicalStatus === "partial_shipped" || isWaitingRestockPartialOnly ? "partial" : shippingMode;
   const fulfilmentByItem = new Map(
     ((fulfilmentSummary || []) as any[]).map((row) => [Number(row.orderItemId), row]),
   );
@@ -616,6 +689,9 @@ export default function PackingDetail() {
     const shippedQuantity = summary ? Number(summary.shippedQuantity || 0) : 0;
     return { ...item, remainingQuantity, shippedQuantity };
   }).filter((item) => item.remainingQuantity > 0);
+  const compatibleMergeCandidates = ((mergeCandidates || []) as any[]).filter((candidate) => Number(candidate.id) !== Number(orderId));
+  const selectedMergeCandidate = compatibleMergeCandidates.find((candidate) => Number(candidate.id) === mergeCandidateId) || null;
+  const canMergeRemainingShipment = canShip && !isWaitingRestockPartialOnly && compatibleMergeCandidates.length > 0;
   const trackedPackageNumbers = ((existingPackages || []) as any[])
     .map((pkg) => String(pkg.trackingNumber || "").trim())
     .filter(Boolean);
@@ -687,14 +763,16 @@ export default function PackingDetail() {
       <Card className="print-hide border-slate-200 bg-slate-50/60">
         <CardHeader className="pb-3"><CardTitle className="text-base">{translate("订单财务结算摘要", "Order Financial Settlement")}</CardTitle></CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <div className="flex justify-between"><span>{translate("结账订单总额", "Checkout Order Total")}</span><span className="font-medium">RM {checkoutOrderTotal.toFixed(2)}</span></div>
-          <div className="flex justify-between"><span>{translate("结账已收", "Checkout Receipts")}</span><span>RM {checkoutReceived.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span>{translate("当前订单应收", "Current Order Due")}</span><span className="font-medium">RM {financialSettlement.currentOrderDue.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span>{translate("已确认收款（退款前）", "Confirmed Receipts Before Refund")}</span><span>RM {financialSettlement.confirmedReceipts.toFixed(2)}</span></div>
           {d.specialOrderType === "pending_shipping" && d.specialOrderStatus === "pending" && <div className="flex justify-between text-amber-800"><span>{translate("待汇款差价", "Pending Remittance Difference")}</span><span>RM {Number(d.shippingDifference || 0).toFixed(2)}</span></div>}
           {approvedSupplementalShipping > 0 && <div className="flex justify-between text-emerald-700"><span>{translate("补差价已收", "Supplemental Shipping Received")}</span><span>+RM {approvedSupplementalShipping.toFixed(2)}</span></div>}
+          {pendingRefundAmount > 0 && <div className="flex justify-between text-amber-800"><span>{translate("待退款（未完成）", "Pending Refund")}</span><span>-RM {pendingRefundAmount.toFixed(2)}</span></div>}
           {completedRefundAmount > 0 && <div className="flex justify-between text-rose-700"><span>{translate("已完成退款", "Completed Refunds")}</span><span>-RM {completedRefundAmount.toFixed(2)}</span></div>}
           <Separator />
-          <div className="flex justify-between font-semibold"><span>{translate("订单净实收", "Order Net Cash Received")}</span><span>RM {netReceivedAmount.toFixed(2)}</span></div>
-          <p className="text-xs text-muted-foreground">{translate("结账订单总额保持原值；补差价与退款作为独立财务结算项目同步显示。", "Checkout order total remains unchanged; shipping differences and refunds are shown as separate financial settlements.")}</p>
+          <div className="flex justify-between"><span>{translate("当前实际净实收（未完成退款前）", "Current Net Received Before Pending Refund")}</span><span>RM {financialSettlement.currentActualNetReceived.toFixed(2)}</span></div>
+          {pendingRefundAmount > 0 && <div className="flex justify-between font-semibold text-emerald-800"><span>{translate("退款处理后预计净实收", "Projected Net After Refund")}</span><span>RM {financialSettlement.projectedNetAfterPendingRefund.toFixed(2)}</span></div>}
+          <p className="text-xs text-muted-foreground">{translate("当前订单应收与订单管理相同；已确认收款和待退款单独展示，避免把未退回金额误认作订单总额。", "Current order due matches Order Management. Confirmed receipts and pending refunds are shown separately so unrefunded cash is not mistaken for the order total.")}</p>
         </CardContent>
       </Card>
 
@@ -841,13 +919,13 @@ export default function PackingDetail() {
         </Card>
       )}
 
-      {/* 包货工作台仅展示履约进度；订单合并只能在订单管理页面操作。 */}
-      {canShip && (
+      {/* 包货工作台仅展示履约进度；待处理特别订单仍须可见以便交接。 */}
+      {canManagePacking && (
         <Card className="print-hide">
           <CardHeader>
             <div>
               <CardTitle className="flex items-center gap-2 text-base"><Package className="h-4 w-4 text-violet-600" />{translate("履约进度", "Fulfilment Progress")}</CardTitle>
-              <p className="mt-1 text-xs text-muted-foreground">{translate("部分发货以每项实际已发数量计算。订单合并请回到订单管理页面操作。", "Partial shipping is calculated from the actual quantity shipped for each item. Manage order merges from Order Management.")}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{translate("部分发货以每项实际已发数量计算；当同客户订单的收件资料与物流方式一致时，可在下方“合并剩余订单发货”共同出货。", "Partial shipping is calculated from actual quantities. When a same-customer order has matching recipient and shipping details, use Merge Remaining Orders below to ship together.")}</p>
             </div>
           </CardHeader>
           <CardContent>
@@ -861,8 +939,8 @@ export default function PackingDetail() {
         </Card>
       )}
 
-      {/* Exception Handling - only show for packing/partial_shipped status */}
-      {canShip && (
+      {/* Exception Handling - keep available for packing/partial-shipped orders, including pending special follow-up. */}
+      {canManagePacking && (
         <Card className="print-hide border-orange-200">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -1153,7 +1231,9 @@ export default function PackingDetail() {
                   {customerAction === "refund" && (
                     <div className="space-y-3 border rounded-lg p-3 bg-orange-50 dark:bg-orange-950/20">
                       <div className="rounded-md bg-amber-100/80 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
-                        {translate("提交后只会建立“未处理”退款；库存、Credit、利润及客户通知均会在退款管理完成退款时才同步。", "Submitting creates a pending refund only. Inventory, Credit, profit and customer notification update only when Refund Management completes the refund.")}
+                        {exceptionType === "cancelled_item"
+                          ? translate("商品取消会立即归还未发货库存，并按剩余商品重新计算估计重量与运费；如已确认付款高于新订单应收，系统会建立待退款，实际退款、Credit与利润仍由退款管理完成时同步。", "Cancelling an item immediately restores unshipped stock and recalculates estimated weight and shipping. If confirmed payment exceeds the new order amount, a pending refund is created; the actual refund, credit and profit sync when Refund Management completes it.")
+                          : translate("提交后只会建立“未处理”退款；库存、Credit、利润及客户通知均会在退款管理完成退款时才同步。", "Submitting creates a pending refund only. Inventory, Credit, profit and customer notification update only when Refund Management completes the refund.")}
                       </div>
                       <Label>{translate("退款方式", "Refund Method")}</Label>
                       <Select value={refundMethod} onValueChange={(v: any) => setRefundMethod(v)}>
@@ -1222,6 +1302,20 @@ export default function PackingDetail() {
                         }
                         if (customerAction === "replace_product" && replacementProductId === "") {
                           toast.error(translate("请选择更换商品", "Please select a replacement product"));
+                          return;
+                        }
+                        if (exceptionType === "cancelled_item" && customerAction === "refund") {
+                          cancelPackingItemMutation.mutate({
+                            orderId,
+                            orderItemId: Number(exceptionItemId),
+                            quantity: exceptionQuantity,
+                            description: exceptionDesc || undefined,
+                            refundMethod,
+                            customerRefundDetails: customerRefundDetails.trim() || undefined,
+                            customerRefundQrUrl: customerRefundQrUrl || undefined,
+                            attachmentUrls: refundAttachmentUrls.length ? JSON.stringify(refundAttachmentUrls) : undefined,
+                            internalNotes: refundInternalNotes.trim() || undefined,
+                          });
                           return;
                         }
                         const actionMap: Record<string, string> = { replace_product: "replace", wait_restock: "wait_restock", refund: "refund" };
@@ -1302,7 +1396,7 @@ export default function PackingDetail() {
                           });
                         }
                       }}
-                      disabled={createExceptionMutation.isPending || updateExceptionMutation.isPending || resolveExceptionMutation.isPending}
+                      disabled={createExceptionMutation.isPending || updateExceptionMutation.isPending || resolveExceptionMutation.isPending || cancelPackingItemMutation.isPending}
                     >
                       {editingExceptionId ? translate("保存修改", "Save changes") : translate("确认", "Confirm")}
                     </Button>
@@ -1632,19 +1726,81 @@ export default function PackingDetail() {
           <CardTitle className="text-base">{translate("发货操作", "Shipping Actions")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {canShip ? <>
+          {packingShippingControl.mode === "requires_release" ? <div className="rounded-lg border border-orange-300 bg-orange-50 p-4 text-sm text-orange-950">
+            <div className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />{translate("待汇款差价：请选择是否允许先发货", "Pending balance: choose whether shipment may go first")}</div>
+            <p className="mt-2">{translate("老客户可由员工明确记录“允许先发货”；新客户可保持等待补款。无论选择哪一种，待汇款差价都会继续留在特别订单交接队列。", "Staff may explicitly allow a trusted customer to ship first, or hold shipment until the balance is paid. The follow-up remains in the special-order queue.")}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" disabled={pendingShippingReleaseMutation.isPending} onClick={() => pendingShippingReleaseMutation.mutate({ orderId, allowShipping: true })}>{translate("允许先发货", "Allow Shipment First")}</Button>
+              <Button size="sm" variant="outline" disabled={pendingShippingReleaseMutation.isPending} onClick={() => pendingShippingReleaseMutation.mutate({ orderId, allowShipping: false })}>{translate("等待补款再发", "Wait for Balance")}</Button>
+            </div>
+          </div> : packingShippingControl.mode === "block" ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+            <div className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />{translate("特别订单待处理，暂不可发货", "Pending special order: shipment is paused")}</div>
+            <p className="mt-2">{translate("请先完成该特别处理后再继续包货／发货。", "Complete this special follow-up before continuing packing or shipment.")}</p>
+          </div> : canShip ? <>
+            {packingShippingControl.reason === "pending_refund" && <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">
+              {translate("待退款仍在处理，但不会阻止本订单照常包货／发货；退款请继续在退款管理跟进。", "A refund remains pending but does not block normal packing or shipment. Continue to follow it up in Refund Management.")}
+            </div>}
+            {isWaitingRestockPartialOnly && <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900">
+              {translate("本订单有商品等待补货：可先选择其他现货商品进行部分发货；缺货商品不会被发出。补货自动分配完成后，剩余商品会恢复可发货。", "This order has a waiting-restock item. Ship the other available items as a partial shipment; the missing item cannot ship. It becomes shippable after automatic restock allocation.")}
+            </div>}
+            {canMergeRemainingShipment && <Dialog open={mergeShippingDialogOpen} onOpenChange={setMergeShippingDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm"><Package className="mr-2 h-4 w-4" />{translate("合并剩余订单发货", "Merge Remaining Orders")}</Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader><DialogTitle>{translate("合并同客户剩余待发商品", "Merge Remaining Orders for Shipment")}</DialogTitle></DialogHeader>
+                <div className="space-y-4 text-sm">
+                  <p className="text-muted-foreground">{translate("只列出同一客户、同一收件地址和同一物流方式的可发订单。会以当前填写的包裹、追踪号和实际重量建立一个共同包裹。", "Only orders with the same customer, recipient address and shipping method are listed. The current package, tracking number and actual weight create one shared package.")}</p>
+                  <div className="rounded-md border bg-muted/30 p-3">
+                    <div className="font-medium">{d.orderNumber} · {translate("本订单剩余商品", "This order remaining")}</div>
+                    <div className="mt-1 text-muted-foreground">{shippableItems.map((item: any) => `${item.productName}${item.variationName ? ` (${item.variationName})` : ""} × ${item.remainingQuantity}`).join("；")}</div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{translate("选择要一同发货的订单", "Choose order to ship together")}</Label>
+                    <Select value={mergeCandidateId ? String(mergeCandidateId) : ""} onValueChange={(value) => setMergeCandidateId(Number(value))}>
+                      <SelectTrigger><SelectValue placeholder={translate("请选择兼容待发订单", "Select a compatible order")}/></SelectTrigger>
+                      <SelectContent>
+                        {compatibleMergeCandidates.map((candidate: any) => <SelectItem key={candidate.id} value={String(candidate.id)}>{candidate.orderNumber} · {candidate.physicalStatus === "partial_shipped" ? translate("部分发货，剩余商品", "Partial shipment remaining") : translate("待包货", "Packing")} · RM {Number(candidate.totalAmount || 0).toFixed(2)}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {selectedMergeCandidate && <div className="rounded-md border border-emerald-200 bg-emerald-50/50 p-3">
+                    <div className="font-medium">{selectedMergeCandidate.orderNumber} · {translate("将一同发货的剩余商品", "Remaining items to ship together")}</div>
+                    <div className="mt-1 text-emerald-900">{selectedMergeCandidate.items.map((item: any) => `${item.productName}${item.variationName ? ` (${item.variationName})` : ""} × ${item.remainingQuantity}`).join("；")}</div>
+                  </div>}
+                  <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-950">{translate("请先在下方发货资料填写同一个包裹的追踪号／AWB和实际重量，再确认合并发货。系统不会重新扣减库存，只会记录共同包裹及各订单实际发出数量。", "First enter the shared tracking/AWB and actual weight below. The system does not deduct inventory again; it records one shared package and the shipped quantities for each order.")}</p>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setMergeShippingDialogOpen(false)}>{translate("取消", "Cancel")}</Button>
+                    <Button disabled={!selectedMergeCandidate || mergeShipMutation.isPending} onClick={() => {
+                      const pkg = packages[0];
+                      if (!pkg) { toast.error(translate("请先填写包裹资料", "Enter package details first")); return; }
+                      if (packages.length !== 1) { toast.error(translate("合并发货一次只可建立一个共同包裹", "Merged shipment supports one shared package at a time")); return; }
+                      if (pkg.shippingType === "manual" && (!pkg.trackingNumber || !pkg.shippingLabelUrl)) { toast.error(translate("手动发货必须填写追踪号并上传 AWB", "Manual shipping requires a tracking number and an AWB upload")); return; }
+                      mergeShipMutation.mutate({
+                        orderIds: [orderId, selectedMergeCandidate.id],
+                        itemQuantities: [
+                          ...shippableItems.map((item: any) => ({ itemId: String(item.id), quantity: Number(item.remainingQuantity) })),
+                          ...selectedMergeCandidate.items.map((item: any) => ({ itemId: String(item.id), quantity: Number(item.remainingQuantity) })),
+                        ],
+                        packageData: { courier: pkg.courier, shippingType: pkg.shippingType as "auto" | "manual", trackingNumber: pkg.trackingNumber || undefined, shippingLabelUrl: pkg.shippingLabelUrl || undefined, weight: pkg.weight },
+                      });
+                    }}>{mergeShipMutation.isPending ? translate("处理中…", "Working…") : translate("确认合并发货", "Confirm Merged Shipment")}</Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>}
             <div className="flex items-center space-x-4">
               <Label htmlFor="shipping-mode" className="text-right">{translate("发货模式", "Shipping Mode")}:</Label>
               <Select
                 value={activeShippingMode}
                 onValueChange={(value: "full" | "partial") => setShippingMode(value)}
-                disabled={d.physicalStatus === "partial_shipped"}
+                disabled={d.physicalStatus === "partial_shipped" || isWaitingRestockPartialOnly}
               >
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder={translate("选择发货模式", "Select shipping mode")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="full">{translate("完整发货", "Full Shipment")}</SelectItem>
+                  {!isWaitingRestockPartialOnly && <SelectItem value="full">{translate("完整发货", "Full Shipment")}</SelectItem>}
                   <SelectItem value="partial">{translate("部分发货", "Partial Shipment")}</SelectItem>
                 </SelectContent>
               </Select>

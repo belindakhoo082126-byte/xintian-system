@@ -2036,6 +2036,8 @@ export const specialOrderActions = mysqlTable("special_order_actions", {
     "company_bear",       // 公司承担
     "remark",             // 备注
     "convert_to_credit",  // V2.0.80: 运费差额转 Credit
+    "allow_shipping_before_balance", // 待汇款差价：员工授权先发货
+    "hold_shipping_before_balance",  // 待汇款差价：员工明确等补款再发
   ]).notNull(),
   // Amount involved
   amount: decimal("amount", { precision: 10, scale: 2 }).default("0"),
@@ -3515,7 +3517,7 @@ export type InsertCampaignButton = typeof campaignButtons.$inferInsert;
 // V2.0.43: Order number sequence counter
 export const orderSeq = mysqlTable("order_seq", {
   id: int("id").autoincrement().primaryKey(),
-  prefix: varchar("prefix", { length: 10 }).notNull(),
+  prefix: varchar("prefix", { length: 10 }).notNull().unique(),
   nextNumber: int("next_number").notNull().default(1),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 });

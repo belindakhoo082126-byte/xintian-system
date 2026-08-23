@@ -883,15 +883,15 @@ export default function ProductsV2() {
             <div className="py-10 text-center text-sm text-muted-foreground">{translate("暂时没有可显示的库存流水记录。", "There are no inventory movement records yet.")}</div>
           ) : (
             <div className="max-h-[60vh] overflow-auto rounded-md border">
-              <Table className="min-w-[1120px] table-fixed">
+              <Table className="min-w-[1240px] table-fixed">
                 <TableHeader><TableRow>
-                  <TableHead className="w-[172px]">{translate("时间", "Time")}</TableHead>
+                  <TableHead className="w-[160px]">{translate("时间", "Time")}</TableHead>
                   <TableHead className="w-[180px]">{translate("商品／规格", "Product / Variant")}</TableHead>
-                  <TableHead className="w-[120px]">{translate("变动前 → 后", "Before → After")}</TableHead>
-                  <TableHead className="w-[88px]">{translate("变动", "Change")}</TableHead>
+                  <TableHead className="w-[110px]">{translate("变动前 → 后", "Before → After")}</TableHead>
+                  <TableHead className="w-[80px]">{translate("变动", "Change")}</TableHead>
                   <TableHead className="w-[260px]">{translate("原因", "Reason")}</TableHead>
-                  <TableHead className="w-[170px]">{translate("关联单据", "Reference")}</TableHead>
-                  <TableHead className="w-[130px]">{translate("操作人", "Operator")}</TableHead>
+                  <TableHead className="w-[230px]">{translate("关联单据", "Reference")}</TableHead>
+                  <TableHead className="w-[180px]">{translate("操作人", "Operator")}</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {(stockLogQuery.data ?? []).map((entry: any) => (
@@ -900,9 +900,9 @@ export default function ProductsV2() {
                       <TableCell className="whitespace-normal break-words">{entry.productName || "—"}{entry.variantName ? <span className="block text-xs text-muted-foreground">{entry.variantName}</span> : null}</TableCell>
                       <TableCell className="whitespace-nowrap">{entry.stockBefore} → {entry.stockAfter}</TableCell>
                       <TableCell className={Number(entry.quantityChange) >= 0 ? "font-medium text-emerald-700" : "font-medium text-destructive"}>{Number(entry.quantityChange) >= 0 ? "+" : ""}{entry.quantityChange}</TableCell>
-                      <TableCell className="whitespace-normal break-words">{entry.reason || "—"}</TableCell>
-                      <TableCell className="whitespace-nowrap">{entry.referenceType && entry.referenceId ? `${getStockReferenceLabel(entry.referenceType)} #${entry.referenceId}` : "—"}</TableCell>
-                      <TableCell>{entry.operator || "—"}</TableCell>
+                      <TableCell className="whitespace-normal break-words leading-5">{entry.reason || "—"}</TableCell>
+                      <TableCell className="whitespace-normal break-all leading-5">{entry.referenceType && entry.referenceId ? `${getStockReferenceLabel(entry.referenceType)} #${entry.referenceId}` : "—"}</TableCell>
+                      <TableCell className="whitespace-normal break-words leading-5">{entry.operator || "—"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

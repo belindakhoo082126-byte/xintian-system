@@ -5027,6 +5027,22 @@ export const appRouter = router({
       });
     }),
 
+    // 包货实际重量／运费沟通后，客户取消部分未发货商品的专用原子流程。
+    cancelPackingItem: protectedProcedure.input(z.object({
+      orderId: z.number().int().positive(),
+      orderItemId: z.number().int().positive(),
+      quantity: z.number().int().positive(),
+      description: z.string().max(5000).optional(),
+      refundMethod: z.enum(['credit', 'tng', 'cash']),
+      customerRefundDetails: z.string().max(5000).optional(),
+      customerRefundQrUrl: z.string().max(500).optional(),
+      attachmentUrls: z.string().max(10000).optional(),
+      internalNotes: z.string().max(5000).optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const operator = ctx.user?.name || ctx.user?.email || 'Unknown';
+      return await db.cancelPackingOrderItem({ ...input, operator });
+    }),
+
     // Resolve an exception with a chosen resolution type
     resolve: protectedProcedure.input(z.object({
       exceptionId: z.number(),
@@ -5510,6 +5526,17 @@ export const appRouter = router({
       orderId: z.number(),
     })).query(async ({ input }) => {
       return await db.getSpecialOrderActions(input.orderId);
+    }),
+
+    setPendingShippingShipmentRelease: shippingProcedure.input(z.object({
+      orderId: z.number().int().positive(),
+      allowShipping: z.boolean(),
+      remark: z.string().max(1000).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      return await db.setPendingShippingShipmentRelease({
+        ...input,
+        operator: ctx.user?.name || "staff",
+      });
     }),
     
     // Process special order action

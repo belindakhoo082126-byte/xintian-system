@@ -1,6 +1,8 @@
 import { useI18n } from "@/contexts/I18nContext";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
 import { WEST_MALAYSIA_V22_SHIPPING } from "@shared/shippingV22";
+import { getOrderDocumentShippingRows } from "@shared/orderDocumentShippingRules";
+import { getOrderDocumentPaymentSummary } from "@shared/orderDocumentFinancialRules";
 
 const SHIPPING_LABELS: Record<string, { zh: string; en: string }> = {
   west_malaysia: { zh: "西马", en: "West Malaysia" },
@@ -107,8 +109,6 @@ export function OrderDocument({
   const creditUsed = parseFloat(o.creditUsed || "0");
   const shippingFee = parseFloat(o.shippingFee || "0");
   const totalAmount = parseFloat(o.totalAmount || "0");
-  const paidAmount = parseFloat(o.paidAmount || "0");
-  const balance = totalAmount - paidAmount;
   const discountAmount = parseFloat(o.discountAmount || "0");
   const estimatedWeight = parseFloat(o.estimatedWeight || o.totalWeight || "0");
   const isWestMalaysia = o.shippingMethod === "west_malaysia";
@@ -116,6 +116,22 @@ export function OrderDocument({
   const extraWeightFee = extraWeightKg * WEST_MALAYSIA_V22_SHIPPING.additionalKgFee;
   const baseShippingFee = isWestMalaysia ? Math.max(0, shippingFee - extraWeightFee) : shippingFee;
   const isFreeShipping = isWestMalaysia && estimatedWeight > 0 && baseShippingFee === 0;
+  const shippingRows = getOrderDocumentShippingRows({
+    isWestMalaysia,
+    isFreeShipping,
+    baseShippingFee,
+    extraWeightKg,
+    extraWeightFee,
+    shippingFee,
+    additionalKgFee: WEST_MALAYSIA_V22_SHIPPING.additionalKgFee,
+  });
+  const actualWeight = parseFloat(o.actualWeight || "0");
+  const actualExtraWeightKg = isWestMalaysia && actualWeight > 0
+    ? Math.max(0, Math.ceil(actualWeight - WEST_MALAYSIA_V22_SHIPPING.includedWeightKg))
+    : 0;
+  const actualExtraWeightFee = actualExtraWeightKg * WEST_MALAYSIA_V22_SHIPPING.additionalKgFee;
+  const paymentSummary = getOrderDocumentPaymentSummary({ baseOrderTotal: totalAmount, payments: o.payments || [] });
+  const hasConfirmedSupplementalShipping = paymentSummary.confirmedSupplementalShipping > 0;
 
   const fmtDate = (d: string | Date) => {
     if (!d) return "-";
@@ -257,6 +273,13 @@ export function OrderDocument({
             <div><span style={labelStyle}>{translate("续重", "Extra Weight")}:</span> {extraWeightKg > 0 ? `${extraWeightKg} kg × RM ${WEST_MALAYSIA_V22_SHIPPING.additionalKgFee}` : translate("无", "None")}</div>
           </div>
         )}
+        {isWestMalaysia && actualWeight > 0 && (
+          <div style={{ ...gridRow, marginTop: "4px" }}>
+            <div><span style={labelStyle}>{translate("实际重量", "Actual Weight")}:</span> {actualWeight.toFixed(2)} kg</div>
+            <div><span style={labelStyle}>{translate("实际续重", "Actual Extra Weight")}:</span> {actualExtraWeightKg > 0 ? `${actualExtraWeightKg} kg × RM ${WEST_MALAYSIA_V22_SHIPPING.additionalKgFee}` : translate("无", "None")}</div>
+            <div><span style={labelStyle}>{translate("实际补差价", "Actual Shipping Difference")}:</span> {hasConfirmedSupplementalShipping ? `RM ${paymentSummary.confirmedSupplementalShipping.toFixed(2)}` : translate("未产生／待确认", "None / pending")}</div>
+          </div>
+        )}
         {(o.courierCompany || o.trackingNumber) && (
           <div style={{ ...gridRow, marginTop: "4px" }}>
             <div><span style={labelStyle}>{translate("快递公司", "Courier")}:</span> {o.courierCompany || "-"}</div>
@@ -347,28 +370,25 @@ export function OrderDocument({
               <span>+RM {extraCharge.toFixed(2)}</span>
             </div>
           )}
-          {isWestMalaysia && estimatedWeight > 0 ? (
+          {shippingRows.map((row) => (
+            <div key={row.key} style={amtRow}>
+              <span>{translate(row.zhLabel, row.enLabel)}</span>
+              <span>{translate(row.zhValue, row.enValue)}</span>
+            </div>
+          ))}
+          {hasConfirmedSupplementalShipping && (
             <>
-              <div style={amtRow}>
-                <span>{isFreeShipping ? translate("首10kg免运", "First 10kg Free Shipping") : translate("首10kg基础运费", "First 10kg Base Shipping")}</span>
-                <span>RM {baseShippingFee.toFixed(2)}</span>
-              </div>
-              {extraWeightKg > 0 && (
+              {actualExtraWeightKg > 0 && (
                 <div style={amtRow}>
-                  <span>{translate("续重运费", "Extra Weight Shipping")} ({extraWeightKg} kg × RM {WEST_MALAYSIA_V22_SHIPPING.additionalKgFee.toFixed(2)})</span>
-                  <span>RM {extraWeightFee.toFixed(2)}</span>
+                  <span>{translate("实际续重运费", "Actual Extra Weight Shipping")} ({actualExtraWeightKg}kg × RM {WEST_MALAYSIA_V22_SHIPPING.additionalKgFee.toFixed(2)})</span>
+                  <span>RM {actualExtraWeightFee.toFixed(2)}</span>
                 </div>
               )}
-              <div style={amtRow}>
-                <span>{translate("客户应付运费", "Customer Shipping Due")}</span>
-                <span>RM {shippingFee.toFixed(2)}</span>
+              <div style={{ ...amtRow, color: C.orange, fontWeight: 600 }}>
+                <span>{translate("实际补差价（已确认）", "Actual Shipping Difference (Confirmed)")}</span>
+                <span>+RM {paymentSummary.confirmedSupplementalShipping.toFixed(2)}</span>
               </div>
             </>
-          ) : (
-            <div style={amtRow}>
-              <span>{translate("运费", "Shipping")}</span>
-              <span>RM {shippingFee.toFixed(2)}</span>
-            </div>
           )}
           {creditUsed > 0 && (
             <div style={{ ...amtRow, color: C.blue }}>
@@ -377,22 +397,22 @@ export function OrderDocument({
             </div>
           )}
           <div style={{ borderTop: `2px solid ${C.green}`, marginTop: "4px", paddingTop: "6px", ...amtRow, fontWeight: 700, fontSize: "15px" }}>
-            <span>{translate("总金额", "Total")}</span>
-            <span>RM {totalAmount.toFixed(2)}</span>
+            <span>{hasConfirmedSupplementalShipping ? translate("最终应收金额", "Final Amount Due") : translate("总金额", "Total")}</span>
+            <span>RM {paymentSummary.finalOrderTotal.toFixed(2)}</span>
           </div>
           <div style={amtRow}>
-            <span>{translate("已付款", "Paid")}</span>
-            <span>RM {paidAmount.toFixed(2)}</span>
+            <span>{translate("已确认付款", "Confirmed Payments")}</span>
+            <span>RM {paymentSummary.approvedPaymentTotal.toFixed(2)}</span>
           </div>
-          {balance > 0 ? (
+          {paymentSummary.balance > 0 ? (
             <div style={{ ...amtRow, color: C.orange, fontWeight: 600 }}>
               <span>{translate("尚欠款", "Outstanding")}</span>
-              <span>RM {balance.toFixed(2)}</span>
+              <span>RM {paymentSummary.balance.toFixed(2)}</span>
             </div>
-          ) : balance < 0 ? (
+          ) : paymentSummary.balance < 0 ? (
             <div style={{ ...amtRow, color: C.greenPaid, fontWeight: 600 }}>
               <span>{translate("客户多付", "Overpaid")}</span>
-              <span>RM {Math.abs(balance).toFixed(2)}</span>
+              <span>RM {Math.abs(paymentSummary.balance).toFixed(2)}</span>
             </div>
           ) : (
             <div style={{ ...amtRow, color: C.greenPaid, fontWeight: 600 }}>
