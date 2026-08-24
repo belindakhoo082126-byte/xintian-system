@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { generateCustomerCarePackPdf } from "./carePackPdf";
 
 describe("server care-pack PDF", () => {
@@ -17,7 +18,7 @@ describe("server care-pack PDF", () => {
         },
         missing: [],
       }],
-    });
+    }, null, null, readFileSync("/usr/share/fonts/opentype/noto/NotoSansCJKsc-Light.otf"));
 
     expect(pdf.subarray(0, 4).toString("utf8")).toBe("%PDF");
     expect(pdf.length).toBeGreaterThan(1_000);

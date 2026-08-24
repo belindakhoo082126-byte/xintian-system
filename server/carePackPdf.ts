@@ -1,9 +1,14 @@
-import { readFileSync } from "node:fs";
 import PDFDocument from "pdfkit";
 import type { CarePackPublicDocument } from "../shared/orderCarePackRules";
 
-const CJK_FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Light.otf";
-const CJK_FONT_BYTES = readFileSync(CJK_FONT_PATH);
+const CJK_FONT_ASSET_PATH = "/manus-storage/NotoSansCJKsc-Light_85634da1.otf";
+
+async function getCjkFont(assetOrigin?: string | null) {
+  if (!assetOrigin) throw new Error("PDF字体资源地址不可用");
+  const response = await fetch(new URL(CJK_FONT_ASSET_PATH, assetOrigin).toString());
+  if (!response.ok) throw new Error("PDF中文字体资源无法读取");
+  return Buffer.from(await response.arrayBuffer());
+}
 
 function textOrDash(value: string | null | undefined) {
   return value?.trim() || "-";
@@ -59,9 +64,9 @@ function addPageHeader(pdf: PDFKit.PDFDocument, title: string, logo: Buffer | nu
 }
 
 /** Generates only the allow-listed customer care-pack fields; it has no order/customer/payment/address inputs. */
-export async function generateCustomerCarePackPdf(document: CarePackPublicDocument, logoUrl?: string | null, assetOrigin?: string | null): Promise<Buffer> {
+export async function generateCustomerCarePackPdf(document: CarePackPublicDocument, logoUrl?: string | null, assetOrigin?: string | null, fontBytes?: Buffer): Promise<Buffer> {
   const pdf = new PDFDocument({ size: "A4", margin: 36, bufferPages: true, info: { Title: document.title, Author: "心田 Xin Tian" } });
-  pdf.registerFont("CarePackCJK", CJK_FONT_BYTES);
+  pdf.registerFont("CarePackCJK", fontBytes ?? await getCjkFont(assetOrigin));
   const chunks: Buffer[] = [];
   pdf.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve, reject) => {
