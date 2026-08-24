@@ -53,6 +53,7 @@ import Packing from "@/pages/Packing";
 import PackingDetail from "@/pages/PackingDetail";
 import CustomerOrderTracking from "@/pages/CustomerOrderTracking";
 import CustomerOrderPage from "@/pages/CustomerOrderPage";
+import CustomerCarePackPage from "@/pages/CustomerCarePackPage";
 import ProfitAnalysisReport from "@/pages/ProfitAnalysisReport";
 import LiveRooms from "@/pages/LiveRooms";
 import LiveRoomDetail from "@/pages/LiveRoomDetail";
@@ -85,6 +86,7 @@ function PublicRoutes() {
       <Route path={"/mall/order-query"} component={MallOrderQuery} />
       <Route path={"/mall/payment/:orderNumber"} component={MallPayment} />
       <Route path={"/order-tracking"} component={CustomerOrderTracking} />
+      <Route path={"/care/:token"} component={({ params }: any) => <CustomerCarePackPage token={params.token} />} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -178,6 +180,7 @@ function App() {
             <Route path={"/terms-of-service"} component={() => <PublicPolicy kind="terms" />} />
             <Route path={"/data-deletion"} component={() => <PublicPolicy kind="dataDeletion" />} />
             <Route path={"/order-tracking"} component={CustomerOrderTracking} />
+            <Route path={"/care/:token"} component={({ params }: any) => <CustomerCarePackPage token={params.token} />} />
             <Route path={"/order/:orderNumber/:token"} component={({ params }: any) => <CustomerOrderPage orderNumber={params.orderNumber} token={params.token} />} />
             <Route>
               <DashboardLayout>

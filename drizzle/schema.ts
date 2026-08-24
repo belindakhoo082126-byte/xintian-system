@@ -2813,6 +2813,137 @@ export type OrderRefundItem = typeof orderRefundItems.$inferSelect;
 export type InsertOrderRefundItem = typeof orderRefundItems.$inferInsert;
 
 // ============================================================================
+// V2.2: Order Care / Product Use Knowledge Packs (订单养护／商品使用知识包)
+// ============================================================================
+
+// One real, staff-maintained profile per product / variation. variationId=0 is
+// the product default; a non-zero variation overrides it for that variant.
+export const productCareProfiles = mysqlTable("product_care_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  variationId: int("variationId").notNull().default(0),
+  profileType: mysqlEnum("profileType", ["plant", "fertilizer", "pesticide", "medium", "tool", "other"]).notNull(),
+  purpose: text("purpose"),
+  usageMethod: text("usageMethod"),
+  dosage: text("dosage"),
+  frequency: text("frequency"),
+  suitableFor: text("suitableFor"),
+  safetyNotes: text("safetyNotes"),
+  additionalNotes: text("additionalNotes"),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  createdBy: varchar("createdBy", { length: 255 }),
+  updatedBy: varchar("updatedBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  productVariationUnique: uniqueIndex("product_care_profiles_product_variation_unique").on(table.productId, table.variationId),
+  productIndex: index("product_care_profiles_product_idx").on(table.productId),
+}));
+
+export type ProductCareProfile = typeof productCareProfiles.$inferSelect;
+export type InsertProductCareProfile = typeof productCareProfiles.$inferInsert;
+
+// Singleton-style settings row. It controls the approved lifecycle without
+// ever generating care content from AI or placeholder text.
+export const carePackSettings = mysqlTable("care_pack_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  finalizationTrigger: mysqlEnum("finalizationTrigger", ["checkout", "packing_start"]).default("packing_start").notNull(),
+  missingContentPolicy: mysqlEnum("missingContentPolicy", ["show_notice", "block_finalization", "exclude_item"]).default("show_notice").notNull(),
+  customerTitle: varchar("customerTitle", { length: 255 }).default("商品养护／使用知识包").notNull(),
+  customerIntro: text("customerIntro"),
+  employeeTitle: varchar("employeeTitle", { length: 255 }).default("包裹内商品养护／使用说明").notNull(),
+  updatedBy: varchar("updatedBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CarePackSettings = typeof carePackSettings.$inferSelect;
+export type InsertCarePackSettings = typeof carePackSettings.$inferInsert;
+
+// One stable customer link per order. The public token is never persisted;
+// only its SHA-256 digest is stored in publicTokenHash.
+export const orderCarePacks = mysqlTable("order_care_packs", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull().unique(),
+  status: mysqlEnum("status", ["active", "finalized", "revoked"]).default("active").notNull(),
+  publicTokenHash: varchar("publicTokenHash", { length: 64 }).notNull(),
+  tokenVersion: int("tokenVersion").default(1).notNull(),
+  currentContentHash: varchar("currentContentHash", { length: 64 }),
+  finalSnapshot: json("finalSnapshot"),
+  finalizedAt: timestamp("finalizedAt"),
+  finalizedBy: varchar("finalizedBy", { length: 255 }),
+  finalizedTrigger: mysqlEnum("finalizedTrigger", ["checkout", "packing_start"]),
+  revokedAt: timestamp("revokedAt"),
+  revokedBy: varchar("revokedBy", { length: 255 }),
+  revokedReason: text("revokedReason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  statusIndex: index("order_care_packs_status_idx").on(table.status),
+}));
+
+export type OrderCarePack = typeof orderCarePacks.$inferSelect;
+export type InsertOrderCarePack = typeof orderCarePacks.$inferInsert;
+
+// Current effective items only. They are de-duplicated by product + variation,
+// while their contents are derived live until the parent pack is finalized.
+export const orderCarePackItems = mysqlTable("order_care_pack_items", {
+  id: int("id").autoincrement().primaryKey(),
+  carePackId: int("carePackId").notNull(),
+  productId: int("productId").notNull(),
+  variationId: int("variationId").notNull().default(0),
+  productNameSnapshot: varchar("productNameSnapshot", { length: 255 }).notNull(),
+  variationNameSnapshot: varchar("variationNameSnapshot", { length: 255 }),
+  sourceOrderItemIds: text("sourceOrderItemIds").notNull(),
+  quantity: int("quantity").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  packProductVariationUnique: uniqueIndex("order_care_pack_items_pack_product_variant_unique").on(table.carePackId, table.productId, table.variationId),
+  productIndex: index("order_care_pack_items_product_idx").on(table.productId),
+}));
+
+export type OrderCarePackItem = typeof orderCarePackItems.$inferSelect;
+export type InsertOrderCarePackItem = typeof orderCarePackItems.$inferInsert;
+
+// Immutable revision events record why an active pack changed and preserve the
+// final snapshot without copying customer, payment, address, or price data.
+export const orderCarePackRevisions = mysqlTable("order_care_pack_revisions", {
+  id: int("id").autoincrement().primaryKey(),
+  carePackId: int("carePackId").notNull(),
+  revisionNumber: int("revisionNumber").notNull(),
+  revisionType: mysqlEnum("revisionType", ["created", "order_items_changed", "product_content_changed", "finalized", "revoked", "rebuilt"]).notNull(),
+  contentSnapshot: json("contentSnapshot"),
+  summary: text("summary"),
+  createdBy: varchar("createdBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  packRevisionUnique: uniqueIndex("order_care_pack_revisions_pack_revision_unique").on(table.carePackId, table.revisionNumber),
+  packIndex: index("order_care_pack_revisions_pack_idx").on(table.carePackId),
+}));
+
+export type OrderCarePackRevision = typeof orderCarePackRevisions.$inferSelect;
+export type InsertOrderCarePackRevision = typeof orderCarePackRevisions.$inferInsert;
+
+// Audit link creation, manual resend/copy, customer view/save/print and
+// employee printing. No customer-sensitive information is written here.
+export const carePackDeliveryLogs = mysqlTable("care_pack_delivery_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  carePackId: int("carePackId").notNull(),
+  action: mysqlEnum("action", ["checkout_attached", "manual_resent", "link_copied", "customer_view", "customer_save", "customer_print", "employee_view", "employee_print", "revoked", "rebuilt"]).notNull(),
+  channel: varchar("channel", { length: 50 }),
+  actorType: mysqlEnum("actorType", ["customer", "staff", "system"]).notNull(),
+  actorName: varchar("actorName", { length: 255 }),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  packActionIndex: index("care_pack_delivery_logs_pack_action_idx").on(table.carePackId, table.action),
+}));
+
+export type CarePackDeliveryLog = typeof carePackDeliveryLogs.$inferSelect;
+export type InsertCarePackDeliveryLog = typeof carePackDeliveryLogs.$inferInsert;
+
+// ============================================================================
 // Order Operation Logs (订单操作日志 - 完整操作记录)
 // ============================================================================
 
