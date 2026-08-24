@@ -71,6 +71,10 @@ export default function CustomerOrderPage(props: any) {
       staleTime: 5 * 1000,
     }
   );
+  const { data: carePackLink } = trpc.publicOrder.getCarePackPath.useQuery(
+    { orderNumber, token },
+    { enabled: orderNumber.length > 0 && token.length >= 32, staleTime: 60 * 1000 }
+  );
 
   // V2.0.3: Address form state
   const [showAddressForm, setShowAddressForm] = useState(false);
@@ -405,6 +409,16 @@ export default function CustomerOrderPage(props: any) {
                     {statusInfo?.label}
                   </Badge>
                 </div>
+                {carePackLink?.path ? (
+                  <div className="mt-4 border-t pt-4">
+                    <Button variant="outline" className="w-full border-emerald-700 text-emerald-900 hover:bg-emerald-50" asChild>
+                      <a href={carePackLink.path} target="_blank" rel="noreferrer">
+                        <Leaf className="mr-2 h-4 w-4" />查看／保存本订单商品养护知识包
+                      </a>
+                    </Button>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">知识包会按当前有效商品更新；开始包货后将保存为最终版本。</p>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
 

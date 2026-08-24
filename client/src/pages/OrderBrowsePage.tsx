@@ -27,6 +27,7 @@ import { OrderDocument } from "@/components/OrderDocument";
 import { prepareOrderDocumentExportHost } from "@/lib/orderDocumentExport";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
 import { ORDER_DOCUMENT_OUTPUT_OPTIONS } from "@shared/orderDocumentOutputRules";
+import OrderCarePackAdminPanel from "@/components/OrderCarePackAdminPanel";
 
 const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
   pending: { zh: "未汇款订单", en: "Unpaid Order", variant: "outline" },
@@ -695,6 +696,8 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
 
       {/* Export/Print content wrapper */}
       <div ref={exportRef} className="space-y-4">
+
+      <OrderCarePackAdminPanel orderId={orderId} />
 
       {/* Section 1: Order Basic Info */}
       <Card>

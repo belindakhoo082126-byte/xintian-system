@@ -1,4 +1,5 @@
 import { eq, ne, and, or, desc, asc, sql, gte, lte, lt, isNull, like, inArray } from "drizzle-orm";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import { formatLiveRoomVariantCopyText } from "../shared/liveRoomVariantCopy";
 import { composeLiveVariantKeyword } from "../shared/liveRoomVariantKeyword";
@@ -72,6 +73,9 @@ import {
   marketingLotteryPrizes, marketingLotteryEntries, marketingLotteryDraws,
   marketingSegments, marketingMessageTemplates, marketingAutomationRules,
   marketingMessageDeliveries, marketingMessageEvents,
+  // V2.2 imports - Order care / product use knowledge packs
+  productCareProfiles, carePackSettings, orderCarePacks, orderCarePackItems,
+  orderCarePackRevisions, carePackDeliveryLogs,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
@@ -100,6 +104,15 @@ import { getSpecialOrderQueryMode } from "../shared/specialOrderHistoryRules";
 import { getOrderSplitIneligibility } from "../shared/orderSplitRules";
 import { getPackingCancellationSettlement, getPackingItemCancellationIneligibility, getRemainingFulfilmentQuantity } from "../shared/packingItemCancellationRules";
 import { getPackingShippingControl, isPackingBlockedByPendingSpecialOrder } from "../shared/packingSpecialOrderRules";
+import {
+  createCarePackPublicDocument,
+  groupEffectiveCarePackItems,
+  mapRealCareContent,
+  resolveCarePackDocument,
+  stringifyCarePackDocument,
+  type CarePackPublicDocument,
+  type CareProfileSource,
+} from "../shared/orderCarePackRules";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -326,6 +339,7 @@ export async function updateProduct(id: number, data: Partial<typeof products.$i
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(products).set(data).where(eq(products.id, id));
+  await syncActiveCarePacksByProduct(id, "product_content_changed");
 }
 
 export async function deleteProduct(id: number) {
@@ -2073,6 +2087,15 @@ if (data.physicalStatus === "packing") updateData.paymentConfirmedAt = new Date(
 
   await db.update(orders).set(updateData).where(eq(orders.id, id));
 
+  if (data.physicalStatus === "cancelled") {
+    await revokeOrderCarePack(id, "订单已取消");
+  } else if (data.physicalStatus === "packing") {
+    const careSettings = await getCarePackSettings();
+    if (careSettings.finalizationTrigger === "packing_start") {
+      await finalizeOrderCarePack(id, "packing_start");
+    }
+  }
+
   // 虚拟商品与实体商品可同单结账。确认付款后只建立一次可追踪交付任务；
   // Meta 自动私聊尚未接入，因此任务先进入待人工发送队列。
   const paidOrderItems = data.physicalStatus === "packing"
@@ -2195,6 +2218,14 @@ export async function updateOrderDetails(id: number, data: {
   if (Object.keys(updateData).length > 0) {
     await db.update(orders).set(updateData).where(eq(orders.id, id));
     // Logging is handled by the routers.ts procedure to avoid duplicate entries
+    if (data.physicalStatus === "cancelled" || data.importStatus === "cancelled") {
+      await revokeOrderCarePack(id, "订单已取消");
+    } else if (data.physicalStatus === "packing") {
+      const careSettings = await getCarePackSettings();
+      if (careSettings.finalizationTrigger === "packing_start") {
+        await finalizeOrderCarePack(id, "packing_start");
+      }
+    }
   }
 
   broadcastChanges(["orders", "dashboard"]);
@@ -2411,6 +2442,8 @@ export async function updateOrderItems(orderId: number, items: Array<{
       changes,
     }), operator || "admin");
   }
+
+  await syncOrderCarePack(orderId, "order_items_changed", operator || null);
 
   broadcastChanges(["orders", "inventory", "dashboard", "customers"]);
   return { success: true, totalAmount: totalAmount.toFixed(2), shippingFee: shippingFee.toFixed(2) };
@@ -4014,6 +4047,8 @@ export async function cancelOrderWithReason(id: number, reason: string, operator
     cancelReason: reason,
     cancelledBy: operator || null,
   }).where(eq(orders.id, id));
+
+  await revokeOrderCarePack(id, "订单已取消", operator || null);
 
   // V2.1.30补充4: Release stock for ALL cancelled orders (not just live orders)
   // 取消即释放库存
@@ -5729,6 +5764,7 @@ export async function updateProductEnhanced(id: number, data: Partial<{
       });
     }
   }
+  await syncActiveCarePacksByProduct(id, "product_content_changed");
 }
 
 export async function deleteProductEnhanced(id: number) {
@@ -7437,6 +7473,15 @@ export async function transitionOrderStatus(orderId: number, toStatus: string, c
   }
 
   await db.update(orders).set(updateData).where(eq(orders.id, orderId));
+
+  if (toStatus === "cancelled") {
+    await revokeOrderCarePack(orderId, "订单已取消", changedBy);
+  } else if (toStatus === "packing") {
+    const careSettings = await getCarePackSettings();
+    if (careSettings.finalizationTrigger === "packing_start") {
+      await finalizeOrderCarePack(orderId, "packing_start", changedBy);
+    }
+  }
 
   // Create status log
   await db.insert(orderStatusLogs).values({
@@ -12516,6 +12561,7 @@ export async function addOrderItem(data: {
     variationId: data.variationId || null,
     variationName: data.variationName || null,
   });
+  await syncOrderCarePack(data.orderId, "order_items_changed");
   broadcastChanges(["orders"]);
 }
 
@@ -18788,10 +18834,388 @@ export async function rollbackToVersion(id: number, rolledBackBy: string) {
 }
 
 // ============================================================================
-// V2.0: Live Studio + Order Security Link Functions
+// V2.2: Order Care / Product Use Knowledge Packs
 // ============================================================================
 
-import { randomBytes } from "crypto";
+type CarePackRevisionType = "created" | "order_items_changed" | "product_content_changed" | "finalized" | "revoked" | "rebuilt";
+type CarePackDeliveryAction = "checkout_attached" | "manual_resent" | "link_copied" | "customer_view" | "customer_save" | "customer_print" | "employee_view" | "employee_print" | "revoked" | "rebuilt";
+
+const DEFAULT_CARE_PACK_SETTINGS = {
+  finalizationTrigger: "packing_start" as const,
+  missingContentPolicy: "show_notice" as const,
+  customerTitle: "商品养护／使用知识包",
+  customerIntro: null as string | null,
+  employeeTitle: "包裹内商品养护／使用说明",
+};
+
+function hashCarePackToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/**
+ * The opaque care token is deterministically recoverable from the project
+ * secret, pack id and version. Only its SHA-256 digest is persisted, so an
+ * operator can resend the same safe link without storing plaintext tokens.
+ */
+function deriveCarePackToken(carePackId: number, tokenVersion: number) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("Knowledge pack token secret is unavailable");
+  return createHmac("sha256", secret)
+    .update(`xintian-care-pack:${carePackId}:v${tokenVersion}`)
+    .digest("base64url");
+}
+
+function isCancelledCarePackOrder(order: { physicalStatus?: string | null; importStatus?: string | null } | undefined) {
+  return order?.physicalStatus === "cancelled" || order?.importStatus === "cancelled";
+}
+
+async function getCarePackSettingsInternal(database: any) {
+  const rows = await database.select().from(carePackSettings).orderBy(asc(carePackSettings.id)).limit(1);
+  return rows[0] || DEFAULT_CARE_PACK_SETTINGS;
+}
+
+async function replaceCarePackItemsInternal(database: any, carePackId: number, orderId: number) {
+  const orderItemRows: any[] = await database.select({
+    orderItemId: orderItems.id,
+    productId: orderItems.productId,
+    variationId: orderItems.variationId,
+    productName: orderItems.productName,
+    variationName: orderItems.variationName,
+    quantity: orderItems.quantity,
+    productType: orderItems.productType,
+  }).from(orderItems).where(eq(orderItems.orderId, orderId));
+
+  const groups = groupEffectiveCarePackItems(orderItemRows
+    .filter((item) => item.productType !== "membership")
+    .map((item) => ({
+      orderItemId: item.orderItemId,
+      productId: item.productId,
+      variationId: item.variationId,
+      productName: item.productName,
+      variationName: item.variationName,
+      quantity: item.quantity,
+    })));
+
+  await database.delete(orderCarePackItems).where(eq(orderCarePackItems.carePackId, carePackId));
+  if (groups.length > 0) {
+    await database.insert(orderCarePackItems).values(groups.map((item) => ({
+      carePackId,
+      productId: item.productId,
+      variationId: item.variationId,
+      productNameSnapshot: item.productName,
+      variationNameSnapshot: item.variationName,
+      sourceOrderItemIds: JSON.stringify(item.orderItemIds),
+      quantity: item.quantity,
+    })));
+  }
+  return groups;
+}
+
+async function buildCarePackDocumentInternal(database: any, pack: any): Promise<CarePackPublicDocument | null> {
+  const orderRows = await database.select({
+    id: orders.id,
+    physicalStatus: orders.physicalStatus,
+    importStatus: (orders as any).importStatus,
+  }).from(orders).where(eq(orders.id, pack.orderId)).limit(1);
+  const order = orderRows[0];
+  if (!order || isCancelledCarePackOrder(order)) return null;
+
+  const settings = await getCarePackSettingsInternal(database);
+  const itemRows: any[] = await database.select({
+    orderItemId: orderItems.id,
+    productId: orderItems.productId,
+    variationId: orderItems.variationId,
+    productName: orderItems.productName,
+    variationName: orderItems.variationName,
+    quantity: orderItems.quantity,
+    productType: orderItems.productType,
+  }).from(orderItems).where(eq(orderItems.orderId, pack.orderId));
+  const groups = groupEffectiveCarePackItems(itemRows
+    .filter((item) => item.productType !== "membership")
+    .map((item) => ({
+      orderItemId: item.orderItemId,
+      productId: item.productId,
+      variationId: item.variationId,
+      productName: item.productName,
+      variationName: item.variationName,
+      quantity: item.quantity,
+    })));
+  const productIds = Array.from(new Set(groups.map((item) => item.productId)));
+  if (productIds.length === 0) {
+    return createCarePackPublicDocument({
+      title: settings.customerTitle,
+      intro: settings.customerIntro,
+      generatedAt: new Date(pack.updatedAt || pack.createdAt || Date.now()).toISOString(),
+      products: [],
+    });
+  }
+
+  const [productRows, imageRows, profileRows]: [any[], any[], any[]] = await Promise.all([
+    database.select({
+      id: products.id,
+      name: products.name,
+      coverImageUrl: products.coverImageUrl,
+      careZh: products.careZh,
+      lightDesc: products.lightDesc,
+      waterDesc: products.waterDesc,
+      fertilizerDesc: products.fertilizerDesc,
+      pruningDesc: products.pruningDesc,
+    }).from(products).where(inArray(products.id, productIds)),
+    database.select({ productId: productImages.productId, url: productImages.url, isMain: productImages.isMain, sortOrder: productImages.sortOrder })
+      .from(productImages).where(inArray(productImages.productId, productIds)).orderBy(desc(productImages.isMain), asc(productImages.sortOrder), asc(productImages.id)),
+    database.select().from(productCareProfiles)
+      .where(and(inArray(productCareProfiles.productId, productIds), eq(productCareProfiles.isEnabled, true))),
+  ]);
+  const variationIds = Array.from(new Set(groups.map((item) => item.variationId).filter((id) => id > 0)));
+  const variationRows: any[] = variationIds.length > 0
+    ? await database.select({ id: variants.id, name: variants.name, imageUrl: variants.imageUrl }).from(variants).where(inArray(variants.id, variationIds))
+    : [];
+
+  const productsById = new Map<number, any>(productRows.map((product: any) => [Number(product.id), product]));
+  const variantsById = new Map<number, any>(variationRows.map((variation: any) => [Number(variation.id), variation]));
+  const imagesByProductId = new Map<number, string[]>();
+  for (const image of imageRows) {
+    const list = imagesByProductId.get(Number(image.productId)) || [];
+    list.push(image.url);
+    imagesByProductId.set(Number(image.productId), list);
+  }
+  const profilesByKey = new Map<string, CareProfileSource>(profileRows.map((profile: any) => [`${profile.productId}:${profile.variationId}`, profile as CareProfileSource]));
+
+  return createCarePackPublicDocument({
+    title: settings.customerTitle,
+    intro: settings.customerIntro,
+    generatedAt: new Date(pack.updatedAt || pack.createdAt || Date.now()).toISOString(),
+    products: groups.map((item) => {
+      const product = productsById.get(item.productId);
+      const variation = item.variationId > 0 ? variantsById.get(item.variationId) : null;
+      const profile = profilesByKey.get(`${item.productId}:${item.variationId}`) || profilesByKey.get(`${item.productId}:0`);
+      const images = [variation?.imageUrl, product?.coverImageUrl, ...(imagesByProductId.get(item.productId) || [])].filter(Boolean) as string[];
+      const content = mapRealCareContent(profile, product || {});
+      if (images.length === 0) content.missing.push({ key: "images", label: "商品照片" });
+      return {
+        productName: product?.name || item.productName,
+        variationName: variation?.name || item.variationName,
+        images,
+        content,
+      };
+    }),
+  });
+}
+
+async function appendCarePackRevisionInternal(database: any, carePackId: number, revisionType: CarePackRevisionType, document: CarePackPublicDocument | null, summary: string, createdBy?: string | null) {
+  const result = await database.select({ maxRevision: sql<number>`coalesce(max(${orderCarePackRevisions.revisionNumber}), 0)` })
+    .from(orderCarePackRevisions).where(eq(orderCarePackRevisions.carePackId, carePackId));
+  await database.insert(orderCarePackRevisions).values({
+    carePackId,
+    revisionNumber: Number(result[0]?.maxRevision || 0) + 1,
+    revisionType,
+    contentSnapshot: document,
+    summary,
+    createdBy: createdBy || null,
+  });
+}
+
+export function buildCarePackPath(token: string) {
+  return `/care/${encodeURIComponent(token)}`;
+}
+
+export async function getCarePackSettings() {
+  const database = await getDb();
+  if (!database) return DEFAULT_CARE_PACK_SETTINGS;
+  return getCarePackSettingsInternal(database);
+}
+
+export async function updateCarePackSettings(data: Partial<typeof carePackSettings.$inferInsert>, updatedBy: string) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const existing = await database.select({ id: carePackSettings.id }).from(carePackSettings).orderBy(asc(carePackSettings.id)).limit(1);
+  if (existing[0]) {
+    await database.update(carePackSettings).set({ ...data, updatedBy }).where(eq(carePackSettings.id, existing[0].id));
+  } else {
+    await database.insert(carePackSettings).values({ ...DEFAULT_CARE_PACK_SETTINGS, ...data, updatedBy });
+  }
+  return getCarePackSettingsInternal(database);
+}
+
+export async function getProductCareProfiles(productId: number) {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(productCareProfiles).where(eq(productCareProfiles.productId, productId)).orderBy(asc(productCareProfiles.variationId));
+}
+
+export async function upsertProductCareProfile(data: Omit<typeof productCareProfiles.$inferInsert, "id" | "createdAt" | "updatedAt">, updatedBy: string) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const variationId = Number(data.variationId || 0);
+  const existing = await database.select({ id: productCareProfiles.id }).from(productCareProfiles)
+    .where(and(eq(productCareProfiles.productId, data.productId), eq(productCareProfiles.variationId, variationId))).limit(1);
+  if (existing[0]) {
+    await database.update(productCareProfiles).set({ ...data, variationId, updatedBy }).where(eq(productCareProfiles.id, existing[0].id));
+  } else {
+    await database.insert(productCareProfiles).values({ ...data, variationId, createdBy: updatedBy, updatedBy });
+  }
+  await syncActiveCarePacksByProduct(data.productId, "product_content_changed", updatedBy);
+  return (await getProductCareProfiles(data.productId)).find((profile) => profile.variationId === variationId) || null;
+}
+
+export async function ensureOrderCarePack(orderId: number, createdBy?: string | null) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const orderRows = await database.select({ id: orders.id, physicalStatus: orders.physicalStatus, importStatus: (orders as any).importStatus })
+    .from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!orderRows[0] || isCancelledCarePackOrder(orderRows[0])) throw new Error("Cancelled or missing orders cannot receive a knowledge pack");
+
+  let pack = (await database.select().from(orderCarePacks).where(eq(orderCarePacks.orderId, orderId)).limit(1))[0];
+  if (!pack) {
+    const inserted = await database.insert(orderCarePacks).values({ orderId, publicTokenHash: "pending" });
+    const carePackId = Number(inserted[0].insertId);
+    const token = deriveCarePackToken(carePackId, 1);
+    await database.update(orderCarePacks).set({ publicTokenHash: hashCarePackToken(token) }).where(eq(orderCarePacks.id, carePackId));
+    pack = (await database.select().from(orderCarePacks).where(eq(orderCarePacks.id, carePackId)).limit(1))[0];
+    const document = await buildCarePackDocumentInternal(database, pack);
+    await replaceCarePackItemsInternal(database, carePackId, orderId);
+    await database.update(orderCarePacks).set({ currentContentHash: document ? hashCarePackToken(stringifyCarePackDocument(document)) : null }).where(eq(orderCarePacks.id, carePackId));
+    await appendCarePackRevisionInternal(database, carePackId, "created", document, "建立订单知识包", createdBy);
+    return { pack: { ...pack, currentContentHash: document ? hashCarePackToken(stringifyCarePackDocument(document)) : null }, token, isNew: true };
+  }
+
+  if (pack.status === "revoked") throw new Error("Knowledge pack has been revoked; rebuild it before use");
+  const token = deriveCarePackToken(pack.id, pack.tokenVersion);
+  await syncOrderCarePack(orderId, "order_items_changed", createdBy);
+  const refreshed = (await database.select().from(orderCarePacks).where(eq(orderCarePacks.id, pack.id)).limit(1))[0];
+  return { pack: refreshed, token, isNew: false };
+}
+
+export async function syncOrderCarePack(orderId: number, revisionType: Extract<CarePackRevisionType, "order_items_changed" | "product_content_changed"> = "order_items_changed", createdBy?: string | null) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const pack = (await database.select().from(orderCarePacks).where(eq(orderCarePacks.orderId, orderId)).limit(1))[0];
+  if (!pack || pack.status !== "active") return { changed: false, skipped: true };
+  const document = await buildCarePackDocumentInternal(database, pack);
+  if (!document) {
+    await revokeOrderCarePack(orderId, "订单已取消", createdBy || null);
+    return { changed: true, revoked: true };
+  }
+  await replaceCarePackItemsInternal(database, pack.id, orderId);
+  const contentHash = hashCarePackToken(stringifyCarePackDocument(document));
+  if (pack.currentContentHash === contentHash) return { changed: false, skipped: false };
+  await database.update(orderCarePacks).set({ currentContentHash: contentHash }).where(eq(orderCarePacks.id, pack.id));
+  await appendCarePackRevisionInternal(database, pack.id, revisionType, document, revisionType === "product_content_changed" ? "商品真实资料或照片更新" : "订单有效商品更新", createdBy);
+  return { changed: true, skipped: false };
+}
+
+export async function syncActiveCarePacksByProduct(productId: number, revisionType: Extract<CarePackRevisionType, "product_content_changed"> = "product_content_changed", createdBy?: string | null) {
+  const database = await getDb();
+  if (!database) return [];
+  const rows = await database.select({ orderId: orderCarePacks.orderId }).from(orderCarePackItems)
+    .innerJoin(orderCarePacks, eq(orderCarePackItems.carePackId, orderCarePacks.id))
+    .where(and(eq(orderCarePackItems.productId, productId), eq(orderCarePacks.status, "active")));
+  return Promise.all(Array.from(new Set(rows.map((row: any) => Number(row.orderId)))).map((orderId) => syncOrderCarePack(orderId, revisionType, createdBy)));
+}
+
+export async function finalizeOrderCarePack(orderId: number, trigger: "checkout" | "packing_start", finalizedBy?: string | null) {
+  const ensured = await ensureOrderCarePack(orderId, finalizedBy);
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const pack = (await database.select().from(orderCarePacks).where(eq(orderCarePacks.id, ensured.pack.id)).limit(1))[0];
+  if (pack.status === "finalized") return { pack, token: ensured.token, finalized: false };
+  const document = await buildCarePackDocumentInternal(database, pack);
+  if (!document) throw new Error("Cancelled orders cannot be finalized");
+  await database.update(orderCarePacks).set({
+    status: "finalized",
+    finalSnapshot: document,
+    finalizedAt: new Date(),
+    finalizedBy: finalizedBy || null,
+    finalizedTrigger: trigger,
+    currentContentHash: hashCarePackToken(stringifyCarePackDocument(document)),
+  }).where(eq(orderCarePacks.id, pack.id));
+  await appendCarePackRevisionInternal(database, pack.id, "finalized", document, `于${trigger === "checkout" ? "最终Checkout" : "开始包货"}冻结知识包`, finalizedBy);
+  const finalizedPack = (await database.select().from(orderCarePacks).where(eq(orderCarePacks.id, pack.id)).limit(1))[0];
+  return { pack: finalizedPack, token: ensured.token, finalized: true };
+}
+
+export async function revokeOrderCarePack(orderId: number, reason: string, revokedBy?: string | null) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const pack = (await database.select().from(orderCarePacks).where(eq(orderCarePacks.orderId, orderId)).limit(1))[0];
+  if (!pack || pack.status === "revoked") return { changed: false };
+  await database.update(orderCarePacks).set({ status: "revoked", revokedAt: new Date(), revokedBy: revokedBy || null, revokedReason: reason }).where(eq(orderCarePacks.id, pack.id));
+  const document = await buildCarePackDocumentInternal(database, pack);
+  await appendCarePackRevisionInternal(database, pack.id, "revoked", document, reason, revokedBy);
+  await database.insert(carePackDeliveryLogs).values({ carePackId: pack.id, action: "revoked", actorType: "staff", actorName: revokedBy || null, metadata: { reason } });
+  return { changed: true };
+}
+
+export async function rebuildOrderCarePack(orderId: number, rebuiltBy?: string | null) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const pack = (await database.select().from(orderCarePacks).where(eq(orderCarePacks.orderId, orderId)).limit(1))[0];
+  if (!pack) return ensureOrderCarePack(orderId, rebuiltBy);
+  const orderRows = await database.select({ id: orders.id, physicalStatus: orders.physicalStatus, importStatus: (orders as any).importStatus }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!orderRows[0] || isCancelledCarePackOrder(orderRows[0])) throw new Error("Cancelled orders cannot rebuild a knowledge pack");
+  const tokenVersion = Number(pack.tokenVersion) + 1;
+  const token = deriveCarePackToken(pack.id, tokenVersion);
+  await database.update(orderCarePacks).set({
+    status: "active", tokenVersion, publicTokenHash: hashCarePackToken(token), currentContentHash: null,
+    finalSnapshot: null, finalizedAt: null, finalizedBy: null, finalizedTrigger: null,
+    revokedAt: null, revokedBy: null, revokedReason: null,
+  }).where(eq(orderCarePacks.id, pack.id));
+  const activePack = (await database.select().from(orderCarePacks).where(eq(orderCarePacks.id, pack.id)).limit(1))[0];
+  const document = await buildCarePackDocumentInternal(database, activePack);
+  await replaceCarePackItemsInternal(database, pack.id, orderId);
+  await database.update(orderCarePacks).set({ currentContentHash: document ? hashCarePackToken(stringifyCarePackDocument(document)) : null }).where(eq(orderCarePacks.id, pack.id));
+  await appendCarePackRevisionInternal(database, pack.id, "rebuilt", document, "员工重建客户知识包链接", rebuiltBy);
+  await database.insert(carePackDeliveryLogs).values({ carePackId: pack.id, action: "rebuilt", actorType: "staff", actorName: rebuiltBy || null, metadata: { tokenVersion } });
+  return { pack: { ...activePack, tokenVersion }, token, isNew: false };
+}
+
+export async function getOrderCarePackForStaff(orderId: number) {
+  const database = await getDb();
+  if (!database) return null;
+  const pack = (await database.select().from(orderCarePacks).where(eq(orderCarePacks.orderId, orderId)).limit(1))[0];
+  if (!pack) return null;
+  const liveDocument = await buildCarePackDocumentInternal(database, pack);
+  return {
+    pack,
+    document: resolveCarePackDocument({ status: pack.status, finalSnapshot: pack.finalSnapshot as CarePackPublicDocument | null, liveDocument }),
+    missing: liveDocument?.products.flatMap((product) => product.missing.map((missing) => ({ productName: product.productName, variationName: product.variationName, ...missing }))) || [],
+    path: pack.status === "revoked" ? null : buildCarePackPath(deriveCarePackToken(pack.id, pack.tokenVersion)),
+  };
+}
+
+export async function getPublicCarePackByToken(token: string) {
+  const database = await getDb();
+  if (!database || !token || token.length < 32) return null;
+  const pack = (await database.select().from(orderCarePacks).where(eq(orderCarePacks.publicTokenHash, hashCarePackToken(token))).limit(1))[0];
+  if (!pack || pack.status === "revoked") return null;
+  const expectedToken = deriveCarePackToken(pack.id, pack.tokenVersion);
+  if (token.length !== expectedToken.length || !timingSafeEqual(Buffer.from(token), Buffer.from(expectedToken))) return null;
+  const liveDocument = await buildCarePackDocumentInternal(database, pack);
+  const document = resolveCarePackDocument({ status: pack.status, finalSnapshot: pack.finalSnapshot as CarePackPublicDocument | null, liveDocument });
+  return document;
+}
+
+export async function recordCarePackDeliveryEvent(input: { carePackId?: number; token?: string; action: CarePackDeliveryAction; actorType: "customer" | "staff" | "system"; actorName?: string | null; channel?: string | null; metadata?: Record<string, unknown> | null }) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  let carePackId = input.carePackId;
+  if (!carePackId && input.token) {
+    const pack = (await database.select({ id: orderCarePacks.id, status: orderCarePacks.status }).from(orderCarePacks)
+      .where(eq(orderCarePacks.publicTokenHash, hashCarePackToken(input.token))).limit(1))[0];
+    if (!pack || pack.status === "revoked") return false;
+    carePackId = pack.id;
+  }
+  if (!carePackId) return false;
+  await database.insert(carePackDeliveryLogs).values({
+    carePackId, action: input.action, actorType: input.actorType, actorName: input.actorName || null,
+    channel: input.channel || null, metadata: input.metadata || null,
+  });
+  return true;
+}
+
+// ============================================================================
+// V2.0: Live Studio + Order Security Link Functions
+// ============================================================================
 
 /**
  * Generate a cryptographically secure random token for order access.

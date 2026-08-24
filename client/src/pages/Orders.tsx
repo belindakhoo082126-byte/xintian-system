@@ -27,6 +27,7 @@ import { canOpenOrderMergeFromPath } from "@/lib/orderMergeAccess";
 import { getSelectableOrderIds, isCancelledOrder, isOrderMergeEligible } from "@/lib/orderMergeSelection";
 import { getOrderSplitIneligibility, isOrderSplitEligible } from "@shared/orderSplitRules";
 import { ORDER_DOCUMENT_OUTPUT_OPTIONS } from "@shared/orderDocumentOutputRules";
+import OrderCarePackAdminPanel from "@/components/OrderCarePackAdminPanel";
 
 const PHYSICAL_STATUS = {
   pending: { label: "未汇款订单", enLabel: "Unpaid Order", variant: "outline" },
@@ -1423,7 +1424,9 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
             <DialogTitle>{translate("订单详情", "Order Details")} - {orderDetail?.orderNumber}</DialogTitle>
           </DialogHeader>
           {orderDetail && (
-            <Tabs value={detailTab} onValueChange={setDetailTab}>
+            <div className="space-y-4">
+              <OrderCarePackAdminPanel orderId={orderDetail.id} />
+              <Tabs value={detailTab} onValueChange={setDetailTab}>
               <TabsList className="grid w-full grid-cols-6">
                 <TabsTrigger value="info">{translate("基本资料", "Info")}</TabsTrigger>
                 <TabsTrigger value="items">{translate("商品内容", "Items")}</TabsTrigger>
@@ -2255,7 +2258,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                   <p className="text-sm text-muted-foreground text-center py-4">{translate("暂无操作日志", "No operation logs")}</p>
                 )}
               </TabsContent>
-            </Tabs>
+              </Tabs>
+            </div>
           )}
         </DialogContent>
       </Dialog>

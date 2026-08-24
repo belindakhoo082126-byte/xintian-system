@@ -40,6 +40,7 @@ import * as shippingProvider from "./shippingProvider";
 import { evaluateMarketingCampaign } from "./marketingEngine";
 import { runMarketingAutomationRule } from "./marketingAutomationService";
 import { createHeartbeatJob, deleteHeartbeatJob, updateHeartbeatJob } from "./_core/heartbeat";
+import { generateCustomerCarePackPdf } from "./carePackPdf";
 
 const PACKING_SHIPPING_ERROR_MESSAGES: Record<string, string> = {
   PACKING_ORDER_NOT_FOUND: "订单不存在或已被删除",
@@ -116,6 +117,29 @@ async function recordManualShipmentNotification(
     // 发货已落库；仅记录通知链路自身的意外错误，不能将订单误判为未发货。
     console.error("[Shipping] Failed to record manual shipment notification", error);
   }
+}
+
+async function appendOrderCarePackLinkToCheckoutMessage(input: {
+  orderId: number;
+  message: string;
+  baseUrl: string;
+  channel: string;
+  actorName?: string | null;
+}) {
+  const settings = await db.getCarePackSettings();
+  const ensured = settings.finalizationTrigger === "checkout"
+    ? await db.finalizeOrderCarePack(input.orderId, "checkout", input.actorName || null)
+    : await db.ensureOrderCarePack(input.orderId, input.actorName || null);
+  const careLink = `${input.baseUrl}${db.buildCarePackPath(ensured.token)}`;
+  await db.recordCarePackDeliveryEvent({
+    carePackId: ensured.pack.id,
+    action: "checkout_attached",
+    actorType: "system",
+    actorName: input.actorName || null,
+    channel: input.channel,
+    metadata: { linkPath: db.buildCarePackPath(ensured.token) },
+  });
+  return `${input.message}\n\n商品养护／使用知识包：\n${careLink}`;
 }
 
 export const appRouter = router({
@@ -2274,9 +2298,10 @@ export const appRouter = router({
           const settings = await db.getSystemSettings();
           const template = (settings as any)?.checkoutMessageTemplate ||
             "您好，感恩您的支持 ❤️\n\n目前还没收到您的汇款及确认信息。\n\n请您点击以下链接查询您的订单（{orderNumber}）：\n\n{link}\n\n进入订单后，除了可以查询订单，也可以继续到商城加单 ❤️\n\n西马消费满 RM150（特价商品除外），10kg 内即可享受免邮优惠。";
-          const message = (input.customMessage || template)
+          let message = (input.customMessage || template)
             .replace(/\{link\}/g, fullLink)
             .replace(/\{orderNumber\}/g, order.orderNumber || "");
+          message = await appendOrderCarePackLinkToCheckoutMessage({ orderId: input.orderId, message, baseUrl, channel: "messenger" });
           await sendTextMessage(order.messengerId, message);
           await db.updateOrderNotificationStatus(input.orderId, "sent", null);
           // V2.0.50: Log notification history
@@ -2335,9 +2360,10 @@ export const appRouter = router({
           const mallSettings = await db.getMallSettings();
           const baseUrl = (mallSettings as any)?.domain ? `https://${(mallSettings as any).domain}` : "https://www.xintian.com.my";
           const fullLink = `${baseUrl}${order.checkoutLink}`;
-          const message = template
+          let message = template
             .replace(/\{link\}/g, fullLink)
             .replace(/\{orderNumber\}/g, order.orderNumber || "");
+          message = await appendOrderCarePackLinkToCheckoutMessage({ orderId: order.id, message, baseUrl, channel: "messenger" });
           try {
             await sendTextMessage(order.messengerId, message);
             await db.updateOrderNotificationStatus(order.id, "sent", null);
@@ -2394,9 +2420,10 @@ export const appRouter = router({
           const mallSettings = await db.getMallSettings();
           const baseUrl = (mallSettings as any)?.domain ? `https://${(mallSettings as any).domain}` : "https://www.xintian.com.my";
           const fullLink = `${baseUrl}${order.checkoutLink}`;
-          const message = template
+          let message = template
             .replace(/\{link\}/g, fullLink)
             .replace(/\{orderNumber\}/g, order.orderNumber || "");
+          message = await appendOrderCarePackLinkToCheckoutMessage({ orderId, message, baseUrl, channel: "messenger" });
           try {
             await sendTextMessage(order.messengerId, message);
             await db.updateOrderNotificationStatus(orderId, "sent", null);
@@ -2443,9 +2470,10 @@ export const appRouter = router({
           const settings = await db.getSystemSettings();
           const template = (settings as any)?.checkoutMessageTemplate ||
             "您好，感恩您的支持 ❤️\n\n目前还没收到您的汇款及确认信息。\n\n请您点击以下链接查询您的订单（{orderNumber}）：\n\n{link}\n\n进入订单后，除了可以查询订单，也可以继续到商城加单 ❤️\n\n西马消费满 RM150（特价商品除外），10kg 内即可享受免邮优惠。";
-          const message = (input.customMessage || template)
+          let message = (input.customMessage || template)
             .replace(/\{link\}/g, fullLink)
             .replace(/\{orderNumber\}/g, order.orderNumber || "");
+          message = await appendOrderCarePackLinkToCheckoutMessage({ orderId: input.orderId, message, baseUrl, channel: "messenger" });
           await sendTextMessage(order.messengerId, message);
           await db.updateOrderNotificationStatus(input.orderId, "sent", null);
           // V2.0.50: Log notification history
@@ -7592,6 +7620,14 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         }
         return result;
       }),
+    getCarePackPath: publicProcedure
+      .input(z.object({ orderNumber: z.string().min(1), token: z.string().min(32).max(128) }))
+      .query(async ({ input }) => {
+        const order = await db.getOrderBySecureToken(input.orderNumber, input.token);
+        if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "订单不存在或链接无效" });
+        const ensured = await db.ensureOrderCarePack(order.id, "customer_checkout");
+        return { path: db.buildCarePackPath(ensured.token) };
+      }),
     // V2.0.3: Customer updates shipping address from public order page
     // V2.0.52: Customer can add remark to their order
     updateRemark: publicProcedure
@@ -7678,6 +7714,112 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
         });
         return { success: true };
     }),
+  }),
+
+  // ===========================================================================
+  // V2.2: Public Order Care Pack Router (独立公开知识包；不含订单敏感资料)
+  // ===========================================================================
+  publicCarePack: router({
+    brand: publicProcedure.query(async () => {
+      const settings = await db.getSystemSettings();
+      return { companyLogoUrl: settings?.companyLogoUrl || null };
+    }),
+    getByToken: publicProcedure
+      .input(z.object({ token: z.string().min(32).max(256) }))
+      .query(async ({ input }) => {
+        const document = await db.getPublicCarePackByToken(input.token);
+        if (!document) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "知识包链接无效或已失效" });
+        }
+        return document;
+      }),
+    downloadPdf: publicProcedure
+      .input(z.object({ token: z.string().min(32).max(256) }))
+      .query(async ({ input, ctx }) => {
+        const document = await db.getPublicCarePackByToken(input.token);
+        if (!document) throw new TRPCError({ code: "NOT_FOUND", message: "知识包链接无效或已失效" });
+        const settings = await db.getSystemSettings();
+        const requestedHost = String(ctx.req.headers.host || "").toLowerCase();
+        const trustedHost = /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestedHost)
+          || requestedHost.endsWith(".manus.computer")
+          || requestedHost.endsWith(".manus.space");
+        const assetOrigin = trustedHost ? `${ctx.req.protocol}://${requestedHost}` : null;
+        const pdf = await generateCustomerCarePackPdf(document, getCompanyLogoUrl(settings), assetOrigin);
+        await db.recordCarePackDeliveryEvent({ token: input.token, action: "customer_save", actorType: "customer", channel: "pdf_download" });
+        return { fileName: "心田-商品养护知识包.pdf", contentBase64: pdf.toString("base64") };
+      }),
+    recordAction: publicProcedure
+      .input(z.object({
+        token: z.string().min(32).max(256),
+        action: z.enum(["customer_view", "customer_save", "customer_print"]),
+      }))
+      .mutation(async ({ input }) => {
+        await db.recordCarePackDeliveryEvent({ token: input.token, action: input.action, actorType: "customer" });
+        return { success: true };
+      }),
+  }),
+
+  // ===========================================================================
+  // V2.2: Order Care Pack Administration (订单知识包后台管理)
+  // ===========================================================================
+  carePacks: router({
+    getSettings: adminProcedure.query(async () => db.getCarePackSettings()),
+    updateSettings: adminProcedure
+      .input(z.object({
+        finalizationTrigger: z.enum(["checkout", "packing_start"]).optional(),
+        missingContentPolicy: z.enum(["show_notice", "block_finalization", "exclude_item"]).optional(),
+        customerTitle: z.string().min(1).max(255).optional(),
+        customerIntro: z.string().max(4000).nullable().optional(),
+        employeeTitle: z.string().min(1).max(255).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => db.updateCarePackSettings(input, ctx.user.name || ctx.user.openId)),
+    getProductProfiles: adminProcedure
+      .input(z.object({ productId: z.number().int().positive() }))
+      .query(async ({ input }) => db.getProductCareProfiles(input.productId)),
+    upsertProductProfile: adminProcedure
+      .input(z.object({
+        productId: z.number().int().positive(),
+        variationId: z.number().int().nonnegative().default(0),
+        profileType: z.enum(["plant", "fertilizer", "pesticide", "medium", "tool", "other"]),
+        purpose: z.string().max(5000).nullable().optional(),
+        usageMethod: z.string().max(5000).nullable().optional(),
+        dosage: z.string().max(5000).nullable().optional(),
+        frequency: z.string().max(5000).nullable().optional(),
+        suitableFor: z.string().max(5000).nullable().optional(),
+        safetyNotes: z.string().max(5000).nullable().optional(),
+        additionalNotes: z.string().max(5000).nullable().optional(),
+        isEnabled: z.boolean().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => db.upsertProductCareProfile(input, ctx.user.name || ctx.user.openId)),
+    getForOrder: adminProcedure
+      .input(z.object({ orderId: z.number().int().positive() }))
+      .query(async ({ input }) => db.getOrderCarePackForStaff(input.orderId)),
+    ensureForOrder: adminProcedure
+      .input(z.object({ orderId: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => {
+        const ensured = await db.ensureOrderCarePack(input.orderId, ctx.user.name || ctx.user.openId);
+        return { pack: ensured.pack, path: db.buildCarePackPath(ensured.token), isNew: ensured.isNew };
+      }),
+    rebuildForOrder: adminProcedure
+      .input(z.object({ orderId: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => {
+        const rebuilt = await db.rebuildOrderCarePack(input.orderId, ctx.user.name || ctx.user.openId);
+        return { pack: rebuilt.pack, path: db.buildCarePackPath(rebuilt.token), isNew: rebuilt.isNew };
+      }),
+    revokeForOrder: adminProcedure
+      .input(z.object({ orderId: z.number().int().positive(), reason: z.string().min(1).max(1000) }))
+      .mutation(async ({ input, ctx }) => db.revokeOrderCarePack(input.orderId, input.reason, ctx.user.name || ctx.user.openId)),
+    recordStaffAction: adminProcedure
+      .input(z.object({
+        orderId: z.number().int().positive(),
+        action: z.enum(["manual_resent", "link_copied", "employee_view", "employee_print"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const pack = await db.getOrderCarePackForStaff(input.orderId);
+        if (!pack) throw new TRPCError({ code: "NOT_FOUND", message: "订单尚未建立知识包" });
+        await db.recordCarePackDeliveryEvent({ carePackId: pack.pack.id, action: input.action, actorType: "staff", actorName: ctx.user.name || ctx.user.openId });
+        return { success: true };
+      }),
   }),
 
   // Customer submitted payment proofs, including Messenger screenshots.

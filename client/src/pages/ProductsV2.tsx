@@ -194,6 +194,98 @@ function VariantSummaryList({ variants, product, translate }: { variants: any[];
   );
 }
 
+const EMPTY_CARE_PROFILE = {
+  profileType: "plant" as const,
+  purpose: "", usageMethod: "", dosage: "", frequency: "", suitableFor: "", safetyNotes: "", additionalNotes: "", isEnabled: true,
+};
+
+function ProductCareProfileEditor({ productId, plantFields }: { productId: number; plantFields: { lightDesc: string; waterDesc: string; fertilizerDesc: string; pruningDesc: string; careZh: string } }) {
+  const utils = trpc.useUtils();
+  const { data: profiles, isLoading } = trpc.carePacks.getProductProfiles.useQuery({ productId });
+  const [profile, setProfile] = useState<any>(EMPTY_CARE_PROFILE);
+  const defaultProfile = (profiles || []).find((entry: any) => Number(entry.variationId) === 0);
+  const plantMissing = [
+    ["光线", plantFields.lightDesc], ["水分／浇水", plantFields.waterDesc], ["施肥", plantFields.fertilizerDesc], ["修剪", plantFields.pruningDesc], ["注意事项", plantFields.careZh],
+  ].filter(([, value]) => !String(value || "").trim()).map(([label]) => label);
+
+  useEffect(() => {
+    if (defaultProfile) {
+      setProfile({
+        profileType: defaultProfile.profileType, purpose: defaultProfile.purpose || "", usageMethod: defaultProfile.usageMethod || "",
+        dosage: defaultProfile.dosage || "", frequency: defaultProfile.frequency || "", suitableFor: defaultProfile.suitableFor || "",
+        safetyNotes: defaultProfile.safetyNotes || "", additionalNotes: defaultProfile.additionalNotes || "", isEnabled: defaultProfile.isEnabled !== false,
+      });
+    }
+  }, [defaultProfile?.id]);
+
+  const saveProfile = trpc.carePacks.upsertProductProfile.useMutation({
+    onSuccess: async () => {
+      await utils.carePacks.getProductProfiles.invalidate({ productId });
+      toast.success("商品使用资料已保存；仍在编辑中的订单知识包会同步真实内容");
+    },
+    onError: (error) => toast.error(`保存使用资料失败：${error.message}`),
+  });
+  const isPlant = profile.profileType === "plant";
+  const nonPlantMissing = [
+    ["用途", profile.purpose], ["使用方法", profile.usageMethod], ["剂量", profile.dosage], ["频率", profile.frequency], ["适用对象", profile.suitableFor], ["安全注意事项", profile.safetyNotes],
+  ].filter(([, value]) => !String(value || "").trim()).map(([label]) => label);
+
+  return (
+    <Card className="mt-5 border-emerald-200 bg-emerald-50/40">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base text-emerald-950">订单养护／使用知识包资料</CardTitle>
+        <p className="text-xs leading-5 text-muted-foreground">只会向客户显示这里与商品养护栏中由员工实际填写的内容；系统不会自动补写或使用AI生成。</p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? <div className="text-sm text-muted-foreground">正在读取已保存资料…</div> : null}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label>商品说明类型</Label>
+            <Select value={profile.profileType} onValueChange={(value: any) => setProfile({ ...profile, profileType: value })}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="plant">植物养护</SelectItem>
+                <SelectItem value="fertilizer">肥料</SelectItem>
+                <SelectItem value="pesticide">药水／杀虫剂</SelectItem>
+                <SelectItem value="medium">种植介质</SelectItem>
+                <SelectItem value="tool">工具</SelectItem>
+                <SelectItem value="other">其他商品</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-end justify-between rounded-md border bg-white px-3 py-2">
+            <div><p className="text-sm font-medium">启用知识包资料</p><p className="text-xs text-muted-foreground">关闭后客户会看到缺资料提示。</p></div>
+            <Switch checked={profile.isEnabled} onCheckedChange={(isEnabled) => setProfile({ ...profile, isEnabled })} />
+          </div>
+        </div>
+        {isPlant ? (
+          <div className={`rounded-md border px-3 py-2 text-sm ${plantMissing.length ? "border-amber-200 bg-amber-50 text-amber-950" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
+            {plantMissing.length ? <>植物知识包尚缺：{plantMissing.join("、")}。请在本步骤上方的植物养护栏填写后，再保存商品。</> : <>植物知识包资料完整：将使用本步骤上方已填写的光线、水分／浇水、施肥、修剪及注意事项。</>}
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <CareProfileField label="用途" value={profile.purpose} onChange={(value) => setProfile({ ...profile, purpose: value })} />
+            <CareProfileField label="使用方法" value={profile.usageMethod} onChange={(value) => setProfile({ ...profile, usageMethod: value })} />
+            <CareProfileField label="剂量" value={profile.dosage} onChange={(value) => setProfile({ ...profile, dosage: value })} />
+            <CareProfileField label="频率" value={profile.frequency} onChange={(value) => setProfile({ ...profile, frequency: value })} />
+            <CareProfileField label="适用对象" value={profile.suitableFor} onChange={(value) => setProfile({ ...profile, suitableFor: value })} />
+            <CareProfileField label="安全注意事项" value={profile.safetyNotes} onChange={(value) => setProfile({ ...profile, safetyNotes: value })} />
+            <div className="sm:col-span-2"><CareProfileField label="补充说明（选填）" value={profile.additionalNotes} onChange={(value) => setProfile({ ...profile, additionalNotes: value })} /></div>
+            {nonPlantMissing.length ? <p className="sm:col-span-2 text-xs text-amber-800">知识包尚缺：{nonPlantMissing.join("、")}。</p> : <p className="sm:col-span-2 text-xs text-emerald-800">非植物使用资料完整。</p>}
+          </div>
+        )}
+        <Button type="button" variant="outline" disabled={saveProfile.isPending} onClick={() => saveProfile.mutate({ productId, variationId: 0, ...profile })}>
+          {saveProfile.isPending ? "保存中…" : "保存知识包资料"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CareProfileField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <div><Label>{label}</Label><Textarea className="mt-1 min-h-20" value={value} onChange={(event) => onChange(event.target.value)} /></div>;
+}
+
 export default function ProductsV2() {
   const { translate, lang } = useI18n();
   const getProductTypeLabel = (type: string) => {
@@ -1376,6 +1468,15 @@ export default function ProductsV2() {
                     <p className="text-xs text-muted-foreground">
                       {translate("提示：以上字段如不填写，商城不会显示对应区域。", "Note: Fields left empty will not be shown in the mall.")}
                     </p>
+                    {editingId ? <ProductCareProfileEditor productId={editingId} plantFields={{
+                      lightDesc: form.lightDesc,
+                      waterDesc: form.waterDesc,
+                      fertilizerDesc: form.fertilizerDesc,
+                      pruningDesc: form.pruningDesc,
+                      careZh: form.careZh,
+                    }} /> : (
+                      <p className="mt-4 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">请先保存商品基本资料；保存后可在这里维护订单知识包的真实养护／使用资料。</p>
+                    )}
 
                     {/* V5: AI Tags & Selling Points */}
                     {isPhysical && (

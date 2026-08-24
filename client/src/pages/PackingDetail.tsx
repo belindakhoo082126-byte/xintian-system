@@ -26,6 +26,7 @@ import { getPackingSlipRemarkRows } from "@shared/packingSlipRemarks";
 import { getMissingPackingRecipientAddressFields } from "@shared/packingRecipientAddress";
 import { derivePackingFinancialSettlement } from "@shared/packingFinancialSettlementRules";
 import { getPackingShippingControl } from "@shared/packingSpecialOrderRules";
+import OrderCarePackAdminPanel from "@/components/OrderCarePackAdminPanel";
 
 // V2.1.30: Only show Parcel Daily services (Poslaju for east Malaysia, Line Clear for west Malaysia)
 const COURIERS = [
@@ -748,6 +749,10 @@ export default function PackingDetail() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="print-hide">
+        <OrderCarePackAdminPanel orderId={orderId} compact />
       </div>
 
       {/* Customer Info */}
