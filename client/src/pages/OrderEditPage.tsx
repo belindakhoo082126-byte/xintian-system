@@ -190,7 +190,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   });
 
   const { data: searchResults } = trpc.orders.searchProductsForOrder.useQuery(
-    { query: productSearch },
+    { query: productSearch, orderCategory: formData.orderCategory },
     { enabled: productSearch.length > 0 }
   );
 
@@ -445,8 +445,10 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   }
 
   function handleProductSelection(product: any) {
-    if (Array.isArray(product.variants) && product.variants.length > 0) {
-      setVariantSelectionProduct(product);
+    const resolvedVariants = [product.variants, product.variations, product.productVariations]
+      .find((candidate) => Array.isArray(candidate) && candidate.length > 0) || [];
+    if (resolvedVariants.length > 0) {
+      setVariantSelectionProduct({ ...product, variants: resolvedVariants });
       return;
     }
     addProductToItems(product);
@@ -837,22 +839,30 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               />
               {searchResults && searchResults.length > 0 && (
                 <div className="max-h-60 overflow-y-auto space-y-1">
-                  {searchResults.slice(0, 10).map((p: any) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center justify-between p-2 rounded hover:bg-muted cursor-pointer border"
-                      onClick={() => handleProductSelection(p)}
-                    >
-                      <div className="flex items-center gap-2">
-                        {p.imageUrl && <img src={p.imageUrl} alt={p.name} className="w-8 h-8 rounded object-cover" />}
-                        <div>
-                          <div className="text-sm font-medium">{p.name}</div>
-                          <div className="text-xs text-muted-foreground">RM {parseFloat(p.sellingPrice || p.price || 0).toFixed(2)}</div>
+                  {searchResults.slice(0, 10).map((p: any) => {
+                    const variantCount = [p.variants, p.variations, p.productVariations]
+                      .find((candidate) => Array.isArray(candidate) && candidate.length > 0)?.length || 0;
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between p-2 rounded hover:bg-muted cursor-pointer border"
+                        onClick={() => handleProductSelection(p)}
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          {p.imageUrl && <img src={p.imageUrl} alt={p.name} className="w-8 h-8 rounded object-cover" />}
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium break-words">{p.name}</div>
+                            <div className="text-xs text-muted-foreground">RM {parseFloat(p.sellingPrice || p.price || 0).toFixed(2)}</div>
+                          </div>
                         </div>
+                        {variantCount > 0 ? (
+                          <Badge variant="secondary" className="ml-2 shrink-0">{translate(`选择规格（${variantCount}）`, `Choose variant (${variantCount})`)}</Badge>
+                        ) : (
+                          <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
                       </div>
-                      <Plus className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
               {searchResults && searchResults.length === 0 && productSearch.length > 0 && (

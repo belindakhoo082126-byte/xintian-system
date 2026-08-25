@@ -25,6 +25,9 @@ describe("OrderEditPage repotting flowerpot synchronization", () => {
     expect(source).toContain("选择商品规格")
     expect(source).toContain("resolveManualOrderVariantPrice")
     expect(source).toContain("resolveOrderItemUnitWeight({ productType: product.type, variantWeight: variant?.weight, productWeight: product.weightKg })")
+    expect(source).toContain("[product.variants, product.variations, product.productVariations]")
+    expect(source).toContain('setVariantSelectionProduct({ ...product, variants: resolvedVariants })')
+    expect(source).toContain('选择规格（${variantCount}）')
   })
 
   it("keeps long plant and flowerpot names readable in the expanded repotting remark dialog", () => {
