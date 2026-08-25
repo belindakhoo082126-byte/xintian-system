@@ -21,10 +21,10 @@ const TYPE_ICONS: Record<string, any> = {
 };
 
 const TYPE_LABELS: Record<string, string> = {
-  qr_code: "QR Code",
-  bank_transfer: "银行转账",
+  qr_code: "TNG",
+  bank_transfer: "Online Transfer",
   cash: "现金",
-  other: "其他",
+  other: "其他（旧资料）",
 };
 
 export default function PaymentSettings() {
@@ -269,7 +269,7 @@ export default function PaymentSettings() {
               <Input
                 value={form.name}
                 onChange={(e) => setForm((p: any) => ({ ...p, name: e.target.value }))}
-                placeholder="例如: DuitNow QR"
+                placeholder="现金、TNG 或 Online Transfer"
               />
             </div>
 
@@ -278,10 +278,10 @@ export default function PaymentSettings() {
               <Select value={form.type} onValueChange={(v) => setForm((p: any) => ({ ...p, type: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="qr_code">QR Code</SelectItem>
-                  <SelectItem value="bank_transfer">银行转账</SelectItem>
+                  <SelectItem value="qr_code">TNG</SelectItem>
+                  <SelectItem value="bank_transfer">Online Transfer</SelectItem>
                   <SelectItem value="cash">现金</SelectItem>
-                  <SelectItem value="other">其他</SelectItem>
+                  <SelectItem value="other">其他（旧资料）</SelectItem>
                 </SelectContent>
               </Select>
             </div>

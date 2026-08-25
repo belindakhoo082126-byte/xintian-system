@@ -403,10 +403,10 @@ export default function Products() {
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="local">本地 Local</SelectItem>
-                    <SelectItem value="import">中国代购 China Import</SelectItem>
+                    <SelectItem value="import">代购 Import</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground mt-1">决定商品加入 XT 本地订单还是 XTC 中国代购订单</p>
+                <p className="text-xs text-muted-foreground mt-1">决定商品加入 XT 本地订单还是 XTD 代购订单</p>
               </div>
             </div>
             {/* Gift-specific note */}

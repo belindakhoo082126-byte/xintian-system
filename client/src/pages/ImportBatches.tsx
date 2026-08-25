@@ -427,7 +427,7 @@ export default function ImportBatches() {
                       <div><Label>直播截止日期 *</Label><Input type="date" min={cnRange.startDate || undefined} value={cnRange.endDate} onChange={e => setCnRange(prev => ({ ...prev, endDate: e.target.value }))} /></div>
                     </CardContent>
                   </Card>
-                  {!cnRange.startDate || !cnRange.endDate ? <p className="text-sm text-muted-foreground">请先选择日期范围，系统会列出期间内的中国代购直播场次。</p> : cnSessionsQuery.isLoading ? <p className="text-sm text-muted-foreground">正在查询直播场次…</p> : (cnSessionsQuery.data || []).length === 0 ? <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">该日期范围没有中国代购直播场次。</p> : (
+                  {!cnRange.startDate || !cnRange.endDate ? <p className="text-sm text-muted-foreground">请先选择日期范围，系统会列出期间内的代购直播场次。</p> : cnSessionsQuery.isLoading ? <p className="text-sm text-muted-foreground">正在查询直播场次…</p> : (cnSessionsQuery.data || []).length === 0 ? <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">该日期范围没有代购直播场次。</p> : (
                     <div className="space-y-2">
                       {(cnSessionsQuery.data as any[]).map(session => (
                         <label key={session.id} className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 hover:bg-muted/30">
@@ -444,7 +444,7 @@ export default function ImportBatches() {
 
               {cnStep === 2 && (
                 <div className="space-y-3 py-2">
-                  <p className="text-sm text-muted-foreground">同一商品 ID 已按所选直播自动合并；数字为互斥阶段，部分发货按实际发货数量拆分。中国进口商品可直接加入；本地商品仅在管理员已明确授权时可加入 XTC。展开可查看每场直播的贡献。</p>
+                  <p className="text-sm text-muted-foreground">同一商品 ID 已按所选直播自动合并；数字为互斥阶段，部分发货按实际发货数量拆分。代购商品可直接加入；本地商品仅在管理员已明确授权时可加入 XTD。展开可查看每场直播的贡献。</p>
                   {cnMergedProductsQuery.isLoading ? <p className="text-sm text-muted-foreground">正在合并商品…</p> : (cnMergedProductsQuery.data || []).length === 0 ? <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">所选直播没有可合并的商品。</p> : (
                     <div className="overflow-x-auto rounded-lg border">
                       <Table>
@@ -475,7 +475,7 @@ export default function ImportBatches() {
 
               <DialogFooter className="gap-2 sm:justify-between">
                 <Button variant="outline" onClick={() => { if (cnStep === 1) { setCnCreateOpen(false); resetCnWizard(); } else setCnStep((cnStep - 1) as 1 | 2 | 3); }}> {cnStep === 1 ? '取消' : '上一步'} </Button>
-                {cnStep < 3 ? <Button onClick={() => { if (cnStep === 1 && selectedLiveSessionIds.length === 0) { toast.error('请至少勾选一场中国代购直播。'); return; } if (cnStep === 2 && Object.keys(selectedProductQuantities).length === 0) { toast.error('请至少勾选一个要采购的商品。'); return; } setCnStep((cnStep + 1) as 1 | 2 | 3); }}>下一步</Button> : <Button disabled={createCnWithAutoIbMutation.isPending || Object.keys(selectedProductQuantities).length === 0} onClick={() => { const products = (cnMergedProductsQuery.data as any[] || []).filter(product => productKey(product) in selectedProductQuantities); createCnWithAutoIbMutation.mutate({ startDate: cnRange.startDate, endDate: cnRange.endDate, liveSessionIds: selectedLiveSessionIds, items: products.map(product => ({ productId: product.productId, productName: product.productName, variantId: product.variantId ?? null, paidQuantity: product.paidQuantity, finalPurchaseQuantity: selectedProductQuantities[productKey(product)] })) }); }}>建立 CN 并自动生成 IB</Button>}
+                {cnStep < 3 ? <Button onClick={() => { if (cnStep === 1 && selectedLiveSessionIds.length === 0) { toast.error('请至少勾选一场代购直播。'); return; } if (cnStep === 2 && Object.keys(selectedProductQuantities).length === 0) { toast.error('请至少勾选一个要采购的商品。'); return; } setCnStep((cnStep + 1) as 1 | 2 | 3); }}>下一步</Button> : <Button disabled={createCnWithAutoIbMutation.isPending || Object.keys(selectedProductQuantities).length === 0} onClick={() => { const products = (cnMergedProductsQuery.data as any[] || []).filter(product => productKey(product) in selectedProductQuantities); createCnWithAutoIbMutation.mutate({ startDate: cnRange.startDate, endDate: cnRange.endDate, liveSessionIds: selectedLiveSessionIds, items: products.map(product => ({ productId: product.productId, productName: product.productName, variantId: product.variantId ?? null, paidQuantity: product.paidQuantity, finalPurchaseQuantity: selectedProductQuantities[productKey(product)] })) }); }}>建立采购单并自动生成 IB</Button>}
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -515,7 +515,7 @@ export default function ImportBatches() {
               </div>
               <div>
                 <Label>批次名称 *</Label>
-                <Input value={formData.batchName} onChange={e => setFormData({ ...formData, batchName: e.target.value })} placeholder="例如: 8月中国代购" />
+                <Input value={formData.batchName} onChange={e => setFormData({ ...formData, batchName: e.target.value })} placeholder="例如: 8月代购" />
               </div>
               <div>
                 <Label>来源国家</Label>

@@ -608,7 +608,7 @@ export default function Customers() {
                         )}
                         {xtcOrders.length > 0 && (
                           <div>
-                            <p className="text-xs font-medium text-muted-foreground mb-1.5">{translate("中国代购订单", "China Import Orders")} ({xtcOrders.length})</p>
+                            <p className="text-xs font-medium text-muted-foreground mb-1.5">{translate("代购订单", "Import Orders")} ({xtcOrders.length})</p>
                             <div className="space-y-2">
                               {xtcOrders.map((o: any) => (
                                 <div key={o.id} className="flex items-center justify-between p-3 border rounded-lg text-sm">

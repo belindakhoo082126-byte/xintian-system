@@ -1197,7 +1197,7 @@ export const systemSettings = mysqlTable("system_settings", {
   // Numbering rules
   orderPrefix: varchar("orderPrefix", { length: 20 }).default("ORD").notNull(),
   localOrderPrefix: varchar("localOrderPrefix", { length: 20 }).default("XT").notNull(),
-  importOrderPrefix: varchar("importOrderPrefix", { length: 20 }).default("XTC").notNull(),
+  importOrderPrefix: varchar("importOrderPrefix", { length: 20 }).default("XTD").notNull(),
   orderNumberPadding: int("orderNumberPadding").default(5).notNull(),
   poPrefix: varchar("poPrefix", { length: 20 }).default("PO").notNull(),
   poNumberPadding: int("poNumberPadding").default(5).notNull(),

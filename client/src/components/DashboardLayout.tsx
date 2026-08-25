@@ -126,7 +126,7 @@ const menuStructure: MenuEntry[] = [
     accent: MENU_ACCENTS.orders,
     children: [
       { icon: Home, label: { zh: "本地订单", en: "Local Orders" }, path: "/orders/local" },
-      { icon: Plane, label: { zh: "中国代购订单", en: "Import Orders" }, path: "/orders/import" },
+      { icon: Plane, label: { zh: "代购订单", en: "Import Orders" }, path: "/orders/import" },
       { icon: Crown, label: { zh: "会员订单", en: "Membership Orders" }, path: "/membership" },
       { icon: Search, label: { zh: "订单查询", en: "Order Search" }, path: "/orders/search" },
       { icon: Undo2, label: { zh: "退款管理", en: "Refund Management" }, path: "/admin/refunds" },
@@ -179,13 +179,13 @@ const menuStructure: MenuEntry[] = [
     ],
   },
 
-  // 8. 中国代购采购
+  // 8. 代购采购
   {
     icon: Plane,
-    label: { zh: "中国代购采购", en: "Import Purchasing" },
+    label: { zh: "代购采购", en: "Import Purchasing" },
     accent: MENU_ACCENTS.import,
     children: [
-      { icon: FileText, label: { zh: "CN（中国采购）", en: "CN (China Purchase)" }, path: "/import-batches?tab=cn" },
+      { icon: FileText, label: { zh: "CN（采购）", en: "CN (Purchase)" }, path: "/import-batches?tab=cn" },
       { icon: Boxes, label: { zh: "IB（进口批次）", en: "IB (Import Batch)" }, path: "/import-batches?tab=ib" },
     ],
   },

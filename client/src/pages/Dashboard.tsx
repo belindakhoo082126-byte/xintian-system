@@ -76,7 +76,7 @@ function formatHandoverWait(minutes: number, lang: "zh" | "en") {
 
 export default function Dashboard() {
   const { t, lang } = useI18n();
-  const { data: stats, isLoading } = trpc.dashboardV11.stats.useQuery();
+  const { data: stats, isLoading, isError, refetch } = trpc.dashboardV11.stats.useQuery();
   const { data: followUpStats } = trpc.orders.followUpStats.useQuery();
   const { data: followUpList } = trpc.orders.followUpList.useQuery({ limit: 50 });
   const followUpDisplay = getFollowUpDisplayState(followUpStats, followUpList);
@@ -128,7 +128,20 @@ export default function Dashboard() {
     );
   }
 
-  if (!stats) return null;
+  if (isError || !stats) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <Card className="w-full max-w-md border-amber-200 bg-amber-50/50">
+          <CardContent className="space-y-3 p-6 text-center">
+            <AlertTriangle className="mx-auto h-8 w-8 text-amber-600" />
+            <p className="font-medium">{lang === "zh" ? "仪表板资料暂时无法读取" : "Dashboard data is temporarily unavailable"}</p>
+            <p className="text-sm text-muted-foreground">{lang === "zh" ? "同步或重启后请稍候，再重新读取资料。" : "Please wait briefly after a sync or restart, then retry."}</p>
+            <Button variant="outline" onClick={() => refetch()}>{lang === "zh" ? "重新读取资料" : "Reload data"}</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // Dashboard Row 1: confirmed cash receipts, not order totals.
   const cashReceiptBreakdown = (stats as any).cashReceiptBreakdown || {};
@@ -144,7 +157,7 @@ export default function Dashboard() {
       link: "/profit-report?nature=normal",
     },
     {
-      title: lang === "zh" ? "中国代购已收款" : "Import Pre-order Receipts",
+      title: lang === "zh" ? "代购已收款" : "Import Pre-order Receipts",
       subtitle: lang === "zh" ? "本月实际确认付款" : "Confirmed This Month",
       value: `RM ${Number(cashReceiptBreakdown.importReceivedMonth || 0).toFixed(2)}`,
       icon: Plane,
@@ -456,7 +469,7 @@ export default function Dashboard() {
                           {SPECIAL_STATUS_LABELS[item.specialType]?.[lang] ?? item.specialTypeLabel}
                         </Badge>
                         {item.orderCategory === 'import' && (
-                          <Badge className="bg-purple-100 text-purple-700" variant="secondary">{lang === "zh" ? "中国代购" : "Import Pre-order"}</Badge>
+                          <Badge className="bg-purple-100 text-purple-700" variant="secondary">{lang === "zh" ? "代购" : "Import Pre-order"}</Badge>
                         )}
                         {item.orderCategory !== 'import' && (
                           <Badge className="bg-green-100 text-green-700" variant="secondary">{lang === "zh" ? "本地" : "Local"}</Badge>

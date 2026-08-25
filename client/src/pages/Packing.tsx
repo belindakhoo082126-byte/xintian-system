@@ -415,7 +415,7 @@ export default function Packing() {
                               )}
                               {/* V2.1.26: Show order category badge for import orders */}
                               {order.orderCategory === "import" && (
-                                <Badge variant="outline" className="text-xs text-purple-600 border-purple-300">{translate("中国代购", "Import")}</Badge>
+                                <Badge variant="outline" className="text-xs text-purple-600 border-purple-300">{translate("代购", "Import")}</Badge>
                               )}
                               {isScheduledTab && (order.physicalStatus || order.importStatus) && getStatusBadge(order.physicalStatus || order.importStatus, lang)}
                               {isScheduledTab && order.scheduledShippingDate && (

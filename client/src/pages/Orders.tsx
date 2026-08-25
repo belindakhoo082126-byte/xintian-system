@@ -817,8 +817,8 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
   return (
     <div className="space-y-6">
       <AdminPageHeader
-        title={crossChannelMergeToday ? translate("今日跨渠道合单", "Today's Cross-channel Merges") : orderCategory === "import" ? translate("中国代购订单", "Import Orders") : orderCategory === "local" ? translate("本地订单", "Local Orders") : translate("订单管理", "Order Management")}
-        description={crossChannelMergeToday ? translate("以下为今天实际追加至未汇款 XT，以及截止日期内 XTC 订单的合单记录；点击订单可查看完整详情。", "These are today's additions to unpaid XT and eligible in-window XTC orders. Click an order for full details.") : orderCategory === "import" ? translate("中国代购订单管理与处理", "Import order management & processing") : orderCategory === "local" ? translate("本地订单管理与处理", "Local order management & processing") : translate("搜索与筛选所有订单", "Search and filter all orders")}
+        title={crossChannelMergeToday ? translate("今日跨渠道合单", "Today's Cross-channel Merges") : orderCategory === "import" ? translate("代购订单", "Import Orders") : orderCategory === "local" ? translate("本地订单", "Local Orders") : translate("订单管理", "Order Management")}
+        description={crossChannelMergeToday ? translate("以下为今天实际追加至未汇款 XT，以及截止日期内 XTD 订单的合单记录；点击订单可查看完整详情。", "These are today's additions to unpaid XT and eligible in-window XTD orders. Click an order for full details.") : orderCategory === "import" ? translate("代购订单管理与处理", "Import order management & processing") : orderCategory === "local" ? translate("本地订单管理与处理", "Local order management & processing") : translate("搜索与筛选所有订单", "Search and filter all orders")}
         actions={(
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             {orderCategory !== "import" && canOpenOrderMergeFromPath(location) && (
@@ -1024,7 +1024,7 @@ export default function Orders({ orderCategory, ...rest }: { orderCategory?: "lo
                         <p className="font-mono text-sm font-semibold text-cyan-800 dark:text-cyan-200">{order.orderNumber}</p>
                         <p className="text-xs text-muted-foreground">{order.customerName || order.facebookName || "-"}</p>
                         <p className="mt-1 text-xs font-medium text-cyan-700 dark:text-cyan-300">
-                          {order.orderCategory === "import" ? translate("XTC 中国代购", "XTC Import") : translate("XT 本地订单", "XT Local")}
+                          {order.orderCategory === "import" ? translate("XTD 代购", "XTD Import") : translate("XT 本地订单", "XT Local")}
                         </p>
                       </div>
                       <div className="text-sm">

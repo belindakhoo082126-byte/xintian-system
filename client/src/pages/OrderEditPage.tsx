@@ -515,7 +515,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   }
 
   const o = order as any;
-  const orderTypeLabel = o.orderCategory === "import" ? translate("中国代购订单", "Import Order") : translate("本地订单", "Local Order");
+  const orderTypeLabel = o.orderCategory === "import" ? translate("代购订单", "Import Order") : translate("本地订单", "Local Order");
 
   return (
     <div className="container max-w-5xl mx-auto px-4 py-6 space-y-4">
@@ -555,7 +555,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="local">{translate("本地订单", "Local Order")}</SelectItem>
-                <SelectItem value="import">{translate("中国代购订单", "Import Order")}</SelectItem>
+                <SelectItem value="import">{translate("代购订单", "Import Order")}</SelectItem>
               </SelectContent>
             </Select>
           </div>

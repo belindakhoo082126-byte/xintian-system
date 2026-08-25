@@ -2,6 +2,7 @@ import { appendItemsToUnpaidLocalOrder, applyTrustedSpecialPriceSnapshots, asser
 import { draftOrders, orderChangeRequests, reservationRecords, products, productVariations, variants, orders, orderItems, aiLogs, aiHandoverRequests } from "../drizzle/schema";
 import { eq, sql, and, desc } from "drizzle-orm";
 import { SideEffectPolicy } from "./aiTestRunner";
+import { IMPORT_ORDER_PREFIX, LOCAL_ORDER_PREFIX } from "../shared/orderNumberPrefixes";
 
 // ===========================================================================
 // AI Case Classification — Intent detection for every customer message
@@ -425,7 +426,7 @@ export async function approveDraftOrder(draftId: number, approvedBy: string): Pr
   }
 
   // V2.1.23: Generate proper order number with XT/XTC prefix
-  const prefix = orderCategory === "import" ? "XTC" : "XT";
+  const prefix = orderCategory === "import" ? IMPORT_ORDER_PREFIX : LOCAL_ORDER_PREFIX;
   const orderNumber = await generateOrderNumber(prefix);
   const secureToken = generateSecureToken();
   const checkoutLink = `/order/${orderNumber}/${secureToken}`;
