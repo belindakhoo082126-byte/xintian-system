@@ -19,7 +19,7 @@ describe("OrderEditPage repotting flowerpot synchronization", () => {
   })
 
   it("uses the current Edit item draft for repotting and opens the same variant picker as manual orders", () => {
-    expect(source).toContain("return itemsModified ? editItems : ((order as any).items || []);")
+    expect(source).toContain("return hasItemChanges ? editItems : ((order as any).items || [])")
     expect(source).toContain("const [variantSelectionProduct, setVariantSelectionProduct]")
     expect(source).toContain("function handleProductSelection(product: any)")
     expect(source).toContain("选择商品规格")
@@ -29,7 +29,12 @@ describe("OrderEditPage repotting flowerpot synchronization", () => {
     expect(source).toContain('setVariantSelectionProduct({ ...product, variants: resolvedVariants })')
     expect(source).toContain('选择规格（${variantCount}）')
     expect(source).toContain('originalUnitPrice: item.originalUnitPrice ? String(item.originalUnitPrice) : null')
-    expect(source).toContain('if (order && !itemsModified)')
+    expect(source).toContain('const loadedOrderIdRef = useRef<number | null>(null)')
+    expect(source).toContain('if (order && loadedOrderIdRef.current !== (order as any).id)')
+    expect(source).toContain('loadedOrderIdRef.current = o.id')
+    expect(source).toContain('const itemDraftDiffersFromOrder = useMemo')
+    expect(source).toContain('const hasItemChanges = itemsModified || itemDraftDiffersFromOrder')
+    expect(source).toContain('if (hasItemChanges)')
     expect(source).toContain('const [isSavingOrder, setIsSavingOrder] = useState(false)')
     expect(source).toContain('await updateDetailsMutation.mutateAsync({')
     expect(source).toContain('disabled={isSavingOrder || updateItemsMutation.isPending || updateDetailsMutation.isPending}')

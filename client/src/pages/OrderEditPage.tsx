@@ -93,6 +93,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   const [editItems, setEditItems] = useState<any[]>([]);
   const [itemsModified, setItemsModified] = useState(false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const loadedOrderIdRef = useRef<number | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
@@ -126,9 +127,10 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
 
   // Load order data into form when available
   useEffect(() => {
-    // Do not replace the user's current item draft when a background query
-    // refreshes after a remark or other unrelated order action.
-    if (order && !itemsModified) {
+    // Background remark/payment queries may refresh the same order. Initialise
+    // the editable item draft only once per order ID so they cannot erase an
+    // item the staff member has just added before saving.
+    if (order && loadedOrderIdRef.current !== (order as any).id) {
       const o = order as any;
       setFormData({
         orderNature: o.orderNature || "retail",
@@ -169,10 +171,11 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
         categoryNameZh: item.categoryNameZh || null,
         itemSource: item.itemSource || "admin",
         priceType: item.priceType || "retail",
-      })));
+      }))); 
       setItemsModified(false);
+      loadedOrderIdRef.current = o.id;
     }
-  }, [order, itemsModified]);
+  }, [order]);
 
   const updateDetailsMutation = trpc.orders.updateDetails.useMutation({
     onSuccess: () => {
@@ -250,6 +253,23 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     },
     onError: (e: any) => toast.error(translate("删除失败: {message}", "Delete failed: {message}", { message: e.message })),
   });
+
+  const itemDraftDiffersFromOrder = useMemo(() => {
+    if (!order) return false;
+    const persistedItems = (order as any).items || [];
+    if (editItems.length !== persistedItems.length) return true;
+    return editItems.some((item, index) => {
+      const persisted = persistedItems[index];
+      return !persisted
+        || item.id !== persisted.id
+        || item.productId !== persisted.productId
+        || (item.variationId || null) !== (persisted.variationId || null)
+        || Number(item.quantity) !== Number(persisted.quantity)
+        || String(item.unitPrice) !== String(persisted.unitPrice);
+    });
+  }, [order, editItems]);
+
+  const hasItemChanges = itemsModified || itemDraftDiffersFromOrder;
 
   async function handleUploadReceipt(file: File) {
     if (!file) return;
@@ -397,15 +417,16 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     });
   }
 
-  // Calculate total from editItems (live) or order (fallback)
+  // Calculate total from the item draft whenever its contents differ from the
+  // persisted order, even when an unrelated refresh reset the modified flag.
   const itemsSubtotal = useMemo(() => {
-    if (itemsModified && editItems.length > 0) {
+    if (hasItemChanges && editItems.length > 0) {
       return editItems.reduce((sum, item) => sum + (parseFloat(item.unitPrice) || 0) * (item.quantity || 0), 0);
     }
     if (!order) return 0;
     const o = order as any;
     return parseFloat(o.physicalSubtotal || "0") + parseFloat(o.membershipSubtotal || "0");
-  }, [order, editItems, itemsModified]);
+  }, [order, editItems, hasItemChanges]);
 
   // Item management functions
   function updateEditItem(idx: number, field: string, value: any) {
@@ -486,8 +507,8 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   // Plant and pot items for repotting
   const repottingSourceItems = useMemo(() => {
     if (!order) return [];
-    return itemsModified ? editItems : ((order as any).items || []);
-  }, [order, editItems, itemsModified]);
+    return hasItemChanges ? editItems : ((order as any).items || []);
+  }, [order, editItems, hasItemChanges]);
 
   const orderPlants = useMemo(
     () => repottingSourceItems.filter((item: any) => !isRepotPotItem(item) && (item.productType || "physical") === "physical"),
@@ -505,7 +526,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     try {
       // Save item rows first. Details are only written after this succeeds, so
       // a failed stock/variant validation cannot leave a misleading order log.
-      if (itemsModified) {
+      if (hasItemChanges) {
         await updateItemsMutation.mutateAsync({
           orderId,
           items: editItems.map(item => ({

@@ -2409,6 +2409,7 @@ export async function updateOrderItems(orderId: number, items: Array<{
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       subtotal: (parseFloat(item.unitPrice) * item.quantity).toFixed(2),
+      variationId: item.variationId ?? null,
     }));
   if (specialSnapshotCandidates.length > 0) {
     await applyTrustedSpecialPriceSnapshots(db, specialSnapshotCandidates);

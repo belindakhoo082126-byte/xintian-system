@@ -16,6 +16,7 @@ describe("OrderEdit newly added item persistence", () => {
 
   it("reserves and restores stock through the current variants table for Edit additions", () => {
     expect(dbSource).toContain("variationId: item.variationId || null")
+    expect(dbSource).toContain("variationId: item.variationId ?? null")
     expect(dbSource).toContain("await reserveProductStocksForOrder(additionalReservations)")
     expect(dbSource).toContain("await db.update(variants).set({\n        stockQuantity: sql`${variants.stockQuantity} + ${item.quantity}`")
     expect(dbSource).toContain("Product and variant stock were atomically reserved above before item insertion.")
