@@ -21,6 +21,7 @@ import {
 import { parseLegacyAddress } from "@shared/parseAddress";
 import { resolveManualOrderItemPrice } from "@shared/manualOrderPricing";
 import { resolveManualOrderVariantPrice } from "@shared/manualOrderVariantPricing";
+import { calculateOrderItemWeight, resolveOrderItemUnitWeight } from "@shared/orderItemWeight";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -350,9 +351,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
 
   // Shipping calculation
   const totalWeight = useMemo(() => {
-    return manualItems
-      .filter(i => i.productType === "physical" || i.productType === "gift")
-      .reduce((sum, i) => sum + (Number(i.unitWeight || 0.5) * i.quantity), 0);
+    return calculateOrderItemWeight(manualItems.filter(i => i.productType === "physical" || i.productType === "gift"));
   }, [manualItems]);
 
   const { data: shippingResult } = trpc.orders.calculateShipping.useQuery(
@@ -463,7 +462,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         productId: product.id,
         productName: product.name,
         productType: product.type || "physical",
-        unitWeight: String((product as any).weightKg || "0.50"),
+        unitWeight: String(resolveOrderItemUnitWeight({ productType: product.type, productWeight: (product as any).weightKg })),
         availableStock: Number((product as any).stockQuantity ?? 0),
         allowOversold: !!(product as any).allowOversold,
         allowPresale: !!((product as any).allowPresale ?? (product as any).allowOversold),
@@ -497,7 +496,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
       subtotal: (quantity * (parseFloat(unitPrice) || 0)).toFixed(2),
       variationId: variant?.id,
       variationName: variant?.name,
-      unitWeight: String(variant?.weight ?? product.weightKg ?? "0.50"),
+      unitWeight: String(resolveOrderItemUnitWeight({ productType: product.type, variantWeight: variant?.weight, productWeight: product.weightKg })),
       priceType: pricing.priceType,
       unitCost: variant?.currentCost || product.costPrice || product.supplierCost || "0",
       image: variant?.imageUrl || product.coverImageUrl || product.imageUrl || product.image,

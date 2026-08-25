@@ -22,6 +22,7 @@ import {
   filterPurchaseProductOptions,
   type PurchaseProductOption,
 } from "@/lib/purchaseOrderSelection";
+import { formatPurchaseOrderQuantityInput, parsePurchaseOrderQuantityInput } from "@/lib/purchaseOrderQuantity";
 
 const STATUS_BADGES: Record<string, string> = {
   draft: "bg-gray-100 text-gray-700",
@@ -215,7 +216,9 @@ export default function PurchaseOrders() {
   }
 
   function removeItem(idx: number) {
-    setItems(items.filter((_, i) => i !== idx));
+    setItems(currentItems => currentItems.length === 1
+      ? [createEmptyPurchaseOrderItem()]
+      : currentItems.filter((_, i) => i !== idx));
   }
 
   function updateItem(idx: number, field: keyof PoItem, value: any) {
@@ -552,8 +555,8 @@ export default function PurchaseOrders() {
                       </div>
                     </div>
                     <div className="col-span-4 flex justify-end">
-                      {items.length > 1 && (
-                        <Button variant="ghost" size="icon" onClick={() => removeItem(idx)}>
+                      {(item.productId !== undefined || items.length > 1) && (
+                        <Button variant="ghost" size="icon" onClick={() => removeItem(idx)} aria-label={translate("移除商品行", "Remove product row")}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       )}
@@ -601,8 +604,10 @@ export default function PurchaseOrders() {
                       <Input
                         type="number"
                         className="h-8"
-                        value={item.quantity}
-                        onChange={(e) => updateItem(idx, "quantity", parseInt(e.target.value) || 0)}
+                        min={0}
+                        inputMode="numeric"
+                        value={formatPurchaseOrderQuantityInput(item.quantity)}
+                        onChange={(e) => updateItem(idx, "quantity", parsePurchaseOrderQuantityInput(e.target.value))}
                       />
                     </div>
                     <div className="col-span-4">

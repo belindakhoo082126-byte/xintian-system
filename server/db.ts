@@ -5815,12 +5815,25 @@ export async function updateProductEnhanced(id: number, data: Partial<{
       (updateData as any)[field] = null;
     }
   }
-  // V4: Convert date strings to Date objects for timestamp fields
-  if (updateData.specialPriceStartDate !== undefined) {
-    (updateData as any).specialPriceStartDate = updateData.specialPriceStartDate ? new Date(updateData.specialPriceStartDate) : null;
-  }
-  if (updateData.specialPriceEndDate !== undefined) {
-    (updateData as any).specialPriceEndDate = updateData.specialPriceEndDate ? new Date(updateData.specialPriceEndDate) : null;
+  // V4: Convert date strings to Date objects for timestamp fields. Older clients
+  // may send an explicit undefined for an empty date; never let that block an
+  // unrelated product update such as correcting a weight.
+  for (const field of ["specialPriceStartDate", "specialPriceEndDate"] as const) {
+    if (!(field in updateData)) continue;
+    const rawValue = (updateData as any)[field];
+    if (rawValue === undefined) {
+      delete (updateData as any)[field];
+      continue;
+    }
+    if (rawValue === null || rawValue === "") {
+      (updateData as any)[field] = null;
+      continue;
+    }
+    const parsedDate = rawValue instanceof Date ? rawValue : new Date(rawValue);
+    if (Number.isNaN(parsedDate.getTime())) {
+      throw new Error(field === "specialPriceStartDate" ? "特价开始日期格式无效" : "特价结束日期格式无效");
+    }
+    (updateData as any)[field] = parsedDate;
   }
   await db.update(products).set(updateData as any).where(eq(products.id, id));
   // Sync coverImageUrl to live_room_products.imageUrl so Live Studio always shows the latest product image

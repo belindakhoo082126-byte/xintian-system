@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateOrderItemWeight, resolveOrderItemUnitWeight } from "../shared/orderItemWeight";
+import { calculateOrderItemWeight, normalizeOrderWeightKg, resolveOrderItemUnitWeight } from "../shared/orderItemWeight";
 
 describe("订单规格重量快照规则", () => {
   it("所选规格重量优先于商品默认重量", () => {
@@ -16,5 +16,11 @@ describe("订单规格重量快照规则", () => {
       { quantity: 2, unitWeight: "8.4" },
       { quantity: 3, unitWeight: null },
     ])).toBe(18.3);
+  });
+
+  it("将早期写入重量字段的克数安全归一化为公斤", () => {
+    expect(normalizeOrderWeightKg("1000.00")).toBe(1);
+    expect(resolveOrderItemUnitWeight({ productType: "physical", productWeight: "1000.00" })).toBe(1);
+    expect(calculateOrderItemWeight([{ quantity: 10, unitWeight: "1000.00" }])).toBe(10);
   });
 });

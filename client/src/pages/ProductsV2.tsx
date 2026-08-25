@@ -62,6 +62,13 @@ const STATUS_BADGES: Record<string, string> = {
 
 const PAGE_SIZE = 20;
 
+function toDateInputValue(value: unknown): string {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
 type ProductForm = {
   name: string;
   type: "physical" | "virtual" | "gift";
@@ -445,8 +452,8 @@ export default function ProductsV2() {
         agentPrice: (p as any).agentPrice ? String((p as any).agentPrice) : "",
         moq: (p as any).moq ?? 0,
         visibleTo: (() => { try { return JSON.parse((p as any).visibleTo || '"[\"retail\",\"member\",\"wholesale\",\"agent\"]"'); } catch { return ["retail", "member", "wholesale", "agent"]; } })(),
-        specialPriceStartDate: (p as any).specialPriceStartDate ? String((p as any).specialPriceStartDate).split("T")[0] : "",
-        specialPriceEndDate: (p as any).specialPriceEndDate ? String((p as any).specialPriceEndDate).split("T")[0] : "",
+        specialPriceStartDate: toDateInputValue((p as any).specialPriceStartDate),
+        specialPriceEndDate: toDateInputValue((p as any).specialPriceEndDate),
         aiTags: (() => { try { const t = JSON.parse((p as any).aiTags || "[]"); return Array.isArray(t) ? t : []; } catch { return []; } })(),
         aiSellingPoints: (p as any).aiSellingPoints || "",
         syncToMall: (p as any).syncToMall ?? false,
@@ -630,8 +637,6 @@ export default function ProductsV2() {
       agentPrice: form.agentPrice ? Number(form.agentPrice) : undefined,
       moq: form.moq,
       visibleTo: JSON.stringify(form.visibleTo),
-      specialPriceStartDate: form.specialPriceStartDate || undefined,
-      specialPriceEndDate: form.specialPriceEndDate || undefined,
       keywordChannels: JSON.stringify(form.keywordChannels),
       aiTags: JSON.stringify(form.aiTags),
       aiSellingPoints: form.aiSellingPoints || undefined,
@@ -647,9 +652,14 @@ export default function ProductsV2() {
           status,
           sortOrder,
           imageUrl: imageUrl || undefined,
-        }))
+      }))
         : undefined,
     };
+    // 空日期不应作为 undefined 写入 Drizzle 的 timestamp 字段；否则商品其他资料（例如重量）也会被阻断保存。
+    if (form.specialPriceStartDate) data.specialPriceStartDate = form.specialPriceStartDate;
+    else delete data.specialPriceStartDate;
+    if (form.specialPriceEndDate) data.specialPriceEndDate = form.specialPriceEndDate;
+    else delete data.specialPriceEndDate;
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...data });
     } else {
