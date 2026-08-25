@@ -92,6 +92,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   // Editable items state
   const [editItems, setEditItems] = useState<any[]>([]);
   const [itemsModified, setItemsModified] = useState(false);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [productSearch, setProductSearch] = useState("");
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
@@ -125,7 +126,9 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
 
   // Load order data into form when available
   useEffect(() => {
-    if (order) {
+    // Do not replace the user's current item draft when a background query
+    // refreshes after a remark or other unrelated order action.
+    if (order && !itemsModified) {
       const o = order as any;
       setFormData({
         orderNature: o.orderNature || "retail",
@@ -169,7 +172,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
       })));
       setItemsModified(false);
     }
-  }, [order]);
+  }, [order, itemsModified]);
 
   const updateDetailsMutation = trpc.orders.updateDetails.useMutation({
     onSuccess: () => {
@@ -497,9 +500,12 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   );
 
   async function handleSave() {
-    // First save items if modified
-    if (itemsModified) {
-      try {
+    if (isSavingOrder) return;
+    setIsSavingOrder(true);
+    try {
+      // Save item rows first. Details are only written after this succeeds, so
+      // a failed stock/variant validation cannot leave a misleading order log.
+      if (itemsModified) {
         await updateItemsMutation.mutateAsync({
           orderId,
           items: editItems.map(item => ({
@@ -516,17 +522,18 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
             originalUnitPrice: item.originalUnitPrice ? String(item.originalUnitPrice) : null,
           })),
         });
-      } catch (e) {
-        return; // Error toast already shown by mutation
       }
+      await updateDetailsMutation.mutateAsync({
+        id: orderId,
+        ...formData,
+        shippingFee: isSelfPickup ? "0.00" : formData.shippingFee,
+        totalAmount: totalAmount.toFixed(2),
+      });
+    } catch {
+      // Individual mutations already show the actionable failure message.
+    } finally {
+      setIsSavingOrder(false);
     }
-    // Then save order details
-    updateDetailsMutation.mutate({
-      id: orderId,
-      ...formData,
-      shippingFee: isSelfPickup ? "0.00" : formData.shippingFee,
-      totalAmount: totalAmount.toFixed(2),
-    });
   }
 
   if (isLoading) {
@@ -1313,7 +1320,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
         <Button variant="outline" onClick={onBack}>
           <X className="h-4 w-4 mr-1" />{translate("取消", "Cancel")}
         </Button>
-        <Button onClick={handleSave} disabled={updateDetailsMutation.isPending} size="lg">
+        <Button onClick={handleSave} disabled={isSavingOrder || updateItemsMutation.isPending || updateDetailsMutation.isPending} size="lg">
           <Save className="h-4 w-4 mr-1" />
           {updateDetailsMutation.isPending ? translate("保存中...", "Saving...") : translate("保存修改", "Save Changes")}
         </Button>

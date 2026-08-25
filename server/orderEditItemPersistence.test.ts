@@ -19,5 +19,6 @@ describe("OrderEdit newly added item persistence", () => {
     expect(dbSource).toContain("await reserveProductStocksForOrder(additionalReservations)")
     expect(dbSource).toContain("await db.update(variants).set({\n        stockQuantity: sql`${variants.stockQuantity} + ${item.quantity}`")
     expect(dbSource).toContain("Product and variant stock were atomically reserved above before item insertion.")
+    expect(dbSource).toContain('const variationLabel = ni.variationName ? `（${ni.variationName}）` : ""')
   })
 })

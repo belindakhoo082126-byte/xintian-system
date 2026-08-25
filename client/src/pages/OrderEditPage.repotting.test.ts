@@ -29,6 +29,10 @@ describe("OrderEditPage repotting flowerpot synchronization", () => {
     expect(source).toContain('setVariantSelectionProduct({ ...product, variants: resolvedVariants })')
     expect(source).toContain('选择规格（${variantCount}）')
     expect(source).toContain('originalUnitPrice: item.originalUnitPrice ? String(item.originalUnitPrice) : null')
+    expect(source).toContain('if (order && !itemsModified)')
+    expect(source).toContain('const [isSavingOrder, setIsSavingOrder] = useState(false)')
+    expect(source).toContain('await updateDetailsMutation.mutateAsync({')
+    expect(source).toContain('disabled={isSavingOrder || updateItemsMutation.isPending || updateDetailsMutation.isPending}')
   })
 
   it("keeps long plant and flowerpot names readable in the expanded repotting remark dialog", () => {

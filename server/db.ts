@@ -2462,7 +2462,8 @@ export async function updateOrderItems(orderId: number, items: Array<{
   }
 
   for (const ni of newItems) {
-    changes.push(`+ ${ni.productName} ×${ni.quantity} @RM${ni.unitPrice}`);
+    const variationLabel = ni.variationName ? `（${ni.variationName}）` : "";
+    changes.push(`+ ${ni.productName}${variationLabel} ×${ni.quantity} @RM${ni.unitPrice}`);
   }
   for (const ui of updatedItems) {
     const old = oldItemsMap.get(ui.id!) as any;
