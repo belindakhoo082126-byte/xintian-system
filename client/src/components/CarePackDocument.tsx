@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import { AlertTriangle, Download, Leaf, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ProductImagePreview } from "@/components/ProductImagePreview";
 
 type CarePackDocumentProps = {
   document: any;
@@ -60,6 +61,7 @@ const CarePackDocument = forwardRef<HTMLElement, CarePackDocumentProps>(function
           }
           .care-pack-document--employee .care-pack-product-image,
           .care-pack-document--employee .care-pack-image-placeholder { display: none !important; }
+          .care-pack-image-zoom-hint { display: none !important; }
         }
       `}</style>
       <header className="border-b border-emerald-900/15 bg-white px-5 py-6 sm:px-8">
@@ -93,9 +95,7 @@ const CarePackDocument = forwardRef<HTMLElement, CarePackDocumentProps>(function
             <article key={`${product.productName}-${product.variationName || index}`} className="care-pack-item overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
               <div className="flex flex-col gap-4 p-5 sm:flex-row sm:p-6">
                 {!employeeMode ? (
-                  <div className="care-pack-product-image h-32 w-full shrink-0 overflow-hidden rounded-xl bg-stone-100 sm:w-36">
-                    {product.images?.[0] ? <img src={product.images[0]} alt={product.productName} className="h-full w-full object-cover" /> : <div className="care-pack-image-placeholder flex h-full items-center justify-center text-stone-400"><Leaf className="h-8 w-8" /></div>}
-                  </div>
+                  <CarePackProductImage src={product.images?.[0]} alt={product.productName} />
                 ) : null}
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -144,6 +144,25 @@ function CareField({ label, value, employeeMode = false, wide = false }: { label
     <div className={wide ? "sm:col-span-2" : ""}>
       <dt className="font-medium text-emerald-900">{label}</dt>
       <dd className="mt-1 whitespace-pre-wrap leading-6 text-stone-700">{textOrPending(value, employeeMode)}</dd>
+    </div>
+  );
+}
+
+function CarePackProductImage({ src, alt }: { src?: string | null; alt: string }) {
+  if (!src) {
+    return <div className="care-pack-product-image care-pack-image-placeholder flex h-32 w-full shrink-0 items-center justify-center overflow-hidden rounded-xl bg-stone-100 text-stone-400 sm:w-36"><Leaf className="h-8 w-8" /></div>;
+  }
+
+  return (
+    <div className="care-pack-product-image relative h-32 w-full shrink-0 overflow-hidden rounded-xl bg-stone-100 sm:w-36">
+      <ProductImagePreview
+        src={src}
+        alt={alt}
+        label="点击放大商品图片"
+        className="h-full w-full rounded-xl border-0 bg-transparent"
+        imageClassName="h-full w-full object-cover"
+      />
+      <span className="care-pack-image-zoom-hint pointer-events-none absolute inset-x-0 bottom-0 bg-black/55 px-2 py-1 text-center text-xs font-medium text-white">点击放大</span>
     </div>
   );
 }

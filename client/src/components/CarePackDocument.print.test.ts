@@ -18,6 +18,11 @@ describe("CarePackDocument print roles", () => {
     expect(source).toContain('size: ${employeeMode ? "A5 portrait" : "A4 portrait"}');
     expect(source).toContain("保存PDF");
     expect(source).toContain("data-care-pack-export-root");
+    expect(source).toContain("function CarePackProductImage");
+    expect(source).toContain("ProductImagePreview");
+    expect(source).toContain('label="点击放大商品图片"');
+    expect(source).toContain("点击放大");
+    expect(source).toContain(".care-pack-image-zoom-hint { display: none !important; }");
   });
 
   it("keeps customer browser printing separate from direct PDF download", () => {
