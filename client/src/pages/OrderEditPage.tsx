@@ -513,6 +513,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
             variationName: item.variationName,
             itemSource: item.itemSource || "admin",
             priceType: item.priceType || "retail",
+            originalUnitPrice: item.originalUnitPrice ? String(item.originalUnitPrice) : null,
           })),
         });
       } catch (e) {

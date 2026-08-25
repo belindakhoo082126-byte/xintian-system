@@ -2441,10 +2441,20 @@ export async function updateOrderItems(orderId: number, items: Array<{
   // conditional UPDATE. This prevents order editing from bypassing the same
   // stock rule used by new orders.
   const additionalReservations = [
-    ...newItems.filter((item) => !!item.productId).map((item) => ({ productId: item.productId!, quantity: item.quantity })),
+    ...newItems.filter((item) => !!item.productId).map((item) => ({
+      productId: item.productId!,
+      quantity: item.quantity,
+      variationId: item.variationId || null,
+      productType: "physical" as const,
+    })),
     ...updatedItems.map((item) => {
       const old = oldItemsMap.get(item.id!) as any;
-      return { productId: old.productId as number, quantity: item.quantity - old.quantity };
+      return {
+        productId: old.productId as number,
+        quantity: item.quantity - old.quantity,
+        variationId: item.variationId || old.variationId || null,
+        productType: old.productType || "physical",
+      };
     }).filter((item) => !!item.productId && item.quantity > 0),
   ];
   if (additionalReservations.length > 0) {
@@ -2470,9 +2480,9 @@ export async function updateOrderItems(orderId: number, items: Array<{
   for (const di of deletedItems) {
     const item = di as any;
     if (item.variationId) {
-      await db.update(productVariations).set({
-        stockQuantity: sql`${productVariations.stockQuantity} + ${item.quantity}`,
-      }).where(eq(productVariations.id, item.variationId));
+      await db.update(variants).set({
+        stockQuantity: sql`${variants.stockQuantity} + ${item.quantity}`,
+      }).where(eq(variants.id, item.variationId));
     }
     if (item.productId) {
       await db.update(products).set({
@@ -2487,15 +2497,15 @@ export async function updateOrderItems(orderId: number, items: Array<{
     const old = oldItemsMap.get(ui.id!) as any;
     const qtyDiff = ui.quantity - old.quantity;
     if (qtyDiff !== 0 && old.productId) {
-      if (old.variationId) {
-        await db.update(productVariations).set({
-          stockQuantity: sql`${productVariations.stockQuantity} - ${qtyDiff}`,
-        }).where(eq(productVariations.id, old.variationId));
-      }
       if (qtyDiff < 0) {
         await db.update(products).set({
           stockQuantity: sql`${products.stockQuantity} + ${Math.abs(qtyDiff)}`,
         }).where(eq(products.id, old.productId));
+        if (old.variationId) {
+          await db.update(variants).set({
+            stockQuantity: sql`${variants.stockQuantity} + ${Math.abs(qtyDiff)}`,
+          }).where(eq(variants.id, old.variationId));
+        }
       }
     }
     const subtotal = (parseFloat(ui.unitPrice) * ui.quantity).toFixed(2);
@@ -2528,12 +2538,7 @@ export async function updateOrderItems(orderId: number, items: Array<{
       itemSource: (ni.itemSource as "admin" | "facebook_live" | "messenger" | "mall") || "admin",
     });
     if (ni.productId) {
-      if (ni.variationId) {
-        await db.update(productVariations).set({
-          stockQuantity: sql`${productVariations.stockQuantity} - ${ni.quantity}`,
-        }).where(eq(productVariations.id, ni.variationId));
-      }
-      // Product stock was atomically reserved above before item insertion.
+      // Product and variant stock were atomically reserved above before item insertion.
     }
   }
 

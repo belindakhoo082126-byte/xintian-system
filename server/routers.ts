@@ -1935,6 +1935,7 @@ export const appRouter = router({
           variationName: z.string().nullable().optional(),
           itemSource: z.string().optional(),
           priceType: z.string().optional(),
+          originalUnitPrice: z.string().nullable().optional(),
         })),
       }))
       .mutation(async ({ input, ctx }) => {
