@@ -68,7 +68,7 @@ export default function MallOrderQuery() {
         {searched && order && (
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center justify-between">
+              <CardTitle className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <span>订单详情</span>
                 {statusInfo && (
                   <Badge className={statusInfo.color}>
@@ -78,7 +78,7 @@ export default function MallOrderQuery() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                 <div><span className="text-muted-foreground">订单号:</span> {order.orderNumber}</div>
                 <div><span className="text-muted-foreground">下单时间:</span> {new Date(order.createdAt).toLocaleString("zh-CN")}</div>
                 <div><span className="text-muted-foreground">总金额:</span> <span className="font-semibold text-[#2d6a4f]">RM {order.totalAmount}</span></div>
@@ -86,7 +86,23 @@ export default function MallOrderQuery() {
                 <div><span className="text-muted-foreground">配送:</span> {order.shippingMethod}</div>
               </div>
 
-              <Table>
+              <div className="space-y-2 md:hidden" aria-label="订单商品">
+                {order.items?.map((item: any, i: number) => (
+                  <article key={i} className="rounded-xl border bg-muted/20 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <p className="min-w-0 flex-1 break-words font-medium">{item.productName}</p>
+                      <Badge variant="outline" className="max-w-full whitespace-normal text-left">规格：{item.variationName || "-"}</Badge>
+                    </div>
+                    <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                      <div><dt className="text-xs text-muted-foreground">数量</dt><dd className="mt-1 font-medium">{item.quantity}</dd></div>
+                      <div><dt className="text-xs text-muted-foreground">单价</dt><dd className="mt-1 font-medium">RM {item.unitPrice}</dd></div>
+                      <div><dt className="text-xs text-muted-foreground">小计</dt><dd className="mt-1 font-semibold text-[#2d6a4f]">RM {item.subtotal}</dd></div>
+                    </dl>
+                  </article>
+                ))}
+              </div>
+
+              <Table className="hidden md:table">
                 <TableHeader>
                   <TableRow>
                     <TableHead>商品</TableHead>
@@ -116,7 +132,7 @@ export default function MallOrderQuery() {
                   </div>
                   {order.packages.map((pkg: any) => (
                     <div key={pkg.id} className="rounded-lg border bg-muted/25 p-3 text-sm">
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <span className="font-medium">包裹 {pkg.packageNumber} · {pkg.courier}</span>
                         <Badge variant={pkg.status === "shipped" ? "default" : "secondary"}>{pkg.status === "shipped" ? "已发货" : pkg.status}</Badge>
                       </div>
