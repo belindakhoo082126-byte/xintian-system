@@ -5,6 +5,29 @@ export type DocumentPayment = {
   purpose?: string | null;
 };
 
+export type DocumentMerchandiseItem = {
+  quantity?: string | number | null;
+  unitPrice?: string | number | null;
+  subtotal?: string | number | null;
+  priceType?: string | null;
+};
+
+export function getOrderDocumentMerchandiseBreakdown(items: DocumentMerchandiseItem[] | null | undefined) {
+  return (items || []).reduce(
+    (summary, item) => {
+      const subtotal = Number(item.subtotal ?? Number(item.unitPrice || 0) * Number(item.quantity || 0));
+      if (String(item.priceType || "regular") === "special") {
+        summary.specialItemsSubtotal += subtotal;
+      } else {
+        summary.regularItemsSubtotal += subtotal;
+      }
+      summary.itemsSubtotal += subtotal;
+      return summary;
+    },
+    { regularItemsSubtotal: 0, specialItemsSubtotal: 0, itemsSubtotal: 0 },
+  );
+}
+
 export function getOrderDocumentPaymentSummary(input: {
   baseOrderTotal: number;
   payments: DocumentPayment[];

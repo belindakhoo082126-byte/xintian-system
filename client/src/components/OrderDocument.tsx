@@ -2,7 +2,7 @@ import { useI18n } from "@/contexts/I18nContext";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
 import { WEST_MALAYSIA_V22_SHIPPING } from "@shared/shippingV22";
 import { getOrderShippingDisplay } from "@shared/orderDocumentShippingRules";
-import { getOrderDocumentPaymentSummary } from "@shared/orderDocumentFinancialRules";
+import { getOrderDocumentMerchandiseBreakdown, getOrderDocumentPaymentSummary } from "@shared/orderDocumentFinancialRules";
 
 const SHIPPING_LABELS: Record<string, { zh: string; en: string }> = {
   west_malaysia: { zh: "西马", en: "West Malaysia" },
@@ -104,6 +104,7 @@ export function OrderDocument({
   const physicalSubtotal = parseFloat(o.physicalSubtotal || "0");
   const membershipSubtotal = parseFloat(o.membershipSubtotal || "0");
   const itemsSubtotal = physicalSubtotal + membershipSubtotal;
+  const merchandiseBreakdown = getOrderDocumentMerchandiseBreakdown(o.items || []);
   const promotionDiscount = parseFloat(o.promotionDiscount || "0");
   const extraCharge = parseFloat(o.extraCharge || "0");
   const creditUsed = parseFloat(o.creditUsed || "0");
@@ -340,6 +341,14 @@ export function OrderDocument({
       <div style={{ marginBottom: "20px" }}>
         <div style={sectionTitle}>{translate("金额详情", "Amount Details")}</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxWidth: "350px", marginLeft: "auto" }}>
+          <div style={amtRow}>
+            <span>{translate("原价商品", "Regular-price Items")}</span>
+            <span>RM {merchandiseBreakdown.regularItemsSubtotal.toFixed(2)}</span>
+          </div>
+          <div style={amtRow}>
+            <span>{translate("特价商品", "Special-price Items")}</span>
+            <span>RM {merchandiseBreakdown.specialItemsSubtotal.toFixed(2)}</span>
+          </div>
           <div style={amtRow}>
             <span>{translate("商品小计", "Subtotal")}</span>
             <span>RM {itemsSubtotal.toFixed(2)}</span>

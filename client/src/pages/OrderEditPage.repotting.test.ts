@@ -46,6 +46,9 @@ describe("OrderEditPage repotting flowerpot synchronization", () => {
     expect(source).toContain('[&>span]:whitespace-normal [&>span]:break-words')
     expect(source).toContain('className="h-auto whitespace-normal break-words py-2 leading-5"')
     expect(source).toContain('sm:min-w-[28rem]')
+    expect(source).toContain('grid-cols-[minmax(0,1fr)_2.5rem]')
+    expect(source).toContain('min-h-12 w-full items-start py-2')
+    expect(source).toContain('h-10 w-10 sm:h-8 sm:w-8')
   })
 
   it("treats legacy order items with an empty product type as physical so saved flowerpot categories remain selectable", () => {

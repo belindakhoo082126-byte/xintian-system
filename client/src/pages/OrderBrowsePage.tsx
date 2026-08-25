@@ -28,7 +28,7 @@ import { prepareOrderDocumentExportHost } from "@/lib/orderDocumentExport";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
 import { ORDER_DOCUMENT_OUTPUT_OPTIONS } from "@shared/orderDocumentOutputRules";
 import { getOrderShippingDisplay } from "@shared/orderDocumentShippingRules";
-import { getOrderDocumentPaymentSummary } from "@shared/orderDocumentFinancialRules";
+import { getOrderDocumentMerchandiseBreakdown, getOrderDocumentPaymentSummary } from "@shared/orderDocumentFinancialRules";
 import OrderCarePackAdminPanel from "@/components/OrderCarePackAdminPanel";
 
 const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
@@ -562,6 +562,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const physicalSubtotal = parseFloat(o.physicalSubtotal || "0");
   const membershipSubtotal = parseFloat(o.membershipSubtotal || "0");
   const itemsSubtotal = physicalSubtotal + membershipSubtotal;
+  const merchandiseBreakdown = getOrderDocumentMerchandiseBreakdown(o.items || []);
   const promotionDiscount = parseFloat(o.promotionDiscount || "0");
   const extraCharge = parseFloat(o.extraCharge || "0");
   const creditUsed = parseFloat(o.creditUsed || "0");
@@ -824,7 +825,9 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <div className="flex justify-between"><span>{translate("商品小计", "Items Subtotal")}</span><span>RM {itemsSubtotal.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span>{translate("原价商品", "Regular-price Items")}</span><span>RM {merchandiseBreakdown.regularItemsSubtotal.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span>{translate("特价商品", "Special-price Items")}</span><span className="text-amber-700">RM {merchandiseBreakdown.specialItemsSubtotal.toFixed(2)}</span></div>
+          <div className="flex justify-between border-t pt-2"><span>{translate("商品小计", "Items Subtotal")}</span><span>RM {itemsSubtotal.toFixed(2)}</span></div>
           {promotionDiscount > 0 && (
             <div className="flex justify-between text-purple-600"><span>{translate("促销优惠", "Promotion Discount")}</span><span>-RM {promotionDiscount.toFixed(2)}</span></div>
           )}

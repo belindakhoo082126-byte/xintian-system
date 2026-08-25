@@ -22,4 +22,12 @@ describe("订单查看、Edit与Preview金额详情一致性", () => {
       expect(source).toContain("最终应收金额");
     }
   });
+
+  it("三处均使用同一普通商品与特价商品分项来源", () => {
+    for (const source of [browse, edit, preview]) {
+      expect(source).toContain("getOrderDocumentMerchandiseBreakdown");
+      expect(source).toContain("原价商品");
+      expect(source).toContain("特价商品");
+    }
+  });
 });

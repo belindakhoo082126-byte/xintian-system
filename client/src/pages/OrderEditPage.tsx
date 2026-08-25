@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
 import { getOrderShippingDisplay } from "@shared/orderDocumentShippingRules";
-import { getOrderDocumentPaymentSummary } from "@shared/orderDocumentFinancialRules";
+import { getOrderDocumentMerchandiseBreakdown, getOrderDocumentPaymentSummary } from "@shared/orderDocumentFinancialRules";
 import { parseLegacyAddress } from "@shared/parseAddress";
 import { isRepotPotItem } from "@shared/repotPotCategories";
 import { resolveManualOrderItemPrice } from "@shared/manualOrderPricing";
@@ -427,6 +427,10 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     const o = order as any;
     return parseFloat(o.physicalSubtotal || "0") + parseFloat(o.membershipSubtotal || "0");
   }, [order, editItems, hasItemChanges]);
+  const merchandiseBreakdown = useMemo(
+    () => getOrderDocumentMerchandiseBreakdown(hasItemChanges ? editItems : ((order as any)?.items || [])),
+    [order, editItems, hasItemChanges],
+  );
 
   // Item management functions
   function updateEditItem(idx: number, field: string, value: any) {
@@ -1036,7 +1040,9 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
           <Separator />
 
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span>{translate("商品小计", "Items Subtotal")}</span><span>RM {itemsSubtotal.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span>{translate("原价商品", "Regular-price Items")}</span><span>RM {merchandiseBreakdown.regularItemsSubtotal.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span>{translate("特价商品", "Special-price Items")}</span><span className="text-amber-700">RM {merchandiseBreakdown.specialItemsSubtotal.toFixed(2)}</span></div>
+            <div className="flex justify-between border-t pt-2"><span>{translate("商品小计", "Items Subtotal")}</span><span>RM {itemsSubtotal.toFixed(2)}</span></div>
             {discountNum > 0 && <div className="flex justify-between text-red-600"><span>{translate("折扣", "Discount")}</span><span>-RM {discountNum.toFixed(2)}</span></div>}
             {extraChargeNum > 0 && <div className="flex justify-between"><span>{translate("额外收费", "Extra Charge")}</span><span>+RM {extraChargeNum.toFixed(2)}</span></div>}
             {!isSelfPickup && shippingDisplay.rows.map((row) => (
@@ -1460,7 +1466,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               <div className="space-y-3">
                 <Label className="text-xs">{translate("换盆记录（可添加多组）", "Repotting entries (can add multiple)")}</Label>
                 {remarkForm.repottingEntries.map((entry, idx) => (
-                  <div key={idx} className="grid grid-cols-1 gap-3 rounded-lg border bg-green-50 p-3 dark:bg-green-950/20 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5rem_2rem] sm:items-end">
+                  <div key={idx} className="grid grid-cols-1 gap-4 rounded-lg border bg-green-50 p-4 dark:bg-green-950/20 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5rem_2rem] sm:items-end sm:gap-3 sm:p-3">
                     <div className="min-w-0">
                       <Label className="text-xs mb-1 block">{translate("植物名称", "Plant Name")}</Label>
                       <Select
@@ -1470,7 +1476,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                           repottingEntries: prev.repottingEntries.map((r, i) => i === idx ? { ...r, plantName: v } : r),
                         }))}
                       >
-                        <SelectTrigger className="h-auto min-h-9 items-start text-left text-sm [&>span]:whitespace-normal [&>span]:break-words"><SelectValue placeholder={translate("选择植物", "Select plant")} /></SelectTrigger>
+                        <SelectTrigger className="h-auto min-h-12 w-full items-start py-2 text-left text-sm leading-5 [&>span]:block [&>span]:whitespace-normal [&>span]:break-words"><SelectValue placeholder={translate("选择植物", "Select plant")} /></SelectTrigger>
                         <SelectContent className="max-w-[calc(100vw-2rem)] sm:min-w-[28rem]">
                           {orderPlants.length === 0 ? (
                             <SelectItem value="__none" disabled>{translate("订单无植物类商品", "No plant items in order")}</SelectItem>
@@ -1493,7 +1499,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                           repottingEntries: prev.repottingEntries.map((r, i) => i === idx ? { ...r, potName: v } : r),
                         }))}
                       >
-                        <SelectTrigger className="h-auto min-h-9 items-start text-left text-sm [&>span]:whitespace-normal [&>span]:break-words"><SelectValue placeholder={translate("选择花盆", "Select pot")} /></SelectTrigger>
+                        <SelectTrigger className="h-auto min-h-12 w-full items-start py-2 text-left text-sm leading-5 [&>span]:block [&>span]:whitespace-normal [&>span]:break-words"><SelectValue placeholder={translate("选择花盆", "Select pot")} /></SelectTrigger>
                         <SelectContent className="max-w-[calc(100vw-2rem)] sm:min-w-[28rem]">
                           {orderPots.length === 0 ? (
                             <SelectItem value="__none" disabled>{translate("订单无花盆类商品", "No pot items in order")}</SelectItem>
@@ -1507,30 +1513,32 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="w-full sm:w-20">
-                      <Label className="text-xs mb-1 block">{translate("数量", "Qty")}</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={entry.quantity}
-                        onChange={(e) => setRemarkForm(prev => ({
+                    <div className="grid grid-cols-[minmax(0,1fr)_2.5rem] items-end gap-3 sm:contents">
+                      <div className="w-full sm:w-20">
+                        <Label className="text-xs mb-1 block">{translate("数量", "Qty")}</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={entry.quantity}
+                          onChange={(e) => setRemarkForm(prev => ({
+                            ...prev,
+                            repottingEntries: prev.repottingEntries.map((r, i) => i === idx ? { ...r, quantity: Number(e.target.value) } : r),
+                          }))}
+                          className="h-10 text-sm sm:h-8"
+                        />
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 sm:h-8 sm:w-8"
+                        onClick={() => setRemarkForm(prev => ({
                           ...prev,
-                          repottingEntries: prev.repottingEntries.map((r, i) => i === idx ? { ...r, quantity: Number(e.target.value) } : r),
+                          repottingEntries: prev.repottingEntries.filter((_, i) => i !== idx),
                         }))}
-                        className="h-8 text-sm"
-                      />
+                      >
+                        <Trash2 className="h-4 w-4 text-muted-foreground" />
+                      </Button>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => setRemarkForm(prev => ({
-                        ...prev,
-                        repottingEntries: prev.repottingEntries.filter((_, i) => i !== idx),
-                      }))}
-                    >
-                      <Trash2 className="h-4 w-4 text-muted-foreground" />
-                    </Button>
                   </div>
                 ))}
                 <Button
