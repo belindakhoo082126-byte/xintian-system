@@ -16,6 +16,7 @@ import { getMallTheme } from "@/lib/mallTheme";
 import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { useI18n } from "@/contexts/I18nContext";
 import { calculateOrderPriceBreakdown } from "@shared/orderPricing";
+import { calculateOrderItemWeight } from "@shared/orderItemWeight";
 
 export default function MallCheckout() {
   const { translate } = useI18n();
@@ -136,7 +137,7 @@ export default function MallCheckout() {
   const normalItems = cart.filter(i => !i.isStandalone);
   const standaloneItems = cart.filter(i => i.isStandalone);
   // Weight for shipping calculation: only normal (non-standalone) items
-  const totalWeight = normalItems.reduce((sum, i) => sum + (Number(i.unitWeight) > 0 ? Number(i.unitWeight) : 0.5) * i.quantity, 0);
+  const totalWeight = calculateOrderItemWeight(normalItems);
   const normalSubtotal = normalItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
   const specialItems = cart.filter(i => i.isSpecial);
   const specialSubtotal = specialItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);

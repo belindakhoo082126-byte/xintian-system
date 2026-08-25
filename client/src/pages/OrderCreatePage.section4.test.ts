@@ -20,7 +20,7 @@ describe("OrderCreatePage 区域四", () => {
     expect(source).toContain("variationId: variant?.id");
     expect(source).toContain("variationName: variant?.name");
     expect(source).toContain("availableStock: Number(variant?.stockQuantity");
-    expect(source).toContain("unitWeight: String(variant?.weight");
+    expect(source).toContain("resolveOrderItemUnitWeight({ productType: product.type, variantWeight: variant?.weight, productWeight: product.weightKg })");
   });
 
   it("手机端商品卡片以两栏／单栏流程展示完整操作，不再固定压缩为十二栏", () => {
