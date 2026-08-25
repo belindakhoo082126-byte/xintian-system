@@ -1,5 +1,5 @@
-import { appendItemsToUnpaidLocalOrder, assertChinaImportOrderItemsEligible, assertImportLiveOrderWindow, cancelOrderWithReason, findMergeableUnpaidImportLiveOrder, findMergeableUnpaidLocalOrder, getActiveImportLiveRoomId, getDb, resolveOrderCategory, recalculateOrderBalance, generateOrderNumber, generateSecureToken } from "./db";
-import { draftOrders, orderChangeRequests, reservationRecords, products, productVariations, orders, orderItems, aiLogs, aiHandoverRequests } from "../drizzle/schema";
+import { appendItemsToUnpaidLocalOrder, applyTrustedSpecialPriceSnapshots, assertChinaImportOrderItemsEligible, assertImportLiveOrderWindow, cancelOrderWithReason, findMergeableUnpaidImportLiveOrder, findMergeableUnpaidLocalOrder, getActiveImportLiveRoomId, getDb, resolveOrderCategory, recalculateOrderBalance, generateOrderNumber, generateSecureToken } from "./db";
+import { draftOrders, orderChangeRequests, reservationRecords, products, productVariations, variants, orders, orderItems, aiLogs, aiHandoverRequests } from "../drizzle/schema";
 import { eq, sql, and, desc } from "drizzle-orm";
 import { SideEffectPolicy } from "./aiTestRunner";
 
@@ -166,6 +166,22 @@ export async function reserveInventory(
     throw new Error(`STOCK_INSUFFICIENT: ${product.name} 库存不足，目前最多可下单 ${available} 件`);
   }
 
+  if (variantId) {
+    const variantCondition = product.allowPresale || product.allowOversold
+      ? and(eq(variants.id, variantId), eq(variants.productId, productId), eq(variants.status, "active"))
+      : and(eq(variants.id, variantId), eq(variants.productId, productId), eq(variants.status, "active"), sql`${variants.stockQuantity} >= ${quantity}`);
+    const variantResult = await database.update(variants)
+      .set({ stockQuantity: sql`${variants.stockQuantity} - ${quantity}` })
+      .where(variantCondition);
+    const variantAffectedRows = Number((variantResult as any)?.[0]?.affectedRows ?? (variantResult as any)?.affectedRows ?? 0);
+    if (variantAffectedRows < 1) {
+      await database.update(products).set({
+        reservedQuantity: sql`GREATEST(COALESCE(${products.reservedQuantity}, 0) - ${quantity}, 0)`,
+      }).where(eq(products.id, productId));
+      throw new Error(`STOCK_INSUFFICIENT: 商品「${product.name}」所选规格库存不足`);
+    }
+  }
+
   // Create reservation record
   const [result] = await database.insert(reservationRecords).values({
     productId,
@@ -202,6 +218,11 @@ export async function releaseInventory(referenceId: number, source: "draft_order
       await database.update(products)
         .set({ reservedQuantity: sql`GREATEST(COALESCE(${products.reservedQuantity}, 0) - ${record.quantity}, 0)` })
         .where(eq(products.id, record.productId));
+    }
+    if (record.variantId) {
+      await database.update(variants).set({
+        stockQuantity: sql`${variants.stockQuantity} + ${record.quantity}`,
+      }).where(eq(variants.id, record.variantId));
     }
 
     // Mark reservation as released
@@ -265,6 +286,9 @@ export interface DraftOrderItem {
   quantity: number;
   price: number;
   variantId?: number;
+  variantName?: string;
+  priceType?: "retail" | "special";
+  originalUnitPrice?: string | null;
 }
 
 /**
@@ -283,6 +307,23 @@ export async function createDraftOrder(params: {
 }): Promise<{ draftId: number; draftNumber: string }> {
   const database = await getDb();
   if (!database) throw new Error("Database not available");
+
+  const trustedItems = params.items.map((item) => ({
+    productId: item.productId,
+    variationId: item.variantId,
+    quantity: item.quantity,
+    unitPrice: Number(item.price || 0).toFixed(2),
+    subtotal: (Number(item.price || 0) * item.quantity).toFixed(2),
+    priceType: item.priceType,
+    originalUnitPrice: item.originalUnitPrice,
+  }));
+  await applyTrustedSpecialPriceSnapshots(database, trustedItems, { useProductSpecialPrice: true });
+  params.items = params.items.map((item, index) => ({
+    ...item,
+    price: Number(trustedItems[index].unitPrice),
+    priceType: trustedItems[index].priceType as "retail" | "special",
+    originalUnitPrice: trustedItems[index].originalUnitPrice,
+  }));
 
   const draftNumber = generateDraftNumber();
   const totalAmount = params.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -366,9 +407,11 @@ export async function approveDraftOrder(draftId: number, approvedBy: string): Pr
         unitPrice: item.price.toFixed(2),
         subtotal: (item.price * item.quantity).toFixed(2),
         variationId: item.variantId || null,
+        variationName: item.variantName || null,
         itemSource: "messenger" as const,
         salesMode: orderCategory === "import" ? "import_preorder" as const : "normal" as const,
-        priceType: "retail" as const,
+        priceType: item.priceType || "retail",
+        originalUnitPrice: item.originalUnitPrice || null,
       })),
     });
     await convertInventory(draftId, "draft_order");
@@ -423,6 +466,11 @@ export async function approveDraftOrder(draftId: number, approvedBy: string): Pr
       quantity: item.quantity,
       unitPrice: item.price.toFixed(2),
       subtotal: (item.price * item.quantity).toFixed(2),
+      variationId: item.variantId || null,
+      variationName: item.variantName || null,
+      priceType: item.priceType || "retail",
+      originalUnitPrice: item.originalUnitPrice || null,
+      itemSource: "messenger",
     });
   }
 

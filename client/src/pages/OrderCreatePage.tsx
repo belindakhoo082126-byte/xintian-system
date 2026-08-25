@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { parseLegacyAddress } from "@shared/parseAddress";
 import { resolveManualOrderItemPrice } from "@shared/manualOrderPricing";
+import { resolveManualOrderVariantPrice } from "@shared/manualOrderVariantPricing";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -141,6 +142,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   // Product search
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [manualItems, setManualItems] = useState<ManualOrderItem[]>([]);
+  const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
   const [quickRestockProduct, setQuickRestockProduct] = useState<any>(null);
   const [quickRestockQuantity, setQuickRestockQuantity] = useState("1");
   const [quickRestockSupplierId, setQuickRestockSupplierId] = useState("");
@@ -440,7 +442,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     }));
   }
 
-    function handleProductSelect(idx: number, productId: string) {
+  function handleProductSelect(idx: number, productId: string) {
     if (productId === "none") return;
     const product = (productSearchResults as any)?.find((p: any) => p.id === parseInt(productId));
     if (!product) return;
@@ -472,6 +474,39 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         categoryId: (product as any).categoryId,
       };
     }));
+  }
+
+  function addSelectedProduct(product: any, variant?: any) {
+    const pricing = variant
+      ? resolveManualOrderVariantPrice(product, variant, orderNature as "retail" | "wholesale" | "agent")
+      : resolveManualOrderItemPrice(product, orderNature as "retail" | "wholesale" | "agent");
+    const unitPrice = pricing.unitPrice;
+    const quantity = 1;
+    setManualItems(prev => [...prev, {
+      productId: product.id,
+      productName: product.name,
+      productType: product.type || "physical",
+      quantity,
+      unitPrice,
+      subtotal: (quantity * (parseFloat(unitPrice) || 0)).toFixed(2),
+      variationId: variant?.id,
+      variationName: variant?.name,
+      unitWeight: String(variant?.weight ?? product.weightKg ?? "0.50"),
+      priceType: pricing.priceType,
+      unitCost: variant?.currentCost || product.costPrice || product.supplierCost || "0",
+      image: variant?.imageUrl || product.coverImageUrl || product.imageUrl || product.image,
+      sku: variant?.sku || product.sku,
+      keyword: variant?.keyword || product.keyword || "",
+      sellingPrice: variant?.sellingPrice || product.sellingPrice || product.regularPrice || "0",
+      originalUnitPrice: pricing.originalUnitPrice,
+      availableStock: Number(variant?.stockQuantity ?? product.stockQuantity ?? 0),
+      allowOversold: Boolean(product.allowOversold),
+      allowPresale: Boolean(product.allowPresale ?? product.allowOversold),
+      isPot: product.isPot || false,
+      categoryId: product.categoryId,
+    }]);
+    setProductSearchQuery("");
+    setVariantSelectionProduct(null);
   }
 
   function handleCreateOrder() {
@@ -967,29 +1002,16 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                       disabled={outOfStock}
                       onClick={() => {
                         if (outOfStock) return;
-                        const unitPrice = pricing.unitPrice;
-                        setManualItems(prev => [...prev, {
-                          productId: p.id,
-                          productName: p.name,
-                          productType: p.type || "physical",
-                          quantity: 1,
-                          unitPrice,
-                          subtotal: unitPrice,
-                          unitWeight: String(p.weightKg || "0.50"),
-                          priceType: pricing.priceType,
-                          unitCost: p.costPrice || p.supplierCost || "0",
-                          image: p.coverImageUrl || p.imageUrl || p.image,
-                          sku: p.sku,
-                          keyword: p.keyword || "",
-                          sellingPrice: p.sellingPrice || p.regularPrice || "0",
-                          originalUnitPrice: pricing.originalUnitPrice,
-                          availableStock: Number(p.stockQuantity ?? 0),
-                          allowOversold: Boolean(p.allowOversold),
-                          allowPresale: Boolean((p as any).allowPresale ?? p.allowOversold),
-                          isPot: p.isPot || false,
-                          categoryId: p.categoryId,
-                        }]);
-                        setProductSearchQuery("");
+                        const activeVariants = Array.isArray(p.variants) ? p.variants : [];
+                        if (p.productMode === "variant" || activeVariants.length > 0) {
+                          if (activeVariants.length === 0) {
+                            toast.error(translate("此多规格商品尚未建立可用规格", "This variant product has no active variants"));
+                            return;
+                          }
+                          setVariantSelectionProduct(p);
+                          return;
+                        }
+                        addSelectedProduct(p);
                       }}
                       className={`w-full text-left p-3 rounded-lg text-base flex items-center justify-between gap-3 ${outOfStock ? "opacity-40 cursor-not-allowed" : "hover:bg-muted"}`}
                     >
@@ -1034,6 +1056,46 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               </div>
             </ScrollArea>
           )}
+
+          <Dialog open={!!variantSelectionProduct} onOpenChange={(open) => !open && setVariantSelectionProduct(null)}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>{translate("选择商品规格", "Select Product Variant")}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">{variantSelectionProduct?.name}</p>
+                {(variantSelectionProduct?.variants || []).map((variant: any) => {
+                  const variantOutOfStock = Number(variant.stockQuantity ?? 0) <= 0
+                    && !Boolean(variantSelectionProduct?.allowPresale ?? variantSelectionProduct?.allowOversold);
+                  const variantPricing = resolveManualOrderVariantPrice(variantSelectionProduct, variant, orderNature as "retail" | "wholesale" | "agent");
+                  return (
+                    <Button
+                      key={variant.id}
+                      type="button"
+                      variant="outline"
+                      disabled={variantOutOfStock}
+                      onClick={() => addSelectedProduct(variantSelectionProduct, variant)}
+                      className="h-auto w-full justify-between gap-3 p-3 text-left"
+                    >
+                      <span className="min-w-0">
+                        <span className="block font-medium">{variant.name}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {translate("关键词", "Keyword")}: {variant.keyword || "-"} · {translate("库存", "Stock")}: {variant.stockQuantity ?? 0}
+                          {variant.weight ? ` · ${translate("重量", "Weight")}: ${variant.weight}kg` : ""}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className="block font-semibold">RM {variantPricing.unitPrice}</span>
+                        {variantPricing.originalUnitPrice && <span className="block text-xs text-muted-foreground line-through">RM {variantPricing.originalUnitPrice}</span>}
+                        {variantPricing.priceType === "special" && <span className="block text-xs font-medium text-amber-700">{translate("特价", "Special")}</span>}
+                        {variantOutOfStock && <span className="block text-xs text-destructive">{translate("库存不足", "Out of stock")}</span>}
+                      </span>
+                    </Button>
+                  );
+                })}
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={!!quickRestockProduct} onOpenChange={(open) => {
             if (!open) {
@@ -1186,7 +1248,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                         {item.priceType === "special" && item.originalUnitPrice && <span className="ml-2 line-through">RM {item.originalUnitPrice}</span>}
                       </div>
                     </div>
-                    <Button variant="ghost" size="icon" className="shrink-0" onClick={() => removeManualItem(idx)}>
+                    <Button variant="ghost" size="icon" className="hidden shrink-0 sm:inline-flex" onClick={() => removeManualItem(idx)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
@@ -1210,8 +1272,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                   </div>
                 )}
                 {/* Quantity / Price / Subtotal */}
-                <div className="grid grid-cols-12 gap-2 items-end">
-                  <div className="col-span-3">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-12 sm:gap-2 sm:items-end">
+                  <div className="min-w-0 sm:col-span-3">
                     <Label className="text-xs">{translate("数量", "Quantity")}</Label>
                     <Input
                       type="number"
@@ -1221,17 +1283,17 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                       onChange={(e) => updateManualItem(idx, "quantity", e.target.value === "" ? "" : parseInt(e.target.value) || 0)}
                     />
                   </div>
-                  <div className="col-span-3">
+                  <div className="min-w-0 sm:col-span-3">
                     <Label className="text-xs">{translate("单价", "Unit Price")}</Label>
                     <Input type="number" className="h-9" value={item.unitPrice} onChange={(e) => updateManualItem(idx, "unitPrice", e.target.value)} />
                   </div>
-                  <div className="col-span-4">
+                  <div className="col-span-2 min-w-0 sm:col-span-4">
                     <Label className="text-xs">{translate("小计", "Subtotal")}</Label>
                     <Input className="h-9" value={`RM ${parseFloat(item.subtotal).toFixed(2)}`} disabled />
                   </div>
-                  <div className="col-span-2">
+                  <div className="col-span-2 min-w-0 sm:col-span-2">
                     {item.productId && (
-                      <Button variant="outline" size="sm" className="w-full" onClick={() => removeManualItem(idx)}>
+                      <Button variant="outline" size="sm" className="h-10 w-full sm:h-9" onClick={() => removeManualItem(idx)}>
                         <Trash2 className="h-3 w-3 mr-1" />{translate("移除", "Remove")}
                       </Button>
                     )}
