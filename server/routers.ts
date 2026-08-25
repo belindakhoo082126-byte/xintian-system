@@ -6,6 +6,7 @@ import { publicProcedure, adminProcedure, protectedProcedure, shippingProcedure,
 import { hasRepeatedVariantKeyword } from "../shared/variantDrafts";
 import { getCompanyLogoUrl } from "../shared/brandAssets";
 import { normalizeNotificationLogChannel } from "../shared/notificationLogChannel";
+import { calculateLalamoveActualCustomerBalance, calculateLalamoveCheckoutCustomerShipping, LALAMOVE_COMPANY_BEARING } from "../shared/shippingV22";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -2274,9 +2275,14 @@ export const appRouter = router({
         } else if (method === "self_pickup") {
           return { shippingFee: 0, isFreeShipping: false, threshold: 0, shippingMethod: method };
         } else if (method === "lalamove") {
-          // V2.0.84: Lalamove — 满 RM150 公司承担 RM15，未满收 RM15
-          const fee = input.orderTotal >= 150 ? 0 : 15;
-          return { shippingFee: fee, isFreeShipping: fee === 0, threshold: 150, shippingMethod: method };
+          return {
+            shippingFee: calculateLalamoveCheckoutCustomerShipping(),
+            isFreeShipping: false,
+            threshold: 0,
+            shippingMethod: method,
+            companyBearing: LALAMOVE_COMPANY_BEARING,
+            settlementNote: `公司先承担RM${LALAMOVE_COMPANY_BEARING}；实际费用超过RM${LALAMOVE_COMPANY_BEARING}后才向客户补收差额`,
+          };
         }
         // West Malaysia (default)
         const result = db.calculateWestMalaysiaShipping(input.totalWeight, input.orderTotal);
@@ -5435,19 +5441,16 @@ export const appRouter = router({
       
       let result;
       
-      // V2.0.84: Lalamove — staff enters actual delivery fee, compare against RM15 company bearing
+      // Lalamove: staff enters the actual delivery fee. The company always bears
+      // the first RM15; only the remaining excess is a customer balance.
       if (shippingMethod === "lalamove") {
-        const companyBearing = 15;
-        const actualFee = input.actualWeight; // Reuse actualWeight field as actual Lalamove fee
-        const customerPaid = customerPaidShipping; // 0 (满RM150) or 15 (未满)
-        const totalBorne = customerPaid + companyBearing;
-        const difference = actualFee - totalBorne;
-        const needsSpecialOrder = difference > 0.01;
+        const companyBearing = LALAMOVE_COMPANY_BEARING;
+        const settlement = calculateLalamoveActualCustomerBalance(input.actualWeight); // actual fee is entered in this field for Lalamove
         result = {
-          actualShippingFee: actualFee,
-          difference: difference,
-          needsSpecialOrder: needsSpecialOrder,
-          specialOrderType: needsSpecialOrder ? "pending_shipping" as const : null,
+          actualShippingFee: settlement.actualShippingFee,
+          difference: settlement.customerBalance,
+          needsSpecialOrder: settlement.needsSpecialOrder,
+          specialOrderType: settlement.needsSpecialOrder ? "pending_shipping" as const : null,
         };
       } else if (shippingMethod === "east_malaysia_poslaju") {
         // V2.1.28: Use recipient address fields (not shippingAddress which may be a combined text)

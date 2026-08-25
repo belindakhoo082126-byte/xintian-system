@@ -22,6 +22,7 @@ import { parseLegacyAddress } from "@shared/parseAddress";
 import { resolveManualOrderItemPrice } from "@shared/manualOrderPricing";
 import { resolveManualOrderVariantPrice } from "@shared/manualOrderVariantPricing";
 import { calculateOrderItemWeight, resolveOrderItemUnitWeight } from "@shared/orderItemWeight";
+import { calculateOrderPriceBreakdown } from "@shared/orderPricing";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -94,6 +95,7 @@ interface ManualOrderItem {
   // V2.0.66: Product classification for repotting remarks filtering
   isPot?: boolean;
   categoryId?: number;
+  categoryNameZh?: string | null;
 }
 
 export default function OrderCreatePage({ orderCategory = "local" }: { orderCategory?: "local" | "import" }) {
@@ -345,9 +347,22 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   }, [manualItems]);
   const discountNum = parseFloat(discountAmount) || 0;
   const extraChargeNum = parseFloat(extraCharge) || 0;
+  const orderPriceBreakdown = useMemo(() => calculateOrderPriceBreakdown(manualItems.map((item) => ({
+    productType: item.productType,
+    priceType: item.priceType,
+    categoryNameZh: item.categoryNameZh,
+    quantity: item.quantity,
+    subtotal: item.subtotal,
+    originalUnitPrice: item.originalUnitPrice,
+  })), { discountAmount }), [manualItems, discountAmount]);
 
-  // Settled amount for free shipping threshold
-  const settledAmount = itemsSubtotal - discountNum;
+  // Only regular physical merchandise counts toward the RM150 free-shipping threshold.
+  // Special-price items must never earn free shipping, even when their order subtotal is RM150 or above.
+  const freeShippingEligibleSubtotal = orderPriceBreakdown.freeShippingEligibleSubtotal;
+  const blocksPlantingMediumFreeShippingCheckout = !isWalkIn
+    && shippingMethod === "west_malaysia"
+    && orderPriceBreakdown.blocksFreeShippingPlantingMediumCombination
+    && freeShippingEligibleSubtotal >= 150;
 
   // Shipping calculation
   const totalWeight = useMemo(() => {
@@ -355,7 +370,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   }, [manualItems]);
 
   const { data: shippingResult } = trpc.orders.calculateShipping.useQuery(
-    { totalWeight, orderTotal: settledAmount, shippingMethod: shippingMethod as any },
+    { totalWeight, orderTotal: freeShippingEligibleSubtotal, shippingMethod: shippingMethod as any },
     { enabled: manualItems.length > 0 }
   );
 
@@ -477,6 +492,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         originalUnitPrice: pricing.originalUnitPrice,
         isPot: (product as any).isPot || false,
         categoryId: (product as any).categoryId,
+        categoryNameZh: (product as any).categoryNameZh || null,
       };
     }));
   }
@@ -509,6 +525,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
       allowPresale: Boolean(product.allowPresale ?? product.allowOversold),
       isPot: product.isPot || false,
       categoryId: product.categoryId,
+      categoryNameZh: product.categoryNameZh || null,
     }]);
     setProductSearchQuery("");
     setVariantSelectionProduct(null);
@@ -517,6 +534,13 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   function handleCreateOrder() {
     if (manualItems.length === 0 || manualItems.every(i => i.productId === undefined)) {
       toast.error(translate("请至少添加一个商品", "Please add at least one product"));
+      return;
+    }
+    if (blocksPlantingMediumFreeShippingCheckout) {
+      toast.error(translate(
+        "订单同时包含植物与种植介质，达到RM150免邮门槛时请取消种植介质或另开订单后再结账。",
+        "This order combines plants and planting medium. At the RM150 free-shipping threshold, remove the planting medium or create a separate order before checkout.",
+      ));
       return;
     }
     if (!customerForm.name.trim() && !customerForm.facebookName.trim() && !isWalkIn) {
@@ -1407,7 +1431,17 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             {!isWalkIn && (
               <div className="flex justify-between">
                 <span>{translate("运费", "Shipping Fee")} {freeShipping && <Badge variant="secondary" className="ml-1 text-xs">{translate("免邮", "Free Shipping")}</Badge>}</span>
-                <span className="font-medium">RM {shippingFee.toFixed(2)}</span>
+                <span className="font-medium">{blocksPlantingMediumFreeShippingCheckout ? translate("需另开订单", "Separate order required") : `RM ${shippingFee.toFixed(2)}`}</span>
+              </div>
+            )}
+            {!isWalkIn && shippingMethod === "lalamove" && (
+              <div className="text-xs text-muted-foreground">
+                {translate("Lalamove：公司先承担RM15；包货后实际配送费用超过RM15时，才向客户补收差额。", "Lalamove: the company bears the first RM15; only the actual delivery-fee excess above RM15 is collected after packing.")}
+              </div>
+            )}
+            {blocksPlantingMediumFreeShippingCheckout && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                {translate("此订单同时有植物与种植介质，达到RM150免邮门槛时不能继续结账。请取消种植介质或另开订单。", "This order combines plants and planting medium at the RM150 free-shipping threshold. Remove the planting medium or create a separate order before checkout.")}
               </div>
             )}
             {creditUsedNum > 0 && (
@@ -1577,11 +1611,11 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         <Button variant="outline" onClick={() => window.history.back()}>
           {translate("取消", "Cancel")}
         </Button>
-        <Button variant="outline" onClick={() => setPreviewMode(true)} disabled={manualItems.length === 0 || hasStockShortage}>
+        <Button variant="outline" onClick={() => setPreviewMode(true)} disabled={manualItems.length === 0 || hasStockShortage || blocksPlantingMediumFreeShippingCheckout}>
           <Eye className="h-4 w-4 mr-1" />
           {translate("浏览订单", "Preview Order")}
         </Button>
-        <Button onClick={handleCreateOrder} disabled={isSubmitting || manualItems.length === 0 || hasStockShortage} size="lg">
+        <Button onClick={handleCreateOrder} disabled={isSubmitting || manualItems.length === 0 || hasStockShortage || blocksPlantingMediumFreeShippingCheckout} size="lg">
           <Save className="h-4 w-4 mr-1" />
           {isSubmitting ? translate("保存中...", "Saving...") : translate("确认建立订单", "Confirm Create Order")}
         </Button>

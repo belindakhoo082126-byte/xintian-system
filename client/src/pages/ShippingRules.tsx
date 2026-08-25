@@ -11,7 +11,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { Truck, Save, Plus, Trash2 } from "lucide-react";
-import { WEST_MALAYSIA_V22_SHIPPING, getWestMalaysiaV22Specification } from "../../../shared/shippingV22";
+import {
+  getLalamoveSettlementSpecification,
+  getWestMalaysiaFreeShippingEligibilitySpecification,
+  getWestMalaysiaV22Specification,
+} from "../../../shared/shippingV22";
 
 function formatRM(n: string | number | null | undefined): string {
   if (n === null || n === undefined || n === "") return "-";
@@ -76,10 +80,29 @@ export default function ShippingRules() {
         <p className="text-sm text-muted-foreground mt-1">管理各区域的运费计算规则</p>
       </div>
 
+      <Card className="border-emerald-200 bg-emerald-50/40">
+        <CardHeader>
+          <CardTitle className="text-base">系统固定运费规则（自动同步至结账、订单与包货）</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-emerald-200 bg-white/70 p-4 text-sm text-emerald-950">
+            <p className="font-semibold">西马</p>
+            <p className="mt-1 leading-6">{getWestMalaysiaV22Specification()}</p>
+            <p className="mt-2 leading-6">{getWestMalaysiaFreeShippingEligibilitySpecification()}</p>
+          </div>
+          <div className="rounded-lg border border-sky-200 bg-white/70 p-4 text-sm text-sky-950">
+            <p className="font-semibold">Lalamove</p>
+            <p className="mt-1 leading-6">{getLalamoveSettlementSpecification()}</p>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 gap-4">
         {rules?.map((rule: any) => {
           const edit = editing[rule.id] || rule;
           const isWestMalaysia = rule.zone === "west_malaysia";
+          const isLalamove = rule.zone === "lalamove";
+          const usesSystemManagedShippingCalculation = isWestMalaysia || isLalamove;
           return (
             <Card key={rule.id}>
               <CardHeader>
@@ -100,6 +123,13 @@ export default function ShippingRules() {
                 <div className="mx-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
                   <p className="font-semibold">正式运费规则 V2.2（系统计算口径）</p>
                   <p className="mt-1 leading-6">{getWestMalaysiaV22Specification()}</p>
+                  <p className="mt-2 leading-6">{getWestMalaysiaFreeShippingEligibilitySpecification()}</p>
+                </div>
+              )}
+              {isLalamove && (
+                <div className="mx-6 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+                  <p className="font-semibold">Lalamove 结算规则（系统计算口径）</p>
+                  <p className="mt-1 leading-6">{getLalamoveSettlementSpecification()}</p>
                 </div>
               )}
               <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -114,7 +144,7 @@ export default function ShippingRules() {
                     value={edit.freeShippingThreshold ?? ""}
                     onChange={(e) => update(rule.id, "freeShippingThreshold", e.target.value)}
                     placeholder="如: 150"
-                    disabled={isWestMalaysia}
+                    disabled={usesSystemManagedShippingCalculation}
                   />
                 </div>
                 <div className="space-y-2">
@@ -124,7 +154,7 @@ export default function ShippingRules() {
                     value={edit.freeShippingMaxWeight ?? ""}
                     onChange={(e) => update(rule.id, "freeShippingMaxWeight", e.target.value)}
                     placeholder="如: 10"
-                    disabled={isWestMalaysia}
+                    disabled={usesSystemManagedShippingCalculation}
                   />
                 </div>
                 <div className="space-y-2">
@@ -134,7 +164,7 @@ export default function ShippingRules() {
                     value={edit.additionalKgPrice ?? ""}
                     onChange={(e) => update(rule.id, "additionalKgPrice", e.target.value)}
                     placeholder="如: 3"
-                    disabled={isWestMalaysia}
+                    disabled={usesSystemManagedShippingCalculation}
                   />
                 </div>
                 <div className="space-y-2">
@@ -157,10 +187,14 @@ export default function ShippingRules() {
                 <div className="space-y-2 md:col-span-2">
                   <Label>特殊说明</Label>
                   <Textarea
-                    value={isWestMalaysia ? getWestMalaysiaV22Specification() : edit.specialInstruction ?? ""}
+                    value={isWestMalaysia
+                      ? `${getWestMalaysiaV22Specification()}\n${getWestMalaysiaFreeShippingEligibilitySpecification()}`
+                      : isLalamove
+                        ? getLalamoveSettlementSpecification()
+                        : edit.specialInstruction ?? ""}
                     onChange={(e) => update(rule.id, "specialInstruction", e.target.value)}
                     placeholder="如: 其余运费请到 Shopee 下单支付运费。"
-                    disabled={isWestMalaysia}
+                    disabled={usesSystemManagedShippingCalculation}
                   />
                 </div>
                 <div className="space-y-2">

@@ -31,4 +31,29 @@ describe("OrderCreatePage 区域四", () => {
     expect(source).toContain('col-span-2 min-w-0 sm:col-span-2');
     expect(source).toContain('h-10 w-full sm:h-9');
   });
+
+  it("特价商品、植物和种植介质均通过共享规则传入RM150免邮门槛", () => {
+    const source = readFileSync(new URL("./OrderCreatePage.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("calculateOrderPriceBreakdown");
+    expect(source).toContain("const freeShippingEligibleSubtotal = orderPriceBreakdown.freeShippingEligibleSubtotal;");
+    expect(source).toContain("blocksPlantingMediumFreeShippingCheckout");
+    expect(source).toContain("categoryNameZh: (product as any).categoryNameZh || null");
+    expect(source).toContain("orderTotal: freeShippingEligibleSubtotal");
+    expect(source).not.toContain("orderTotal: settledAmount");
+  });
+
+  it("植物与种植介质达到免邮门槛时会禁用预览和实际建单", () => {
+    const source = readFileSync(new URL("./OrderCreatePage.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("请取消种植介质或另开订单后再结账");
+    expect(source).toContain("disabled={manualItems.length === 0 || hasStockShortage || blocksPlantingMediumFreeShippingCheckout}");
+  });
+
+  it("Lalamove摘要明确说明公司先承担RM15、实际超额后才补差价", () => {
+    const source = readFileSync(new URL("./OrderCreatePage.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("公司先承担RM15");
+    expect(source).toContain("实际配送费用超过RM15时");
+  });
 });

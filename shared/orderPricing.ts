@@ -13,6 +13,9 @@ export type OrderPriceBreakdown = {
   specialSubtotal: number;
   originalSpecialSubtotal: number;
   freeShippingEligibleSubtotal: number;
+  containsPlant: boolean;
+  containsPlantingMedium: boolean;
+  blocksFreeShippingPlantingMediumCombination: boolean;
 };
 
 export type MerchandiseNotificationBreakdown = {
@@ -57,6 +60,7 @@ export function calculateOrderPriceBreakdown(
   let originalSpecialSubtotal = 0;
   let eligiblePhysicalSubtotal = 0;
   const containsPlant = items.some((item) => item.productType === "physical" && isPlantCategory(item.categoryNameZh));
+  const containsPlantingMedium = items.some((item) => item.productType === "physical" && isPlantingMediumCategory(item.categoryNameZh));
 
   for (const item of items) {
     const subtotal = asMoney(item.subtotal);
@@ -89,6 +93,9 @@ export function calculateOrderPriceBreakdown(
     specialSubtotal,
     originalSpecialSubtotal,
     freeShippingEligibleSubtotal: Math.max(0, eligiblePhysicalSubtotal - Math.min(eligiblePhysicalSubtotal, totalDiscount)),
+    containsPlant,
+    containsPlantingMedium,
+    blocksFreeShippingPlantingMediumCombination: containsPlant && containsPlantingMedium,
   };
 }
 

@@ -83,7 +83,7 @@ import { ENV } from './_core/env';
 import { broadcastChange, broadcastChanges } from './_core/realtime';
 import { evaluateMarketingCampaign } from './marketingEngine';
 import { SPECIAL_ORDER_FOLLOW_UP_TYPES, isSpecialOrderFollowUpType } from '../shared/specialOrderDisplay';
-import { calculateWestMalaysiaShippingBreakdown, WEST_MALAYSIA_V22_SHIPPING } from '../shared/shippingV22';
+import { calculateLalamoveCheckoutCustomerShipping, calculateWestMalaysiaShippingBreakdown, WEST_MALAYSIA_V22_SHIPPING } from '../shared/shippingV22';
 import { getRefundCompletionDates } from '../shared/refundCompletionDates';
 import { calculateMerchandiseNotificationBreakdown, calculateOrderPriceBreakdown } from "../shared/orderPricing";
 import { isStockManagedProductType } from "../shared/inventoryStageRules";
@@ -138,6 +138,19 @@ async function calculateOrderPriceBreakdownByProductCategory(
     ...item,
     categoryNameZh: categoryNameByProductId.get(Number(item.productId)) ?? item.categoryNameZh ?? null,
   })), options);
+}
+
+function assertWestMalaysiaPlantingMediumCheckoutAllowed(
+  shippingMethod: string | undefined | null,
+  breakdown: Awaited<ReturnType<typeof calculateOrderPriceBreakdownByProductCategory>>,
+) {
+  if (
+    shippingMethod === "west_malaysia"
+    && breakdown.blocksFreeShippingPlantingMediumCombination
+    && breakdown.freeShippingEligibleSubtotal >= WEST_MALAYSIA_V22_SHIPPING.freeShippingThreshold
+  ) {
+    throw new Error("订单同时包含植物与种植介质，达到免邮门槛时不能继续结账。请取消种植介质或另开订单后再结账。");
+  }
 }
 
 export async function executeRaw(query: any) {
@@ -353,8 +366,20 @@ export async function getProductsForOrder(filters?: { search?: string; orderCate
     variantsByProductId.set(variant.productId, current);
   }
 
+  const productCategoryRows = await db.select({
+    productId: products.id,
+    categoryNameZh: categories.nameZh,
+  }).from(products)
+    .leftJoin(categories, eq(products.categoryId, categories.id))
+    .where(inArray(products.id, eligibleProducts.map((product) => product.id)));
+  const categoryNameByProductId = new Map<number, string | null>(productCategoryRows.map((row: any) => [
+    Number(row.productId),
+    row.categoryNameZh == null ? null : String(row.categoryNameZh),
+  ]));
+
   return eligibleProducts.map((product) => ({
     ...product,
+    categoryNameZh: categoryNameByProductId.get(product.id) || null,
     variants: variantsByProductId.get(product.id) || [],
   }));
 }
@@ -1567,6 +1592,15 @@ export async function appendItemsToUnpaidLocalOrder(params: {
   }
 
   await applyTrustedOrderItemWeights(db, params.items);
+  const existingItemsForShipping = await db.select().from(orderItems).where(eq(orderItems.orderId, params.targetOrderId));
+  const prospectiveShippingBreakdown = await calculateOrderPriceBreakdownByProductCategory(db, [
+    ...existingItemsForShipping,
+    ...params.items,
+  ], {
+    promotionDiscount: order.promotionDiscount,
+    discountAmount: order.discountAmount,
+  });
+  assertWestMalaysiaPlantingMediumCheckoutAllowed(order.shippingMethod, prospectiveShippingBreakdown);
 
   const stockItems = params.items
     .filter((item) => isStockManagedProductType(item.productType || "physical"))
@@ -1628,7 +1662,7 @@ export async function appendItemsToUnpaidLocalOrder(params: {
   } else if (order.shippingMethod === "east_malaysia_poslaju") {
     shippingFee = 50;
   } else if (order.shippingMethod === "lalamove") {
-    shippingFee = breakdown.freeShippingEligibleSubtotal >= 150 ? 0 : 15;
+    shippingFee = calculateLalamoveCheckoutCustomerShipping();
   }
   const totalAmount = breakdown.physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
 
@@ -1906,6 +1940,12 @@ export async function createOrderWithSplit(data: {
   await applyTrustedOrderItemWeights(db, data.items);
   const virtualDeliverySnapshots = await getVirtualDeliverySnapshotsForVariants(data.items.map((item) => item.variationId));
 
+  const newOrderPriceBreakdown = await calculateOrderPriceBreakdownByProductCategory(db, data.items, {
+    promotionDiscount: data.promotionDiscount,
+    discountAmount: data.discountAmount,
+  });
+  assertWestMalaysiaPlantingMediumCheckoutAllowed(data.shippingMethod, newOrderPriceBreakdown);
+
   const mergeTarget = data.orderCategory === "import"
     ? await findMergeableUnpaidImportLiveOrder(data.customerId, data.liveRoomId!)
     : await findMergeableUnpaidLocalOrder(data.customerId);
@@ -1960,6 +2000,7 @@ export async function createOrderWithSplit(data: {
     promotionDiscount: promotionDiscountNum,
     discountAmount: discountAmountNum,
   });
+  assertWestMalaysiaPlantingMediumCheckoutAllowed(data.shippingMethod, priceBreakdown);
   const { physicalSubtotal, membershipSubtotal, freeShippingEligibleSubtotal } = priceBreakdown;
   
   const totalWeight = calculateOrderItemWeight(data.items
@@ -1974,8 +2015,7 @@ export async function createOrderWithSplit(data: {
     // V2.0.84: 东马 Shopee 运费固定 RM0
     shippingFee = 0;
   } else if (hasPhysical && data.shippingMethod === "lalamove") {
-    // V2.0.84: Lalamove — 满 RM150 公司承担，未满收 RM15
-    shippingFee = freeShippingEligibleSubtotal >= 150 ? 0 : 15;
+    shippingFee = calculateLalamoveCheckoutCustomerShipping();
   }
 
   // V2.0.78: Auto-deduct credit from customer balance (no manual input)
@@ -2374,6 +2414,25 @@ export async function updateOrderItems(orderId: number, items: Array<{
     }
   }
 
+  const prospectiveItemsForShipping = items.map((input) => {
+    const existing = input.id ? oldItemsMap.get(input.id) : undefined;
+    return {
+      ...existing,
+      ...input,
+      productId: input.productId ?? existing?.productId ?? 0,
+      productType: existing?.productType ?? "physical",
+      quantity: input.quantity,
+      subtotal: ((parseFloat(input.unitPrice) || 0) * input.quantity).toFixed(2),
+      priceType: input.priceType ?? existing?.priceType,
+      originalUnitPrice: input.originalUnitPrice ?? existing?.originalUnitPrice,
+    };
+  });
+  const prospectiveShippingBreakdown = await calculateOrderPriceBreakdownByProductCategory(db, prospectiveItemsForShipping, {
+    promotionDiscount: target[0].promotionDiscount,
+    discountAmount: target[0].discountAmount,
+  });
+  assertWestMalaysiaPlantingMediumCheckoutAllowed(target[0].shippingMethod, prospectiveShippingBreakdown);
+
   // Reserve every newly-added unit and positive quantity difference with a
   // conditional UPDATE. This prevents order editing from bypassing the same
   // stock rule used by new orders.
@@ -2501,8 +2560,7 @@ export async function updateOrderItems(orderId: number, items: Array<{
     // V2.0.84: 东马 Shopee 运费固定 RM0
     shippingFee = 0;
   } else if (target[0].shippingMethod === "lalamove") {
-    // V2.0.84: Lalamove
-    shippingFee = eligibleSubtotal >= 150 ? 0 : 15;
+    shippingFee = calculateLalamoveCheckoutCustomerShipping();
   }
 
   const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
@@ -7681,7 +7739,7 @@ export async function recalculateOrderTotals(orderId: number) {
   if (order[0].shippingMethod === "west_malaysia") {
     shippingFee = calculateWestMalaysiaShipping(totalWeight, priceBreakdown.freeShippingEligibleSubtotal).shippingFee;
   } else if (order[0].shippingMethod === "lalamove") {
-    shippingFee = priceBreakdown.freeShippingEligibleSubtotal >= 150 ? 0 : 15;
+    shippingFee = calculateLalamoveCheckoutCustomerShipping();
   } else if (order[0].shippingMethod === "self_pickup") {
     shippingFee = 0;
   }
@@ -7923,9 +7981,11 @@ export async function getMallProducts(filters?: { categoryId?: number; search?: 
     product: products,
     unitNameZh: units.nameZh,
     unitNameEn: units.nameEn,
+    categoryNameZh: categories.nameZh,
   })
     .from(products)
     .leftJoin(units, eq(products.unitId, units.id))
+    .leftJoin(categories, eq(products.categoryId, categories.id))
     .where(and(...conditions))
     .orderBy(asc(products.mallSortOrder), desc(products.createdAt));
   const productIds = rows.map(({ product }) => product.id);
@@ -7956,10 +8016,11 @@ export async function getMallProducts(filters?: { categoryId?: number; search?: 
         : { min: price, max: price };
     }
   }
-  return rows.map(({ product, unitNameZh, unitNameEn }) => ({
+  return rows.map(({ product, unitNameZh, unitNameEn, categoryNameZh }) => ({
     ...product,
     unitNameZh,
     unitNameEn,
+    categoryNameZh,
     galleryImageUrls: galleryImageMap[product.id] || [],
     variantPriceMin: variantPriceRangeMap[product.id]?.min ?? null,
     variantPriceMax: variantPriceRangeMap[product.id]?.max ?? null,
@@ -8086,6 +8147,11 @@ export async function mallCheckout(data: {
     item.productType = (checkoutTypeByProduct.get(item.productId) || "physical") as "physical" | "membership" | "gift";
   }
   await applyTrustedOrderItemWeights(db, data.items);
+  const mallShippingBreakdown = await calculateOrderPriceBreakdownByProductCategory(
+    db,
+    data.items.filter((item) => !item.isStandalone),
+  );
+  assertWestMalaysiaPlantingMediumCheckoutAllowed(data.shippingMethod, mallShippingBreakdown);
   const mallVirtualSnapshots = await getVirtualDeliverySnapshotsForVariants(data.items.map((item) => item.variationId));
   const regularItems = data.items.filter((item) => !item.bundleId);
 
@@ -8119,10 +8185,7 @@ export async function mallCheckout(data: {
   const standaloneItems = data.items.filter(i => i.isStandalone);
   // Weight for shipping: only normal (non-standalone) items
   const totalWeight = calculateOrderItemWeight(normalItems);
-  // V2.1: Free shipping threshold excludes special-price items
-  const specialSubtotal = data.items.filter(i => i.isSpecial).reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
-  const normalSubtotal = normalItems.reduce((sum, i) => sum + parseFloat(i.subtotal), 0);
-  const thresholdSubtotal = normalSubtotal - specialSubtotal;
+  const thresholdSubtotal = mallShippingBreakdown.freeShippingEligibleSubtotal;
   // Calculate shipping fee based on method
   let shippingFee = 0;
   if (data.shippingMethod === "west_malaysia") {
@@ -8145,8 +8208,7 @@ export async function mallCheckout(data: {
   } else if (data.shippingMethod === "self_pickup") {
     shippingFee = 0;
   } else if (data.shippingMethod === "lalamove") {
-    // V2.0.84: Lalamove — 满 RM150 公司承担 RM15，未满 RM15 收 RM15
-    shippingFee = thresholdSubtotal >= 150 ? 0 : 15;
+    shippingFee = calculateLalamoveCheckoutCustomerShipping();
   }
 
   // The mall preview is guidance only. Re-evaluate promotions on the server
@@ -8442,6 +8504,15 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
   }
   await applyTrustedSpecialPriceSnapshots(db, items, { useProductSpecialPrice: true });
   await applyTrustedOrderItemWeights(db, items);
+  const existingItemsForShipping = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const prospectiveShippingBreakdown = await calculateOrderPriceBreakdownByProductCategory(db, [
+    ...existingItemsForShipping,
+    ...items,
+  ], {
+    promotionDiscount: target[0].promotionDiscount,
+    discountAmount: target[0].discountAmount,
+  });
+  assertWestMalaysiaPlantingMediumCheckoutAllowed(target[0].shippingMethod, prospectiveShippingBreakdown);
   await reserveProductStocksForOrder(items);
   for (const item of items) {
     await db.insert(orderItems).values({
@@ -8493,8 +8564,7 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
     // V2.0.84: 东马 Shopee 运费固定 RM0
     shippingFee = 0;
   } else if (target[0].shippingMethod === "lalamove") {
-    // V2.0.84: Lalamove
-    shippingFee = eligibleSubtotal >= 150 ? 0 : 15;
+    shippingFee = calculateLalamoveCheckoutCustomerShipping();
   }
 
   const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
@@ -9073,12 +9143,13 @@ export async function splitUnpaidPhysicalOrder(input: {
       ...item,
       categoryNameZh: categoryNameByProductId.get(item.productId) ?? null,
     })));
+    assertWestMalaysiaPlantingMediumCheckoutAllowed(source.shippingMethod, price);
     const totalWeight = calculateOrderItemWeight(items
       .filter((item) => item.productType === "physical" || item.productType === "gift"));
     const shippingFee = source.shippingMethod === "west_malaysia"
       ? calculateWestMalaysiaShipping(totalWeight, price.freeShippingEligibleSubtotal).shippingFee
       : source.shippingMethod === "east_malaysia_poslaju" ? 50
-        : source.shippingMethod === "lalamove" ? (price.freeShippingEligibleSubtotal >= WEST_MALAYSIA_V22_SHIPPING.freeShippingThreshold ? 0 : 15)
+        : source.shippingMethod === "lalamove" ? calculateLalamoveCheckoutCustomerShipping()
           : 0;
     return { physicalSubtotal: price.physicalSubtotal, membershipSubtotal: price.membershipSubtotal, totalWeight, shippingFee, totalAmount: price.physicalSubtotal + price.membershipSubtotal + shippingFee };
   };
@@ -9462,8 +9533,9 @@ export async function getPackingOrders(status: string) {
     
     // V2.1.26: Calculate isFreeShipping
     const physicalSubtotalNum = parseFloat(o.physicalSubtotal || "0");
-    // V2.1.26补充5: Free shipping only for west_malaysia and lalamove (>=RM150), not east Malaysia
-    const isFreeShipping = (o.shippingMethod === 'west_malaysia' || o.shippingMethod === 'lalamove') && physicalSubtotalNum >= 150;
+    // Lalamove checkout is RM0 because the company first bears RM15; it is not
+    // the West Malaysia RM150 free-shipping entitlement.
+    const isFreeShipping = o.shippingMethod === 'west_malaysia' && physicalSubtotalNum >= 150;
     
     const latestShippingDecision = await db.select({ actionType: specialOrderActions.actionType })
       .from(specialOrderActions)
@@ -9757,10 +9829,10 @@ export async function getPackingSlipData(orderId: number) {
   // V3.0: Fetch all order remarks for A5 slip (unified: repotting, desired_delivery_date, other)
   const allRemarks = await getOrderRemarks(orderId);
 
-  // V2.1.26补充6: Fix isFreeShipping - only for west_malaysia and lalamove (Issue 6)
+  // Lalamove's initial RM0 is a company bearing, not the RM150 free-shipping entitlement.
   const physicalSubtotal = parseFloat((detail as any).physicalSubtotal || "0");
   const shippingMethod = (detail as any).shippingMethod || "";
-  const isFreeShipping = (shippingMethod === "west_malaysia" || shippingMethod === "lalamove") && physicalSubtotal >= 150;
+  const isFreeShipping = shippingMethod === "west_malaysia" && physicalSubtotal >= 150;
   // V2.1.26: Determine shipping method label (including 西马)
   let shippingMethodLabel = "";
   if (detail.shippingMethod === "lalamove") shippingMethodLabel = "LALAMOVE";
@@ -12082,7 +12154,7 @@ export async function cancelPackingOrderItem(data: {
       shippingFee = shipping.shippingFee;
       estimatedChargeableWeight = shipping.extraWeightKg;
     } else if (order.shippingMethod === 'lalamove') {
-      shippingFee = breakdown.freeShippingEligibleSubtotal >= 150 ? 0 : 15;
+      shippingFee = calculateLalamoveCheckoutCustomerShipping();
     } else if (order.shippingMethod === 'self_pickup' || order.shippingMethod === 'east_malaysia_shopee') {
       shippingFee = 0;
     } else if (order.shippingMethod === 'east_malaysia_poslaju') {
@@ -19502,8 +19574,7 @@ export async function updateOrderShippingAddress(orderNumber: string, token: str
   } else if (shippingMethod === 'self_pickup') {
     shippingFee = 0;
   } else if (shippingMethod === 'lalamove') {
-    // V2.0.84: Lalamove — 满 RM150 公司承担，未满收 RM15
-    shippingFee = freeShippingEligibleSubtotal >= 150 ? 0 : 15;
+    shippingFee = calculateLalamoveCheckoutCustomerShipping();
   }
 
   // Recalculate total
