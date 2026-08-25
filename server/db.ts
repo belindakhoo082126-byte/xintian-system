@@ -10,6 +10,7 @@ import {
 } from "../shared/financialCashFlow";
 import { getSellableInventoryQuantity } from "../shared/inventoryStageRules";
 import { isSpecialPriceCurrentlyActive } from "../shared/specialPriceSchedule";
+import { IMPORT_ORDER_PREFIX, LOCAL_ORDER_PREFIX } from "../shared/orderNumberPrefixes";
 import {
   InsertUser, users,
   products, productVariations, productCategories,
@@ -279,7 +280,7 @@ export function isChinaImportOrderEligibleProduct(product: {
 }
 
 /**
- * 中国代购订单只允许中国进口代购商品，或已明确授权的本地配套商品。此服务层校验用于
+ * 代购订单只允许代购模式商品，或已明确授权的本地配套商品。此服务层校验用于
  * 后台建单、AI建单与商城加单，不能只依赖前端筛选。
  */
 export async function assertChinaImportOrderItemsEligible(productIds: number[]) {
@@ -302,7 +303,7 @@ export async function assertChinaImportOrderItemsEligible(productIds: number[]) 
   const disallowed = rows.filter((row) => !isChinaImportOrderEligibleProduct(row));
   if (missing.length > 0 || disallowed.length > 0) {
     const names = disallowed.map((row) => row.name).join("、");
-    throw new Error(`中国代购订单只可选择“中国进口代购”模式商品，以及已开启“允许进入中国代购订单”的本地配套商品${names ? `；不可加入：${names}` : ""}`);
+    throw new Error(`代购订单只可选择“代购”模式商品，以及已开启“允许进入代购订单”的本地配套商品${names ? `；不可加入：${names}` : ""}`);
   }
 }
 
@@ -1276,7 +1277,7 @@ async function allocateRefundNumber(tx: any): Promise<string> {
   return formatRefundNumber(sequence);
 }
 
-// V2.1: Unified order category resolver — determines whether an order should be local (XT) or import (XTC).
+// Unified order category resolver — determines whether an order should be local (XT) or import (XTD).
 // A local accessory with allowImportOrder remains XT by default. It can only
 // enter an XTC order when the caller supplies an existing XTC order or an
 // active China-import live context; the separate item-eligibility assertion
@@ -1357,7 +1358,7 @@ export async function findMergeableUnpaidLocalOrder(customerId: number) {
 export async function assertImportLiveOrderWindow(liveRoomId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  if (!liveRoomId) throw new Error("XTC 中国代购订单必须来自已设定期限的中国代购直播间");
+  if (!liveRoomId) throw new Error("XTD 代购订单必须来自已设定期限的代购直播间");
 
   const room = await db.select({
     id: liveRooms.id,
@@ -1369,14 +1370,14 @@ export async function assertImportLiveOrderWindow(liveRoomId?: number) {
   }).from(liveRooms).where(eq(liveRooms.id, liveRoomId)).limit(1);
   const importRoom = room[0];
   if (!importRoom || importRoom.liveType !== "import_preorder") {
-    throw new Error("XTC 中国代购订单只能在中国代购直播间建立");
+    throw new Error("XTD 代购订单只能在代购直播间建立");
   }
   const start = importRoom.preorderStartDate || importRoom.liveStartTime;
   const end = importRoom.preorderEndDate || importRoom.liveEndTime;
-  if (!start || !end) throw new Error("该中国代购直播尚未设定开始日期或截止日期，不能下单");
+  if (!start || !end) throw new Error("该代购直播尚未设定开始日期或截止日期，不能下单");
   const now = new Date();
   if (now < new Date(start) || now > new Date(end)) {
-    throw new Error("中国代购订单仅可在该直播的开始日期至截止日期期间下单");
+    throw new Error("代购订单仅可在该直播的开始日期至截止日期期间下单");
   }
 }
 
@@ -1399,8 +1400,8 @@ export async function getActiveImportLiveRoomId(): Promise<number> {
   });
   if (active.length !== 1) {
     throw new Error(active.length === 0
-      ? "目前没有处于开始日期至截止日期内的中国代购直播，无法建立 XTC 订单"
-      : "目前有多个中国代购直播窗口重叠，请由直播间明确建立 XTC 订单");
+      ? "目前没有处于开始日期至截止日期内的代购直播，无法建立 XTD 订单"
+      : "目前有多个代购直播窗口重叠，请由直播间明确建立 XTD 订单");
   }
   return active[0].id;
 }
@@ -1994,7 +1995,7 @@ export async function createOrderWithSplit(data: {
   if (stockManagedItems.length > 0) {
     await reserveProductStocksForOrder(stockManagedItems);
   }
-  const prefix = data.orderCategory === "import" ? "XTC" : "XT";
+  const prefix = data.orderCategory === "import" ? IMPORT_ORDER_PREFIX : LOCAL_ORDER_PREFIX;
   const orderNumber = await generateOrderNumber(prefix);
   const secureToken = generateSecureToken();
   const checkoutLink = `/order/${orderNumber}/${secureToken}`;
@@ -8207,7 +8208,7 @@ export async function mallCheckout(data: {
   // V2.1.04: Use resolveOrderCategory for unified routing
   await reserveProductStocksForOrder(regularItems.filter((item) => isStockManagedProductType(item.productType || "physical")));
   const isImport = resolvedCategory === "import";
-  const orderPrefix = isImport ? "XTC" : "XT";
+  const orderPrefix = isImport ? IMPORT_ORDER_PREFIX : LOCAL_ORDER_PREFIX;
   const orderNumber = await generateOrderNumber(orderPrefix);
   const secureToken = generateSecureToken();
   const checkoutLink = `/order/${orderNumber}/${secureToken}`;
@@ -8421,7 +8422,7 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
       const productRows = await db.select({ orderCategory: products.orderCategory }).from(products).where(inArray(products.id, productIds));
       for (const pr of productRows) {
         if (pr.orderCategory === "import") {
-        throw new Error("此商品属于中国代购商品，不能加入本地订单，请加入/建立中国代购 XTC 订单。");
+        throw new Error("此商品属于代购商品，不能加入本地订单，请加入／建立代购 XTD 订单。");
         }
       }
     }
@@ -10800,7 +10801,7 @@ export async function createOrderFromLiveCapture(data: {
 
   // V2.1.02: Use XTC prefix for import_preorder live rooms, XT for normal live rooms
   await reserveProductStocksForOrder(reservableProducts);
-  const prefix = isImportOrder ? "XTC" : "XT";
+  const prefix = isImportOrder ? IMPORT_ORDER_PREFIX : LOCAL_ORDER_PREFIX;
   const orderNumber = await generateOrderNumber(prefix);
   const secureToken = generateSecureToken();
   const checkoutLink = `/order/${orderNumber}/${secureToken}`;
@@ -13853,7 +13854,7 @@ export async function createChinaPreorderWithAutoIB(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
-  if (data.liveSessionIds.length === 0) throw new Error('请至少选择一场中国代购直播。');
+  if (data.liveSessionIds.length === 0) throw new Error('请至少选择一场代购直播。');
   if (data.items.length === 0) throw new Error('请至少选择一个要采购的商品。');
   if (data.items.some(item => item.finalPurchaseQuantity < 0)) throw new Error('采购数量不可小于零。');
   const cnNumber = await generateCnNumber();

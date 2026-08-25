@@ -38,6 +38,12 @@ const SHIPPING_METHODS = {
   self_pickup: { label: "自取", enLabel: "Self Pickup" },
 } as const;
 
+const LOCAL_PAYMENT_METHOD_OPTIONS = [
+  { value: "现金", label: "现金", enLabel: "Cash" },
+  { value: "TNG", label: "TNG", enLabel: "TNG" },
+  { value: "Online Transfer", label: "Online Transfer", enLabel: "Online Transfer" },
+] as const;
+
 const LOCAL_ORDER_STATUSES = [
   { value: "pending", label: "未汇款订单", enLabel: "Unpaid Order" },
   { value: "receipt_uploaded", label: "待审核付款凭证", enLabel: "Pending Payment Verification" },
@@ -617,6 +623,10 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
       toast.error(translate("请输入有效金额", "Please enter a valid amount"));
       return;
     }
+    if (!paymentForm.paymentMethodName) {
+      toast.error(translate("请选择付款方式", "Please select a payment method"));
+      return;
+    }
     setLocalPayments(prev => [...prev, { ...paymentForm }]);
     setPaymentForm({ amount: "", paymentMethodName: "", receiptUrl: "", notes: "" });
     setPaymentDialogOpen(false);
@@ -633,8 +643,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     && item.quantity > item.availableStock,
   );
   const hasStockShortage = stockShortageItems.length > 0;
-  const orderTypeLabel = orderCategory === "import" ? translate("中国代购订单", "Import Order") : translate("本地订单", "Local Order");
-  const orderNumberPrefix = orderCategory === "import" ? "XTC" : "XT";
+  const orderTypeLabel = orderCategory === "import" ? translate("代购订单", "Import Order") : translate("本地订单", "Local Order");
+  const orderNumberPrefix = orderCategory === "import" ? "XTD" : "XT";
   const statusOptions = orderCategory === "import" ? IMPORT_ORDER_STATUSES : LOCAL_ORDER_STATUSES;
 
   // ===== Preview Mode =====
@@ -1709,7 +1719,14 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             </div>
             <div>
               <Label>{translate("付款方式", "Payment Method")}</Label>
-              <Input value={paymentForm.paymentMethodName} onChange={e => setPaymentForm(prev => ({ ...prev, paymentMethodName: e.target.value }))} placeholder={translate("例如: QR Pay (Tng/Duit Now)", "e.g. QR Pay (Tng/Duit Now)")} />
+              <Select value={paymentForm.paymentMethodName || undefined} onValueChange={(value) => setPaymentForm(prev => ({ ...prev, paymentMethodName: value }))}>
+                <SelectTrigger><SelectValue placeholder={translate("选择付款方式", "Select payment method")} /></SelectTrigger>
+                <SelectContent>
+                  {LOCAL_PAYMENT_METHOD_OPTIONS.map((method) => (
+                    <SelectItem key={method.value} value={method.value}>{translate(method.label, method.enLabel)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>{translate("上传付款单据", "Upload Receipt")}</Label>

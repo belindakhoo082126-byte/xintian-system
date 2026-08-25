@@ -240,8 +240,8 @@ export default function SystemSettings() {
               </div>
               <div className="space-y-2">
                 <Label>代购订单前缀</Label>
-                <Input value={form.importOrderPrefix || "XTC"} onChange={(e) => update("importOrderPrefix", e.target.value)} />
-                <p className="text-xs text-muted-foreground">例: XTC-00001</p>
+                <Input value={form.importOrderPrefix || "XTD"} onChange={(e) => update("importOrderPrefix", e.target.value)} />
+                <p className="text-xs text-muted-foreground">例: XTD-00001</p>
               </div>
               <div className="space-y-2">
                 <Label>订单编号位数</Label>

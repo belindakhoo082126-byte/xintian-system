@@ -549,7 +549,7 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const natureCfg = NATURE_LABELS[o.orderNature] || { zh: o.orderNature, en: o.orderNature };
   const sourceCfg = SOURCE_LABELS[o.orderSource] || { zh: o.orderSource, en: o.orderSource };
   const shippingCfg = SHIPPING_LABELS[o.shippingMethod] || { zh: o.shippingMethod, en: o.shippingMethod };
-  const orderTypeLabel = o.orderCategory === "import" ? translate("中国代购订单", "Import Order") : translate("本地订单", "Local Order");
+  const orderTypeLabel = o.orderCategory === "import" ? translate("代购订单", "Import Order") : translate("本地订单", "Local Order");
   const processedRefunds = ((o.refunds || []) as any[]).filter((refund) => refund.status === "processed" || refund.status === "awaiting_return");
   const isPendingRemittanceDifference = o.specialOrderType === "pending_shipping" && o.specialOrderStatus === "pending";
   const supplementalPendingPayment = ((o.payments || []) as any[]).find((payment) =>

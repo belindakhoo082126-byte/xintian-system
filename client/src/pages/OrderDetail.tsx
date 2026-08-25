@@ -34,7 +34,7 @@ const STATUS_CONFIG_RAW: Record<string, { zh: string; en: string; variant: any; 
   cancelled: { zh: "已取消", en: "Cancelled", variant: "destructive", color: "text-red-600" },
 };
 
-// XTC (中国代购) import order status config
+// XTD import-order status config; historical XTC orders remain supported.
 const IMPORT_STATUS_CONFIG_RAW: Record<string, { zh: string; en: string; variant: any; color: string }> = {
   pending: { zh: "挂单", en: "Pending", variant: "outline", color: "text-yellow-600" },
   receipt_uploaded: { zh: "待审核付款凭证", en: "Pending Payment Verification", variant: "secondary", color: "text-blue-600" },

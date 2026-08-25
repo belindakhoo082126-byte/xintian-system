@@ -27,7 +27,7 @@ function normalise(value: string) {
 }
 
 function getOrderNumberFromMessage(message: string) {
-  return message.match(/\bXTC?\d{3,}\b/i)?.[0]?.toUpperCase() ?? null;
+  return message.match(/\b(?:XT|XTC|XTD)\d{3,}\b/i)?.[0]?.toUpperCase() ?? null;
 }
 
 function getMentionedAmount(message: string): string | null {
