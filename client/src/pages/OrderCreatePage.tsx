@@ -1140,12 +1140,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
 
           {/* Order items */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>{translate("订单商品", "Order Items")} ({manualItems.length})</Label>
-              <Button variant="outline" size="sm" onClick={addManualItem}>
-                <Plus className="h-3 w-3 mr-1" />{translate("添加商品", "Add Product")}
-              </Button>
-            </div>
+            <Label>{translate("订单商品", "Order Items")} ({manualItems.length})</Label>
             {manualItems.map((item, idx) => (
               <div key={idx} className="p-3 border rounded-lg space-y-3">
                 {/* Product info display */}
