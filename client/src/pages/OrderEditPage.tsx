@@ -3,6 +3,8 @@ import { useI18n } from "@/contexts/I18nContext";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
+import { getOrderShippingDisplay } from "@shared/orderDocumentShippingRules";
+import { getOrderDocumentPaymentSummary } from "@shared/orderDocumentFinancialRules";
 import { parseLegacyAddress } from "@shared/parseAddress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -426,6 +428,15 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   const isSelfPickup = formData.shippingMethod === "self_pickup";
   const shippingFeeNum = isSelfPickup ? 0 : (parseFloat(formData.shippingFee) || 0);
   const totalAmount = itemsSubtotal - discountNum + extraChargeNum + shippingFeeNum - creditUsedNum;
+  const shippingDisplay = getOrderShippingDisplay({
+    shippingMethod: formData.shippingMethod,
+    estimatedWeight: Number((order as any)?.estimatedWeight || (order as any)?.totalWeight || 0),
+    shippingFee: shippingFeeNum,
+  });
+  const paymentSummary = getOrderDocumentPaymentSummary({
+    baseOrderTotal: totalAmount,
+    payments: ((order as any)?.payments || []),
+  });
 
   // Payment method filtering based on shipping method
   const filteredPaymentMethods = useMemo(() => {
@@ -915,15 +926,23 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
             <div className="flex justify-between"><span>{translate("商品小计", "Items Subtotal")}</span><span>RM {itemsSubtotal.toFixed(2)}</span></div>
             {discountNum > 0 && <div className="flex justify-between text-red-600"><span>{translate("折扣", "Discount")}</span><span>-RM {discountNum.toFixed(2)}</span></div>}
             {extraChargeNum > 0 && <div className="flex justify-between"><span>{translate("额外收费", "Extra Charge")}</span><span>+RM {extraChargeNum.toFixed(2)}</span></div>}
-            {!isSelfPickup && (
-              <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")}</span><span>RM {shippingFeeNum.toFixed(2)}</span></div>
-            )}
+            {!isSelfPickup && shippingDisplay.rows.map((row) => (
+              <div key={row.key} className="flex justify-between"><span>{translate(row.zhLabel, row.enLabel)}</span><span>{translate(row.zhValue, row.enValue)}</span></div>
+            ))}
             {creditUsedNum > 0 && <div className="flex justify-between text-blue-600"><span>{translate("使用Credit", "Credit Used")}</span><span>-RM {creditUsedNum.toFixed(2)}</span></div>}
             <Separator />
             <div className="flex justify-between font-bold text-base">
-              <span>{translate("总金额", "Total Amount")}</span>
-              <span>RM {totalAmount.toFixed(2)}</span>
+              <span>{paymentSummary.confirmedSupplementalShipping > 0 ? translate("最终应收金额", "Final Amount Due") : translate("总金额", "Total")}</span>
+              <span>RM {paymentSummary.finalOrderTotal.toFixed(2)}</span>
             </div>
+            <div className="flex justify-between"><span>{translate("已确认付款", "Confirmed Payments")}</span><span>RM {paymentSummary.approvedPaymentTotal.toFixed(2)}</span></div>
+            {paymentSummary.balance > 0 ? (
+              <div className="flex justify-between text-orange-600 font-medium"><span>{translate("尚欠款", "Outstanding")}</span><span>RM {paymentSummary.balance.toFixed(2)}</span></div>
+            ) : paymentSummary.balance < 0 ? (
+              <div className="flex justify-between text-green-600 font-medium"><span>{translate("客户多付", "Overpaid")}</span><span>RM {Math.abs(paymentSummary.balance).toFixed(2)}</span></div>
+            ) : (
+              <div className="flex justify-between text-green-600 font-medium"><span>{translate("已付清", "Fully Paid")}</span><span>RM 0.00</span></div>
+            )}
           </div>
         </CardContent>
       </Card>

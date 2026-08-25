@@ -27,6 +27,8 @@ import { OrderDocument } from "@/components/OrderDocument";
 import { prepareOrderDocumentExportHost } from "@/lib/orderDocumentExport";
 import { ProductImagePreview } from "@/components/ProductImagePreview";
 import { ORDER_DOCUMENT_OUTPUT_OPTIONS } from "@shared/orderDocumentOutputRules";
+import { getOrderShippingDisplay } from "@shared/orderDocumentShippingRules";
+import { getOrderDocumentPaymentSummary } from "@shared/orderDocumentFinancialRules";
 import OrderCarePackAdminPanel from "@/components/OrderCarePackAdminPanel";
 
 const STATUS_CONFIG: Record<string, { zh: string; en: string; variant: any }> = {
@@ -565,13 +567,19 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
   const creditUsed = parseFloat(o.creditUsed || "0");
   const shippingFee = parseFloat(o.shippingFee || "0");
   const totalAmount = parseFloat(o.totalAmount || "0");
-  const paidAmount = parseFloat(o.paidAmount || "0");
-  const balance = totalAmount - paidAmount;
+  const shippingDisplay = getOrderShippingDisplay({
+    shippingMethod: o.shippingMethod,
+    estimatedWeight: Number(o.estimatedWeight || o.totalWeight || 0),
+    shippingFee,
+  });
+  const paymentSummary = getOrderDocumentPaymentSummary({ baseOrderTotal: totalAmount, payments: o.payments || [] });
+  const paidAmount = paymentSummary.approvedPaymentTotal;
+  const balance = paymentSummary.balance;
   const approvedSupplementalShipping = ((o.payments || []) as any[])
     .filter((payment) => payment.reviewStatus === "approved" && String(payment.purpose || "").startsWith("supplemental_shipping:"))
     .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const completedRefundAmount = processedRefunds.reduce((sum, refund) => sum + Number(refund.amount || refund.requestedAmount || 0), 0);
-  const netReceivedAmount = paidAmount + approvedSupplementalShipping - completedRefundAmount;
+  const netReceivedAmount = paidAmount - completedRefundAmount;
   const discountAmount = parseFloat(o.discountAmount || "0");
   const detailItems = (o.items || []) as any[];
   const canSplitOrder = !isImportOrder && o.orderType === "physical" && ["pending", "receipt_uploaded", "partial_payment", "hold_order"].includes(o.physicalStatus || "")
@@ -840,22 +848,22 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           {extraCharge > 0 && (
             <div className="flex justify-between"><span>{translate("额外收费", "Extra Charge")}{o.extraChargeDescription && ` (${o.extraChargeDescription})`}</span><span>+RM {extraCharge.toFixed(2)}</span></div>
           )}
-          {o.shippingMethod !== "self_pickup" && (
-            <div className="flex justify-between"><span>{translate("运费", "Shipping Fee")}</span><span>RM {shippingFee.toFixed(2)}</span></div>
-          )}
+          {o.shippingMethod !== "self_pickup" && shippingDisplay.rows.map((row) => (
+            <div key={row.key} className="flex justify-between"><span>{translate(row.zhLabel, row.enLabel)}</span><span>{translate(row.zhValue, row.enValue)}</span></div>
+          ))}
           {creditUsed > 0 && (
             <div className="flex justify-between text-blue-600"><span>{translate("使用Credit", "Credit Used")}</span><span>-RM {creditUsed.toFixed(2)}</span></div>
           )}
           <Separator />
-          <div className="flex justify-between font-bold text-base"><span>{translate("结账订单总额", "Checkout Order Total")}</span><span>RM {totalAmount.toFixed(2)}</span></div>
-          <div className="flex justify-between"><span>{translate("结账已收", "Checkout Receipts")}</span><span>RM {paidAmount.toFixed(2)}</span></div>
+          <div className="flex justify-between font-bold text-base"><span>{paymentSummary.confirmedSupplementalShipping > 0 ? translate("最终应收金额", "Final Amount Due") : translate("总金额", "Total")}</span><span>RM {paymentSummary.finalOrderTotal.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span>{translate("已确认付款", "Confirmed Payments")}</span><span>RM {paidAmount.toFixed(2)}</span></div>
           <Separator />
           {balance > 0 ? (
-            <div className="flex justify-between text-orange-600 font-medium"><span>{translate("结账订单尚欠", "Checkout Balance Due")}</span><span>RM {balance.toFixed(2)}</span></div>
+            <div className="flex justify-between text-orange-600 font-medium"><span>{translate("尚欠款", "Outstanding")}</span><span>RM {balance.toFixed(2)}</span></div>
           ) : balance < 0 ? (
-            <div className="flex justify-between text-green-600 font-medium"><span>{translate("结账订单多付", "Checkout Overpaid")}</span><span>RM {Math.abs(balance).toFixed(2)}</span></div>
+            <div className="flex justify-between text-green-600 font-medium"><span>{translate("客户多付", "Overpaid")}</span><span>RM {Math.abs(balance).toFixed(2)}</span></div>
           ) : (
-            <div className="flex justify-between text-green-600 font-medium"><span>{translate("结账订单已付清", "Checkout Order Paid")}</span><span>RM 0.00</span></div>
+            <div className="flex justify-between text-green-600 font-medium"><span>{translate("已付清", "Fully Paid")}</span><span>RM 0.00</span></div>
           )}
           {(approvedSupplementalShipping > 0 || completedRefundAmount > 0 || isPendingRemittanceDifference) && (
             <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50/60 p-3 space-y-2">

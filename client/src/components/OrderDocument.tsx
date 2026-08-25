@@ -1,7 +1,7 @@
 import { useI18n } from "@/contexts/I18nContext";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
 import { WEST_MALAYSIA_V22_SHIPPING } from "@shared/shippingV22";
-import { getOrderDocumentShippingRows } from "@shared/orderDocumentShippingRules";
+import { getOrderShippingDisplay } from "@shared/orderDocumentShippingRules";
 import { getOrderDocumentPaymentSummary } from "@shared/orderDocumentFinancialRules";
 
 const SHIPPING_LABELS: Record<string, { zh: string; en: string }> = {
@@ -111,20 +111,12 @@ export function OrderDocument({
   const totalAmount = parseFloat(o.totalAmount || "0");
   const discountAmount = parseFloat(o.discountAmount || "0");
   const estimatedWeight = parseFloat(o.estimatedWeight || o.totalWeight || "0");
-  const isWestMalaysia = o.shippingMethod === "west_malaysia";
-  const extraWeightKg = isWestMalaysia ? Math.max(0, Math.ceil(estimatedWeight - WEST_MALAYSIA_V22_SHIPPING.includedWeightKg)) : 0;
-  const extraWeightFee = extraWeightKg * WEST_MALAYSIA_V22_SHIPPING.additionalKgFee;
-  const baseShippingFee = isWestMalaysia ? Math.max(0, shippingFee - extraWeightFee) : shippingFee;
-  const isFreeShipping = isWestMalaysia && estimatedWeight > 0 && baseShippingFee === 0;
-  const shippingRows = getOrderDocumentShippingRows({
-    isWestMalaysia,
-    isFreeShipping,
-    baseShippingFee,
-    extraWeightKg,
-    extraWeightFee,
+  const shippingDisplay = getOrderShippingDisplay({
+    shippingMethod: o.shippingMethod,
+    estimatedWeight,
     shippingFee,
-    additionalKgFee: WEST_MALAYSIA_V22_SHIPPING.additionalKgFee,
   });
+  const { isWestMalaysia, extraWeightKg, extraWeightFee, baseShippingFee, isFreeShipping, rows: shippingRows } = shippingDisplay;
   const actualWeight = parseFloat(o.actualWeight || "0");
   const actualExtraWeightKg = isWestMalaysia && actualWeight > 0
     ? Math.max(0, Math.ceil(actualWeight - WEST_MALAYSIA_V22_SHIPPING.includedWeightKg))

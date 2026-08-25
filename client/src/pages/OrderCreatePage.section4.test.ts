@@ -56,4 +56,12 @@ describe("OrderCreatePage 区域四", () => {
     expect(source).toContain("公司先承担RM15");
     expect(source).toContain("实际配送费用超过RM15时");
   });
+
+  it("换盆备注以正式花盆分类识别区域四商品，并兼容旧isPot标记", () => {
+    const source = readFileSync(new URL("./OrderCreatePage.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain('import { isRepotPotItem } from "@shared/repotPotCategories"');
+    expect(source).toContain("const section4Pots = section4Items.filter(i => isRepotPotItem(i));");
+    expect(source).toContain("isRepotPotItem({ categoryNameZh: product.categoryNameZh })");
+  });
 });

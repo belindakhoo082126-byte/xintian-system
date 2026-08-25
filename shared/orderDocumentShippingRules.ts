@@ -1,3 +1,5 @@
+import { WEST_MALAYSIA_V22_SHIPPING } from "./shippingV22";
+
 export type OrderDocumentShippingRow = {
   key: "base" | "extra" | "customer" | "shipping";
   zhLabel: string;
@@ -60,4 +62,43 @@ export function getOrderDocumentShippingRows(input: {
     enValue: money(input.shippingFee),
   });
   return rows;
+}
+
+/**
+ * 查看页、Edit画面、Preview／打印／下载单据共用的运费展示模型。
+ * 运费金额本身仍以订单已保存的 shippingFee 为准；这里仅用同一规则拆出首10kg与续重行。
+ */
+export function getOrderShippingDisplay(input: {
+  shippingMethod: string | null | undefined;
+  estimatedWeight: number;
+  shippingFee: number;
+}) {
+  const isWestMalaysia = input.shippingMethod === "west_malaysia";
+  const estimatedWeight = Math.max(0, Number(input.estimatedWeight) || 0);
+  const shippingFee = Math.max(0, Number(input.shippingFee) || 0);
+  const extraWeightKg = isWestMalaysia
+    ? Math.max(0, Math.ceil(estimatedWeight - WEST_MALAYSIA_V22_SHIPPING.includedWeightKg))
+    : 0;
+  const extraWeightFee = extraWeightKg * WEST_MALAYSIA_V22_SHIPPING.additionalKgFee;
+  const baseShippingFee = isWestMalaysia ? Math.max(0, shippingFee - extraWeightFee) : shippingFee;
+  const isFreeShipping = isWestMalaysia && estimatedWeight > 0 && baseShippingFee === 0;
+
+  return {
+    isWestMalaysia,
+    estimatedWeight,
+    isFreeShipping,
+    baseShippingFee,
+    extraWeightKg,
+    extraWeightFee,
+    shippingFee,
+    rows: getOrderDocumentShippingRows({
+      isWestMalaysia,
+      isFreeShipping,
+      baseShippingFee,
+      extraWeightKg,
+      extraWeightFee,
+      shippingFee,
+      additionalKgFee: WEST_MALAYSIA_V22_SHIPPING.additionalKgFee,
+    }),
+  };
 }

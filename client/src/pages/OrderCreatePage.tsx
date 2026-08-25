@@ -23,6 +23,7 @@ import { resolveManualOrderItemPrice } from "@shared/manualOrderPricing";
 import { resolveManualOrderVariantPrice } from "@shared/manualOrderVariantPricing";
 import { calculateOrderItemWeight, resolveOrderItemUnitWeight } from "@shared/orderItemWeight";
 import { calculateOrderPriceBreakdown } from "@shared/orderPricing";
+import { isRepotPotItem } from "@shared/repotPotCategories";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -187,9 +188,9 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const { data: potProducts } = trpc.repots.potProducts.useQuery();
   // V2.0.65: Items added in Section 4, filtered to those with a real productId
   const section4Items = manualItems.filter(i => i.productId !== undefined);
-  // V2.0.66: Plant items (isPot=false) and pot items (isPot=true) for repotting remarks
-  const section4Plants = section4Items.filter(i => !i.isPot);
-  const section4Pots = section4Items.filter(i => i.isPot);
+  // 换盆：兼容旧isPot标记，并以商品管理的正式花盆分类为主。
+  const section4Plants = section4Items.filter(i => !isRepotPotItem(i));
+  const section4Pots = section4Items.filter(i => isRepotPotItem(i));
 
   // Preview mode
   const [previewMode, setPreviewMode] = useState(false);
@@ -490,7 +491,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         keyword: (product as any).keyword || "",
         sellingPrice: (product as any).sellingPrice || (product as any).regularPrice || "0",
         originalUnitPrice: pricing.originalUnitPrice,
-        isPot: (product as any).isPot || false,
+        isPot: Boolean((product as any).isPot) || isRepotPotItem({ categoryNameZh: (product as any).categoryNameZh }),
         categoryId: (product as any).categoryId,
         categoryNameZh: (product as any).categoryNameZh || null,
       };
@@ -523,7 +524,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
       availableStock: Number(variant?.stockQuantity ?? product.stockQuantity ?? 0),
       allowOversold: Boolean(product.allowOversold),
       allowPresale: Boolean(product.allowPresale ?? product.allowOversold),
-      isPot: product.isPot || false,
+      isPot: Boolean(product.isPot) || isRepotPotItem({ categoryNameZh: product.categoryNameZh }),
       categoryId: product.categoryId,
       categoryNameZh: product.categoryNameZh || null,
     }]);

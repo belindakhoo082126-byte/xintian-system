@@ -10,6 +10,7 @@ import {
 } from "../shared/financialCashFlow";
 import { getSellableInventoryQuantity } from "../shared/inventoryStageRules";
 import { isSpecialPriceCurrentlyActive } from "../shared/specialPriceSchedule";
+import { isRepotPotItem } from "../shared/repotPotCategories";
 import { IMPORT_ORDER_PREFIX, LOCAL_ORDER_PREFIX } from "../shared/orderNumberPrefixes";
 import {
   InsertUser, users,
@@ -11855,9 +11856,14 @@ export async function getScheduledShippingOrders(filter?: { dateFrom?: Date; dat
 export async function getPotProducts() {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(products)
-    .where(and(eq(products.isPot, true), eq(products.status, 'active')))
+  const rows = await db.select({ product: products, categoryNameZh: categories.nameZh })
+    .from(products)
+    .leftJoin(categories, eq(products.categoryId, categories.id))
+    .where(eq(products.status, 'active'))
     .orderBy(asc(products.name));
+  return rows
+    .filter(({ product, categoryNameZh }) => isRepotPotItem({ isPot: product.isPot, categoryNameZh }))
+    .map(({ product }) => product);
 }
 
 // ============================================================================
