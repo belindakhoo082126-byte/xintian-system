@@ -8,8 +8,8 @@ const detailService = readFileSync(resolve(process.cwd(), "server/db.ts"), "utf8
 describe("OrderEditPage repotting flowerpot synchronization", () => {
   it("uses the same shared flowerpot classifier for order plants and order flowerpots", () => {
     expect(source).toContain('import { isRepotPotItem } from "@shared/repotPotCategories"')
-    expect(source).toContain("!isRepotPotItem(item) && item.productType === \"physical\"")
-    expect(source).toContain("isRepotPotItem(item) && item.productType === \"physical\"")
+    expect(source).toContain('!isRepotPotItem(item) && (item.productType || "physical") === "physical"')
+    expect(source).toContain('isRepotPotItem(item) && (item.productType || "physical") === "physical"')
   })
 
   it("returns product isPot and actual Chinese category names through order detail items", () => {
@@ -31,10 +31,15 @@ describe("OrderEditPage repotting flowerpot synchronization", () => {
   })
 
   it("keeps long plant and flowerpot names readable in the expanded repotting remark dialog", () => {
-    expect(source).toContain('max-w-4xl overflow-y-auto')
+    expect(source).toContain('width: "min(94vw, 980px)", maxWidth: "980px"')
     expect(source).toContain('sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5rem_2rem]')
     expect(source).toContain('[&>span]:whitespace-normal [&>span]:break-words')
     expect(source).toContain('className="h-auto whitespace-normal break-words py-2 leading-5"')
     expect(source).toContain('sm:min-w-[28rem]')
+  })
+
+  it("treats legacy order items with an empty product type as physical so saved flowerpot categories remain selectable", () => {
+    expect(source).toContain('(item.productType || "physical") === "physical"')
+    expect(source).toContain('isRepotPotItem(item)')
   })
 })

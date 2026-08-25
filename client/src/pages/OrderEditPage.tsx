@@ -487,12 +487,12 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   }, [order, editItems, itemsModified]);
 
   const orderPlants = useMemo(
-    () => repottingSourceItems.filter((item: any) => !isRepotPotItem(item) && item.productType === "physical"),
+    () => repottingSourceItems.filter((item: any) => !isRepotPotItem(item) && (item.productType || "physical") === "physical"),
     [repottingSourceItems],
   );
 
   const orderPots = useMemo(
-    () => repottingSourceItems.filter((item: any) => isRepotPotItem(item) && item.productType === "physical"),
+    () => repottingSourceItems.filter((item: any) => isRepotPotItem(item) && (item.productType || "physical") === "physical"),
     [repottingSourceItems],
   );
 
@@ -1383,7 +1383,10 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
 
       {/* Add Remark Dialog */}
       <Dialog open={remarkDialogOpen} onOpenChange={setRemarkDialogOpen}>
-        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-4xl overflow-y-auto sm:max-h-[calc(100vh-4rem)]">
+        <DialogContent
+          className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-h-[calc(100vh-4rem)]"
+          style={{ width: "min(94vw, 980px)", maxWidth: "980px" }}
+        >
           <DialogHeader>
             <DialogTitle>{translate("新增备注", "Add Remark")}</DialogTitle>
           </DialogHeader>
