@@ -9,6 +9,7 @@ import {
   makeSupplementalShippingPaymentPurpose,
 } from "../shared/financialCashFlow";
 import { getSellableInventoryQuantity } from "../shared/inventoryStageRules";
+import { isSpecialPriceCurrentlyActive } from "../shared/specialPriceSchedule";
 import {
   InsertUser, users,
   products, productVariations, productCategories,
@@ -1729,6 +1730,8 @@ async function applyTrustedSpecialPriceSnapshots(
       isSpecial: products.isSpecial,
       specialPrice: products.specialPrice,
       sellingPrice: products.sellingPrice,
+      specialPriceStartDate: products.specialPriceStartDate,
+      specialPriceEndDate: products.specialPriceEndDate,
     })
     .from(products)
     .where(inArray(products.id, uniqueProductIds));
@@ -1738,7 +1741,7 @@ async function applyTrustedSpecialPriceSnapshots(
     if (item.bundleId) continue;
     const product = productsById.get(item.productId);
     const specialPrice = Number(product?.specialPrice ?? 0);
-    const isActiveSpecialPrice = Boolean(product?.isSpecial) && specialPrice > 0;
+    const isActiveSpecialPrice = Boolean(product && isSpecialPriceCurrentlyActive(product));
     item.priceType = isActiveSpecialPrice ? "special" : "retail";
     item.isSpecial = isActiveSpecialPrice;
     item.originalUnitPrice = isActiveSpecialPrice && product?.sellingPrice != null
@@ -1823,7 +1826,7 @@ export async function createOrderWithSplit(data: {
     await assertImportLiveOrderWindow(data.liveRoomId);
   }
 
-  await applyTrustedSpecialPriceSnapshots(db, data.items);
+  await applyTrustedSpecialPriceSnapshots(db, data.items, { useProductSpecialPrice: true });
   await applyTrustedOrderItemWeights(db, data.items);
   const virtualDeliverySnapshots = await getVirtualDeliverySnapshotsForVariants(data.items.map((item) => item.variationId));
 
