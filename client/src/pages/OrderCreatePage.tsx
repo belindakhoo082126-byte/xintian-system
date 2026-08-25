@@ -19,6 +19,7 @@ import {
   Sprout, Upload, Loader2,
 } from "lucide-react";
 import { parseLegacyAddress } from "@shared/parseAddress";
+import { resolveManualOrderItemPrice } from "@shared/manualOrderPricing";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -77,6 +78,7 @@ interface ManualOrderItem {
   sku?: string;
   keyword?: string;
   sellingPrice?: string;
+  originalUnitPrice?: string;
   unitWeight?: string;
   availableStock?: number;
   allowOversold?: boolean;
@@ -442,8 +444,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     if (productId === "none") return;
     const product = (productSearchResults as any)?.find((p: any) => p.id === parseInt(productId));
     if (!product) return;
-    const priceField = orderNature === "wholesale" ? "wholesalePrice" : orderNature === "agent" ? "agentPrice" : "sellingPrice";
-    const unitPrice = (product as any)[priceField] || product.sellingPrice || product.regularPrice || "0";
+    const pricing = resolveManualOrderItemPrice(product, orderNature as "retail" | "wholesale" | "agent");
+    const unitPrice = pricing.unitPrice;
     const quantity = 1;
     setManualItems(prev => prev.map((item, i) => {
       if (i !== idx) return item;
@@ -460,11 +462,12 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
         unitPrice,
         subtotal: (quantity * price).toFixed(2),
         unitCost: (product as any).costPrice || (product as any).supplierCost || "0",
-        priceType: orderNature,
+        priceType: pricing.priceType,
         image: (product as any).coverImageUrl || (product as any).imageUrl || (product as any).image,
         sku: (product as any).sku,
         keyword: (product as any).keyword || "",
         sellingPrice: (product as any).sellingPrice || (product as any).regularPrice || "0",
+        originalUnitPrice: pricing.originalUnitPrice,
         isPot: (product as any).isPot || false,
         categoryId: (product as any).categoryId,
       };
@@ -957,13 +960,14 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               <div className="p-3 space-y-2">
                 {(productSearchResults as any[]).slice(0, 20).map((p: any) => {
                   const outOfStock = (p.stockQuantity ?? 0) <= 0 && !((p as any).allowPresale ?? p.allowOversold);
+                  const pricing = resolveManualOrderItemPrice(p, orderNature as "retail" | "wholesale" | "agent");
                   return (
                   <div key={p.id} className={`rounded-lg border ${outOfStock ? "bg-muted/30" : "bg-card"}`}>
                     <button
                       disabled={outOfStock}
                       onClick={() => {
                         if (outOfStock) return;
-                        const unitPrice = orderNature === "wholesale" ? (p.wholesalePrice || p.sellingPrice || "0") : orderNature === "agent" ? (p.agentPrice || p.sellingPrice || "0") : (p.sellingPrice || p.regularPrice || "0");
+                        const unitPrice = pricing.unitPrice;
                         setManualItems(prev => [...prev, {
                           productId: p.id,
                           productName: p.name,
@@ -972,12 +976,13 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                           unitPrice,
                           subtotal: unitPrice,
                           unitWeight: String(p.weightKg || "0.50"),
-                          priceType: orderNature,
+                          priceType: pricing.priceType,
                           unitCost: p.costPrice || p.supplierCost || "0",
                           image: p.coverImageUrl || p.imageUrl || p.image,
                           sku: p.sku,
                           keyword: p.keyword || "",
                           sellingPrice: p.sellingPrice || p.regularPrice || "0",
+                          originalUnitPrice: pricing.originalUnitPrice,
                           availableStock: Number(p.stockQuantity ?? 0),
                           allowOversold: Boolean(p.allowOversold),
                           allowPresale: Boolean((p as any).allowPresale ?? p.allowOversold),
@@ -996,7 +1001,9 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <div className="font-semibold text-lg">RM {p.sellingPrice || p.regularPrice || "0"}</div>
+                        <div className="font-semibold text-lg">RM {pricing.unitPrice}</div>
+                        {pricing.priceType === "special" && pricing.originalUnitPrice && <div className="text-sm text-muted-foreground line-through">RM {pricing.originalUnitPrice}</div>}
+                        {pricing.priceType === "special" && <div className="text-xs text-amber-700 font-medium">{translate("特价", "Special")}</div>}
                         {outOfStock && <div className="text-sm text-red-500">{translate("库存不足", "Out of stock")}</div>}
                         {p.wholesalePrice && !outOfStock && <div className="text-sm text-muted-foreground">{translate("批发", "Wholesale")}: RM {p.wholesalePrice}</div>}
                       </div>
@@ -1173,9 +1180,10 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                         <div className="text-xs text-muted-foreground"><span className="font-medium">{translate("规格", "Variant")}:</span> {item.variationName}</div>
                       )}
                       <div className="text-xs text-muted-foreground">
-                        <span className="font-medium">{translate("售价", "Price")}:</span> RM {item.sellingPrice || item.unitPrice}
+                        <span className="font-medium">{translate("售价", "Price")}:</span> RM {item.unitPrice}
                         {item.priceType === "special" && <Badge variant="secondary" className="ml-2 h-5 bg-amber-100 text-amber-800">{translate("特价", "Special")}</Badge>}
                         {item.priceType !== "special" && <Badge variant="outline" className="ml-2 h-5">{translate("原价", "Regular")}</Badge>}
+                        {item.priceType === "special" && item.originalUnitPrice && <span className="ml-2 line-through">RM {item.originalUnitPrice}</span>}
                       </div>
                     </div>
                     <Button variant="ghost" size="icon" className="shrink-0" onClick={() => removeManualItem(idx)}>

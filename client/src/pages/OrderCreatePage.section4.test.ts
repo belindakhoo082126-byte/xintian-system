@@ -9,5 +9,6 @@ describe("OrderCreatePage 区域四", () => {
     expect(source).toContain("handleProductSelect(idx, v)");
     expect(source).toContain("updateManualItem(idx, \"quantity\"");
     expect(source).not.toContain("onClick={addManualItem}");
+    expect(source).toContain("resolveManualOrderItemPrice");
   });
 });
