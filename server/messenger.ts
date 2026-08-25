@@ -1084,6 +1084,8 @@ async function processComment(params: {
             productName: m.productName,
             productSku: m.productSku,
             unitPrice: m.unitPrice,
+            variationId: m.variationId || m.variantId,
+            variationName: m.variationName,
             liveRoomProductId: m.liveRoomProductId,
             isPreorder: m.isPreorder,
           })),

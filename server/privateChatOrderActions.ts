@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { orderItems, orders, productVariations, products } from "../drizzle/schema";
+import { orderItems, orders, variants, products } from "../drizzle/schema";
 import { addOrderPayment, getDb, transitionOrderStatus, updateOrderStatus } from "./db";
 import { createDraftOrder, createOrderChangeRequest, type DraftOrderItem } from "./businessAi";
 import { storagePut } from "./storage";
@@ -36,7 +36,7 @@ function getMentionedAmount(message: string): string | null {
 }
 
 function extractQuantity(message: string, aliases: string[]) {
-  for (const alias of aliases.filter((value) => value.trim().length >= 2)) {
+  for (const alias of aliases.filter((value) => value.trim().length >= 2).sort((left, right) => right.length - left.length)) {
     const escaped = escapeRegex(alias.trim());
     const patterns = [
       new RegExp(`${escaped}\\s*(?:[+x×＊*]|数量[:：]?)\\s*(\\d{1,3})`, "i"),
@@ -90,6 +90,23 @@ async function findExactlyOneProduct(message: string) {
   return matches.length === 1 ? matches[0] : null;
 }
 
+async function findExactlyOneVariantForProduct(productId: number, productKeyword: string | null, message: string) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const text = normalise(message);
+  const candidates = await database.select().from(variants)
+    .where(and(eq(variants.productId, productId), eq(variants.status, "active")));
+  const matches = candidates.filter((variant) => {
+    const aliases = [
+      variant.name,
+      variant.keyword,
+      productKeyword && variant.keyword ? `${productKeyword}${variant.keyword}` : null,
+    ].filter((value): value is string => Boolean(value) && normalise(String(value)).length >= 2);
+    return aliases.some((alias) => text.includes(normalise(alias)));
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
 async function findOrderItemForProduct(orderId: number, productId: number) {
   const database = await getDb();
   if (!database) throw new Error("Database not available");
@@ -119,12 +136,15 @@ export async function capturePrivateChatOrderIntent(input: {
   if (input.workflow === "draft_order") {
     const product = await findExactlyOneProduct(message);
     if (!product) return handover("AI无法唯一确认要购买的商品，请客户提供商品关键词和数量");
-    if (product.productMode === "variant") {
+    const variant = product.productMode === "variant"
+      ? await findExactlyOneVariantForProduct(product.id, product.keyword, message)
+      : null;
+    if (product.productMode === "variant" && !variant) {
       return handover(`商品「${product.name}」需要确认规格或颜色，请人工建立待审核草稿`);
     }
-    const quantity = extractQuantity(message, [product.keyword, product.sku, product.name]);
+    const quantity = extractQuantity(message, [product.keyword, product.sku, product.name, variant?.keyword || "", variant && product.keyword ? `${product.keyword}${variant.keyword}` : ""]);
     if (!quantity) return handover(`已识别商品「${product.name}」，但无法确认数量，请客户补充数量`);
-    const price = Number(product.sellingPrice ?? product.regularPrice ?? 0);
+    const price = Number(variant?.sellingPrice ?? product.sellingPrice ?? product.regularPrice ?? 0);
     if (!(price > 0)) return handover(`商品「${product.name}」没有有效售价，无法建立草稿订单`);
     const draft = await createDraftOrder({
       customerId: input.customerId ?? undefined,
@@ -133,7 +153,7 @@ export async function capturePrivateChatOrderIntent(input: {
       platform: "messenger",
       detectedIntent: "new_order",
       originalMessage: message,
-      items: [{ productId: product.id, productName: product.name, quantity, price }],
+      items: [{ productId: product.id, productName: product.name, quantity, price, variantId: variant?.id, variantName: variant?.name }],
     });
     return {
       handled: true,
@@ -179,12 +199,15 @@ export async function capturePrivateChatOrderIntent(input: {
   const addingItem = /(加单|加货|加商品|再要|再加)/.test(message);
   if (addingItem) {
     if (!product) return handover("无法唯一确认要加购的商品，请客户提供商品关键词和数量");
-    if (product.productMode === "variant") return handover(`商品「${product.name}」需要确认规格或颜色，请人工处理加购申请`);
-    const quantity = extractQuantity(message, [product.keyword, product.sku, product.name]);
+    const variant = product.productMode === "variant"
+      ? await findExactlyOneVariantForProduct(product.id, product.keyword, message)
+      : null;
+    if (product.productMode === "variant" && !variant) return handover(`商品「${product.name}」需要确认规格或颜色，请人工处理加购申请`);
+    const quantity = extractQuantity(message, [product.keyword, product.sku, product.name, variant?.keyword || "", variant && product.keyword ? `${product.keyword}${variant.keyword}` : ""]);
     if (!quantity) return handover(`已识别加购商品「${product.name}」，但无法确认数量`);
-    const price = Number(product.sellingPrice ?? product.regularPrice ?? 0);
+    const price = Number(variant?.sellingPrice ?? product.sellingPrice ?? product.regularPrice ?? 0);
     if (!(price > 0)) return handover(`商品「${product.name}」没有有效售价，无法建立加购申请`);
-    const items: DraftOrderItem[] = [{ productId: product.id, productName: product.name, quantity, price }];
+    const items: DraftOrderItem[] = [{ productId: product.id, productName: product.name, quantity, price, variantId: variant?.id, variantName: variant?.name }];
     const request = await createOrderChangeRequest({
       orderId: order.id, orderNumber: order.orderNumber, customerId: input.customerId ?? undefined, customerName: input.customerName ?? undefined,
       requestType: "add_item", changeDetails: { items, source: "messenger_private_chat" }, detectedIntent: "order_modification", originalMessage: message,
@@ -218,13 +241,13 @@ export async function capturePrivateChatOrderIntent(input: {
   if (/(颜色|规格|款式|换成|换.*色|改.*色)/.test(message)) {
     const database = await getDb();
     if (!database) throw new Error("Database not available");
-    const variants = await database.select().from(productVariations).where(eq(productVariations.productId, product.id));
+    const productVariants = await database.select().from(variants).where(and(eq(variants.productId, product.id), eq(variants.status, "active")));
     const text = normalise(message);
-    const matches = variants.filter((variant) => [variant.name, variant.keywords].filter(Boolean).some((value) => normalise(String(value)).length >= 2 && text.includes(normalise(String(value)))));
+    const matches = productVariants.filter((variant) => [variant.name, variant.keyword].filter(Boolean).some((value) => normalise(String(value)).length >= 2 && text.includes(normalise(String(value)))));
     if (matches.length !== 1) return handover(`无法唯一确认商品「${product.name}」要更换的规格或颜色`);
     const request = await createOrderChangeRequest({
       orderId: order.id, orderNumber: order.orderNumber, customerId: input.customerId ?? undefined, customerName: input.customerName ?? undefined,
-      requestType: "change_variant", changeDetails: { orderItemId: item.id, productId: product.id, newVariationId: matches[0].id, newVariationName: matches[0].name, newPrice: Number(matches[0].price), source: "messenger_private_chat" }, detectedIntent: "order_modification", originalMessage: message,
+      requestType: "change_variant", changeDetails: { orderItemId: item.id, productId: product.id, newVariationId: matches[0].id, newVariationName: matches[0].name, newPrice: Number(matches[0].sellingPrice), source: "messenger_private_chat" }, detectedIntent: "order_modification", originalMessage: message,
     });
     return { handled: true, shouldHandover: false, changeRequestId: request.requestId, reply: `已登记「${product.name}」更换为「${matches[0].name}」的申请（${request.requestNumber}）。客服审核前，订单不会变更。` };
   }

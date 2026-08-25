@@ -308,18 +308,54 @@ export async function assertChinaImportOrderItemsEligible(productIds: number[]) 
 
 export async function getProductsForOrder(filters?: { search?: string; orderCategory?: string }) {
   const productRows = await getProducts({ search: filters?.search });
-  if (filters?.orderCategory !== "import" || productRows.length === 0) return productRows;
+  if (productRows.length === 0) return [];
   const db = await getDb();
-  if (!db) return [];
-  const categoryRows = await db.select({
-    id: products.id,
-    salesMode: products.salesMode,
-    orderCategory: products.orderCategory,
-    allowImportOrder: products.allowImportOrder,
-  }).from(products)
-    .where(inArray(products.id, productRows.map((product) => product.id)));
-  const eligibleIds = new Set(categoryRows.filter(isChinaImportOrderEligibleProduct).map((row) => row.id));
-  return productRows.filter((product) => eligibleIds.has(product.id));
+  if (!db) return productRows;
+
+  let eligibleProducts = productRows;
+  if (filters?.orderCategory === "import") {
+    const categoryRows = await db.select({
+      id: products.id,
+      salesMode: products.salesMode,
+      orderCategory: products.orderCategory,
+      allowImportOrder: products.allowImportOrder,
+    }).from(products)
+      .where(inArray(products.id, productRows.map((product) => product.id)));
+    const eligibleIds = new Set(categoryRows.filter(isChinaImportOrderEligibleProduct).map((row) => row.id));
+    eligibleProducts = productRows.filter((product) => eligibleIds.has(product.id));
+  }
+  if (eligibleProducts.length === 0) return [];
+
+  const variantRows = await db.select({
+    id: variants.id,
+    productId: variants.productId,
+    name: variants.name,
+    keyword: variants.keyword,
+    sellingPrice: variants.sellingPrice,
+    compareAtPrice: variants.compareAtPrice,
+    currentCost: variants.currentCost,
+    weight: variants.weight,
+    imageUrl: variants.imageUrl,
+    stockQuantity: variants.stockQuantity,
+    status: variants.status,
+  }).from(variants)
+    .where(and(
+      inArray(variants.productId, eligibleProducts.map((product) => product.id)),
+      eq(variants.status, "active"),
+    ))
+    .orderBy(asc(variants.sortOrder), asc(variants.id));
+
+  const variantsByProductId = new Map<number, typeof variantRows>();
+  for (const variant of variantRows) {
+    const current = variantsByProductId.get(variant.productId) || [];
+    current.push(variant);
+    variantsByProductId.set(variant.productId, current);
+  }
+
+  return eligibleProducts.map((product) => ({
+    ...product,
+    variants: variantsByProductId.get(product.id) || [],
+  }));
 }
 
 export async function getProductById(id: number) {
@@ -1630,11 +1666,11 @@ export async function appendItemsToUnpaidLocalOrder(params: {
  * intentionally part of the UPDATE condition instead of a separate read, so
  * concurrent orders cannot both consume the final available units.
  */
-export async function reserveProductStocksForOrder(items: Array<{ productId: number; quantity: number; productType?: "physical" | "gift" | "membership" }>) {
+export async function reserveProductStocksForOrder(items: Array<{ productId: number; quantity: number; variationId?: number | null; productType?: "physical" | "gift" | "membership" }>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const requested = new Map<string, { productId: number; quantity: number; lockUntilShipment: boolean }>();
+  const requested = new Map<string, { productId: number; variationId: number | null; quantity: number; lockUntilShipment: boolean }>();
   for (const item of items) {
     if (!item.productId) continue;
     const quantity = Number(item.quantity);
@@ -1642,18 +1678,20 @@ export async function reserveProductStocksForOrder(items: Array<{ productId: num
       throw new Error("STOCK_INSUFFICIENT: 商品数量必须大于 0");
     }
     const lockUntilShipment = item.productType === "gift";
-    const key = `${item.productId}:${lockUntilShipment ? "gift" : "physical"}`;
+    const variationId = item.variationId && item.variationId > 0 ? item.variationId : null;
+    const key = `${item.productId}:${variationId || "default"}:${lockUntilShipment ? "gift" : "physical"}`;
     const current = requested.get(key);
     requested.set(key, {
       productId: item.productId,
+      variationId,
       quantity: (current?.quantity || 0) + quantity,
       lockUntilShipment,
     });
   }
 
-  const reserved: Array<{ productId: number; quantity: number; lockUntilShipment: boolean }> = [];
+  const reserved: Array<{ productId: number; variationId: number | null; quantity: number; lockUntilShipment: boolean }> = [];
   try {
-    for (const { productId, quantity, lockUntilShipment } of Array.from(requested.values())) {
+    for (const { productId, variationId, quantity, lockUntilShipment } of Array.from(requested.values())) {
       const result = await db.update(products).set(lockUntilShipment ? {
         // 赠品在下单时只锁定可售数量；实际库存于包裹出货时才扣减。
         reservedQuantity: sql`COALESCE(${products.reservedQuantity}, 0) + ${quantity}`,
@@ -1662,17 +1700,14 @@ export async function reserveProductStocksForOrder(items: Array<{ productId: num
       }).where(and(
         eq(products.id, productId),
         or(
-        eq(products.allowPresale, true),
-        eq(products.allowOversold, true),
+          eq(products.allowPresale, true),
+          eq(products.allowOversold, true),
           and(
             or(eq(products.allowOversold, false), isNull(products.allowOversold)),
-            // 未转换的 AI 草稿也已经占用可售数，正式订单不可绕过它们。
-            // 该条件位于同一条 UPDATE 内，避免直播／商城并发请求穿透库存。
             sql`${products.stockQuantity} - COALESCE(${products.reservedQuantity}, 0) >= ${quantity}`,
           ),
         ),
       ));
-
       const affectedRows = Number((result as any)?.[0]?.affectedRows ?? (result as any)?.affectedRows ?? 0);
       if (affectedRows < 1) {
         const current = await db.select({ name: products.name, stockQuantity: products.stockQuantity, reservedQuantity: products.reservedQuantity })
@@ -1681,17 +1716,32 @@ export async function reserveProductStocksForOrder(items: Array<{ productId: num
         const available = Math.max(0, Number(current[0]?.stockQuantity ?? 0) - Number(current[0]?.reservedQuantity ?? 0));
         throw new Error(`STOCK_INSUFFICIENT: ${productName} 库存不足，目前最多可下单 ${available} 件`);
       }
-      reserved.push({ productId, quantity, lockUntilShipment });
+      if (variationId && !lockUntilShipment) {
+        const [policy] = await db.select({ allowPresale: products.allowPresale, allowOversold: products.allowOversold })
+          .from(products).where(eq(products.id, productId)).limit(1);
+        const variantCondition = policy?.allowPresale || policy?.allowOversold
+          ? and(eq(variants.id, variationId), eq(variants.productId, productId), eq(variants.status, "active"))
+          : and(eq(variants.id, variationId), eq(variants.productId, productId), eq(variants.status, "active"), sql`${variants.stockQuantity} >= ${quantity}`);
+        const variantResult = await db.update(variants).set({ stockQuantity: sql`${variants.stockQuantity} - ${quantity}` }).where(variantCondition);
+        const variantAffectedRows = Number((variantResult as any)?.[0]?.affectedRows ?? (variantResult as any)?.affectedRows ?? 0);
+        if (variantAffectedRows < 1) {
+          await db.update(products).set({ stockQuantity: sql`${products.stockQuantity} + ${quantity}` }).where(eq(products.id, productId));
+          const [variant] = await db.select({ name: variants.name, stockQuantity: variants.stockQuantity }).from(variants).where(eq(variants.id, variationId)).limit(1);
+          throw new Error(`STOCK_INSUFFICIENT: 规格「${variant?.name || variationId}」库存不足，目前最多可下单 ${Math.max(0, Number(variant?.stockQuantity ?? 0))} 件`);
+        }
+      }
+      reserved.push({ productId, variationId, quantity, lockUntilShipment });
     }
   } catch (error) {
-    // If a later product cannot be reserved, release all earlier reservations
-    // so this failed request never leaves a partial inventory hold.
     for (const item of reserved) {
       await db.update(products).set(item.lockUntilShipment ? {
         reservedQuantity: sql`GREATEST(0, COALESCE(${products.reservedQuantity}, 0) - ${item.quantity})`,
       } : {
         stockQuantity: sql`${products.stockQuantity} + ${item.quantity}`,
       }).where(eq(products.id, item.productId));
+      if (item.variationId && !item.lockUntilShipment) {
+        await db.update(variants).set({ stockQuantity: sql`${variants.stockQuantity} + ${item.quantity}` }).where(eq(variants.id, item.variationId));
+      }
     }
     throw error;
   }
@@ -1702,6 +1752,7 @@ type SpecialPriceSnapshotItem = {
   quantity: number;
   unitPrice: string;
   subtotal: string;
+  variationId?: number | null;
   priceType?: string;
   originalUnitPrice?: string | null;
   isSpecial?: boolean;
@@ -1713,7 +1764,7 @@ type SpecialPriceSnapshotItem = {
  * price type. Refresh every regular item from the product master so special
  * prices are consistently excluded from the RM150 free-shipping threshold.
  */
-async function applyTrustedSpecialPriceSnapshots(
+export async function applyTrustedSpecialPriceSnapshots(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   items: SpecialPriceSnapshotItem[],
   options: { useProductSpecialPrice?: boolean } = {},
@@ -1732,20 +1783,44 @@ async function applyTrustedSpecialPriceSnapshots(
       sellingPrice: products.sellingPrice,
       specialPriceStartDate: products.specialPriceStartDate,
       specialPriceEndDate: products.specialPriceEndDate,
+      productMode: products.productMode,
+      name: products.name,
     })
     .from(products)
     .where(inArray(products.id, uniqueProductIds));
   const productsById = new Map(productRows.map((product) => [product.id, product]));
+  const variationIds = Array.from(new Set(items
+    .map((item) => item.variationId)
+    .filter((id): id is number => typeof id === "number" && id > 0)));
+  const variantRows = variationIds.length === 0 ? [] : await db.select({
+    id: variants.id,
+    productId: variants.productId,
+    sellingPrice: variants.sellingPrice,
+    name: variants.name,
+    status: variants.status,
+  }).from(variants).where(inArray(variants.id, variationIds));
+  const variantsById = new Map(variantRows.map((variant) => [variant.id, variant]));
 
   for (const item of items) {
     if (item.bundleId) continue;
     const product = productsById.get(item.productId);
+    const variant = item.variationId ? variantsById.get(item.variationId) : undefined;
+    if (item.variationId && (!variant || variant.productId !== item.productId)) {
+      throw new Error("所选商品规格无效，请重新选择规格");
+    }
+    if (product?.productMode === "variant" && !item.variationId) {
+      throw new Error(`商品「${product.name}」必须先选择规格`);
+    }
+    if (variant && variant.status !== "active") {
+      throw new Error(`所选商品规格「${variant.name}」已不可用，请重新选择`);
+    }
+    const basePrice = Number(variant?.sellingPrice ?? product?.sellingPrice ?? 0);
     const specialPrice = Number(product?.specialPrice ?? 0);
-    const isActiveSpecialPrice = Boolean(product && isSpecialPriceCurrentlyActive(product));
+    const isActiveSpecialPrice = Boolean(product && specialPrice > 0 && isSpecialPriceCurrentlyActive(product));
     item.priceType = isActiveSpecialPrice ? "special" : "retail";
     item.isSpecial = isActiveSpecialPrice;
-    item.originalUnitPrice = isActiveSpecialPrice && product?.sellingPrice != null
-      ? String(product.sellingPrice)
+    item.originalUnitPrice = isActiveSpecialPrice && basePrice > 0
+      ? basePrice.toFixed(2)
       : null;
 
     if (isActiveSpecialPrice && options.useProductSpecialPrice) {
@@ -4075,9 +4150,9 @@ export async function cancelOrderWithReason(id: number, reason: string, operator
     }
     if (item.productType === "physical" && item.productId) {
       if (item.variationId) {
-        await db.update(productVariations).set({
-          stockQuantity: sql`${productVariations.stockQuantity} + ${item.quantity}`,
-        }).where(eq(productVariations.id, item.variationId));
+        await db.update(variants).set({
+          stockQuantity: sql`${variants.stockQuantity} + ${item.quantity}`,
+        }).where(eq(variants.id, item.variationId));
       }
       await db.update(products).set({
         stockQuantity: sql`${products.stockQuantity} + ${item.quantity}`,
@@ -8308,6 +8383,8 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
   unitPrice: string;
   subtotal: string;
   isSpecial?: boolean;
+  priceType?: string;
+  originalUnitPrice?: string | null;
   unitWeight?: string | null;
 }>) {
   const db = await getDb();
@@ -8349,6 +8426,7 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
       }
     }
   }
+  await applyTrustedSpecialPriceSnapshots(db, items, { useProductSpecialPrice: true });
   await applyTrustedOrderItemWeights(db, items);
   await reserveProductStocksForOrder(items);
   for (const item of items) {
@@ -8365,16 +8443,11 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
       variationId: item.variationId || null,
       variationName: item.variationName || null,
       facebookKeyword: item.facebookKeyword || null,
-      priceType: item.isSpecial ? "special" : "retail",
+      priceType: item.priceType === "special" || item.isSpecial ? "special" : "retail",
+      originalUnitPrice: (item as any).originalUnitPrice || null,
       discount: "0.00",
       itemSource: "mall",
     });
-
-    if (item.variationId) {
-      await db.update(productVariations).set({
-        stockQuantity: sql`${productVariations.stockQuantity} - ${item.quantity}`,
-      }).where(eq(productVariations.id, item.variationId));
-    }
     // Product stock was atomically reserved before the item was inserted.
     await allocateFifoCostForSale({ orderId, productId: item.productId, quantity: item.quantity, createdBy: "mall" });
   }
@@ -10339,7 +10412,7 @@ export async function matchKeywordsToProducts(keywords: Array<{ keyword: string;
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const matched: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string; coverImageUrl: string | null; variantId?: number; variationName?: string }> = [];
+  const matched: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string; coverImageUrl: string | null; variationId?: number; variationName?: string }> = [];
   const unmatched: Array<{ keyword: string; quantity: number }> = [];
   
   for (const { keyword, quantity } of keywords) {
@@ -10408,7 +10481,7 @@ export async function matchKeywordsToProducts(keywords: Array<{ keyword: string;
             productSku: parentProduct[0].sku || "",
             unitPrice: variant[0].sellingPrice || "0",
             coverImageUrl: parentProduct[0].coverImageUrl || null,
-            variantId: variant[0].id,
+            variationId: variant[0].id,
             variationName: variant[0].variationName,
           });
         } else {
@@ -10452,7 +10525,7 @@ export async function matchKeywordsToCampaignProducts(
     }
   });
 
-  const matched: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string; coverImageUrl: string | null }> = [];
+  const matched: Array<{ keyword: string; quantity: number; productId: number; productName: string; productSku: string; unitPrice: string; coverImageUrl: string | null; variationId?: number; variationName?: string }> = [];
   const unmatched: Array<{ keyword: string; quantity: number }> = [];
 
   for (const { keyword, quantity } of keywords) {
@@ -10494,6 +10567,22 @@ export async function matchKeywordsToCampaignProducts(
         }).from(variants)
           .where(and(eq(variants.keyword, keyword), inArray(variants.productId, campaignProductIds)))
           .limit(1);
+        if (variant.length === 0) {
+          const candidates = await db.select({
+            id: variants.id,
+            productId: variants.productId,
+            variationName: variants.name,
+            sellingPrice: variants.sellingPrice,
+            keyword: variants.keyword,
+            productKeyword: products.keyword,
+          }).from(variants)
+            .innerJoin(products, eq(variants.productId, products.id))
+            .where(and(eq(variants.status, "active"), inArray(variants.productId, campaignProductIds)));
+          const composedMatch = candidates.find((candidate: any) =>
+            composeLiveVariantKeyword(candidate.productKeyword, candidate.keyword).toUpperCase() === keyword.toUpperCase(),
+          );
+          if (composedMatch) variant = [composedMatch];
+        }
       }
 
       if (variant.length > 0) {
@@ -10509,6 +10598,8 @@ export async function matchKeywordsToCampaignProducts(
             productSku: parentProduct[0].sku || "",
             unitPrice: variant[0].sellingPrice || "0",
             coverImageUrl: parentProduct[0].coverImageUrl || null,
+            variationId: variant[0].id,
+            variationName: variant[0].variationName,
           });
         } else {
           unmatched.push({ keyword, quantity });
@@ -10540,10 +10631,14 @@ export async function createOrderFromLiveCapture(data: {
     productName: string;
     productSku: string;
     unitPrice: string;
+    variationId?: number;
+    variationName?: string;
+    unitWeight?: string | null;
     liveRoomProductId?: number;
     isPreorder?: boolean;
     priceType?: "retail" | "special";
     originalUnitPrice?: string | null;
+    isSpecial?: boolean;
   }>;
   sourceName?: string;
   campaignId?: number;
@@ -10553,33 +10648,30 @@ export async function createOrderFromLiveCapture(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // 不接受直播前端自行决定特价分类：以商品资料库内已启用的特价设定为准，
-  // 把特价价及原售价一并固定为订单快照，供订单明细与 V2.2 免邮资格统一使用。
-  const matchedProductIds = Array.from(new Set(data.matchedProducts.map((item) => item.productId).filter(Boolean)));
-  if (matchedProductIds.length > 0) {
-    const productPriceRows = await db.select({
-      id: products.id,
-      sellingPrice: products.sellingPrice,
-      isSpecial: products.isSpecial,
-      specialPrice: products.specialPrice,
-    }).from(products).where(inArray(products.id, matchedProductIds));
-    const priceByProductId = new Map(productPriceRows.map((product) => [product.id, product]));
-    for (const item of data.matchedProducts) {
-      const product = priceByProductId.get(item.productId);
-      const specialPrice = Number(product?.specialPrice || 0);
-      if (product?.isSpecial && specialPrice > 0) {
-        item.unitPrice = specialPrice.toFixed(2);
-        item.priceType = "special";
-        item.originalUnitPrice = product.sellingPrice ? String(product.sellingPrice) : null;
-      } else {
-        item.priceType = "retail";
-        item.originalUnitPrice = null;
-      }
-    }
-  }
+  // 留言关键词只负责选中商品／规格；价格、特价分类和原价快照统一从商品主资料重新计算。
+  const trustedItems = data.matchedProducts.map((item) => ({
+    productId: item.productId,
+    variationId: item.variationId,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    subtotal: (Number(item.unitPrice || 0) * item.quantity).toFixed(2),
+    priceType: item.priceType,
+    originalUnitPrice: item.originalUnitPrice,
+    isSpecial: item.isSpecial,
+  }));
+  await applyTrustedSpecialPriceSnapshots(db, trustedItems, { useProductSpecialPrice: true });
+  await applyTrustedOrderItemWeights(db, trustedItems);
+  data.matchedProducts.forEach((item, index) => {
+    const trusted = trustedItems[index];
+    item.unitPrice = trusted.unitPrice;
+    item.priceType = trusted.priceType as "retail" | "special";
+    item.originalUnitPrice = trusted.originalUnitPrice;
+    item.isSpecial = trusted.isSpecial;
+    item.unitWeight = (trusted as any).unitWeight || null;
+  });
 
   // 商品级预售仍使用同一原子库存账本扣减，库存可显示为负数；不再维护直播房专属预售数量。
-  const reservableProducts = data.matchedProducts.map((p) => ({ productId: p.productId, quantity: p.quantity }));
+  const reservableProducts = data.matchedProducts.map((p) => ({ productId: p.productId, variationId: p.variationId || null, quantity: p.quantity }));
 
   for (const p of reservableProducts) {
     const productRows = await db.select({
@@ -10667,11 +10759,14 @@ export async function createOrderFromLiveCapture(data: {
         quantity: p.quantity,
         unitPrice: p.unitPrice,
         subtotal: (parseFloat(p.unitPrice) * p.quantity).toFixed(2),
+        variationId: p.variationId || null,
+        variationName: p.variationName || null,
         facebookKeyword: p.keyword,
         itemSource: "facebook_live" as const,
         salesMode: isImportOrder ? "import_preorder" as const : "normal" as const,
         priceType: p.priceType || "retail",
         originalUnitPrice: p.originalUnitPrice || null,
+        unitWeight: p.unitWeight || null,
       })),
       operationType: isImportOrder ? "import_live_merge" : "cross_channel_merge",
       operationBy: data.sourceType === "facebook_post" ? "Facebook Post" : "Facebook Live",
@@ -10759,12 +10854,15 @@ export async function createOrderFromLiveCapture(data: {
       quantity: p.quantity,
       unitPrice: p.unitPrice,
       subtotal: itemSubtotal,
+      variationId: p.variationId || null,
+      variationName: p.variationName || null,
       facebookKeyword: p.keyword,
       discount: "0.00",
       itemSource: "facebook_live",
       salesMode: isImportOrder ? "import_preorder" : "normal",
       priceType: p.priceType || "retail",
       originalUnitPrice: p.originalUnitPrice || null,
+      unitWeight: p.unitWeight || "0.50",
     });
     // Product stock was atomically reserved before order creation.
     if (p.productId && !p.isPreorder) {
