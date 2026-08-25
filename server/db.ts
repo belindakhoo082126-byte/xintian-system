@@ -1254,8 +1254,11 @@ export async function getOrderItems(orderId: number) {
     originalUnitPrice: orderItems.originalUnitPrice,
     createdAt: orderItems.createdAt,
     productImage: products.coverImageUrl,
+    isPot: products.isPot,
+    categoryNameZh: categories.nameZh,
   }).from(orderItems)
     .leftJoin(products, eq(orderItems.productId, products.id))
+    .leftJoin(categories, eq(products.categoryId, categories.id))
     .where(eq(orderItems.orderId, orderId));
   return result;
 }

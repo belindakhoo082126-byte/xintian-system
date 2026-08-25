@@ -636,20 +636,6 @@ export default function OrderBrowsePage({ orderId, onBack }: { orderId: number; 
           <Button variant="outline" size="sm" onClick={() => setLocation(`/orders/${orderId}/edit`)}>
             <Edit className="h-3 w-3 mr-1" />{translate("编辑", "Edit")}
           </Button>
-          {canSplitOrder && (
-            <Button variant="outline" size="sm" onClick={() => {
-              setNewOrderAllocatedPayment("0");
-              setNewOrderAllocatedCredit("0");
-              setSplitOpen(true);
-            }}>
-              <GitFork className="h-3 w-3 mr-1" />{translate("拆分订单", "Split Order")}
-            </Button>
-          )}
-          {canMergeOrder && (
-            <Button variant="outline" size="sm" onClick={() => setMergeOpen(true)}>
-              <GitMerge className="h-3 w-3 mr-1" />{translate("合并订单", "Merge Order")}
-            </Button>
-          )}
           {o.checkoutLink && (
             <Button variant="outline" size="sm" onClick={() => {
               const fullLink = `${window.location.origin}${o.checkoutLink}`;

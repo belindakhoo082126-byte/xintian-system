@@ -301,12 +301,6 @@ export default function OrderDetail({ orderId, onBack }: { orderId: number; onBa
           <History className="h-4 w-4 mr-2" />
             {translate("手动变更状态", "Change Status Manually")}
         </Button>
-        {canSplitOrder && (
-          <Button variant="outline" onClick={() => setSplitOpen(true)}>
-            <GitFork className="h-4 w-4 mr-2" />
-            {translate("拆分订单", "Split Order")}
-          </Button>
-        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -6,6 +6,10 @@ import { ITEM_SOURCE_LABELS } from "@shared/const";
 import { getOrderShippingDisplay } from "@shared/orderDocumentShippingRules";
 import { getOrderDocumentPaymentSummary } from "@shared/orderDocumentFinancialRules";
 import { parseLegacyAddress } from "@shared/parseAddress";
+import { isRepotPotItem } from "@shared/repotPotCategories";
+import { resolveManualOrderItemPrice } from "@shared/manualOrderPricing";
+import { resolveManualOrderVariantPrice } from "@shared/manualOrderVariantPricing";
+import { resolveOrderItemUnitWeight } from "@shared/orderItemWeight";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,6 +94,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   const [itemsModified, setItemsModified] = useState(false);
   const [productSearch, setProductSearch] = useState("");
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [variantSelectionProduct, setVariantSelectionProduct] = useState<any>(null);
 
   // Payment records state
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
@@ -149,10 +154,16 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
         productId: item.productId,
         productName: item.productName,
         productSku: item.productSku || null,
+        productType: item.productType || "physical",
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         variationId: item.variationId || null,
         variationName: item.variationName || null,
+        unitWeight: item.unitWeight || "0",
+        keyword: item.facebookKeyword || "",
+        originalUnitPrice: item.originalUnitPrice || undefined,
+        isPot: Boolean(item.isPot),
+        categoryNameZh: item.categoryNameZh || null,
         itemSource: item.itemSource || "admin",
         priceType: item.priceType || "retail",
       })));
@@ -404,22 +415,41 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
     setItemsModified(true);
   }
 
-  function addProductToItems(product: any) {
+  function addProductToItems(product: any, variant?: any) {
+    const orderNature = formData.orderNature as "retail" | "wholesale" | "agent";
+    const pricing = variant
+      ? resolveManualOrderVariantPrice(product, variant, orderNature)
+      : resolveManualOrderItemPrice(product, orderNature);
     setEditItems(prev => [...prev, {
       id: undefined,
       productId: product.id,
       productName: product.name,
-      productSku: product.sku || null,
+      productSku: variant?.sku || product.sku || null,
+      productType: product.type || "physical",
       quantity: 1,
-      unitPrice: product.sellingPrice || product.price || "0",
-      variationId: null,
-      variationName: null,
+      unitPrice: pricing.unitPrice,
+      variationId: variant?.id || null,
+      variationName: variant?.name || null,
+      unitWeight: String(resolveOrderItemUnitWeight({ productType: product.type, variantWeight: variant?.weight, productWeight: product.weightKg })),
+      keyword: variant?.keyword || product.keyword || "",
+      originalUnitPrice: pricing.originalUnitPrice,
+      isPot: isRepotPotItem({ isPot: product.isPot, categoryNameZh: product.categoryNameZh }),
+      categoryNameZh: product.categoryNameZh || null,
       itemSource: "admin",
-      priceType: "retail",
+      priceType: pricing.priceType,
     }]);
     setItemsModified(true);
     setProductSearch("");
     setShowSearchResults(false);
+    setVariantSelectionProduct(null);
+  }
+
+  function handleProductSelection(product: any) {
+    if (Array.isArray(product.variants) && product.variants.length > 0) {
+      setVariantSelectionProduct(product);
+      return;
+    }
+    addProductToItems(product);
   }
 
   const discountNum = parseFloat(formData.discountAmount) || 0;
@@ -449,17 +479,20 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   }, [paymentMethods, isSelfPickup]);
 
   // Plant and pot items for repotting
-  const orderPlants = useMemo(() => {
+  const repottingSourceItems = useMemo(() => {
     if (!order) return [];
-    const o = order as any;
-    return (o.items || []).filter((item: any) => !item.isPot && item.productType === "physical");
-  }, [order]);
+    return itemsModified ? editItems : ((order as any).items || []);
+  }, [order, editItems, itemsModified]);
 
-  const orderPots = useMemo(() => {
-    if (!order) return [];
-    const o = order as any;
-    return (o.items || []).filter((item: any) => item.isPot && item.productType === "physical");
-  }, [order]);
+  const orderPlants = useMemo(
+    () => repottingSourceItems.filter((item: any) => !isRepotPotItem(item) && item.productType === "physical"),
+    [repottingSourceItems],
+  );
+
+  const orderPots = useMemo(
+    () => repottingSourceItems.filter((item: any) => isRepotPotItem(item) && item.productType === "physical"),
+    [repottingSourceItems],
+  );
 
   async function handleSave() {
     // First save items if modified
@@ -808,7 +841,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                     <div
                       key={p.id}
                       className="flex items-center justify-between p-2 rounded hover:bg-muted cursor-pointer border"
-                      onClick={() => addProductToItems(p)}
+                      onClick={() => handleProductSelection(p)}
                     >
                       <div className="flex items-center gap-2">
                         {p.imageUrl && <img src={p.imageUrl} alt={p.name} className="w-8 h-8 rounded object-cover" />}
@@ -826,8 +859,49 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                 <p className="text-sm text-muted-foreground text-center py-2">{translate("未找到商品", "No products found")}</p>
               )}
             </div>
-          )}
-          {/* Editable Items Table */}
+              )}
+              <Dialog open={!!variantSelectionProduct} onOpenChange={(open) => !open && setVariantSelectionProduct(null)}>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>{translate("选择商品规格", "Select Product Variant")}</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">{variantSelectionProduct?.name}</p>
+                    {(variantSelectionProduct?.variants || []).map((variant: any) => {
+                      const outOfStock = Number(variant.stockQuantity ?? 0) <= 0
+                        && !Boolean(variantSelectionProduct?.allowPresale ?? variantSelectionProduct?.allowOversold);
+                      const pricing = resolveManualOrderVariantPrice(
+                        variantSelectionProduct,
+                        variant,
+                        formData.orderNature as "retail" | "wholesale" | "agent",
+                      );
+                      return (
+                        <Button
+                          key={variant.id}
+                          type="button"
+                          variant="outline"
+                          disabled={outOfStock}
+                          onClick={() => addProductToItems(variantSelectionProduct, variant)}
+                          className="h-auto w-full justify-between gap-3 p-3 text-left"
+                        >
+                          <span className="min-w-0">
+                            <span className="block font-medium">{variant.name}</span>
+                            <span className="block text-xs text-muted-foreground">
+                              {translate("关键词", "Keyword")}: {variant.keyword || "-"} · {translate("库存", "Stock")}: {variant.stockQuantity ?? 0}
+                              {variant.weight ? ` · ${translate("重量", "Weight")}: ${variant.weight}kg` : ""}
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-right">
+                            <span className="block font-semibold">RM {pricing.unitPrice}</span>
+                            {pricing.originalUnitPrice && <span className="block text-xs text-muted-foreground line-through">RM {pricing.originalUnitPrice}</span>}
+                          </span>
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </DialogContent>
+              </Dialog>
+              {/* Editable Items Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/50">
@@ -1299,7 +1373,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
 
       {/* Add Remark Dialog */}
       <Dialog open={remarkDialogOpen} onOpenChange={setRemarkDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-4xl overflow-y-auto sm:max-h-[calc(100vh-4rem)]">
           <DialogHeader>
             <DialogTitle>{translate("新增备注", "Add Remark")}</DialogTitle>
           </DialogHeader>
@@ -1344,8 +1418,8 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
               <div className="space-y-3">
                 <Label className="text-xs">{translate("换盆记录（可添加多组）", "Repotting entries (can add multiple)")}</Label>
                 {remarkForm.repottingEntries.map((entry, idx) => (
-                  <div key={idx} className="flex items-end gap-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950/20">
-                    <div className="flex-1">
+                  <div key={idx} className="grid grid-cols-1 gap-3 rounded-lg border bg-green-50 p-3 dark:bg-green-950/20 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5rem_2rem] sm:items-end">
+                    <div className="min-w-0">
                       <Label className="text-xs mb-1 block">{translate("植物名称", "Plant Name")}</Label>
                       <Select
                         value={entry.plantName}
@@ -1354,13 +1428,13 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                           repottingEntries: prev.repottingEntries.map((r, i) => i === idx ? { ...r, plantName: v } : r),
                         }))}
                       >
-                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择植物", "Select plant")} /></SelectTrigger>
-                        <SelectContent>
+                        <SelectTrigger className="h-auto min-h-9 items-start text-left text-sm [&>span]:whitespace-normal [&>span]:break-words"><SelectValue placeholder={translate("选择植物", "Select plant")} /></SelectTrigger>
+                        <SelectContent className="max-w-[calc(100vw-2rem)] sm:min-w-[28rem]">
                           {orderPlants.length === 0 ? (
                             <SelectItem value="__none" disabled>{translate("订单无植物类商品", "No plant items in order")}</SelectItem>
                           ) : (
                             orderPlants.map((item: any, i: number) => (
-                              <SelectItem key={i} value={item.productName}>
+                              <SelectItem key={i} value={item.productName} className="h-auto whitespace-normal break-words py-2 leading-5">
                                 {item.productName}{item.variationName ? ` (${item.variationName})` : ""} ×{item.quantity}
                               </SelectItem>
                             ))
@@ -1368,7 +1442,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="flex-1">
+                    <div className="min-w-0">
                       <Label className="text-xs mb-1 block">{translate("花盆", "Pot")}</Label>
                       <Select
                         value={entry.potName}
@@ -1377,13 +1451,13 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                           repottingEntries: prev.repottingEntries.map((r, i) => i === idx ? { ...r, potName: v } : r),
                         }))}
                       >
-                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={translate("选择花盆", "Select pot")} /></SelectTrigger>
-                        <SelectContent>
+                        <SelectTrigger className="h-auto min-h-9 items-start text-left text-sm [&>span]:whitespace-normal [&>span]:break-words"><SelectValue placeholder={translate("选择花盆", "Select pot")} /></SelectTrigger>
+                        <SelectContent className="max-w-[calc(100vw-2rem)] sm:min-w-[28rem]">
                           {orderPots.length === 0 ? (
                             <SelectItem value="__none" disabled>{translate("订单无花盆类商品", "No pot items in order")}</SelectItem>
                           ) : (
                             orderPots.map((item: any, i: number) => (
-                              <SelectItem key={i} value={item.productName}>
+                              <SelectItem key={i} value={item.productName} className="h-auto whitespace-normal break-words py-2 leading-5">
                                 {item.productName}{item.variationName ? ` (${item.variationName})` : ""} ×{item.quantity}
                               </SelectItem>
                             ))
@@ -1391,7 +1465,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="w-16">
+                    <div className="w-full sm:w-20">
                       <Label className="text-xs mb-1 block">{translate("数量", "Qty")}</Label>
                       <Input
                         type="number"
