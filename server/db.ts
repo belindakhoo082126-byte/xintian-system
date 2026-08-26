@@ -270,7 +270,16 @@ export async function getProducts(filters?: { type?: string; search?: string; is
         like(productVariations.name, searchTerm),
         like(productVariations.keywords, searchTerm)
       ) as any);
-    const matchedProductIds = variationMatches.map(v => v.productId);
+    const variantMatches = await db.select({ productId: variants.productId })
+      .from(variants)
+      .where(or(
+        like(variants.name, searchTerm),
+        like(variants.keyword, searchTerm)
+      ) as any);
+    const matchedProductIds = Array.from(new Set([
+      ...variationMatches.map((variation) => variation.productId),
+      ...variantMatches.map((variant) => variant.productId),
+    ]));
     
     conditions.push(or(
       like(products.name, searchTerm),
@@ -6189,7 +6198,7 @@ export async function createVirtualDeliveryProduct(data: {
     const productResult = await tx.insert(products).values({
       name: data.name.trim(),
       type: resolveVirtualDeliveryCatalogProductType(data.deliveryType),
-      productMode: "variant",
+      productMode: data.deliveryType === "membership" && packages.length === 1 ? "simple" : "variant",
       keyword: productKeyword,
       sku: productSku,
       status: "active",

@@ -475,7 +475,11 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
   function handleProductSelection(product: any) {
     const resolvedVariants = [product.variants, product.variations, product.productVariations]
       .find((candidate) => Array.isArray(candidate) && candidate.length > 0) || [];
-    if (resolvedVariants.length > 0) {
+    if (product.productMode === "variant") {
+      if (resolvedVariants.length === 0) {
+        toast.error(translate("此多规格商品尚未建立可用规格", "This variant product has no active variants"));
+        return;
+      }
       setVariantSelectionProduct({ ...product, variants: resolvedVariants });
       return;
     }
@@ -911,7 +915,7 @@ export default function OrderEditPage({ orderId, onBack }: { orderId: number; on
                   <div className="space-y-2">
                     <p className="text-sm text-muted-foreground">{variantSelectionProduct?.name}</p>
                     {(variantSelectionProduct?.variants || []).map((variant: any) => {
-                      const outOfStock = Number(variant.stockQuantity ?? 0) <= 0
+                      const outOfStock = (variantSelectionProduct?.type === "physical" || variantSelectionProduct?.type === "gift") && Number(variant.stockQuantity ?? 0) <= 0
                         && !Boolean(variantSelectionProduct?.allowPresale ?? variantSelectionProduct?.allowOversold);
                       const pricing = resolveManualOrderVariantPrice(
                         variantSelectionProduct,

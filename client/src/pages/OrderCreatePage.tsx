@@ -1031,7 +1031,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             <ScrollArea className="h-[300px] border rounded-lg">
               <div className="p-3 space-y-2">
                 {(productSearchResults as any[]).slice(0, 20).map((p: any) => {
-                  const outOfStock = (p.stockQuantity ?? 0) <= 0 && !((p as any).allowPresale ?? p.allowOversold);
+                  const isStockManaged = p.type === "physical" || p.type === "gift";
+                  const outOfStock = isStockManaged && (p.stockQuantity ?? 0) <= 0 && !((p as any).allowPresale ?? p.allowOversold);
                   const pricing = resolveManualOrderItemPrice(p, orderNature as "retail" | "wholesale" | "agent");
                   return (
                   <div key={p.id} className={`rounded-lg border ${outOfStock ? "bg-muted/30" : "bg-card"}`}>
@@ -1040,7 +1041,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
                       onClick={() => {
                         if (outOfStock) return;
                         const activeVariants = Array.isArray(p.variants) ? p.variants : [];
-                        if (p.productMode === "variant" || activeVariants.length > 0) {
+                        if (p.productMode === "variant") {
                           if (activeVariants.length === 0) {
                             toast.error(translate("此多规格商品尚未建立可用规格", "This variant product has no active variants"));
                             return;
@@ -1102,7 +1103,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">{variantSelectionProduct?.name}</p>
                 {(variantSelectionProduct?.variants || []).map((variant: any) => {
-                  const variantOutOfStock = Number(variant.stockQuantity ?? 0) <= 0
+                  const variantOutOfStock = (variantSelectionProduct?.type === "physical" || variantSelectionProduct?.type === "gift") && Number(variant.stockQuantity ?? 0) <= 0
                     && !Boolean(variantSelectionProduct?.allowPresale ?? variantSelectionProduct?.allowOversold);
                   const variantPricing = resolveManualOrderVariantPrice(variantSelectionProduct, variant, orderNature as "retail" | "wholesale" | "agent");
                   return (
