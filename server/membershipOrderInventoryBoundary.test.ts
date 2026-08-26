@@ -18,4 +18,9 @@ describe("会员订单库存边界", () => {
     expect(stockReserveIndex).toBeGreaterThan(trustedTypeIndex);
     expect(dbSource).toContain('trustedType === "membership" || trustedType === "virtual" ? "membership"');
   });
+
+  it("统一库存预留函数也会按商品主档跳过会员，覆盖订单编辑与其他调用路径", () => {
+    expect(dbSource).toContain("const trustedTypeById = new Map<number, string>(typeRows.map((product) => [product.id, String(product.type)]));");
+    expect(dbSource).toContain("if (!isStockManagedProductType(normalizedType as \"physical\" | \"gift\" | \"membership\")) continue;");
+  });
 });

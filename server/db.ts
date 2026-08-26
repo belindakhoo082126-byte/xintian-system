@@ -1718,14 +1718,27 @@ export async function reserveProductStocksForOrder(items: Array<{ productId: num
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  // 这是所有订单入口共用的最后库存防线。必须以商品主档类型决定是否预留，
+  // 不可信任旧页面、订单编辑或其他调用方传入的 productType。
+  const productIds = Array.from(new Set(items.map((item) => item.productId).filter(Boolean)));
+  const typeRows = productIds.length === 0 ? [] : await db.select({
+    id: products.id,
+    type: products.type,
+  }).from(products).where(inArray(products.id, productIds));
+  const trustedTypeById = new Map<number, string>(typeRows.map((product) => [product.id, String(product.type)]));
+
   const requested = new Map<string, { productId: number; variationId: number | null; quantity: number; lockUntilShipment: boolean }>();
   for (const item of items) {
     if (!item.productId) continue;
+    const trustedType = trustedTypeById.get(item.productId);
+    if (!trustedType) throw new Error(`商品 #${item.productId} 不存在或已不可用`);
+    const normalizedType = trustedType === "membership" || trustedType === "virtual" ? "membership" : trustedType;
+    if (!isStockManagedProductType(normalizedType as "physical" | "gift" | "membership")) continue;
     const quantity = Number(item.quantity);
     if (!Number.isFinite(quantity) || quantity <= 0) {
       throw new Error("STOCK_INSUFFICIENT: 商品数量必须大于 0");
     }
-    const lockUntilShipment = item.productType === "gift";
+    const lockUntilShipment = normalizedType === "gift";
     const variationId = item.variationId && item.variationId > 0 ? item.variationId : null;
     const key = `${item.productId}:${variationId || "default"}:${lockUntilShipment ? "gift" : "physical"}`;
     const current = requested.get(key);
