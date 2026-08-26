@@ -324,12 +324,15 @@ export default function ProductsV2() {
   const searchParams = useSearch();
   const [, setLocation] = useLocation();
   const urlStock = new URLSearchParams(searchParams).get("stock");
+  const urlStockThreshold = Number(new URLSearchParams(searchParams).get("stockThreshold"));
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [stockFilter, setStockFilter] = useState<string>(urlStock || "all");
   const [xtcFilter, setXtcFilter] = useState<string>("all");
-  const [lowStockThreshold, setLowStockThreshold] = useState("5");
+  const [lowStockThreshold, setLowStockThreshold] = useState(
+    Number.isFinite(urlStockThreshold) && urlStockThreshold > 0 ? String(urlStockThreshold) : "5",
+  );
   const [page, setPage] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
