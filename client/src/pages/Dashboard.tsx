@@ -83,6 +83,10 @@ export default function Dashboard() {
   // 待退款与其他待跟进状态均保留在摘要中；待退款点击后统一进入退款管理。
   const specialFollowUpItems = (followUpList as any[] | undefined) || [];
   const specialFollowUpItemCount = specialFollowUpItems.length;
+  const waitingRestockItem = specialFollowUpItems.find((item: any) => item.specialType === "stock_exception");
+  const waitingRestockLink = waitingRestockItem
+    ? `/orders/${waitingRestockItem.orderId}`
+    : "/orders?special=1&type=stock_exception";
   const { data: ordersWithRemarks } = trpc.orderRemarks.ordersWithRemarks.useQuery();
   const { data: handoverStats } = trpc.aiHandover.getStats.useQuery();
   const { data: aiNotificationCenter } = trpc.notifications.aiCenter.useQuery();
@@ -416,7 +420,7 @@ export default function Dashboard() {
                 <p className="mt-1 text-2xl font-bold text-red-600">{followUpDisplay.amountChangedCount}</p>
               </div>
             </Link>
-            <Link href="/orders?special=1&type=stock_exception">
+            <Link href={waitingRestockLink}>
               <div className="rounded-lg border border-amber-100 bg-background/70 p-3 dark:border-amber-900/50 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors cursor-pointer">
                 <p className="text-xs text-muted-foreground">{lang === "zh" ? "等待补货" : "Waiting Restock"}</p>
                 <p className="mt-1 text-2xl font-bold text-amber-600">{followUpDisplay.stockExceptionCount}</p>

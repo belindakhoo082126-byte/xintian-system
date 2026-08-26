@@ -831,7 +831,7 @@ export default function ProductsV2() {
         </Select>
         {stockFilter === "low" && (
           <div className="flex w-fit items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5">
-            <span className="whitespace-nowrap text-sm text-muted-foreground">{translate("少于", "Below")}</span>
+            <span className="whitespace-nowrap text-sm text-muted-foreground">{translate("少于或等于", "At or below")}</span>
             <Input
               aria-label={translate("低库存阈值", "Low stock threshold")}
               type="number"

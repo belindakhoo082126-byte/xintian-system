@@ -5393,7 +5393,7 @@ export async function getProductsEnhanced(params: {
   if (params.stockFilter === 'low') {
     const stockThreshold = Math.max(1, Math.floor(params.stockThreshold ?? 5));
     conditions.push(inArray(products.type, ['physical', 'gift'] as const));
-    conditions.push(lt(products.stockQuantity, stockThreshold));
+    conditions.push(lte(products.stockQuantity, stockThreshold));
     conditions.push(gt(products.stockQuantity, 0));
   }
   if (params.stockFilter === 'out') {
@@ -14742,9 +14742,43 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
     SPECIAL_ORDER_FOLLOW_UP_TYPES.map((type) => sql`${type}`),
     sql`, `,
   );
-  // V3.2: Read directly from orders table — single source of truth
+  // 每一笔未完成的特别状态均是独立待办；同一订单可同时待退款、等待补货等。
   const [rows] = await db.execute(sql`
     SELECT 
+      o.id as order_id,
+      o.orderNumber,
+      o.parentOrderId,
+      oss.type as specialOrderType,
+      oss.status as specialOrderStatus,
+      'multi_status' as specialOrderSource,
+      oss.reason as specialOrderReason,
+      o.shippingDifference,
+      o.customerPaidShipping,
+      o.actualShippingFee,
+      o.physicalStatus,
+      o.orderCategory,
+      o.importStatus,
+      o.createdAt,
+      o.shippingAddress,
+      c.id as customer_id,
+      c.name as customer_name,
+      c.phoneNumber as customer_phone,
+      c.facebookName,
+      (SELECT remark FROM special_order_actions sa
+       WHERE sa.orderId = o.id AND sa.remark IS NOT NULL AND sa.remark != ''
+       ORDER BY sa.createdAt DESC LIMIT 1) as last_remark,
+      (SELECT performedBy FROM special_order_actions sa
+       WHERE sa.orderId = o.id 
+       ORDER BY sa.createdAt DESC LIMIT 1) as last_handler
+    FROM order_special_statuses oss
+    JOIN orders o ON o.id = oss.orderId
+    LEFT JOIN customers c ON o.customerId = c.id
+    WHERE o.physicalStatus != 'cancelled'
+      AND oss.status = 'pending'
+      AND oss.type != 'notification_failed'
+      AND oss.type IN (${specialFollowUpTypeSql})
+    UNION ALL
+    SELECT
       o.id as order_id,
       o.orderNumber,
       o.parentOrderId,
@@ -14764,11 +14798,11 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
       c.name as customer_name,
       c.phoneNumber as customer_phone,
       c.facebookName,
-      (SELECT remark FROM special_order_actions sa 
+      (SELECT remark FROM special_order_actions sa
        WHERE sa.orderId = o.id AND sa.remark IS NOT NULL AND sa.remark != ''
        ORDER BY sa.createdAt DESC LIMIT 1) as last_remark,
-      (SELECT performedBy FROM special_order_actions sa 
-       WHERE sa.orderId = o.id 
+      (SELECT performedBy FROM special_order_actions sa
+       WHERE sa.orderId = o.id
        ORDER BY sa.createdAt DESC LIMIT 1) as last_handler
     FROM orders o
     LEFT JOIN customers c ON o.customerId = c.id
@@ -14777,7 +14811,13 @@ export async function getSpecialOrderFollowUpList(limit = 50) {
       AND o.specialOrderStatus = 'pending'
       AND COALESCE(o.specialOrderType, '') != 'notification_failed'
       AND o.specialOrderType IN (${specialFollowUpTypeSql})
-    ORDER BY o.createdAt ASC
+      AND NOT EXISTS (
+        SELECT 1 FROM order_special_statuses oss
+        WHERE oss.orderId = o.id
+          AND oss.type = o.specialOrderType
+          AND oss.status = 'pending'
+      )
+    ORDER BY createdAt ASC
     LIMIT ${limit}
   `);
 
