@@ -5338,6 +5338,7 @@ export async function checkVariantKeywordConflict(productId: number, keyword: st
 }
 
 export async function getProductsEnhanced(params: {
+  productIds?: number[];
   search?: string;
   categoryId?: number;
   status?: string;
@@ -5354,6 +5355,9 @@ export async function getProductsEnhanced(params: {
   const db = await getDb();
   if (!db) return { items: [], total: 0 };
   const conditions: any[] = [];
+  if (params.productIds && params.productIds.length > 0) {
+    conditions.push(inArray(products.id, params.productIds));
+  }
   if (params.search) {
     const searchTerm = `%${params.search}%`;
     conditions.push(or(like(products.name, searchTerm), like(products.keyword, searchTerm)));
@@ -5372,7 +5376,7 @@ export async function getProductsEnhanced(params: {
   }
   if (params.type) {
     conditions.push(eq(products.type, params.type as any));
-  } else {
+  } else if (!params.productIds || params.productIds.length === 0) {
     // 日常商品管理只处理实体商品与赠品；会员、课程与资料包由独立虚拟交付菜单管理。
     conditions.push(inArray(products.type, ["physical", "gift"] as const));
   }
@@ -6131,10 +6135,23 @@ export async function listVirtualDeliveryProducts() {
     list.push(packageRow);
     packagesByProduct.set(packageRow.deliveryPackage.virtualProductId, list);
   }
+  const productIds = Array.from(new Set(rows.map((row) => row.product.id)));
+  const inventoryResult = productIds.length > 0
+    ? await getProductsEnhanced({ productIds, limit: productIds.length, offset: 0 })
+    : { items: [] };
+  const inventoryByProductId = new Map((inventoryResult.items as any[]).map((item) => [item.id, item]));
   return rows.map((row) => ({
     ...row.virtual,
     product: row.product,
     packages: packagesByProduct.get(row.virtual.id) || [],
+    inventory: inventoryByProductId.get(row.product.id) || {
+      stockQuantity: Number(row.product.stockQuantity || 0),
+      availableQuantity: Number(row.product.stockQuantity || 0),
+      orderedCount: 0,
+      paidCount: 0,
+      completedCount: 0,
+      variantSummaries: [],
+    },
   }));
 }
 
