@@ -23,7 +23,7 @@ import {
   categories, units, variants, memberLinks, productImages, productVideos, productAttributes,
   virtualDeliveryProducts, virtualDeliveryPackages, virtualDeliveryTasks,
   // System Settings & Shipping imports
-  systemSettings, shippingRules, shippingProviders, shipments,
+  systemSettings, shippingRules, shippingConfigValues, shippingProviders, shipments,
   // Payment & Order imports
   paymentMethods, orderStatusLogs, holdOrderInfos, notificationLogs, aiNotificationActions,
   // Mall imports
@@ -85,6 +85,7 @@ import { broadcastChange, broadcastChanges } from './_core/realtime';
 import { evaluateMarketingCampaign } from './marketingEngine';
 import { SPECIAL_ORDER_FOLLOW_UP_TYPES, isSpecialOrderFollowUpType } from '../shared/specialOrderDisplay';
 import { calculateLalamoveCheckoutCustomerShipping, calculateWestMalaysiaShippingBreakdown, WEST_MALAYSIA_V22_SHIPPING } from '../shared/shippingV22';
+import { DEFAULT_CONTROLLED_SHIPPING_CONFIGURATION, normalizeControlledShippingConfiguration, type ControlledShippingConfiguration } from '../shared/shippingConfiguration';
 import { getRefundCompletionDates } from '../shared/refundCompletionDates';
 import { calculateMerchandiseNotificationBreakdown, calculateOrderPriceBreakdown } from "../shared/orderPricing";
 import { isStockManagedProductType } from "../shared/inventoryStageRules";
@@ -1660,14 +1661,12 @@ export async function appendItemsToUnpaidLocalOrder(params: {
   const discountAmount = Number(order.discountAmount || 0);
   const extraCharge = Number(order.extraCharge || 0);
   const creditUsed = Number(order.creditUsed || 0);
-  let shippingFee = 0;
-  if (order.shippingMethod === "west_malaysia") {
-    shippingFee = calculateWestMalaysiaShipping(totalWeight, breakdown.freeShippingEligibleSubtotal).shippingFee;
-  } else if (order.shippingMethod === "east_malaysia_poslaju") {
-    shippingFee = 50;
-  } else if (order.shippingMethod === "lalamove") {
-    shippingFee = calculateLalamoveCheckoutCustomerShipping();
-  }
+  const configuredShipping = await calculateConfiguredCheckoutShipping(
+    order.shippingMethod,
+    totalWeight,
+    breakdown.freeShippingEligibleSubtotal,
+  );
+  const shippingFee = configuredShipping.shippingFee;
   const totalAmount = breakdown.physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
 
   await db.update(orders).set({
@@ -2009,17 +2008,13 @@ export async function createOrderWithSplit(data: {
   
   const totalWeight = calculateOrderItemWeight(data.items
     .filter((item) => item.productType === "physical" || item.productType === "gift"));
-  if (hasPhysical && data.shippingMethod === "west_malaysia") {
-    const shipResult = calculateWestMalaysiaShipping(totalWeight, freeShippingEligibleSubtotal);
-    shippingFee = shipResult.shippingFee;
-  } else if (hasPhysical && data.shippingMethod === "east_malaysia_poslaju") {
-    // V2.0.80: 东马 PosLaju 预收 RM50（2kg 内），打包后 API 计算实际运费
-    shippingFee = 50;
-  } else if (hasPhysical && data.shippingMethod === "east_malaysia_shopee") {
-    // V2.0.84: 东马 Shopee 运费固定 RM0
-    shippingFee = 0;
-  } else if (hasPhysical && data.shippingMethod === "lalamove") {
-    shippingFee = calculateLalamoveCheckoutCustomerShipping();
+  if (hasPhysical) {
+    const configuredShipping = await calculateConfiguredCheckoutShipping(
+      data.shippingMethod,
+      totalWeight,
+      freeShippingEligibleSubtotal,
+    );
+    shippingFee = configuredShipping.shippingFee;
   }
 
   // V2.0.78: Auto-deduct credit from customer balance (no manual input)
@@ -2574,6 +2569,12 @@ export async function updateOrderItems(orderId: number, items: Array<{
     shippingFee = calculateLalamoveCheckoutCustomerShipping();
   }
 
+  const configuredShipping = await calculateConfiguredCheckoutShipping(
+    target[0].shippingMethod,
+    totalWeight,
+    eligibleSubtotal,
+  );
+  shippingFee = configuredShipping.shippingFee;
   const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
     await db.update(orders).set({
     physicalSubtotal: physicalSubtotal.toFixed(2),
@@ -7330,6 +7331,56 @@ export async function getShippingRules() {
   return rows;
 }
 
+const CONTROLLED_SHIPPING_CONFIG_KEY = "controlled_shipping_v1";
+
+export async function getControlledShippingConfiguration(): Promise<ControlledShippingConfiguration> {
+  const db = await getDb();
+  if (!db) return DEFAULT_CONTROLLED_SHIPPING_CONFIGURATION;
+  const rows = await db.select().from(shippingConfigValues)
+    .where(eq(shippingConfigValues.configKey, CONTROLLED_SHIPPING_CONFIG_KEY)).limit(1);
+  const stored = rows[0]?.config as Partial<ControlledShippingConfiguration> | undefined;
+  return normalizeControlledShippingConfiguration(stored);
+}
+
+export async function updateControlledShippingConfiguration(
+  configuration: ControlledShippingConfiguration,
+  updatedBy?: string | null,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("数据库不可用，无法保存运费设置");
+  const normalized = normalizeControlledShippingConfiguration(configuration);
+  await db.insert(shippingConfigValues).values({
+    configKey: CONTROLLED_SHIPPING_CONFIG_KEY,
+    config: normalized,
+    updatedBy: updatedBy ?? null,
+  }).onDuplicateKeyUpdate({
+    set: { config: normalized, updatedBy: updatedBy ?? null, updatedAt: new Date() },
+  });
+  return normalized;
+}
+
+export async function calculateConfiguredCheckoutShipping(
+  shippingMethod: string | null | undefined,
+  totalWeight: number,
+  freeShippingEligibleSubtotal: number,
+) {
+  const config = await getControlledShippingConfiguration();
+  if (shippingMethod === "west_malaysia") {
+    const breakdown = calculateWestMalaysiaShippingBreakdown(totalWeight, freeShippingEligibleSubtotal, config.westMalaysia);
+    return { shippingFee: breakdown.shippingFee, breakdown, config };
+  }
+  if (shippingMethod === "east_malaysia_poslaju") {
+    return { shippingFee: config.eastMalaysiaPosLaju.checkoutPrepaidFee, breakdown: null, config };
+  }
+  if (shippingMethod === "east_malaysia_shopee" || shippingMethod === "east_malaysia") {
+    return { shippingFee: config.eastMalaysiaShopee.checkoutPrepaidFee, breakdown: null, config };
+  }
+  if (shippingMethod === "lalamove") {
+    return { shippingFee: calculateLalamoveCheckoutCustomerShipping(config.lalamove.companyBearingFee), breakdown: null, config };
+  }
+  return { shippingFee: 0, breakdown: null, config };
+}
+
 export async function getShippingRuleByZone(zone: string) {
   const db = await getDb();
   if (!db) return null;
@@ -7747,12 +7798,15 @@ export async function recalculateOrderTotals(orderId: number) {
   const extraCharge = Number(order[0].extraCharge || 0);
   const creditUsed = Number(order[0].creditUsed || 0);
   let shippingFee = Number(order[0].shippingFee || 0);
-  if (order[0].shippingMethod === "west_malaysia") {
-    shippingFee = calculateWestMalaysiaShipping(totalWeight, priceBreakdown.freeShippingEligibleSubtotal).shippingFee;
-  } else if (order[0].shippingMethod === "lalamove") {
-    shippingFee = calculateLalamoveCheckoutCustomerShipping();
-  } else if (order[0].shippingMethod === "self_pickup") {
+  if (order[0].shippingMethod === "self_pickup") {
     shippingFee = 0;
+  } else {
+    const configuredShipping = await calculateConfiguredCheckoutShipping(
+      order[0].shippingMethod,
+      totalWeight,
+      priceBreakdown.freeShippingEligibleSubtotal,
+    );
+    shippingFee = configuredShipping.shippingFee;
   }
   const paidAmount = Number(order[0].paidAmount || 0);
   const totalAmount = subtotal - promotionDiscount - totalDiscount + extraCharge + shippingFee - creditUsed;
@@ -8198,29 +8252,12 @@ export async function mallCheckout(data: {
   const totalWeight = calculateOrderItemWeight(normalItems);
   const thresholdSubtotal = mallShippingBreakdown.freeShippingEligibleSubtotal;
   // Calculate shipping fee based on method
-  let shippingFee = 0;
-  if (data.shippingMethod === "west_malaysia") {
-    if (thresholdSubtotal >= 150) {
-      // 满 RM150：10kg 以内免邮，超过 10kg 每公斤 RM3
-      shippingFee = totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3;
-    } else {
-      // 未满 RM150：10kg 以内 RM15，超过 10kg 每公斤 RM3
-      shippingFee = 15 + (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3);
-    }
-  } else if (data.shippingMethod === "east_malaysia_poslaju") {
-    // V2.0.80: 东马 PosLaju 预收 RM50（2kg 内），打包后 API 计算实际运费
-    shippingFee = 50;
-  } else if (data.shippingMethod === "east_malaysia_shopee") {
-    // V2.0.84: 东马 Shopee 运费固定 RM0，Shopee 平台自行向客户收取运费
-    shippingFee = 0;
-  } else if (data.shippingMethod === "east_malaysia") {
-    // 兼容旧数据：默认走 Shopee 规则（RM0）
-    shippingFee = 0;
-  } else if (data.shippingMethod === "self_pickup") {
-    shippingFee = 0;
-  } else if (data.shippingMethod === "lalamove") {
-    shippingFee = calculateLalamoveCheckoutCustomerShipping();
-  }
+  const configuredShipping = await calculateConfiguredCheckoutShipping(
+    data.shippingMethod,
+    totalWeight,
+    thresholdSubtotal,
+  );
+  let shippingFee = data.shippingMethod === "self_pickup" ? 0 : configuredShipping.shippingFee;
 
   // The mall preview is guidance only. Re-evaluate promotions on the server
   // immediately before this new order is created.
@@ -8578,6 +8615,12 @@ export async function addMallItemsToOrder(orderId: number, items: Array<{
     shippingFee = calculateLalamoveCheckoutCustomerShipping();
   }
 
+  const configuredShipping = await calculateConfiguredCheckoutShipping(
+    target[0].shippingMethod,
+    totalWeight,
+    eligibleSubtotal,
+  );
+  shippingFee = configuredShipping.shippingFee;
   const totalAmount = physicalSubtotal + membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed;
 
   // V2.1.14: Auto-recalculate order status after adding items
@@ -9149,6 +9192,7 @@ export async function splitUnpaidPhysicalOrder(input: {
       .where(inArray(products.id, productIds))
     : [];
   const categoryNameByProductId = new Map(categoryRows.map((row: any) => [row.productId, row.categoryNameZh]));
+  const shippingConfig = await getControlledShippingConfiguration();
   const calculateTotals = (items: Array<typeof allItems[number]>) => {
     const price = calculateOrderPriceBreakdown(items.map((item) => ({
       ...item,
@@ -9158,10 +9202,11 @@ export async function splitUnpaidPhysicalOrder(input: {
     const totalWeight = calculateOrderItemWeight(items
       .filter((item) => item.productType === "physical" || item.productType === "gift"));
     const shippingFee = source.shippingMethod === "west_malaysia"
-      ? calculateWestMalaysiaShipping(totalWeight, price.freeShippingEligibleSubtotal).shippingFee
-      : source.shippingMethod === "east_malaysia_poslaju" ? 50
-        : source.shippingMethod === "lalamove" ? calculateLalamoveCheckoutCustomerShipping()
-          : 0;
+      ? calculateWestMalaysiaShippingBreakdown(totalWeight, price.freeShippingEligibleSubtotal, shippingConfig.westMalaysia).shippingFee
+      : source.shippingMethod === "east_malaysia_poslaju" ? shippingConfig.eastMalaysiaPosLaju.checkoutPrepaidFee
+      : source.shippingMethod === "east_malaysia_shopee" ? shippingConfig.eastMalaysiaShopee.checkoutPrepaidFee
+          : source.shippingMethod === "lalamove" ? calculateLalamoveCheckoutCustomerShipping(shippingConfig.lalamove.companyBearingFee)
+            : 0;
     return { physicalSubtotal: price.physicalSubtotal, membershipSubtotal: price.membershipSubtotal, totalWeight, shippingFee, totalAmount: price.physicalSubtotal + price.membershipSubtotal + shippingFee };
   };
   const retainedTotals = calculateTotals(retainedItems);
@@ -12163,18 +12208,19 @@ export async function cancelPackingOrderItem(data: {
     const discountAmount = Number(order.discountAmount || 0);
     const extraCharge = Number(order.extraCharge || 0);
     const creditUsed = Number(order.creditUsed || 0);
+    const shippingConfig = await getControlledShippingConfiguration();
     let shippingFee = Number(order.shippingFee || 0);
     let estimatedChargeableWeight = 0;
     if (order.shippingMethod === 'west_malaysia') {
-      const shipping = calculateWestMalaysiaShippingBreakdown(estimatedWeight, breakdown.freeShippingEligibleSubtotal);
+      const shipping = calculateWestMalaysiaShippingBreakdown(estimatedWeight, breakdown.freeShippingEligibleSubtotal, shippingConfig.westMalaysia);
       shippingFee = shipping.shippingFee;
       estimatedChargeableWeight = shipping.extraWeightKg;
     } else if (order.shippingMethod === 'lalamove') {
-      shippingFee = calculateLalamoveCheckoutCustomerShipping();
+      shippingFee = calculateLalamoveCheckoutCustomerShipping(shippingConfig.lalamove.companyBearingFee);
     } else if (order.shippingMethod === 'self_pickup' || order.shippingMethod === 'east_malaysia_shopee') {
-      shippingFee = 0;
+      shippingFee = order.shippingMethod === 'east_malaysia_shopee' ? shippingConfig.eastMalaysiaShopee.checkoutPrepaidFee : 0;
     } else if (order.shippingMethod === 'east_malaysia_poslaju') {
-      shippingFee = 50;
+      shippingFee = shippingConfig.eastMalaysiaPosLaju.checkoutPrepaidFee;
     }
     const revisedTotal = Number((breakdown.physicalSubtotal + breakdown.membershipSubtotal - promotionDiscount - discountAmount + extraCharge + shippingFee - creditUsed).toFixed(2));
     const paymentRows = await tx.select().from(orderPayments).where(eq(orderPayments.orderId, data.orderId));
@@ -13443,7 +13489,8 @@ export function processActualWeight(
   freeShippingEligibleSubtotal: number,
   isStandalone: boolean,
   standaloneMethod: "fixed_fee" | "free_shipping" | null,
-  standaloneFixedFee: number
+  standaloneFixedFee: number,
+  westMalaysiaConfig: ControlledShippingConfiguration["westMalaysia"] = DEFAULT_CONTROLLED_SHIPPING_CONFIGURATION.westMalaysia,
 ): {
   actualShippingFee: number;
   difference: number;
@@ -13466,7 +13513,11 @@ export function processActualWeight(
   }
 
   // 西马实际重量必须与结账使用同一首10kg、续重向上取整与免邮资格规则。
-  actualShippingFee = calculateWestMalaysiaShipping(actualWeightKg, freeShippingEligibleSubtotal).shippingFee;
+  actualShippingFee = calculateWestMalaysiaShippingBreakdown(
+    actualWeightKg,
+    freeShippingEligibleSubtotal,
+    westMalaysiaConfig,
+  ).shippingFee;
 
   const difference = actualShippingFee - customerPaidShipping;
   // V2.1.26: Remove actualWeightKg > 10 condition - any difference should trigger special order
@@ -19620,18 +19671,13 @@ export async function updateOrderShippingAddress(orderNumber: string, token: str
   });
   const freeShippingEligibleSubtotal = priceBreakdown.freeShippingEligibleSubtotal;
 
-  // Calculate shipping fee
-  let shippingFee = 0;
-  if (shippingMethod === 'west_malaysia') {
-    shippingFee = calculateWestMalaysiaShipping(totalWeight, freeShippingEligibleSubtotal).shippingFee;
-  } else if (shippingMethod === 'east_malaysia' || shippingMethod === 'east_malaysia_shopee') {
-    // V2.0.84: 东马 Shopee 运费固定 RM0
-    shippingFee = 0;
-  } else if (shippingMethod === 'self_pickup') {
-    shippingFee = 0;
-  } else if (shippingMethod === 'lalamove') {
-    shippingFee = calculateLalamoveCheckoutCustomerShipping();
-  }
+  // Calculate shipping fee from the administrator-controlled configuration.
+  const configuredShipping = await calculateConfiguredCheckoutShipping(
+    shippingMethod,
+    totalWeight,
+    freeShippingEligibleSubtotal,
+  );
+  const shippingFee = shippingMethod === 'self_pickup' ? 0 : configuredShipping.shippingFee;
 
   // Recalculate total
   const subtotal = parseFloat(order[0].physicalSubtotal || '0');

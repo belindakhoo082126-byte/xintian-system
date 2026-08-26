@@ -1,6 +1,5 @@
 import { useI18n } from "@/contexts/I18nContext";
 import { ITEM_SOURCE_LABELS } from "@shared/const";
-import { WEST_MALAYSIA_V22_SHIPPING } from "@shared/shippingV22";
 import { getOrderShippingDisplay } from "@shared/orderDocumentShippingRules";
 import { getOrderDocumentMerchandiseBreakdown, getOrderDocumentPaymentSummary } from "@shared/orderDocumentFinancialRules";
 
@@ -119,10 +118,7 @@ export function OrderDocument({
   });
   const { isWestMalaysia, extraWeightKg, extraWeightFee, baseShippingFee, isFreeShipping, rows: shippingRows } = shippingDisplay;
   const actualWeight = parseFloat(o.actualWeight || "0");
-  const actualExtraWeightKg = isWestMalaysia && actualWeight > 0
-    ? Math.max(0, Math.ceil(actualWeight - WEST_MALAYSIA_V22_SHIPPING.includedWeightKg))
-    : 0;
-  const actualExtraWeightFee = actualExtraWeightKg * WEST_MALAYSIA_V22_SHIPPING.additionalKgFee;
+  const actualShippingFee = parseFloat(o.actualShippingFee || "0");
   const paymentSummary = getOrderDocumentPaymentSummary({ baseOrderTotal: totalAmount, payments: o.payments || [] });
   const hasConfirmedSupplementalShipping = paymentSummary.confirmedSupplementalShipping > 0;
 
@@ -262,14 +258,14 @@ export function OrderDocument({
         {isWestMalaysia && estimatedWeight > 0 && (
           <div style={{ ...gridRow, marginTop: "4px" }}>
             <div><span style={labelStyle}>{translate("估计重量", "Estimated Weight")}:</span> {estimatedWeight.toFixed(2)} kg</div>
-            <div><span style={labelStyle}>{translate("首10kg资格", "First 10kg Eligibility")}:</span> {isFreeShipping ? translate("免运", "Free Shipping") : translate("基础运费", "Base Shipping")}</div>
-            <div><span style={labelStyle}>{translate("续重", "Extra Weight")}:</span> {extraWeightKg > 0 ? `${extraWeightKg} kg × RM ${WEST_MALAYSIA_V22_SHIPPING.additionalKgFee}` : translate("无", "None")}</div>
+            <div><span style={labelStyle}>{translate("首段运费资格", "Base Shipping Eligibility")}:</span> {isFreeShipping ? translate("免运", "Free Shipping") : translate("基础运费", "Base Shipping")}</div>
+            <div><span style={labelStyle}>{translate("续重重量", "Extra Weight")}:</span> {extraWeightKg > 0 ? `${extraWeightKg} kg` : translate("无", "None")}</div>
           </div>
         )}
         {isWestMalaysia && actualWeight > 0 && (
           <div style={{ ...gridRow, marginTop: "4px" }}>
             <div><span style={labelStyle}>{translate("实际重量", "Actual Weight")}:</span> {actualWeight.toFixed(2)} kg</div>
-            <div><span style={labelStyle}>{translate("实际续重", "Actual Extra Weight")}:</span> {actualExtraWeightKg > 0 ? `${actualExtraWeightKg} kg × RM ${WEST_MALAYSIA_V22_SHIPPING.additionalKgFee}` : translate("无", "None")}</div>
+            <div><span style={labelStyle}>{translate("实际配送费用", "Actual Shipping Fee")}:</span> RM {actualShippingFee.toFixed(2)}</div>
             <div><span style={labelStyle}>{translate("实际补差价", "Actual Shipping Difference")}:</span> {hasConfirmedSupplementalShipping ? `RM ${paymentSummary.confirmedSupplementalShipping.toFixed(2)}` : translate("未产生／待确认", "None / pending")}</div>
           </div>
         )}
@@ -379,12 +375,6 @@ export function OrderDocument({
           ))}
           {hasConfirmedSupplementalShipping && (
             <>
-              {actualExtraWeightKg > 0 && (
-                <div style={amtRow}>
-                  <span>{translate("实际续重运费", "Actual Extra Weight Shipping")} ({actualExtraWeightKg}kg × RM {WEST_MALAYSIA_V22_SHIPPING.additionalKgFee.toFixed(2)})</span>
-                  <span>RM {actualExtraWeightFee.toFixed(2)}</span>
-                </div>
-              )}
               <div style={{ ...amtRow, color: C.orange, fontWeight: 600 }}>
                 <span>{translate("实际补差价（已确认）", "Actual Shipping Difference (Confirmed)")}</span>
                 <span>+RM {paymentSummary.confirmedSupplementalShipping.toFixed(2)}</span>

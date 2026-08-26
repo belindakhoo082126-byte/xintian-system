@@ -17,7 +17,8 @@ import { MallThemeDecorations } from "@/components/MallThemeArtwork";
 import { useI18n } from "@/contexts/I18nContext";
 import { calculateOrderPriceBreakdown } from "@shared/orderPricing";
 import { calculateOrderItemWeight } from "@shared/orderItemWeight";
-import { calculateLalamoveCheckoutCustomerShipping } from "@shared/shippingV22";
+import { calculateLalamoveCheckoutCustomerShipping, calculateWestMalaysiaShippingBreakdown } from "@shared/shippingV22";
+import { DEFAULT_CONTROLLED_SHIPPING_CONFIGURATION } from "@shared/shippingConfiguration";
 
 export default function MallCheckout() {
   const { translate } = useI18n();
@@ -53,6 +54,8 @@ export default function MallCheckout() {
   const utils = trpc.useUtils();
   const { data: settings } = trpc.mall.settings.useQuery();
   const { data: paymentMethods } = trpc.paymentMethods.listEnabled.useQuery();
+  const { data: checkoutShippingConfiguration } = trpc.shippingRules.checkoutConfiguration.useQuery();
+  const shippingConfiguration = checkoutShippingConfiguration ?? DEFAULT_CONTROLLED_SHIPPING_CONFIGURATION;
   const theme = getMallTheme(settings?.activeTheme, settings?.customThemeColors);
 
   // smartPaste is a query, use lazy fetch
@@ -154,26 +157,22 @@ export default function MallCheckout() {
   const regularSubtotal = subtotal - specialSubtotal;
   const blocksPlantingMediumFreeShippingCheckout = form.shippingMethod === "west_malaysia"
     && priceBreakdown.blocksFreeShippingPlantingMediumCombination
-    && thresholdSubtotal >= 150;
+    && thresholdSubtotal >= shippingConfiguration.westMalaysia.freeShippingThreshold;
   
   let shippingFee = 0;
   let standaloneShippingFee = 0;
   if (form.shippingMethod === "west_malaysia") {
-    if (thresholdSubtotal >= 150) {
-      // 满 RM150：10kg 以内免邮，超过 10kg 每公斤 RM3
-      shippingFee = totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3;
-    } else {
-      // 未满 RM150：10kg 以内 RM15，超过 10kg 每公斤 RM3
-      shippingFee = 15 + (totalWeight <= 10 ? 0 : Math.ceil(totalWeight - 10) * 3);
-    }
+    shippingFee = calculateWestMalaysiaShippingBreakdown(
+      totalWeight,
+      thresholdSubtotal,
+      shippingConfiguration.westMalaysia,
+    ).shippingFee;
   } else if (form.shippingMethod === "east_malaysia" || form.shippingMethod === "east_malaysia_shopee") {
-    // V2.0.84: 东马 Shopee 运费固定 RM0
-    shippingFee = 0;
+    shippingFee = shippingConfiguration.eastMalaysiaShopee.checkoutPrepaidFee;
   } else if (form.shippingMethod === "east_malaysia_poslaju") {
-    // V2.0.84: 东马 PosLaju 预收 RM50
-    shippingFee = 50;
+    shippingFee = shippingConfiguration.eastMalaysiaPosLaju.checkoutPrepaidFee;
   } else if (form.shippingMethod === "lalamove") {
-    shippingFee = calculateLalamoveCheckoutCustomerShipping();
+    shippingFee = calculateLalamoveCheckoutCustomerShipping(shippingConfiguration.lalamove.companyBearingFee);
   }
   // Add standalone shipping fees
   standaloneItems.forEach(i => {
@@ -215,7 +214,7 @@ export default function MallCheckout() {
   function handleCheckout() {
     if (cart.length === 0) { toast.error("购物车为空"); return; }
     if (blocksPlantingMediumFreeShippingCheckout) {
-      toast.error("订单同时包含植物与种植介质，达到RM150免邮门槛时请取消种植介质或另开订单后再结账。");
+      toast.error(`订单同时包含植物与种植介质，达到RM${shippingConfiguration.westMalaysia.freeShippingThreshold}免邮门槛时请取消种植介质或另开订单后再结账。`);
       return;
     }
     if (secureAddOnOrder) {
@@ -479,21 +478,21 @@ export default function MallCheckout() {
               <label className="flex items-start justify-between gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2 sm:items-center">
                 <div className="flex min-w-0 items-start gap-3 sm:items-center">
                   <RadioGroupItem value="west_malaysia" />
-                  <div><p className="font-medium text-sm">西马配送</p><p className="text-xs text-muted-foreground">普通商品满RM150首10kg免邮；植物与种植介质同单达到门槛时，请取消种植介质或另开订单；超10kg续重RM3/kg</p></div>
+                  <div><p className="font-medium text-sm">西马配送</p><p className="text-xs text-muted-foreground">普通商品满RM{shippingConfiguration.westMalaysia.freeShippingThreshold}首{shippingConfiguration.westMalaysia.includedWeightKg}kg免邮；植物与种植介质同单达到门槛时，请取消种植介质或另开订单；超重续费RM{shippingConfiguration.westMalaysia.additionalKgFee}/kg</p></div>
                 </div>
                 <span className="shrink-0 font-semibold">{shippingFee === 0 ? t("免邮", "Free") : `RM ${shippingFee}`}</span>
               </label>
               <label className="flex items-start justify-between gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2 sm:items-center">
                 <div className="flex min-w-0 items-start gap-3 sm:items-center">
                   <RadioGroupItem value="east_malaysia_poslaju" />
-                  <div><p className="font-medium text-sm">东马 PosLaju</p><p className="text-xs text-muted-foreground">预收 RM50，打包后按实际运费结算</p></div>
+                  <div><p className="font-medium text-sm">东马 PosLaju</p><p className="text-xs text-muted-foreground">预收 RM{shippingConfiguration.eastMalaysiaPosLaju.checkoutPrepaidFee.toFixed(2)}，{shippingConfiguration.eastMalaysiaPosLaju.settlementNote}</p></div>
                 </div>
                 <span className="shrink-0 font-semibold">RM 50</span>
               </label>
               <label className="flex items-start justify-between gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent mb-2 sm:items-center">
                 <div className="flex min-w-0 items-start gap-3 sm:items-center">
                   <RadioGroupItem value="east_malaysia_shopee" />
-                  <div><p className="font-medium text-sm">东马 Shopee</p><p className="text-xs text-muted-foreground">运费由 Shopee 平台收取，本系统不收运费</p></div>
+                  <div><p className="font-medium text-sm">东马 Shopee</p><p className="text-xs text-muted-foreground">系统预收 RM{shippingConfiguration.eastMalaysiaShopee.checkoutPrepaidFee.toFixed(2)}，{shippingConfiguration.eastMalaysiaShopee.settlementNote}</p></div>
                 </div>
                 <span className="shrink-0 font-semibold text-emerald-600">RM 0</span>
               </label>
@@ -507,7 +506,7 @@ export default function MallCheckout() {
               <label className="flex items-start justify-between gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent sm:items-center">
                 <div className="flex min-w-0 items-start gap-3 sm:items-center">
                   <RadioGroupItem value="lalamove" />
-                  <div className="min-w-0"><p className="font-medium text-sm">Lalamove</p><p className="text-xs text-muted-foreground">{t("公司先承担RM15；完成打包后，如实际配送费用超过RM15才补收差额。", "The company bears the first RM15. After packing, only the actual delivery-fee excess above RM15 is payable.")}</p></div>
+                  <div className="min-w-0"><p className="font-medium text-sm">Lalamove</p><p className="text-xs text-muted-foreground">{shippingConfiguration.lalamove.settlementNote}</p></div>
                 </div>
                 <span className="shrink-0 font-semibold text-emerald-600">RM 0</span>
               </label>
@@ -560,7 +559,7 @@ export default function MallCheckout() {
             )}
             {blocksPlantingMediumFreeShippingCheckout && (
               <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                此订单同时有植物与种植介质，达到RM150免邮门槛时不能继续结账。请取消种植介质或另开订单。
+                此订单同时有植物与种植介质，达到RM{shippingConfiguration.westMalaysia.freeShippingThreshold}免邮门槛时不能继续结账。请取消种植介质或另开订单。
               </div>
             )}
             <div className="border-t pt-2 flex justify-between text-sm">
@@ -588,7 +587,7 @@ export default function MallCheckout() {
                   </>
                 ) : (
                   <div className="flex justify-between text-sm">
-                    <span>运费</span><span>{form.shippingMethod === "lalamove" ? "RM 0（公司先承担RM15，实际超额后补差价）" : totalShipping === 0 ? "免邮" : `RM ${totalShipping.toFixed(2)}`}</span>
+                    <span>运费</span><span>{form.shippingMethod === "lalamove" ? `RM 0（公司先承担RM${shippingConfiguration.lalamove.companyBearingFee.toFixed(2)}，实际超额后补差价）` : totalShipping === 0 ? "免邮" : `RM ${totalShipping.toFixed(2)}`}</span>
                   </div>
                 )}
                 <div className="border-t pt-2 flex justify-between font-semibold text-lg">

@@ -7,7 +7,9 @@ describe("ShippingRules 系统设置同步", () => {
 
     expect(source).toContain("getWestMalaysiaFreeShippingEligibilitySpecification");
     expect(source).toContain("正式运费规则 V2.2（系统计算口径）");
-    expect(source).toContain("系统固定运费规则（自动同步至结账、订单与包货）");
+    expect(source).toContain("统一生效运费参数（自动同步至结账、订单、包货与单据）");
+    expect(source).toContain("updateControlled");
+    expect(source).toContain("旧配送分区资料（仅显示／供应商资讯）");
     expect(source).toContain("usesSystemManagedShippingCalculation");
   });
 
@@ -16,5 +18,6 @@ describe("ShippingRules 系统设置同步", () => {
 
     expect(source).toContain("getLalamoveSettlementSpecification");
     expect(source).toContain("Lalamove 结算规则（系统计算口径）");
+    expect(source).toContain("companyBearingFee");
   });
 });

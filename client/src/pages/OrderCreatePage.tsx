@@ -24,6 +24,7 @@ import { resolveManualOrderVariantPrice } from "@shared/manualOrderVariantPricin
 import { calculateOrderItemWeight, resolveOrderItemUnitWeight } from "@shared/orderItemWeight";
 import { calculateOrderPriceBreakdown } from "@shared/orderPricing";
 import { isRepotPotItem } from "@shared/repotPotCategories";
+import { DEFAULT_CONTROLLED_SHIPPING_CONFIGURATION } from "@shared/shippingConfiguration";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -206,6 +207,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
 
   // ===== Queries =====
   const utils = trpc.useUtils();
+  const { data: controlledShippingConfiguration } = trpc.shippingRules.controlled.useQuery();
+  const shippingConfiguration = controlledShippingConfiguration ?? DEFAULT_CONTROLLED_SHIPPING_CONFIGURATION;
 
   // Customer search
   const { data: customerSearchResults } = trpc.customers.list.useQuery(
@@ -363,7 +366,7 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
   const blocksPlantingMediumFreeShippingCheckout = !isWalkIn
     && shippingMethod === "west_malaysia"
     && orderPriceBreakdown.blocksFreeShippingPlantingMediumCombination
-    && freeShippingEligibleSubtotal >= 150;
+    && freeShippingEligibleSubtotal >= shippingConfiguration.westMalaysia.freeShippingThreshold;
 
   // Shipping calculation
   const totalWeight = useMemo(() => {
@@ -539,8 +542,8 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
     }
     if (blocksPlantingMediumFreeShippingCheckout) {
       toast.error(translate(
-        "订单同时包含植物与种植介质，达到RM150免邮门槛时请取消种植介质或另开订单后再结账。",
-        "This order combines plants and planting medium. At the RM150 free-shipping threshold, remove the planting medium or create a separate order before checkout.",
+        `订单同时包含植物与种植介质，达到RM${shippingConfiguration.westMalaysia.freeShippingThreshold}免邮门槛时请取消种植介质或另开订单后再结账。`,
+        `This order combines plants and planting medium. At the RM${shippingConfiguration.westMalaysia.freeShippingThreshold} free-shipping threshold, remove the planting medium or create a separate order before checkout.`,
       ));
       return;
     }
@@ -1437,12 +1440,12 @@ export default function OrderCreatePage({ orderCategory = "local" }: { orderCate
             )}
             {!isWalkIn && shippingMethod === "lalamove" && (
               <div className="text-xs text-muted-foreground">
-                {translate("Lalamove：公司先承担RM15；包货后实际配送费用超过RM15时，才向客户补收差额。", "Lalamove: the company bears the first RM15; only the actual delivery-fee excess above RM15 is collected after packing.")}
+                {translate(`Lalamove：${shippingConfiguration.lalamove.settlementNote}`, `Lalamove: the company bears the first RM${shippingConfiguration.lalamove.companyBearingFee.toFixed(2)}; only the actual delivery-fee excess is collected after packing.`)}
               </div>
             )}
             {blocksPlantingMediumFreeShippingCheckout && (
               <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                {translate("此订单同时有植物与种植介质，达到RM150免邮门槛时不能继续结账。请取消种植介质或另开订单。", "This order combines plants and planting medium at the RM150 free-shipping threshold. Remove the planting medium or create a separate order before checkout.")}
+                {translate(`此订单同时有植物与种植介质，达到RM${shippingConfiguration.westMalaysia.freeShippingThreshold}免邮门槛时不能继续结账。请取消种植介质或另开订单。`, `This order combines plants and planting medium at the RM${shippingConfiguration.westMalaysia.freeShippingThreshold} free-shipping threshold. Remove the planting medium or create a separate order before checkout.`)}
               </div>
             )}
             {creditUsedNum > 0 && (

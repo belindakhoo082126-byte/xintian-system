@@ -6,7 +6,7 @@ import { publicProcedure, adminProcedure, protectedProcedure, shippingProcedure,
 import { hasRepeatedVariantKeyword } from "../shared/variantDrafts";
 import { getCompanyLogoUrl } from "../shared/brandAssets";
 import { normalizeNotificationLogChannel } from "../shared/notificationLogChannel";
-import { calculateLalamoveActualCustomerBalance, calculateLalamoveCheckoutCustomerShipping, LALAMOVE_COMPANY_BEARING } from "../shared/shippingV22";
+import { calculateLalamoveActualCustomerBalance, calculateLalamoveCheckoutCustomerShipping, calculateWestMalaysiaShippingBreakdown, LALAMOVE_COMPANY_BEARING } from "../shared/shippingV22";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -2267,27 +2267,26 @@ export const appRouter = router({
       }))
       .query(async ({ input }) => {
         const method = input.shippingMethod || "west_malaysia";
+        const config = await db.getControlledShippingConfiguration();
         if (method === "east_malaysia_poslaju") {
-          // V2.0.80: 东马 PosLaju 预收 RM50
-          return { shippingFee: 50, isFreeShipping: false, threshold: 0, shippingMethod: method };
+          return { shippingFee: config.eastMalaysiaPosLaju.checkoutPrepaidFee, isFreeShipping: false, threshold: 0, shippingMethod: method, settlementNote: config.eastMalaysiaPosLaju.settlementNote };
         } else if (method === "east_malaysia_shopee" || method === "east_malaysia") {
-          // V2.0.84: 东马 Shopee 运费固定 RM0
-          return { shippingFee: 0, isFreeShipping: true, threshold: 0, shippingMethod: method };
+          return { shippingFee: config.eastMalaysiaShopee.checkoutPrepaidFee, isFreeShipping: config.eastMalaysiaShopee.checkoutPrepaidFee === 0, threshold: 0, shippingMethod: method, settlementNote: config.eastMalaysiaShopee.settlementNote };
         } else if (method === "self_pickup") {
           return { shippingFee: 0, isFreeShipping: false, threshold: 0, shippingMethod: method };
         } else if (method === "lalamove") {
           return {
-            shippingFee: calculateLalamoveCheckoutCustomerShipping(),
+            shippingFee: calculateLalamoveCheckoutCustomerShipping(config.lalamove.companyBearingFee),
             isFreeShipping: false,
             threshold: 0,
             shippingMethod: method,
-            companyBearing: LALAMOVE_COMPANY_BEARING,
-            settlementNote: `公司先承担RM${LALAMOVE_COMPANY_BEARING}；实际费用超过RM${LALAMOVE_COMPANY_BEARING}后才向客户补收差额`,
+            companyBearing: config.lalamove.companyBearingFee,
+            settlementNote: config.lalamove.settlementNote,
           };
         }
         // West Malaysia (default)
-        const result = db.calculateWestMalaysiaShipping(input.totalWeight, input.orderTotal);
-        return { ...result, threshold: 150, shippingMethod: method };
+        const result = calculateWestMalaysiaShippingBreakdown(input.totalWeight, input.orderTotal, config.westMalaysia);
+        return { shippingFee: result.shippingFee, isFreeShipping: result.freeShipping, extraWeightCharge: result.extraWeightCharge, threshold: config.westMalaysia.freeShippingThreshold, shippingMethod: method };
       }),
     // V2.0.33: Send checkout link to Messenger
     sendCheckout: adminProcedure
@@ -3252,6 +3251,34 @@ export const appRouter = router({
   // Shipping Rules (运费规则)
   // ===========================================================================
   shippingRules: router({
+    checkoutConfiguration: publicProcedure.query(async () => {
+      return await db.getControlledShippingConfiguration();
+    }),
+    controlled: adminProcedure.query(async () => {
+      return await db.getControlledShippingConfiguration();
+    }),
+    updateControlled: adminProcedure.input(z.object({
+      westMalaysia: z.object({
+        freeShippingThreshold: z.number().nonnegative(),
+        includedWeightKg: z.number().positive(),
+        baseFeeBelowThreshold: z.number().nonnegative(),
+        additionalKgFee: z.number().nonnegative(),
+      }),
+      eastMalaysiaPosLaju: z.object({
+        checkoutPrepaidFee: z.number().nonnegative(),
+        settlementNote: z.string().min(1).max(500),
+      }),
+      eastMalaysiaShopee: z.object({
+        checkoutPrepaidFee: z.number().nonnegative(),
+        settlementNote: z.string().min(1).max(500),
+      }),
+      lalamove: z.object({
+        companyBearingFee: z.number().nonnegative(),
+        settlementNote: z.string().min(1).max(500),
+      }),
+    })).mutation(async ({ input, ctx }) => {
+      return await db.updateControlledShippingConfiguration(input, ctx.user.name ?? ctx.user.openId);
+    }),
     list: adminProcedure.query(async () => {
       return await db.getShippingRules();
     }),
@@ -5445,8 +5472,9 @@ export const appRouter = router({
       // Lalamove: staff enters the actual delivery fee. The company always bears
       // the first RM15; only the remaining excess is a customer balance.
       if (shippingMethod === "lalamove") {
-        const companyBearing = LALAMOVE_COMPANY_BEARING;
-        const settlement = calculateLalamoveActualCustomerBalance(input.actualWeight); // actual fee is entered in this field for Lalamove
+        const shippingConfig = await db.getControlledShippingConfiguration();
+        const companyBearing = shippingConfig.lalamove.companyBearingFee;
+        const settlement = calculateLalamoveActualCustomerBalance(input.actualWeight, companyBearing); // actual fee is entered in this field for Lalamove
         result = {
           actualShippingFee: settlement.actualShippingFee,
           difference: settlement.customerBalance,
@@ -5468,13 +5496,15 @@ export const appRouter = router({
       } else {
         // 西马实际重量以结账时同一套免邮资格金额重算，避免特价或种植介质改变结果。
         const freeShippingEligibleSubtotal = await db.getOrderFreeShippingEligibleSubtotal(input.orderId);
+        const shippingConfig = await db.getControlledShippingConfiguration();
         result = db.processActualWeight(
           input.actualWeight,
           customerPaidShipping,
           freeShippingEligibleSubtotal,
           false,
           null,
-          0
+          0,
+          shippingConfig.westMalaysia,
         );
       }
       

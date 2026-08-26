@@ -61,6 +61,9 @@ export default function PackingDetail() {
   const { data: mergeCandidates } = trpc.packing.mergeCandidates.useQuery({ orderId }, { enabled: !!orderId });
   const { data: remarks } = trpc.orderRemarks.list.useQuery({ orderId });
   const { data: repots } = trpc.repots.list.useQuery({ orderId });
+  const { data: shippingConfiguration } = trpc.shippingRules.controlled.useQuery();
+  const westMalaysiaThreshold = shippingConfiguration?.westMalaysia.freeShippingThreshold ?? 150;
+  const lalamoveCompanyBearing = shippingConfiguration?.lalamove.companyBearingFee ?? 15;
 
   const [shippingMode, setShippingMode] = useState<"full" | "partial">("full");
   const [exceptionDialogOpen, setExceptionDialogOpen] = useState(false);
@@ -1451,7 +1454,7 @@ export default function PackingDetail() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">{translate("免邮状态", "Free Shipping")}: </span>
-                  <span className="font-medium">{(detail.shippingMethod === "west_malaysia" || detail.shippingMethod === "lalamove") ? (Number((detail as any).physicalSubtotal || 0) >= 150 ? translate("是（满RM150免邮）", "Yes (Free shipping over RM150)") : translate("否（未满RM150）", "No (Under RM150)")) : translate("不适用", "N/A")}</span>
+                  <span className="font-medium">{detail.shippingMethod === "west_malaysia" ? (Number((detail as any).physicalSubtotal || 0) >= westMalaysiaThreshold ? translate(`是（满RM${westMalaysiaThreshold}免邮）`, `Yes (free shipping over RM${westMalaysiaThreshold})`) : translate(`否（未满RM${westMalaysiaThreshold}）`, `No (under RM${westMalaysiaThreshold})`)) : translate("不适用", "N/A")}</span>
                 </div>
               </div>
             )}
@@ -1474,7 +1477,7 @@ export default function PackingDetail() {
                   />
                   {d.shippingMethod === "lalamove" && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      {translate("公司承担 RM15 + 客户已付 RM" + (Number(d.customerPaidShipping || d.shippingFee || 0)).toFixed(0), "Company bears RM15 + Customer paid RM" + (Number(d.customerPaidShipping || d.shippingFee || 0)).toFixed(0))}
+                      {translate(`公司承担 RM${lalamoveCompanyBearing.toFixed(2)} + 客户已付 RM${Number(d.customerPaidShipping || d.shippingFee || 0).toFixed(2)}`, `Company bears RM${lalamoveCompanyBearing.toFixed(2)} + Customer paid RM${Number(d.customerPaidShipping || d.shippingFee || 0).toFixed(2)}`)}
                     </p>
                   )}
                 </div>

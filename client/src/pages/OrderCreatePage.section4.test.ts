@@ -50,11 +50,12 @@ describe("OrderCreatePage 区域四", () => {
     expect(source).toContain("disabled={manualItems.length === 0 || hasStockShortage || blocksPlantingMediumFreeShippingCheckout}");
   });
 
-  it("Lalamove摘要明确说明公司先承担RM15、实际超额后才补差价", () => {
+  it("Lalamove摘要引用管理员公司承担金额并保留实际超额补收说明", () => {
     const source = readFileSync(new URL("./OrderCreatePage.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("公司先承担RM15");
-    expect(source).toContain("实际配送费用超过RM15时");
+    expect(source).toContain("shippingConfiguration.lalamove.settlementNote");
+    expect(source).toContain("shippingConfiguration.lalamove.companyBearingFee");
+    expect(source).toContain("only the actual delivery-fee excess is collected after packing");
   });
 
   it("换盆备注以正式花盆分类识别区域四商品，并兼容旧isPot标记", () => {

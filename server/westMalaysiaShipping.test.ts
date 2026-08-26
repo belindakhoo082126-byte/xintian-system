@@ -45,4 +45,21 @@ describe("西马首10kg与续重运费", () => {
       specialOrderType: "pending_refund",
     });
   });
+
+  it("管理员调整门槛、首段重量、基础费及续重后，结账与实际重量采用同一参数", () => {
+    const configuredWestMalaysia = {
+      freeShippingThreshold: 180,
+      includedWeightKg: 12,
+      baseFeeBelowThreshold: 18,
+      additionalKgFee: 4,
+    };
+    const checkout = calculateWestMalaysiaShippingBreakdown(14, 180, configuredWestMalaysia);
+    expect(checkout).toMatchObject({ shippingFee: 8, freeShipping: true, extraWeightKg: 2 });
+    expect(processActualWeight(16, checkout.shippingFee, 180, false, null, 0, configuredWestMalaysia)).toMatchObject({
+      actualShippingFee: 16,
+      difference: 8,
+      needsSpecialOrder: true,
+      specialOrderType: "pending_shipping",
+    });
+  });
 });

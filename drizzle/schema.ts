@@ -1260,6 +1260,23 @@ export type ShippingRule = typeof shippingRules.$inferSelect;
 export type InsertShippingRule = typeof shippingRules.$inferInsert;
 
 // ============================================================================
+// Controlled Shipping Configuration (受控运费参数)
+// ============================================================================
+// Numeric parameters that administrators may change. Protected eligibility and
+// settlement safeguards remain code-enforced and are intentionally not stored
+// as editable flags here.
+export const shippingConfigValues = mysqlTable("shipping_config_values", {
+  id: int("id").autoincrement().primaryKey(),
+  configKey: varchar("configKey", { length: 64 }).notNull().unique(),
+  config: json("config").notNull(),
+  updatedBy: varchar("updatedBy", { length: 255 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ShippingConfigValue = typeof shippingConfigValues.$inferSelect;
+export type InsertShippingConfigValue = typeof shippingConfigValues.$inferInsert;
+
+// ============================================================================
 // Shipping Providers (物流供应商配置)
 // ============================================================================
 

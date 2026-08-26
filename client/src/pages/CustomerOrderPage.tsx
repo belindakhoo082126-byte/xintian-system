@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Package, Truck, MapPin, Phone, User, CheckCircle2, Clock, ExternalLink, Leaf, AlertCircle, RefreshCw, MapPinCheck, Upload, Copy, QrCode, University, Banknote, ShoppingBag, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { WEST_MALAYSIA_V22_SHIPPING } from "@shared/shippingV22";
+import { DEFAULT_CONTROLLED_SHIPPING_CONFIGURATION } from "@shared/shippingConfiguration";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   // Local order statuses (mapped from server Chinese labels)
@@ -92,6 +92,8 @@ export default function CustomerOrderPage(props: any) {
   const [repottingEntries, setRepottingEntries] = useState<Array<{ plantName: string; potName: string; quantity: number }>>([]);
   const utils = trpc.useUtils();
   const { data: paymentMethods } = trpc.paymentMethods.listEnabled.useQuery();
+  const { data: checkoutShippingConfiguration } = trpc.shippingRules.checkoutConfiguration.useQuery();
+  const shippingConfiguration = checkoutShippingConfiguration ?? DEFAULT_CONTROLLED_SHIPPING_CONFIGURATION;
 
   const submitRemarkMutation = trpc.publicOrder.updateRemark.useMutation({
     onSuccess: () => {
@@ -128,8 +130,8 @@ export default function CustomerOrderPage(props: any) {
   const hasAddress = !!(o?.shippingAddress);
   const estimatedWeight = Number(o?.estimatedWeight || o?.totalWeight || 0);
   const isWestMalaysia = o?.shippingMethod === "west_malaysia";
-  const extraWeightKg = isWestMalaysia ? Math.max(0, Math.ceil(estimatedWeight - WEST_MALAYSIA_V22_SHIPPING.includedWeightKg)) : 0;
-  const extraWeightFee = extraWeightKg * WEST_MALAYSIA_V22_SHIPPING.additionalKgFee;
+  const extraWeightKg = isWestMalaysia ? Math.max(0, Math.ceil(estimatedWeight - shippingConfiguration.westMalaysia.includedWeightKg)) : 0;
+  const extraWeightFee = extraWeightKg * shippingConfiguration.westMalaysia.additionalKgFee;
   const shippingFee = Number(o?.shippingFee || 0);
   const baseShippingFee = isWestMalaysia ? Math.max(0, shippingFee - extraWeightFee) : shippingFee;
   const isFreeShipping = isWestMalaysia && estimatedWeight > 0 && baseShippingFee === 0;
@@ -313,7 +315,7 @@ export default function CustomerOrderPage(props: any) {
                     请先填写收货地址
                   </p>
                   <p className="text-xs text-amber-700 mt-1">
-                    系统将自动计算运费后即可完成付款。消费满 RM150（不含特价商品）10kg 内即可享用免邮福利。
+                    系统将自动计算运费后即可完成付款。普通商品消费满 RM{shippingConfiguration.westMalaysia.freeShippingThreshold}（不含特价商品）首{shippingConfiguration.westMalaysia.includedWeightKg}kg 内即可享用免邮福利。
                   </p>
                   <Button size="sm" className="mt-2" onClick={() => setShowAddressForm(true)}>
                     填写收货地址
@@ -463,8 +465,8 @@ export default function CustomerOrderPage(props: any) {
                 {isWestMalaysia && estimatedWeight > 0 && (
                   <div className="rounded-md bg-emerald-50 border border-emerald-100 px-3 py-2 mt-2 space-y-1 text-emerald-900">
                     <div className="flex justify-between"><span>估计重量</span><span>{estimatedWeight.toFixed(2)} kg</span></div>
-                    <div className="flex justify-between"><span>{isFreeShipping ? "首10kg免运" : "首10kg基础运费"}</span><span>RM {baseShippingFee.toFixed(2)}</span></div>
-                    {extraWeightKg > 0 && <div className="flex justify-between"><span>续重运费（{extraWeightKg}kg × RM {WEST_MALAYSIA_V22_SHIPPING.additionalKgFee}）</span><span>RM {extraWeightFee.toFixed(2)}</span></div>}
+                    <div className="flex justify-between"><span>{isFreeShipping ? `首${shippingConfiguration.westMalaysia.includedWeightKg}kg免运` : `首${shippingConfiguration.westMalaysia.includedWeightKg}kg基础运费`}</span><span>RM {baseShippingFee.toFixed(2)}</span></div>
+                    {extraWeightKg > 0 && <div className="flex justify-between"><span>续重运费（{extraWeightKg}kg × RM {shippingConfiguration.westMalaysia.additionalKgFee}）</span><span>RM {extraWeightFee.toFixed(2)}</span></div>}
                     <div className="flex justify-between font-medium border-t border-emerald-200 pt-1"><span>客户应付运费</span><span>RM {shippingFee.toFixed(2)}</span></div>
                   </div>
                 )}

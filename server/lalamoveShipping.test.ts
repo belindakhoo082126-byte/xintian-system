@@ -30,4 +30,10 @@ describe("Lalamove RM15公司承担规则", () => {
       needsSpecialOrder: true,
     });
   });
+
+  it("管理员调整公司承担额后，仍只收实际超额且不对低于承担额的配送退款", () => {
+    expect(calculateLalamoveCheckoutCustomerShipping(20)).toBe(0);
+    expect(calculateLalamoveActualCustomerBalance(18, 20)).toMatchObject({ customerBalance: 0, needsSpecialOrder: false });
+    expect(calculateLalamoveActualCustomerBalance(27.5, 20)).toMatchObject({ customerBalance: 7.5, needsSpecialOrder: true });
+  });
 });

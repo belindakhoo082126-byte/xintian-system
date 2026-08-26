@@ -10,11 +10,12 @@ describe("MallCheckout 运费规则展示", () => {
     expect(source).toContain("blocksPlantingMediumFreeShippingCheckout ||");
   });
 
-  it("Lalamove结账预收为RM0并明确说明公司先承担RM15", () => {
+  it("Lalamove结账预收为RM0，并使用公开统一配置说明公司承担额与实际超额补收", () => {
     const source = readFileSync(new URL("./MallCheckout.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("calculateLalamoveCheckoutCustomerShipping()");
-    expect(source).toContain("公司先承担RM15");
+    expect(source).toContain("shippingRules.checkoutConfiguration.useQuery()");
+    expect(source).toContain("calculateLalamoveCheckoutCustomerShipping(shippingConfiguration.lalamove.companyBearingFee)");
+    expect(source).toContain("shippingConfiguration.lalamove.companyBearingFee");
     expect(source).toContain("实际超额后补差价");
   });
 });

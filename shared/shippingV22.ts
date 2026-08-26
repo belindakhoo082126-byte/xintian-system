@@ -9,11 +9,18 @@ export const WEST_MALAYSIA_V22_SHIPPING = {
   additionalKgFee: 3,
 } as const;
 
+export type WestMalaysiaShippingParameters = {
+  freeShippingThreshold: number;
+  includedWeightKg: number;
+  baseFeeBelowThreshold: number;
+  additionalKgFee: number;
+};
+
 /** Lalamove first RM15 is always borne by the company. */
 export const LALAMOVE_COMPANY_BEARING = 15;
 
 /** Customers only pay the actual Lalamove amount above the company bearing after packing. */
-export function calculateLalamoveCheckoutCustomerShipping() {
+export function calculateLalamoveCheckoutCustomerShipping(_companyBearingFee = LALAMOVE_COMPANY_BEARING) {
   return 0;
 }
 
@@ -22,9 +29,9 @@ export function calculateLalamoveCheckoutCustomerShipping() {
  * customer still owes. The company bears the first RM15, and a lower actual
  * fee must never create either a refund or a negative customer balance.
  */
-export function calculateLalamoveActualCustomerBalance(actualDeliveryFee: number) {
+export function calculateLalamoveActualCustomerBalance(actualDeliveryFee: number, companyBearingFee = LALAMOVE_COMPANY_BEARING) {
   const actualShippingFee = Math.max(0, Number(actualDeliveryFee) || 0);
-  const customerBalance = Math.max(0, actualShippingFee - LALAMOVE_COMPANY_BEARING);
+  const customerBalance = Math.max(0, actualShippingFee - Math.max(0, Number(companyBearingFee) || 0));
   return {
     actualShippingFee,
     customerBalance,
@@ -36,8 +43,12 @@ export function calculateLalamoveActualCustomerBalance(actualDeliveryFee: number
  * 西马订单的唯一重量／运费明细规则。
  * 首10kg的资格由免邮门槛决定；超过10kg的部分一律向上取整并按RM3／kg计。
  */
-export function calculateWestMalaysiaShippingBreakdown(totalWeight: number, freeShippingEligibleSubtotal = 0) {
-  const rule = WEST_MALAYSIA_V22_SHIPPING;
+export function calculateWestMalaysiaShippingBreakdown(
+  totalWeight: number,
+  freeShippingEligibleSubtotal = 0,
+  configuredRule: Partial<WestMalaysiaShippingParameters> = WEST_MALAYSIA_V22_SHIPPING,
+) {
+  const rule = { ...WEST_MALAYSIA_V22_SHIPPING, ...configuredRule };
   const estimatedWeight = Math.max(0, Number(totalWeight) || 0);
   const freeShipping = freeShippingEligibleSubtotal >= rule.freeShippingThreshold;
   const extraWeightKg = Math.max(0, Math.ceil(estimatedWeight - rule.includedWeightKg));
@@ -55,15 +66,18 @@ export function calculateWestMalaysiaShippingBreakdown(totalWeight: number, free
   };
 }
 
-export function getWestMalaysiaV22Specification(): string {
-  const rule = WEST_MALAYSIA_V22_SHIPPING;
+export function getWestMalaysiaV22Specification(configuredRule: Partial<WestMalaysiaShippingParameters> = WEST_MALAYSIA_V22_SHIPPING): string {
+  const rule = { ...WEST_MALAYSIA_V22_SHIPPING, ...configuredRule };
   return `订单商品金额满 RM${rule.freeShippingThreshold}：首 ${rule.includedWeightKg}kg 免邮，超过部分每公斤加 RM${rule.additionalKgFee}。订单商品金额未满 RM${rule.freeShippingThreshold}：首 ${rule.includedWeightKg}kg 收 RM${rule.baseFeeBelowThreshold}，超过部分每公斤加 RM${rule.additionalKgFee}。`;
 }
 
-export function getWestMalaysiaFreeShippingEligibilitySpecification(): string {
-  return "免邮资格：特价商品不计入RM150；订单含植物时，种植介质不计入门槛。植物与种植介质同单且合资格普通商品达到RM150时，必须取消种植介质或另开订单后才可结账；没有植物时，种植介质可与肥料等普通商品合计免邮。";
+export function getWestMalaysiaFreeShippingEligibilitySpecification(
+  configuredRule: Partial<WestMalaysiaShippingParameters> = WEST_MALAYSIA_V22_SHIPPING,
+): string {
+  const rule = { ...WEST_MALAYSIA_V22_SHIPPING, ...configuredRule };
+  return `免邮资格：特价商品不计入RM${rule.freeShippingThreshold}；订单含植物时，种植介质不计入门槛。植物与种植介质同单且合资格普通商品达到RM${rule.freeShippingThreshold}时，必须取消种植介质或另开订单后才可结账；没有植物时，种植介质可与肥料等普通商品合计免邮。`;
 }
 
-export function getLalamoveSettlementSpecification(): string {
-  return `Lalamove结账时客户运费为RM0，公司先承担RM${LALAMOVE_COMPANY_BEARING}；包货后填写实际配送费用，只有超过RM${LALAMOVE_COMPANY_BEARING}的部分才向客户补收。实际费用不超过RM${LALAMOVE_COMPANY_BEARING}时不补收也不退款。`;
+export function getLalamoveSettlementSpecification(companyBearingFee = LALAMOVE_COMPANY_BEARING): string {
+  return `Lalamove结账时客户运费为RM0，公司先承担RM${companyBearingFee}；包货后填写实际配送费用，只有超过RM${companyBearingFee}的部分才向客户补收。实际费用不超过RM${companyBearingFee}时不补收也不退款。`;
 }
