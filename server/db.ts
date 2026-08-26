@@ -1929,6 +1929,20 @@ export async function createOrderWithSplit(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  // 商品类型必须以主档为准：旧页面状态或客户端数据不能把会员、课程、资料包
+  // 错误送入实体库存预留。实体材料包在主档中是 physical，仍会保留库存校验。
+  const productIdsForType = Array.from(new Set(data.items.map((item) => item.productId).filter(Boolean)));
+  const trustedProductTypes = productIdsForType.length === 0 ? [] : await db.select({
+    id: products.id,
+    type: products.type,
+  }).from(products).where(inArray(products.id, productIdsForType));
+  const productTypeById = new Map<number, string>(trustedProductTypes.map((product) => [product.id, String(product.type)]));
+  for (const item of data.items) {
+    const trustedType = productTypeById.get(item.productId);
+    if (!trustedType) throw new Error(`商品 #${item.productId} 不存在或已不可用`);
+    item.productType = (trustedType === "membership" || trustedType === "virtual" ? "membership" : trustedType) as "physical" | "membership" | "gift";
+  }
+
   // Physical products reserve stock atomically immediately before the order is
   // created. A separate read is not safe when multiple users order at once.
   const stockManagedItems = data.items.filter(i => isStockManagedProductType(i.productType));
