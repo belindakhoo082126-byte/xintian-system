@@ -313,7 +313,7 @@ export type InsertVariant = typeof variants.$inferInsert;
 export const virtualDeliveryProducts = mysqlTable("virtual_delivery_products", {
   id: int("id").autoincrement().primaryKey(),
   productId: int("productId").notNull(),
-  deliveryType: mysqlEnum("deliveryType", ["membership", "course", "resource"]).notNull(),
+  deliveryType: mysqlEnum("deliveryType", ["membership", "course", "resource", "material_kit"]).notNull(),
   defaultDeliveryMessage: text("defaultDeliveryMessage"),
   allowMixedCheckout: boolean("allowMixedCheckout").default(true).notNull(),
   isActive: boolean("isActive").default(true).notNull(),
@@ -355,7 +355,7 @@ export const virtualDeliveryTasks = mysqlTable("virtual_delivery_tasks", {
   customerId: int("customerId").notNull(),
   virtualProductId: int("virtualProductId").notNull(),
   virtualPackageId: int("virtualPackageId"),
-  deliveryType: mysqlEnum("deliveryType", ["membership", "course", "resource"]).notNull(),
+  deliveryType: mysqlEnum("deliveryType", ["membership", "course", "resource", "material_kit"]).notNull(),
   productNameSnapshot: varchar("productNameSnapshot", { length: 255 }).notNull(),
   packageNameSnapshot: varchar("packageNameSnapshot", { length: 255 }),
   deliveryLinkSnapshot: varchar("deliveryLinkSnapshot", { length: 500 }),

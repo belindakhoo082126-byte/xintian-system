@@ -512,7 +512,7 @@ export default function PurchaseOrders() {
                         <CommandInput value={productSearch} onValueChange={setProductSearch} placeholder={translate("按商品名称、SKU 或规格关键词搜索...", "Search product name, SKU or variant keyword...")} />
                         <CommandList className="max-h-72">
                           <CommandEmpty>{translate("未找到可进货商品", "No purchasable products found")}</CommandEmpty>
-                          <CommandGroup heading={translate("商品与赠品", "Products and gifts")}>
+                          <CommandGroup heading={translate("商品、赠品与实体材料包", "Products, gifts and material kits")}>
                             {filteredPurchaseProducts.map(product => (
                               <CommandItem key={product.id} value={`${product.id}-${product.name}`} onSelect={() => selectPurchaseProduct(product)}>
                                 <Check className="mr-2 h-4 w-4 opacity-0" />

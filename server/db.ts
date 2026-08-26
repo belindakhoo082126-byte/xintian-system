@@ -3,6 +3,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import { formatLiveRoomVariantCopyText } from "../shared/liveRoomVariantCopy";
 import { composeLiveVariantKeyword } from "../shared/liveRoomVariantKeyword";
+import { requiresMaterialKitWeight, resolveVirtualDeliveryCatalogProductType } from "../shared/virtualDeliveryProductType";
 import {
   calculateFinancialCashFlow,
   isBalanceAffectingPayment,
@@ -6139,7 +6140,7 @@ export async function listVirtualDeliveryProducts() {
 
 export async function createVirtualDeliveryProduct(data: {
   name: string;
-  deliveryType: "membership" | "course" | "resource";
+  deliveryType: "membership" | "course" | "resource" | "material_kit";
   description?: string;
   defaultDeliveryMessage?: string;
   coverImageUrl?: string;
@@ -6152,6 +6153,7 @@ export async function createVirtualDeliveryProduct(data: {
     deliveryLink?: string;
     deliveryMessage?: string;
     imageUrl?: string;
+    weightKg?: string;
   }>;
 }) {
   const database = await getDb();
@@ -6169,7 +6171,7 @@ export async function createVirtualDeliveryProduct(data: {
   return await database.transaction(async (tx) => {
     const productResult = await tx.insert(products).values({
       name: data.name.trim(),
-      type: "membership",
+      type: resolveVirtualDeliveryCatalogProductType(data.deliveryType),
       productMode: "variant",
       keyword: productKeyword,
       sku: productSku,
@@ -6181,9 +6183,9 @@ export async function createVirtualDeliveryProduct(data: {
       description: data.description || null,
       coverImageUrl: data.coverImageUrl || null,
       sellingPrice: packages[0].sellingPrice,
-      currentCost: "0.00",
+      currentCost: requiresMaterialKitWeight(data.deliveryType) ? (packages[0].contentCost || "0.00") : "0.00",
       stockQuantity: 0,
-      weightKg: "0.00",
+      weightKg: requiresMaterialKitWeight(data.deliveryType) ? (packages[0].weightKg || "0.00") : "0.00",
       allowStandalonePurchase: true,
       allowMixedCheckout: data.allowMixedCheckout,
       syncToMall: data.syncToMall,
@@ -6212,7 +6214,7 @@ export async function createVirtualDeliveryProduct(data: {
         sku: `${productSku}-${String(index + 1).padStart(2, "0")}`,
         sellingPrice: item.sellingPrice,
         currentCost: item.contentCost || "0.00",
-        weight: "0.00",
+        weight: requiresMaterialKitWeight(data.deliveryType) ? (item.weightKg || "0.00") : "0.00",
         status: "active",
         visibility: "public",
         imageUrl: item.imageUrl || null,
@@ -6244,6 +6246,7 @@ export async function updateVirtualDeliveryPackage(id: number, data: {
   deliveryLink?: string | null;
   deliveryMessage?: string | null;
   imageUrl?: string | null;
+  weightKg?: string;
   isActive?: boolean;
 }) {
   const database = await getDb();
@@ -6264,6 +6267,7 @@ export async function updateVirtualDeliveryPackage(id: number, data: {
   if (data.sellingPrice !== undefined) variantUpdate.sellingPrice = data.sellingPrice || null;
   if (data.contentCost !== undefined) variantUpdate.currentCost = data.contentCost || "0.00";
   if (data.imageUrl !== undefined) variantUpdate.imageUrl = data.imageUrl || null;
+  if (data.weightKg !== undefined) variantUpdate.weight = data.weightKg || "0.00";
   if (data.isActive !== undefined) variantUpdate.status = data.isActive ? "active" : "inactive";
   if (Object.keys(variantUpdate).length > 0) {
     await database.update(variants).set(variantUpdate as any).where(eq(variants.id, current[0].variantId));
