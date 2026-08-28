@@ -8108,6 +8108,7 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
       .input(z.object({
         name: z.string().trim().min(1, "请输入虚拟商品名称"),
         deliveryType: z.enum(["membership", "course", "resource", "material_kit"]),
+        keyword: z.string().trim().max(64, "关键词不能超过64个字").optional(),
         description: z.string().optional(),
         defaultDeliveryMessage: z.string().optional(),
         coverImageUrl: z.string().url("商品图片必须是完整网址").optional().or(z.literal("")),
@@ -8121,6 +8122,7 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
           deliveryMessage: z.string().optional(),
           imageUrl: z.string().url("配套图片必须是完整网址").optional().or(z.literal("")),
           weightKg: z.string().regex(/^\d+(\.\d{1,2})?$/, "请输入有效重量").optional(),
+          keyword: z.string().trim().max(64, "关键词不能超过64个字").optional(),
         })).min(1, "请至少建立一个交付配套"),
       }).refine((value) => value.deliveryType !== "material_kit" || value.packages.every((pkg) => Number(pkg.weightKg || 0) > 0), {
         message: "实体材料包的每个配套必须填写大于0的单包重量（kg）",
@@ -8133,6 +8135,7 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
       .input(z.object({
         id: z.number(),
         name: z.string().trim().min(1, "请输入虚拟商品名称").optional(),
+        keyword: z.string().trim().max(64, "关键词不能超过64个字").optional(),
         description: z.string().optional(),
         defaultDeliveryMessage: z.string().optional(),
         coverImageUrl: z.string().url().optional().or(z.literal("")),
@@ -8149,6 +8152,7 @@ ${persona.proactiveRecommend ? '- 主动推荐适合的商品\n' : ''}${persona.
       .input(z.object({
         id: z.number(),
         name: z.string().trim().min(1).optional(),
+        keyword: z.string().trim().max(64, "关键词不能超过64个字").optional(),
         sellingPrice: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
         contentCost: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
         deliveryLink: z.string().url().optional().or(z.literal("")),

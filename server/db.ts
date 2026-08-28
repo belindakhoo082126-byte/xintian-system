@@ -6194,6 +6194,7 @@ export async function listVirtualDeliveryProducts() {
 export async function createVirtualDeliveryProduct(data: {
   name: string;
   deliveryType: "membership" | "course" | "resource" | "material_kit";
+  keyword?: string;
   description?: string;
   defaultDeliveryMessage?: string;
   coverImageUrl?: string;
@@ -6207,6 +6208,7 @@ export async function createVirtualDeliveryProduct(data: {
     deliveryMessage?: string;
     imageUrl?: string;
     weightKg?: string;
+    keyword?: string;
   }>;
 }) {
   const database = await getDb();
@@ -6220,8 +6222,14 @@ export async function createVirtualDeliveryProduct(data: {
 
   const stamp = Date.now().toString().slice(-8);
   const productSku = `VD-${stamp}`;
-  const productKeyword = `VD${stamp}`;
+  const requestedProductKeyword = data.keyword?.toUpperCase().replace(/\s+/g, "") || "";
+  const productKeyword = requestedProductKeyword || `VD${stamp}`;
   return await database.transaction(async (tx) => {
+    if (requestedProductKeyword) {
+      const conflict = await tx.select({ id: products.id, name: products.name }).from(products)
+        .where(eq(products.keyword, requestedProductKeyword)).limit(1);
+      if (conflict[0]) throw new Error(`商品关键词「${requestedProductKeyword}」已被「${conflict[0].name}」使用`);
+    }
     const productResult = await tx.insert(products).values({
       name: data.name.trim(),
       type: resolveVirtualDeliveryCatalogProductType(data.deliveryType),
@@ -6260,10 +6268,17 @@ export async function createVirtualDeliveryProduct(data: {
     const createdPackages = [] as Array<{ id: number; variantId: number }>;
     for (let index = 0; index < packages.length; index += 1) {
       const item = packages[index];
+      const requestedVariantKeyword = item.keyword?.toUpperCase().replace(/\s+/g, "") || "";
+      const variantKeyword = requestedVariantKeyword || `${productKeyword}${index + 1}`;
+      if (requestedVariantKeyword) {
+        const conflict = await tx.select({ id: variants.id, name: variants.name }).from(variants)
+          .where(and(eq(variants.productId, productId), eq(variants.keyword, requestedVariantKeyword))).limit(1);
+        if (conflict[0]) throw new Error(`配套关键词「${requestedVariantKeyword}」已被「${conflict[0].name}」使用`);
+      }
       const variantResult = await tx.insert(variants).values({
         productId,
         name: item.name.trim(),
-        keyword: `${productKeyword}${index + 1}`,
+        keyword: variantKeyword,
         sku: `${productSku}-${String(index + 1).padStart(2, "0")}`,
         sellingPrice: item.sellingPrice,
         currentCost: item.contentCost || "0.00",
@@ -6294,6 +6309,7 @@ export async function createVirtualDeliveryProduct(data: {
 
 export async function updateVirtualDeliveryPackage(id: number, data: {
   name?: string;
+  keyword?: string;
   sellingPrice?: string;
   contentCost?: string;
   deliveryLink?: string | null;
@@ -6317,6 +6333,14 @@ export async function updateVirtualDeliveryPackage(id: number, data: {
   }
   const variantUpdate: Record<string, unknown> = {};
   if (data.name !== undefined) variantUpdate.name = data.name.trim();
+  if (data.keyword !== undefined && data.keyword.trim()) {
+    const normalizedKeyword = data.keyword.toUpperCase().replace(/\s+/g, "");
+    const variantRows = await database.select({ productId: variants.productId }).from(variants).where(eq(variants.id, current[0].variantId)).limit(1);
+    const conflict = await database.select({ id: variants.id, name: variants.name }).from(variants)
+      .where(and(eq(variants.productId, variantRows[0].productId), eq(variants.keyword, normalizedKeyword), ne(variants.id, current[0].variantId))).limit(1);
+    if (conflict[0]) throw new Error(`配套关键词「${normalizedKeyword}」已被「${conflict[0].name}」使用`);
+    variantUpdate.keyword = normalizedKeyword;
+  }
   if (data.sellingPrice !== undefined) variantUpdate.sellingPrice = data.sellingPrice || null;
   if (data.contentCost !== undefined) variantUpdate.currentCost = data.contentCost || "0.00";
   if (data.imageUrl !== undefined) variantUpdate.imageUrl = data.imageUrl || null;
@@ -6330,6 +6354,7 @@ export async function updateVirtualDeliveryPackage(id: number, data: {
 
 export async function updateVirtualDeliveryProduct(id: number, data: {
   name?: string;
+  keyword?: string;
   description?: string | null;
   defaultDeliveryMessage?: string | null;
   coverImageUrl?: string | null;
@@ -6352,6 +6377,13 @@ export async function updateVirtualDeliveryProduct(id: number, data: {
 
   const productUpdate: Record<string, unknown> = {};
   if (data.name !== undefined) productUpdate.name = data.name.trim();
+  if (data.keyword !== undefined && data.keyword.trim()) {
+    const normalizedKeyword = data.keyword.toUpperCase().replace(/\s+/g, "");
+    const conflict = await database.select({ id: products.id, name: products.name }).from(products)
+      .where(and(eq(products.keyword, normalizedKeyword), ne(products.id, current[0].productId))).limit(1);
+    if (conflict[0]) throw new Error(`商品关键词「${normalizedKeyword}」已被「${conflict[0].name}」使用`);
+    productUpdate.keyword = normalizedKeyword;
+  }
   if (data.description !== undefined) {
     productUpdate.shortDescZh = data.description || null;
     productUpdate.fullDescZh = data.description || null;
